@@ -45,9 +45,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          curl --fail --silent --show-error \
+          portal_html="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/ >/dev/null
+            http://127.0.0.1:8080/)"
+
+          grep --quiet 'id="brand-select"' <<<"$portal_html"
+          grep --quiet 'id="review-panel"' <<<"$portal_html"
+          grep --quiet 'data-device="desktop"' <<<"$portal_html"
+          grep --quiet 'data-device="tablet"' <<<"$portal_html"
+          grep --quiet 'data-device="mobile"' <<<"$portal_html"
+
+          brands_json="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/data/brands.json)"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert len(data["brands"]) == 12' <<<"$brands_json"
 
           sites=(
             imperial
@@ -65,11 +76,28 @@ jobs:
           )
 
           for site in "${sites[@]}"; do
-            curl --fail --silent --show-error \
+            site_html="$(curl --fail --silent --show-error \
               --header "Host: ${site}.localhost" \
-              http://127.0.0.1:8080/ \
-              | grep --quiet "Staging környezet"
+              http://127.0.0.1:8080/)"
+            grep --quiet 'name="robots" content="noindex,nofollow"' <<<"$site_html"
           done
+
+          imperial_html="$(curl --fail --silent --show-error \
+            --header "Host: imperial.localhost" \
+            http://127.0.0.1:8080/)"
+          for section_id in hero trust portfolio capabilities projects sustainability news contact; do
+            grep --quiet "id=\"${section_id}\"" <<<"$imperial_html"
+          done
+
+          curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            'http://127.0.0.1:8080/site-preview/imperial/?review=1' \
+            | grep --quiet 'id="hero"'
+
+          curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/assets/data/imperial-home.json \
+            | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False'
 
           curl --fail --silent --show-error \
             http://127.0.0.1:8080/healthz \
