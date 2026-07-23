@@ -4,15 +4,422 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
-    <title>Prefab — Staging</title>
-    <link rel="stylesheet" href="/assets/site.css">
+    <meta name="description" content="Tájékoztató építési technológia-összehasonlító kalkulátor családi házakhoz.">
+    <title>Építési technológia kalkulátor | Prefab</title>
+    <link rel="stylesheet" href="calculator-assets/calculator.css">
+    <script src="calculator-assets/config.js" defer></script>
+    <script src="calculator-assets/calculator.js" defer></script>
   </head>
-  <body style="--accent: #d4a64a">
+  <body>
+    <a class="skip-link" href="#calculator">Ugrás a kalkulátorhoz</a>
+
+    <header class="site-header">
+      <div class="topbar">
+        <div class="shell topbar__inner">
+          <p class="staging-badge">Staging környezet</p>
+          <div class="topbar__links">
+            <a href="tel:+36708845361">+36 70 884 5361</a>
+            <a href="mailto:info@prefab.hu">info@prefab.hu</a>
+          </div>
+        </div>
+      </div>
+      <div class="shell nav">
+        <a class="brand" href="https://prefab.hu/" aria-label="Prefab főoldal">
+          <span class="brand__mark" aria-hidden="true">P</span>
+          <span class="brand__name">PREFAB</span>
+        </a>
+        <nav aria-label="Fő navigáció">
+          <a href="https://prefab.hu/tipushaz-kereso">Mintaházak</a>
+          <a href="https://prefab.hu/egyedi-hazepites">Kivitelezés</a>
+          <a class="button button--small" href="#consultation">Ingyenes konzultáció</a>
+        </nav>
+      </div>
+    </header>
+
     <main>
-      <p class="eyebrow">Staging környezet</p>
-      <h1>Prefab</h1>
-      <p class="lede">Elkülönített fejlesztési és teszt-helyőrző. Ez nem az éles weboldal.</p>
-      <p class="meta"><span>Site ID: <strong>prefab</strong></span><span>Állapot: előkészítve</span></p>
+      <section class="hero">
+        <div class="shell hero__grid">
+          <div>
+            <p class="eyebrow">TECHNOLÓGIAI ÖSSZEHASONLÍTÁS</p>
+            <h1>Melyik építési mód mit jelent valójában?</h1>
+            <p class="hero__lead">
+              Hasonlítsd össze a választott építési technológiát a Liapor
+              előregyártott agyagbeton rendszerrel – költség, idő, kockázat és
+              várható piaci érték alapján.
+            </p>
+            <div class="hero__facts" aria-label="A kalkulátor jellemzői">
+              <span>2026. júliusi ármodell</span>
+              <span>Magyarországi régiók</span>
+              <span>Nem ajánlat, hanem döntéstámogatás</span>
+            </div>
+          </div>
+          <aside class="hero__note" aria-label="Fontos tudnivaló">
+            <span class="hero__note-icon" aria-hidden="true">i</span>
+            <div>
+              <strong>Őszinte összehasonlítás</strong>
+              <p>
+                A Liapor nem minden esetben a legolcsóbb vagy a leggyorsabb.
+                A kedvezőbb és kedvezőtlenebb eredményeket ugyanazzal a módszerrel
+                emeljük ki.
+              </p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="calculator-section" id="calculator">
+        <div class="shell">
+          <div class="section-heading">
+            <p class="eyebrow">1. LÉPÉS</p>
+            <h2>Add meg a tervezett ház paramétereit</h2>
+            <p>A csillaggal jelölt mezők kitöltése szükséges a számításhoz.</p>
+          </div>
+
+          <form class="calculator-card" id="calculator-form">
+            <fieldset>
+              <legend>Alapadatok</legend>
+              <div class="field-grid field-grid--3">
+                <label class="field">
+                  <span>Hasznos alapterület *</span>
+                  <span class="input-with-unit">
+                    <input id="area" name="area" type="number" min="40" max="500" step="1" value="120" required>
+                    <span>m²</span>
+                  </span>
+                  <small>40–500 m² közötti lakóterület</small>
+                </label>
+                <label class="field">
+                  <span>Szintszám *</span>
+                  <select id="storeys" name="storeys" required>
+                    <option value="single">Földszintes</option>
+                    <option value="double">Kétszintes</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Összehasonlított technológia *</span>
+                  <select id="technology" name="technology" required>
+                    <option value="timber">Favázas könnyűszerkezet</option>
+                    <option value="steel">Fémvázas könnyűszerkezet</option>
+                    <option value="ytong">Ytong falazat</option>
+                    <option value="brick">Tégla falazat</option>
+                    <option value="sip">SIP panel</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Műszaki színvonal *</span>
+                  <select id="quality" name="quality" required>
+                    <option value="basic">Alap kulcsrakész</option>
+                    <option value="mid" selected>Közép kulcsrakész</option>
+                    <option value="premium">Prémium kulcsrakész</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Áfakezelés *</span>
+                  <select id="vat" name="vat" required>
+                    <option value="0.05">5% – ha a projekt jogosult</option>
+                    <option value="0.27">27% – általános kulcs</option>
+                    <option value="0">Nettó összeget kérek</option>
+                  </select>
+                  <small>A jogosultságot adószakértővel kell ellenőrizni.</small>
+                </label>
+                <label class="field">
+                  <span>Telek becsült értéke</span>
+                  <span class="input-with-unit">
+                    <input id="land-value" name="landValue" type="number" min="0" max="1000" step="1" value="0">
+                    <span>M Ft</span>
+                  </span>
+                  <small>Opcionális; a teljes ingatlanértékhez adjuk.</small>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Helyszín és szerkezet</legend>
+              <div class="field-grid field-grid--3">
+                <label class="field">
+                  <span>Elhelyezkedés *</span>
+                  <select id="region" name="region" required>
+                    <option value="budapest">Budapest</option>
+                    <option value="agglomeration" selected>Budapesti agglomeráció / Pest</option>
+                    <option value="balaton">Balaton / Velencei-tó prémium térség</option>
+                    <option value="major-city">Kiemelt vármegyeszékhely</option>
+                    <option value="county-seat">Egyéb vármegyeszékhely</option>
+                    <option value="town">Egyéb város</option>
+                    <option value="village">Község / vidéki térség</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Telek lejtése *</span>
+                  <select id="terrain" name="terrain" required>
+                    <option value="flat">Sík</option>
+                    <option value="mild">Enyhén lejtős</option>
+                    <option value="steep">Erősen lejtős</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Megközelíthetőség *</span>
+                  <select id="access" name="access" required>
+                    <option value="good">Jól megközelíthető</option>
+                    <option value="limited">Korlátozott teherautós hozzáférés</option>
+                    <option value="hard">Darunak / nyerges vontatónak nehéz</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Tetőforma *</span>
+                  <select id="roof" name="roof" required>
+                    <option value="gable">Egyszerű nyeregtető</option>
+                    <option value="hip">Kontyolt tető</option>
+                    <option value="flat">Lapostető</option>
+                    <option value="complex">Összetett magastető</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Talaj és alapozás *</span>
+                  <select id="foundation" name="foundation" required>
+                    <option value="standard">Normál síklemez / sávalap</option>
+                    <option value="unknown">Nincs talajmechanikai vizsgálat</option>
+                    <option value="water">Magas talajvíz / speciális szigetelés</option>
+                    <option value="deep">Mélyalapozás várható</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Közműhelyzet *</span>
+                  <select id="utilities" name="utilities" required>
+                    <option value="ready">Telken, kiépítve</option>
+                    <option value="partial">Részben kiépítve</option>
+                    <option value="absent">Hiányos / ügyintézés szükséges</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Komplexitás és ütemezési kockázat</legend>
+              <div class="field-grid field-grid--3">
+                <label class="field">
+                  <span>Gépészet *</span>
+                  <select id="mep" name="mep" required>
+                    <option value="standard">Standard hőszivattyús rendszer</option>
+                    <option value="enhanced">Hővisszanyerés + zónavezérlés</option>
+                    <option value="complex">Komplex okosotthon / extra gépészet</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Nyílászárók *</span>
+                  <select id="windows" name="windows" required>
+                    <option value="standard">Standard méretek</option>
+                    <option value="custom">Nagy üvegfelületek / egyedi méretek</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Várható kezdési időszak *</span>
+                  <select id="season" name="season" required>
+                    <option value="normal">Késő tavasz / nyár</option>
+                    <option value="wet">Ősz / csapadékos tavasz</option>
+                    <option value="winter">Tél / fagyveszély</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Tervkészültség *</span>
+                  <select id="design" name="design" required>
+                    <option value="ready">Kiviteli terv kész</option>
+                    <option value="concept" selected>Koncepció / engedélyezési terv</option>
+                    <option value="none">Még nincs terv</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Változtatási kockázat *</span>
+                  <select id="changes" name="changes" required>
+                    <option value="low">Döntések lezárva</option>
+                    <option value="average" selected>Átlagos változtatási igény</option>
+                    <option value="high">Sok nyitott döntés</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="calculator-actions">
+              <p>
+                A számítás nem helyettesíti a tervekre, geotechnikára és tételes
+                műszaki tartalomra épülő kivitelezői ajánlatot.
+              </p>
+              <button class="button button--primary button--large" type="submit">
+                Összehasonlítás elkészítése
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="results-section" id="results" aria-live="polite" hidden>
+        <div class="shell">
+          <div class="section-heading section-heading--result">
+            <div>
+              <p class="eyebrow">2. LÉPÉS</p>
+              <h2>A két technológia összehasonlítása</h2>
+              <p id="result-summary"></p>
+            </div>
+            <button class="button button--ghost" type="button" id="edit-calculation">
+              Paraméterek módosítása
+            </button>
+          </div>
+
+          <div class="legend" aria-label="Színmagyarázat">
+            <span><i class="legend__dot legend__dot--good"></i>Kedvezőbb érték</span>
+            <span><i class="legend__dot legend__dot--bad"></i>Kedvezőtlenebb érték</span>
+            <span><i class="legend__dot legend__dot--neutral"></i>Nincs érdemi eltérés</span>
+          </div>
+
+          <div class="comparison-wrap" tabindex="0" aria-label="Technológia-összehasonlító táblázat, vízszintesen görgethető">
+            <table class="comparison-table">
+              <thead>
+                <tr>
+                  <th scope="col">Vizsgált szempont</th>
+                  <th scope="col" id="selected-tech-heading"></th>
+                  <th scope="col">Liapor előregyártott agyagbeton</th>
+                </tr>
+              </thead>
+              <tbody id="comparison-body"></tbody>
+            </table>
+          </div>
+
+          <div class="result-notes">
+            <article>
+              <span class="result-notes__number">01</span>
+              <div>
+                <h3>Mit tartalmaz a költség?</h3>
+                <p>
+                  Kulcsrakész lakóépület tájékoztató kivitelezési kerete a választott
+                  műszaki színvonalon. A telek, finanszírozás, közműszolgáltatói díjak
+                  és hatósági terhek külön tételek.
+                </p>
+              </div>
+            </article>
+            <article>
+              <span class="result-notes__number">02</span>
+              <div>
+                <h3>Miért tartomány az eredmény?</h3>
+                <p>
+                  A korai fázisú becslést tervkészültség, talaj, logisztika és
+                  kivitelezői kapacitás bizonytalansága terheli. A tartomány ezt teszi
+                  láthatóvá.
+                </p>
+              </div>
+            </article>
+            <article>
+              <span class="result-notes__number">03</span>
+              <div>
+                <h3>Piaci érték</h3>
+                <p>
+                  Régiós újépítésű és családi házas referencia, nem hivatalos
+                  értékbecslés. A telek csak akkor része, ha fent külön megadtad.
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <details class="methodology">
+            <summary>Módszertan, adatforrások és korlátok</summary>
+            <div class="methodology__content">
+              <p>
+                A technológiai nettó alapárak a Prefab 2026. júliusi belső
+                webkalkulációs Ártükör-adatából származnak. Az időmodell a családi ház
+                Ütemtükör cél helyszíni munkanapjaiból és helyszíni módosítóiból épül.
+                A piaci értéket KSH, MNB és ingatlan.com régiós referenciaadatokhoz
+                igazított, széles bizonytalansági sávval becsüljük.
+              </p>
+              <ul>
+                <li>A technológiák azonos, kulcsrakész készültségi szinten szerepelnek.</li>
+                <li>Az alapárakhoz azonos projektparaméter-módosítókat alkalmazunk; a daruzási hozzáférés technológiaspecifikus.</li>
+                <li>Az 5%-os áfa csak a jogszabályi feltételek teljesülése esetén alkalmazható.</li>
+                <li>A kockázati pontszám szakmai döntéstámogató index, nem statikai vagy biztosítási minősítés.</li>
+                <li>Árbázis: 2026. július. Az eredmény legfeljebb 30 napig tekinthető aktuális indikációnak.</li>
+              </ul>
+              <p class="source-links">
+                <a href="https://www.ksh.hu/s/en/publications/housing-prices-housing-price-index-q4-2025/index.html" target="_blank" rel="noopener">KSH lakásárak</a>
+                <a href="https://www.mnb.hu/kiadvanyok/jelentesek/lakaspiaci-jelentes/lakaspiaci-jelentes-2026-majus" target="_blank" rel="noopener">MNB Lakáspiaci jelentés</a>
+                <a href="https://tudastar.ingatlan.com/hirek/2026-tol-lenduletet-kaphatnak-az-uj-lakasok/" target="_blank" rel="noopener">ingatlan.com újlakás-adatok</a>
+                <a href="https://nav.gov.hu/print/ado/afa/Ujabb_ket_evig_marad_az_ujepitesu_lakasok_5_szazalekos_afaja" target="_blank" rel="noopener">NAV áfatájékoztató</a>
+              </p>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <section class="consultation" id="consultation">
+        <div class="shell consultation__grid">
+          <div>
+            <p class="eyebrow eyebrow--light">3. LÉPÉS</p>
+            <h2>Kérj díjmentes mérnöki konzultációt</h2>
+            <p>
+              Küldd el az elérhetőségeidet és a kalkuláció összefoglalóját.
+              Mérnök kollégánk segít a műszaki tartalom és a valódi projektköltség
+              pontosításában.
+            </p>
+            <ul class="consultation__benefits">
+              <li>30 perces első konzultáció</li>
+              <li>Kötelezettségmentes</li>
+              <li>A saját projekted paramétereire szabva</li>
+            </ul>
+          </div>
+
+          <form class="lead-form" id="lead-form">
+            <div class="field-grid field-grid--2">
+              <label class="field">
+                <span>Név *</span>
+                <input id="lead-name" name="name" type="text" autocomplete="name" maxlength="100" required>
+              </label>
+              <label class="field">
+                <span>Telefonszám *</span>
+                <input id="lead-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" pattern="[+0-9 ()/-]{7,30}" required>
+              </label>
+              <label class="field field--wide">
+                <span>E-mail cím *</span>
+                <input id="lead-email" name="email" type="email" autocomplete="email" maxlength="160" required>
+              </label>
+            </div>
+            <label class="honeypot" aria-hidden="true">
+              Weboldal
+              <input name="website" type="text" tabindex="-1" autocomplete="off">
+            </label>
+            <label class="consent">
+              <input id="lead-consent" name="consent" type="checkbox" required>
+              <span>
+                Elfogadom az
+                <a href="https://prefab.hu/privacy-policy" target="_blank" rel="noopener">Adatkezelési tájékoztatót</a>,
+                és hozzájárulok, hogy a Prefab a konzultáció egyeztetése céljából
+                kapcsolatba lépjen velem. *
+              </span>
+            </label>
+            <input id="calculation-payload" name="calculation" type="hidden">
+            <button class="button button--light button--large" type="submit">
+              Kérem a díjmentes konzultációt
+            </button>
+            <p class="form-status" id="form-status" role="status"></p>
+            <p class="form-fallback-note" id="form-fallback-note">
+              A staging változatban az elküldés a saját levelezőprogramodban
+              fejeződik be. Élesítéskor a meglévő Prefab űrlapvégponthoz kell kötni.
+            </p>
+          </form>
+        </div>
+      </section>
     </main>
+
+    <footer class="site-footer">
+      <div class="shell site-footer__inner">
+        <div>
+          <strong>PREFAB</strong>
+          <p>Előregyártott készházak – családi házak szilárd alapokon.</p>
+        </div>
+        <div>
+          <a href="tel:+36708845361">+36 70 884 5361</a>
+          <a href="mailto:info@prefab.hu">info@prefab.hu</a>
+          <a href="https://prefab.hu/privacy-policy">Adatkezelési tájékoztató</a>
+        </div>
+      </div>
+      <div class="shell site-footer__legal">
+        Az eredmények előzetes, kötelezettségmentes tájékoztatásul szolgálnak,
+        nem minősülnek ajánlatnak vagy ingatlanforgalmi értékbecslésnek.
+      </div>
+    </footer>
   </body>
 </html>
