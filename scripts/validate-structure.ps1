@@ -30,7 +30,7 @@ foreach ($site in $requiredSites) {
 
 $requiredFiles = @(
   '.env.example',
-  'compose.yaml',
+  'docker-compose.yml',
   'docker/nginx/nginx.conf',
   'docker/nginx/conf.d/staging.conf',
   'sites/_portal/index.html',
