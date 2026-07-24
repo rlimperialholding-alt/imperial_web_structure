@@ -23,6 +23,7 @@ FROM base AS test
 COPY tests ./tests
 RUN --mount=type=cache,target=/root/.cache/pip \
     PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" python -m pip install ".[dev]"
+USER 10001:10001
 
 FROM base AS runtime
 USER 10001:10001
