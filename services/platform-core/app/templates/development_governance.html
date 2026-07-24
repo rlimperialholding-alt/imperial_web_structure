@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Fejlesztési governance | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">NO-DUPLICATE DEVELOPMENT GATE</span><h1>Kanonikus újrafelhasználási ellenőrzés</h1><p>Új modul, motor, törzsadat, sablon vagy munkafolyamat csak jóváhagyott discovery rekord után kerülhet kiadásba.</p></div></div>
+<div class="metric-grid three"><article class="metric-card"><span>Discovery rekordok</span><strong>{{ rows|length }}</strong></article><article class="metric-card"><span>Jóváhagyott</span><strong>{{ rows|selectattr('status','equalto','approved')|list|length }}</strong></article><article class="metric-card"><span>Szabály</span><strong>Reuse first</strong><small>Párhuzamos motor tilos</small></article></div>
+<section class="panel">
+<div class="panel-head"><div><h2>Új discovery rekord</h2><p>A fejlesztés pontos hiányát kell rögzíteni, nem a már elkészült képességet újrafogalmazni.</p></div></div>
+<form method="post" action="/development-governance" class="form-grid">
+<label>Kérésazonosító<input name="discovery_id" required placeholder="DISC-2026-..."></label>
+<label>Kért képesség<input name="requested_capability" required></label>
+<label>Érintett ModuleKey<input name="requested_module_key"></label>
+<label>Kanonikus ModuleKey<input name="canonical_module_key"></label>
+<label>Döntés<select name="decision"><option value="integrate">integrate</option><option value="extend">extend</option><option value="reuse">reuse</option><option value="repair">repair</option><option value="new_exception">new_exception</option></select></label>
+<label>Forrásverzió<input name="source_version"></label>
+<label class="span-2">Keresési kifejezések<input name="searched_terms" required placeholder="vesszővel elválasztva"></label>
+<label class="span-2">Megvalósítandó valódi hiány<textarea name="implementation_gap" required rows="4"></textarea></label>
+<label class="span-2">Kivétel indoka<textarea name="exception_reason" rows="2"></textarea></label>
+<div class="span-2 form-actions"><button class="button primary">Discovery rögzítése</button></div>
+</form>
+</section>
+<section class="panel"><div class="panel-head"><div><h2>Discovery napló</h2><p>Forrás, döntés és jóváhagyás egy helyen.</p></div></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Képesség</th><th>Kanonikus modul</th><th>Döntés</th><th>Státusz</th><th>Hiány</th></tr></thead><tbody>
+{% for row in rows %}<tr><td class="mono small">{{ row.discovery_id }}</td><td>{{ row.requested_capability }}</td><td>{{ row.canonical_module_key or '—' }}<small>{{ row.source_version or '' }}</small></td><td>{{ row.decision }}</td><td><span class="status-pill {{ 'ok' if row.status=='approved' else '' }}">{{ row.status }}</span></td><td>{{ row.implementation_gap }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

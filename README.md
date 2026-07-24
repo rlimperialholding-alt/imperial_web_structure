@@ -7,7 +7,8 @@ ellenőrzése és szekciószintű review-zása.
 
 > [!IMPORTANT]
 > Ez **nem production rendszer**. Nem használ valódi ügyféladatot, külső API-t,
-> production secretet, adatbázist vagy automatikus élesítést. A Compose stack
+> production secretet, production adatbázist vagy automatikus élesítést. A helyi
+> demoállapot egy elkülönített SQLite-fájlban és JSON runtime-ban marad. A Compose stack
 > alapértelmezetten kizárólag a `127.0.0.1` címen figyel, minden oldal
 > `noindex,nofollow` jelölést kap.
 
@@ -26,6 +27,56 @@ ellenőrzése és szekciószintű review-zása.
 - közös design tokenek és újrahasznosítható komponensosztályok;
 - biztonságos, read-only nginx Docker Compose futtatás;
 - szerkezeti, adat- és HTTP smoke tesztek GitHub Actionsben.
+
+## Imperial Intelligence integrációs munkaterület
+
+A vizuális weboldal-review mellett a repository egy 47 modulból álló, kattintható
+Imperial Intelligence rendszerdemót is tartalmaz. Minden modul közös, JSON-alapú
+backend runtime-hoz kapcsolódik, szintetikus rekorddal és végrehajtható
+tesztművelettel rendelkezik. Nyisd meg közvetlenül:
+
+- szerepkörös kezdőlap: [http://localhost:8080/workspace/](http://localhost:8080/workspace/)
+- modul- és konzisztenciaközpont: [http://localhost:8080/control-center/](http://localhost:8080/control-center/)
+- helyi event/outbox teszt: [http://localhost:8080/integration-control-room/](http://localhost:8080/integration-control-room/)
+- HouseBuild ügynök: [http://localhost:8080/housebuild-agent/](http://localhost:8080/housebuild-agent/)
+- kampánykészítő: [http://localhost:8080/campaign-factory/](http://localhost:8080/campaign-factory/)
+- digitális projektmenedzserek: [http://localhost:8080/digital-project-managers/](http://localhost:8080/digital-project-managers/)
+- Operations Workspace: [http://localhost:8080/operations-workspace/](http://localhost:8080/operations-workspace/)
+- Finance Intelligence: [http://localhost:8080/finance-intelligence/](http://localhost:8080/finance-intelligence/)
+- Enterprise Import Center: [http://localhost:8080/import-center/](http://localhost:8080/import-center/)
+
+A felső szerepkörválasztó 12 munkakört szimulál. Ez felület- és
+folyamatdemonstráció, nem valódi jogosultsági rendszer. A modulok a statikus
+`system.json` minták mellett a `platform-core` FastAPI backend közös
+`ProjectID`-, `CorrelationID`-, idempotency-, audit- és outbox-rétegét használják.
+A backend állapota Docker volume-ban marad meg, és a Workspace felületén bármikor
+visszaállítható az eredeti szintetikus állapotra.
+
+Két teljes E2E tesztút futtatható egyetlen kattintással:
+
+- lead → HouseMatch → PlotCheck → BuildConfig → PlanCheck → árlekötés →
+  szerződés → projekt → partner/beszerzés/helyszín → pénzügy → MyImperial →
+  Imperial Care;
+- kampánybrief → négykapus QA → ClaimID/PriceSnapshotID/TermsVersionID →
+  csatornaexport/PublicationProof → lead → CRM → szerződés → profit-attribúció.
+
+A Drive-ról beemelt kiadások és az integrációs döntések tételes jegyzéke:
+[modulforrás-provenance](docs/imported-module-releases.md).
+
+A Digitális Kálmán, Máté és Misi kezelőfelület mögötti opcionális FastAPI,
+PostgreSQL és Redis/RQ szolgáltatás a `digital-pm` Compose profilban fut. Az
+ügynökök projektmemóriája elkülönített, minden módosítás auditált, az R4–R5
+lépések emberi jóváhagyást kérnek, az R6–R7 külső kötelezettségvállalások pedig
+blokkoltak. Részletek:
+[Digital Project Managers v0.2.0](docs/integrations/digital-project-managers-v0.2.0.md).
+
+A HouseBuild különálló generáló ügynök. Jóváhagyott forráspillanatképből
+verziózott `HousePlan`-jelöltet készít, majd kötelezően PlanCheck és emberi review
+következik. A jóváhagyott eredmény BuildConfig, HouseVision és HouseMatch felé
+adható tovább; az ügynök nem publikálhat automatikusan. A részletes határok és
+event contractok a [HouseBuild leírásban](docs/housebuild-agent.md), a teljes
+modul- és szerepkörtérkép pedig az
+[integrációs architektúrában](docs/system-integration.md) található.
 
 ## Gyorsindítás
 
@@ -51,12 +102,30 @@ Ezután nyisd meg:
 - Imperial főoldal közvetlenül:
   [http://imperial.localhost:8080](http://imperial.localhost:8080)
 - health check: [http://localhost:8080/healthz](http://localhost:8080/healthz)
+- közös backend health: [http://localhost:8080/core/health/ready](http://localhost:8080/core/health/ready)
+- közvetlen backend UI: [http://localhost:8091](http://localhost:8091)
 
 Leállítás:
 
 ```bash
 docker compose down --remove-orphans
 ```
+
+### Automatikus helyi indítás
+
+A `scripts/start-local-platform.ps1` szükség esetén elindítja a Docker Desktopot,
+megvárja a Docker engine-t, felállítja az Imperial Intelligence és a
+`digital-pm` profilt, majd megnyitja a Workspace oldalt:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\start-local-platform.ps1
+```
+
+Bejelentkezéskori automatikus futtatáshoz a helyi gépen az
+`Imperial Intelligence Local Platform` ütemezett feladat használható. A
+konténerek `unless-stopped` restart policyval futnak, ezért Docker Desktop
+újraindulása után is automatikusan helyreállnak.
 
 Ha a `HTTP_PORT` értékét megváltoztatod, ugyanazt a portot használd a fenti
 URL-ekben. A `.localhost` hostok modern böngészőben a loopback címre oldódnak

@@ -38,6 +38,8 @@ docker/nginx/conf.d/staging.conf
 sites/_portal/index.html
 sites/_portal/data/brands.json
 sites/_portal/data/artifacts.json
+sites/_portal/data/platform.json
+sites/_portal/data/system.json
 sites/_shared/assets/tokens.css
 sites/_shared/assets/components.css
 sites/_shared/assets/admin.css
@@ -91,6 +93,23 @@ if artifacts["meta"]["containsCustomerData"] is not False:
     raise SystemExit("artifacts.json must declare containsCustomerData=false.")
 if artifacts["meta"]["runtimeExternalApis"] is not False:
     raise SystemExit("artifacts.json must declare runtimeExternalApis=false.")
+
+platform = json.loads(
+    (root / "sites/_portal/data/platform.json").read_text(encoding="utf-8")
+)
+system = json.loads(
+    (root / "sites/_portal/data/system.json").read_text(encoding="utf-8")
+)
+if len(platform["modules"]) != 47:
+    raise SystemExit(f"Expected 47 registered modules, found {len(platform['modules'])}.")
+if len(system["roles"]) < 10 or len(system["eventContracts"]) < 12:
+    raise SystemExit("system.json requires role workspaces and event contracts.")
+if (
+    system["meta"]["containsCustomerData"] is not False
+    or system["meta"]["usesExternalApis"] is not False
+    or system["meta"]["containsProductionSecrets"] is not False
+):
+    raise SystemExit("system.json must remain synthetic, offline and secret-free.")
 
 total_test_pages = 0
 for brand in brands["brands"]:

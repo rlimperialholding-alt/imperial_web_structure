@@ -29,3 +29,262 @@ services:
       retries: 5
       start_period: 5s
     stop_grace_period: 10s
+    depends_on:
+      platform-core:
+        condition: service_healthy
+
+  platform-core:
+    build:
+      context: ./services/platform-core
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+    restart: unless-stopped
+    init: true
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: sqlite:////app/runtime/platform_core.db
+      DEMO_RUNTIME_PATH: /app/runtime/platform_demo_runtime.json
+      SESSION_SECRET: ${PLATFORM_SESSION_SECRET:-local-demo-session-key-not-for-production}
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver,gateway,platform-core
+      REQUIRE_HTTPS: "false"
+    volumes:
+      - platform_core_runtime:/app/runtime
+    ports:
+      - "127.0.0.1:${PLATFORM_CORE_PORT:-8091}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')",
+        ]
+      interval: 10s
+      timeout: 4s
+      retries: 15
+      start_period: 10s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  platform-core-tests:
+    build:
+      context: ./services/platform-core
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+    profiles: ["platform-test"]
+    command: ["pytest", "-q"]
+    environment:
+      ENVIRONMENT: test
+      DATABASE_URL: sqlite:////tmp/platform_core_test.db
+      DEMO_RUNTIME_PATH: /tmp/platform_demo_runtime.json
+      SESSION_SECRET: local-test-session-key-not-for-production
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  dpm-postgres:
+    image: ${DPM_POSTGRES_IMAGE:-postgres:17-alpine}
+    profiles: ["digital-pm", "digital-pm-test"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DPM_DATABASE_NAME:-imperial_dpm}
+      POSTGRES_USER: ${DPM_DATABASE_USER:-imperial_dpm}
+      POSTGRES_PASSWORD_FILE: /run/secrets/dpm_db_password
+    secrets:
+      - dpm_db_password
+    volumes:
+      - dpm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DPM_DATABASE_USER:-imperial_dpm} -d ${DPM_DATABASE_NAME:-imperial_dpm}",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+
+  dpm-redis:
+    image: ${DPM_REDIS_IMAGE:-redis:8-alpine}
+    profiles: ["digital-pm", "digital-pm-test"]
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /data:size=64m,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  dpm-migrate:
+    build:
+      context: ./services/digital-project-managers
+      target: runtime
+    profiles: ["digital-pm", "digital-pm-test"]
+    command: ["alembic", "upgrade", "head"]
+    environment: &dpm-environment
+      APP_ENV: ${DPM_APP_ENV:-development}
+      DATABASE_HOST: dpm-postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${DPM_DATABASE_NAME:-imperial_dpm}
+      DATABASE_USER: ${DPM_DATABASE_USER:-imperial_dpm}
+      DATABASE_PASSWORD_FILE: /run/secrets/dpm_db_password
+      REDIS_URL: redis://dpm-redis:6379/0
+      PLATFORM_DATA_PATH: /data/platform.json
+      AUTH_MODE: oidc
+      AUTH_ISSUER: ${DPM_AUTH_ISSUER:-imperial-intelligence}
+      AUTH_AUDIENCE: ${DPM_AUTH_AUDIENCE:-digital-project-managers}
+      AUTH_JWKS_URL: ${DPM_AUTH_JWKS_URL:-}
+      AUTH_HS256_SECRET_FILE: /run/secrets/dpm_auth_hs256_secret
+      EXTERNAL_WRITES_ENABLED: "false"
+    secrets:
+      - dpm_db_password
+      - dpm_auth_hs256_secret
+    volumes:
+      - ./sites/_portal/data/platform.json:/data/platform.json:ro
+    depends_on:
+      dpm-postgres:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  digital-project-managers:
+    build:
+      context: ./services/digital-project-managers
+      target: runtime
+    profiles: ["digital-pm"]
+    restart: unless-stopped
+    environment:
+      <<: *dpm-environment
+      QUEUE_ENABLED: "true"
+    secrets:
+      - dpm_db_password
+      - dpm_auth_hs256_secret
+    volumes:
+      - ./sites/_portal/data/platform.json:/data/platform.json:ro
+    ports:
+      - "127.0.0.1:${DIGITAL_PM_PORT:-8090}:8000"
+    depends_on:
+      dpm-migrate:
+        condition: service_completed_successfully
+      dpm-redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  dpm-worker:
+    build:
+      context: ./services/digital-project-managers
+      target: runtime
+    profiles: ["digital-pm"]
+    command:
+      [
+        "rq",
+        "worker",
+        "--url",
+        "redis://dpm-redis:6379/0",
+        "digital-project-managers",
+      ]
+    restart: unless-stopped
+    environment:
+      <<: *dpm-environment
+      QUEUE_ENABLED: "true"
+    secrets:
+      - dpm_db_password
+      - dpm_auth_hs256_secret
+    volumes:
+      - ./sites/_portal/data/platform.json:/data/platform.json:ro
+    depends_on:
+      dpm-migrate:
+        condition: service_completed_successfully
+      dpm-redis:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  dpm-tests:
+    build:
+      context: ./services/digital-project-managers
+      target: test
+    profiles: ["digital-pm-test"]
+    command:
+      [
+        "sh",
+        "-c",
+        "ruff format --check app tests && ruff check app tests && mypy app && pytest -o cache_dir=/tmp/pytest-cache",
+      ]
+    environment:
+      <<: *dpm-environment
+      APP_ENV: test
+      AUTH_MODE: test
+      QUEUE_ENABLED: "false"
+      RUFF_CACHE_DIR: /tmp/ruff-cache
+      MYPY_CACHE_DIR: /tmp/mypy-cache
+      COVERAGE_FILE: /tmp/.coverage
+      PYTHONPYCACHEPREFIX: /tmp/pycache
+    secrets:
+      - dpm_db_password
+      - dpm_auth_hs256_secret
+    volumes:
+      - ./sites/_portal/data/platform.json:/data/platform.json:ro
+    depends_on:
+      dpm-migrate:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  dpm_postgres_data:
+  platform_core_runtime:
+
+secrets:
+  dpm_db_password:
+    file: ${DPM_DB_PASSWORD_FILE:-./secrets/dpm_db_password.txt}
+  dpm_auth_hs256_secret:
+    file: ${DPM_AUTH_HS256_SECRET_FILE:-./secrets/dpm_auth_hs256_secret.txt}

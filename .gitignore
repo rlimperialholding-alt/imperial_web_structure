@@ -10,3 +10,15 @@ Thumbs.db
 *.log
 tmp/
 coverage/
+htmlcov/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+secrets/*
+!secrets/.gitkeep

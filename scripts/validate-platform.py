@@ -6,9 +6,11 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA_FILE = ROOT / "sites/_portal/data/platform.json"
+SYSTEM_FILE = ROOT / "sites/_portal/data/system.json"
 PORTAL_FILE = ROOT / "sites/_portal/index.html"
 SCRIPT_FILE = ROOT / "sites/_shared/assets/platform.js"
 STYLE_FILE = ROOT / "sites/_shared/assets/platform.css"
+DEMO_SEED_FILE = ROOT / "services/platform-core/data/platform_demo_seed.json"
 
 EXPECTED_MODULES = {
     "executive-dashboard",
@@ -25,6 +27,39 @@ EXPECTED_MODULES = {
     "document-center",
     "workflow-center",
     "admin",
+    "workspace",
+    "control-center",
+    "integration-control-room",
+    "completion-audit",
+    "smart-calendar",
+    "change-control",
+    "document-evidence",
+    "procurement",
+    "partner-connect",
+    "partner-field",
+    "house-catalog",
+    "housebuild-agent",
+    "housematch",
+    "plotcheck",
+    "buildconfig",
+    "plancheck",
+    "engineering-workspace",
+    "housevision",
+    "booking-engine",
+    "reservation-engine",
+    "campaign-factory",
+    "content-factory",
+    "claim-registry",
+    "answer-center",
+    "lead-intelligence",
+    "digital-project-managers",
+    "pm-cockpit",
+    "operations-workspace",
+    "field-pwa",
+    "finance-intelligence",
+    "import-center",
+    "tendermail",
+    "b2b-project-intake",
 }
 
 MINIMUM_COUNTS = {
@@ -81,9 +116,11 @@ def require_reference(valid_ids, value, source):
 
 def main():
     data = json.loads(load_text(DATA_FILE))
+    system = json.loads(load_text(SYSTEM_FILE))
     portal = load_text(PORTAL_FILE)
     script = load_text(SCRIPT_FILE)
     style = load_text(STYLE_FILE)
+    demo_seed = json.loads(load_text(DEMO_SEED_FILE))
 
     meta = data.get("meta", {})
     required_meta = {
@@ -110,6 +147,97 @@ def main():
             fail(f"{module['id']} must use stable route {expected_route}")
         if not (module.get("name") or module.get("label")) or not module.get("description"):
             fail(f"{module['id']} requires a label and description")
+
+    system_meta = system.get("meta", {})
+    required_system_meta = {
+        "environment": "local-integration-prototype",
+        "synthetic": True,
+        "containsCustomerData": False,
+        "usesExternalApis": False,
+        "containsProductionSecrets": False,
+    }
+    for key, expected in required_system_meta.items():
+        if system_meta.get(key) != expected:
+            fail(f"system.meta.{key} must be {expected!r}")
+
+    roles = system.get("roles", [])
+    role_ids = [role.get("id") for role in roles]
+    if len(roles) < 10 or None in role_ids or len(set(role_ids)) != len(role_ids):
+        fail("system requires at least ten unique role workspaces")
+    for role in roles:
+        access = role.get("moduleAccess", [])
+        if not access or set(access) - module_ids:
+            fail(f"role {role['id']} has empty or invalid module access")
+    admin_role = next((role for role in roles if role["id"] == "platform-admin"), None)
+    if not admin_role or set(admin_role["moduleAccess"]) != module_ids:
+        fail("platform-admin must have access to every registered module")
+
+    demo_meta = demo_seed.get("meta", {})
+    for key, expected in {
+        "synthetic": True,
+        "containsCustomerData": False,
+        "usesExternalApis": False,
+        "containsProductionSecrets": False,
+        "projectIdPolicy": "required",
+    }.items():
+        if demo_meta.get(key) != expected:
+            fail(f"demo runtime meta.{key} must be {expected!r}")
+    demo_modules = demo_seed.get("modules", [])
+    demo_module_ids = {module.get("id") for module in demo_modules}
+    if demo_module_ids != module_ids:
+        fail(f"demo runtime module set mismatch: {sorted(demo_module_ids ^ module_ids)}")
+    for module in demo_modules:
+        if not module.get("records") or not module.get("actions"):
+            fail(f"demo runtime module {module.get('id')} requires records and actions")
+        for action in module["actions"]:
+            if not action.get("eventKey") or not action.get("nextStatus"):
+                fail(f"demo action {module['id']}.{action.get('id')} is incomplete")
+            if set(action.get("consumers", [])) - demo_module_ids:
+                fail(f"demo action {module['id']}.{action.get('id')} has unknown consumers")
+    journeys = demo_seed.get("journeys", [])
+    if {journey.get("id") for journey in journeys} != {"customer-to-care", "campaign-to-profit"}:
+        fail("demo runtime requires customer and marketing E2E journeys")
+    for journey in journeys:
+        if len(journey.get("steps", [])) < 10:
+            fail(f"demo journey {journey.get('id')} is incomplete")
+        for step in journey["steps"]:
+            module = next((item for item in demo_modules if item["id"] == step.get("moduleId")), None)
+            if not module or step.get("actionId") not in {action["id"] for action in module["actions"]}:
+                fail(f"demo journey {journey['id']} references an unknown action")
+
+    event_contracts = system.get("eventContracts", [])
+    event_keys = [contract.get("eventKey") for contract in event_contracts]
+    if len(event_contracts) < 12 or None in event_keys or len(set(event_keys)) != len(event_keys):
+        fail("system requires unique canonical event contracts")
+    for contract in event_contracts:
+        if contract.get("producer") not in module_ids:
+            fail(f"event {contract['eventKey']} has an unknown producer")
+        consumers = contract.get("consumers", [])
+        if not consumers or set(consumers) - module_ids:
+            fail(f"event {contract['eventKey']} has unknown consumers")
+        if not contract.get("idempotency"):
+            fail(f"event {contract['eventKey']} requires an idempotency key")
+
+    house_build = system.get("houseBuild", {})
+    sources = house_build.get("sources", [])
+    source_ids = {source.get("id") for source in sources}
+    approved_source_ids = {source["id"] for source in sources if source.get("status") == "approved"}
+    if not approved_source_ids or not any(source.get("status") == "rights_blocked" for source in sources):
+        fail("HouseBuild requires approved and rights-blocked source fixtures")
+    for job in house_build.get("jobs", []):
+        if job.get("sourceId") not in source_ids or not job.get("housePlanId"):
+            fail(f"HouseBuild job {job.get('id')} has invalid source/projection IDs")
+        if job.get("sourceId") not in approved_source_ids:
+            fail(f"HouseBuild job {job.get('id')} must use an approved source")
+        required_gates = {"source", "rights", "grossArea", "topology", "duplicates", "humanApproval"}
+        if set(job.get("qa", {})) != required_gates:
+            fail(f"HouseBuild job {job.get('id')} has an incomplete QA gate set")
+
+    briefs = system.get("campaignFactory", {}).get("briefs", [])
+    if not briefs or any(not brief.get("claimIds") or not brief.get("channels") for brief in briefs):
+        fail("Campaign Factory requires claim-linked multi-channel briefs")
+    if len(system.get("consistencyChecks", [])) < 4:
+        fail("cross-module consistency checks are incomplete")
 
     for collection, minimum in MINIMUM_COUNTS.items():
         records = data.get(collection)
@@ -232,6 +360,15 @@ def main():
         "data-nav-module",
         "data-entity-type",
         "/data/platform.json",
+        "/data/system.json",
+        'id="role-switcher"',
+        "runtimeStorageKey",
+        "HOUSE_PLAN_DRAFTED",
+        "HOUSE_PLAN_APPROVED",
+        "CAMPAIGN_BRIEF_APPROVED",
+        "/core/api/demo",
+        "data-backend-action",
+        "data-backend-journey",
     ):
         if marker not in script:
             fail(f"platform client marker missing: {marker}")
@@ -241,13 +378,15 @@ def main():
         if marker not in style:
             fail(f"responsive/design marker missing: {marker}")
 
-    combined = script + style + json.dumps(data)
+    combined = script + style + json.dumps(data) + json.dumps(system)
     if "https://" in combined or "http://" in combined:
         fail("platform runtime must not contain external HTTP dependencies")
 
     print(
         "Imperial Intelligence validation passed: "
-        f"{len(modules)} modules, {len(steps)} journey steps, "
+        f"{len(modules)} modules, {len(roles)} role workspaces, "
+        f"{len(event_contracts)} event contracts, {len(steps)} journey steps, "
+        f"{len(journeys)} backend E2E journeys, "
         f"{sum(len(data[name]) for name in MINIMUM_COUNTS)} core fixture records."
     )
 

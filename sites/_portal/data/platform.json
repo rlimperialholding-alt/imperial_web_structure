@@ -121,6 +121,270 @@
       "shortLabel": "Admin",
       "icon": "⚙",
       "description": "Tesztfelhasználók, szerepkörök, jogosultságok és lokális auditnapló."
+    },
+    {
+      "id": "workspace",
+      "route": "/workspace/",
+      "label": "Saját Workspace",
+      "shortLabel": "Workspace",
+      "icon": "⌂",
+      "description": "Szerepkörre szabott feladatok, döntések, blokkolók és keresztmodul munkafolyamatok."
+    },
+    {
+      "id": "control-center",
+      "route": "/control-center/",
+      "label": "Control Center",
+      "shortLabel": "Control",
+      "icon": "◈",
+      "description": "Kanonikus modul-, verzió-, artifact-, esemény- és kiadási állapot egyetlen irányítópulton."
+    },
+    {
+      "id": "integration-control-room",
+      "route": "/integration-control-room/",
+      "label": "Integration Control Room",
+      "shortLabel": "Integrations",
+      "icon": "⟲",
+      "description": "Adapterhealth, outbox, retry, dead-letter és konzisztencia-incidensek lokális tesztfelülete."
+    },
+    {
+      "id": "completion-audit",
+      "route": "/completion-audit/",
+      "label": "Completion Audit",
+      "shortLabel": "Audit",
+      "icon": "✓",
+      "description": "Reuse, extend, integrate, repair, build és verify döntések Drive-provenance alapján."
+    },
+    {
+      "id": "smart-calendar",
+      "route": "/smart-calendar/",
+      "label": "Project Smart Calendar",
+      "shortLabel": "Calendar",
+      "icon": "▣",
+      "description": "Projektmérföldkövek, felelősök, számlázási pontok, késések és szinkronállapotok."
+    },
+    {
+      "id": "change-control",
+      "route": "/change-control/",
+      "label": "ChangeControl",
+      "shortLabel": "Changes",
+      "icon": "±",
+      "description": "Pótmunka- és változtatáskezelés költség-, idő-, jóváhagyási és ügyfélhatással."
+    },
+    {
+      "id": "document-evidence",
+      "route": "/document-evidence/",
+      "label": "Document & Evidence",
+      "shortLabel": "Evidence",
+      "icon": "▥",
+      "description": "Verziózott dokumentum, bizonyíték, intake, routing, hash és felülvizsgálati queue."
+    },
+    {
+      "id": "procurement",
+      "route": "/procurement/",
+      "label": "Procurement Execution",
+      "shortLabel": "Procurement",
+      "icon": "⊞",
+      "description": "Tender, ajánlatnormalizálás, megrendelés, szállítás, teljesítés és pénzügyi egyeztetés."
+    },
+    {
+      "id": "partner-connect",
+      "route": "/partner-connect/",
+      "label": "Partner Connect",
+      "shortLabel": "Partner Connect",
+      "icon": "⬢",
+      "description": "Partnerintake, PartnerCheck, tenderkérdések, igazoláskapuk és teljesítményértékelés."
+    },
+    {
+      "id": "partner-field",
+      "route": "/partner-field/",
+      "label": "Partner Field",
+      "shortLabel": "Field",
+      "icon": "⌖",
+      "description": "Mobil helyszíni jelenlét, készültség, ellenőrzőlista, fotóbizonyíték és problémarögzítés."
+    },
+    {
+      "id": "house-catalog",
+      "route": "/house-catalog/",
+      "label": "House Catalog",
+      "shortLabel": "Catalog",
+      "icon": "⌂",
+      "description": "Valós és szintetikus teszt HousePlan rekordok, verziók, jogállás és márkakötések."
+    },
+    {
+      "id": "housebuild-agent",
+      "route": "/housebuild-agent/",
+      "label": "HouseBuild Agent",
+      "shortLabel": "HouseBuild",
+      "icon": "HB",
+      "description": "Jóváhagyott adatforrásokból verziózott típusház-jelölteket és HousePlan-csomagokat készítő ügynök."
+    },
+    {
+      "id": "housematch",
+      "route": "/housematch/",
+      "label": "HouseMatch",
+      "shortLabel": "HouseMatch",
+      "icon": "HM",
+      "description": "Élethelyzet és igény alapján magyarázható típusház-ajánlás, shortlist és CRM-handoff."
+    },
+    {
+      "id": "plotcheck",
+      "route": "/plotcheck/",
+      "label": "PlotCheck",
+      "shortLabel": "PlotCheck",
+      "icon": "PC",
+      "description": "Telekintake, szabályforrás, beépíthetőség, kockázat és mérnöki STOP-kapu."
+    },
+    {
+      "id": "buildconfig",
+      "route": "/buildconfig/",
+      "label": "BuildConfig",
+      "shortLabel": "BuildConfig",
+      "icon": "BC",
+      "description": "Technológia-, készültség-, műszaki tartalom-, PriceProfile- és ajánlatverzió-kezelés."
+    },
+    {
+      "id": "plancheck",
+      "route": "/plancheck/",
+      "label": "PlanCheck",
+      "shortLabel": "PlanCheck",
+      "icon": "PL",
+      "description": "Tervcsomag-teljesség, feltételezések, szakági findingok, clash és emberi jóváhagyási kapuk."
+    },
+    {
+      "id": "engineering-workspace",
+      "route": "/engineering-workspace/",
+      "label": "Engineering Workspace",
+      "shortLabel": "Engineering",
+      "icon": "EW",
+      "description": "Tervezési program, tervverziók, szakági koordináció, engedélyezés és STOP-kapuk."
+    },
+    {
+      "id": "housevision",
+      "route": "/housevision/",
+      "label": "HouseVision",
+      "shortLabel": "HouseVision",
+      "icon": "HV",
+      "description": "Jóváhagyott HousePlan vizuális csomagja Geometry Lock, jog-, minőség- és publikációs kapukkal."
+    },
+    {
+      "id": "booking-engine",
+      "route": "/booking-engine/",
+      "label": "Booking Engine",
+      "shortLabel": "Booking",
+      "icon": "BK",
+      "description": "Márkaspecifikus konzultáció- és helyszínifelmérés-foglalás naptár- és CRM-handoffal."
+    },
+    {
+      "id": "reservation-engine",
+      "route": "/reservation-engine/",
+      "label": "Reservation & Price Lock",
+      "shortLabel": "Reservation",
+      "icon": "RL",
+      "description": "HousePlan-, OfferVersion-, PriceSnapshot- és TermsVersion-alapú tesztlekötési folyamat."
+    },
+    {
+      "id": "campaign-factory",
+      "route": "/campaign-factory/",
+      "label": "Campaign Factory",
+      "shortLabel": "Campaigns",
+      "icon": "CF",
+      "description": "Master kampánybrief, négykapus QA, csatornaexport és PublicationProof tesztworkflow."
+    },
+    {
+      "id": "content-factory",
+      "route": "/content-factory/",
+      "label": "Content Factory",
+      "shortLabel": "Content",
+      "icon": "CT",
+      "description": "TopicID-, ContentID-, forrás-, szerkesztési-, lektorálási- és publikációs queue."
+    },
+    {
+      "id": "claim-registry",
+      "route": "/claim-registry/",
+      "label": "Claim & Evidence Registry",
+      "shortLabel": "Claims",
+      "icon": "CL",
+      "description": "Ár-, határidő-, műszaki-, jogi és garanciaállítások bizonyíték- és lejáratkezelése."
+    },
+    {
+      "id": "answer-center",
+      "route": "/answer-center/",
+      "label": "Answer Center",
+      "shortLabel": "Answers",
+      "icon": "AI",
+      "description": "Forráshivatkozásos szakmai válaszközpont bizonytalanság-, relevancia- és emberi kapuval."
+    },
+    {
+      "id": "lead-intelligence",
+      "route": "/lead-intelligence/",
+      "label": "Lead Intelligence",
+      "shortLabel": "Lead Intel",
+      "icon": "LI",
+      "description": "Jóváhagyott forrású lehetőségfelderítés, deduplikáció, scoring és CRM-előkészítés."
+    },
+    {
+      "id": "digital-project-managers",
+      "route": "/digital-project-managers/",
+      "label": "Digital Project Managers",
+      "shortLabel": "Digital PM",
+      "icon": "DP",
+      "description": "Digitális Kálmán, Máté és Misi projektkiosztása, feladat-, memória-, jóváhagyás- és auditnézete."
+    },
+    {
+      "id": "pm-cockpit",
+      "route": "/pm-cockpit/",
+      "label": "PM Cockpit",
+      "shortLabel": "PM Cockpit",
+      "icon": "PM",
+      "description": "Projektvezetői döntési kapuk, blokkolók, kockázatok és portfóliószintű teendők."
+    },
+    {
+      "id": "operations-workspace",
+      "route": "/operations-workspace/",
+      "label": "Operations Workspace",
+      "shortLabel": "Operations",
+      "icon": "OW",
+      "description": "Munkacsomagok, teljesítés, kapuk, helyszíni adatok és operációs portfólió."
+    },
+    {
+      "id": "field-pwa",
+      "route": "/field-pwa/",
+      "label": "Field PWA",
+      "shortLabel": "Field PWA",
+      "icon": "FP",
+      "description": "Mobil napi jelentés, ellenőrzőlista, fotó- és dokumentumbizonyíték sandbox."
+    },
+    {
+      "id": "finance-intelligence",
+      "route": "/finance-intelligence/",
+      "label": "Finance Intelligence",
+      "shortLabel": "Finance Intel",
+      "icon": "FI",
+      "description": "Projektfedezet, cash-flow, előrejelzés, eltérés és profit-attribúció."
+    },
+    {
+      "id": "import-center",
+      "route": "/import-center/",
+      "label": "Enterprise Import Center",
+      "shortLabel": "Import",
+      "icon": "IC",
+      "description": "Staging, review, commit, rollback és kanonikus rekordbetöltés."
+    },
+    {
+      "id": "tendermail",
+      "route": "/tendermail/",
+      "label": "TenderMail",
+      "shortLabel": "TenderMail",
+      "icon": "TM",
+      "description": "Jóváhagyott sandbox tenderkiküldés, címzettlista, esemény- és leiratkozáskövetés."
+    },
+    {
+      "id": "b2b-project-intake",
+      "route": "/b2b-project-intake/",
+      "label": "B2B Project Intake",
+      "shortLabel": "B2B Intake",
+      "icon": "B2",
+      "description": "B2B projektjelek forrás-, deduplikációs, műszaki és pénzügyi előszűrése."
     }
   ],
   "journey": {

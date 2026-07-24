@@ -1,0 +1,232 @@
+{
+  "contract_type": "subcontractor_execution",
+  "relationship": "partner",
+  "service": "construction",
+  "contract_number": "AV-2026-0001",
+  "contract_date": "2026-07-18",
+  "contract_place": "Budapest",
+  "ids": {
+    "CompanyID": "COM-AV-2026-0001",
+    "PersonID": "PER-AV-2026-0001",
+    "OpportunityID": "OPP-AV-2026-0001",
+    "ProjectID": "PRJ-AV-2026-0001",
+    "PartnerID": "PAR-AV-2026-0001"
+  },
+  "internal_entity": {
+    "party_type": "company",
+    "name": "Imperial Teszt Megrendelő Kft. (MINTAADAT)",
+    "short_name": "Imperial Teszt Kft.",
+    "registration_number": "01-09-000001",
+    "tax_number": "10000001-2-41",
+    "registered_office": "1037 Budapest, Teszt köz 1.",
+    "address": "1037 Budapest, Teszt köz 1.",
+    "postal_address": "1037 Budapest, Teszt köz 1.",
+    "bank_account": "11700000-00000001-00000001",
+    "representative": "Minta Imre",
+    "representative_title": "ügyvezető",
+    "email": "szerzodes@example.com",
+    "phone": "+36 70 000 0001"
+  },
+  "counterparty": {
+    "party_type": "company",
+    "name": "Minta Szakipari Kft.",
+    "short_name": "Minta Szakipari Kft.",
+    "registration_number": "01-09-999999",
+    "tax_number": "12345678-2-41",
+    "registered_office": "1111 Budapest, Minta utca 1.",
+    "address": "1111 Budapest, Minta utca 1.",
+    "postal_address": "1111 Budapest, Minta utca 1.",
+    "bank_account": "11700000-00000002-00000002",
+    "representative": "Minta Márton",
+    "representative_title": "ügyvezető",
+    "email": "minta.szakipar@example.com",
+    "phone": "+36 30 000 0002"
+  },
+  "project": {
+    "name": "Minta családi ház – vakolási munkák",
+    "site_address": "1111 Budapest, Példa utca 2.",
+    "parcel_number": "1234/5",
+    "scope": "Komplett belső vakolási és kapcsolódó helyreállítási munkák"
+  },
+  "commercial": {
+    "net_price": 12500000,
+    "vat_percent": 27,
+    "vat_amount": 3375000,
+    "gross_price": 15875000,
+    "currency": "HUF",
+    "payment_schedule": [
+      {
+        "milestone": "Munkaterület átvétele és anyagok beérkezése",
+        "percent": 20,
+        "due_rule": "elfogadott TIG és hibátlan számla alapján"
+      },
+      {
+        "milestone": "50%-os készültség",
+        "percent": 35,
+        "due_rule": "elfogadott TIG és hibátlan számla alapján"
+      },
+      {
+        "milestone": "100%-os készültség",
+        "percent": 35,
+        "due_rule": "elfogadott TIG és hibátlan számla alapján"
+      },
+      {
+        "milestone": "Műszaki átadás és dokumentációzárás",
+        "percent": 10,
+        "due_rule": "elfogadott vég-TIG és hibátlan számla alapján"
+      }
+    ]
+  },
+  "schedule": {
+    "site_handover_date": "2026-08-03",
+    "start_date": "2026-08-04",
+    "deadline": "2026-09-15"
+  },
+  "delivery_requirements": {
+    "postal_required": true,
+    "electronic_required": true,
+    "postal_method": "registered_return_receipt",
+    "postal_original_copies": 1,
+    "electronic_format": "SIGNED_PDF"
+  },
+  "required_attachments": [
+    "technical_scope",
+    "priced_bill_of_quantities",
+    "schedule",
+    "technical_compliance_deductions",
+    "invoice_gate_terms"
+  ],
+  "attachments": [
+    {
+      "type": "technical_scope",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "priced_bill_of_quantities",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "schedule",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "technical_compliance_deductions",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "invoice_gate_terms",
+      "status": "APPROVED",
+      "version": "1.0"
+    }
+  ],
+  "status": {
+    "contract_status": "DRAFT",
+    "signed_contract_present": false,
+    "master_hash_verified": false,
+    "all_required_annexes_present": true,
+    "commercial_approval": "APPROVED",
+    "technical_approval": "APPROVED",
+    "all_fields_complete": true,
+    "both_parties_signed": false,
+    "signed_contract_file_id": "",
+    "owner_policy_version": "ICG-PAY-2026-07-18"
+  },
+  "dispatch_status": {
+    "internal_signed_original_present": false,
+    "internal_signature_date": "",
+    "signed_document_sha256": "",
+    "postal": {
+      "sent": false,
+      "sent_at": "",
+      "recipient_address": "1111 Budapest, Minta utca 1.",
+      "original_copy_count": 0,
+      "tracking_number": "",
+      "proof_file_id": ""
+    },
+    "electronic": {
+      "sent": false,
+      "sent_at": "",
+      "recipient_email": "minta.szakipar@example.com",
+      "message_id": "",
+      "attachment_sha256": ""
+    }
+  },
+  "subcontractor_controls": {
+    "failure_penalty": {
+      "percent": 25
+    },
+    "delay_penalty": {
+      "amount_per_day": 15000
+    },
+    "good_performance_guarantee": {
+      "percent": 5
+    },
+    "warranty_retention_percent": 5,
+    "client_services_deduction_percent": 1,
+    "payment_term_days": 30,
+    "skonto_percent": 3,
+    "skonto_days": 8,
+    "subcontractor_terms_url": "https://imperialholding.hu/dokumentumok/ASZF_imperial.pdf",
+    "invoice_gate": {
+      "internal_tig_required": true,
+      "upstream_customer_tig_required": true,
+      "risk_sharing_required": true,
+      "upstream_payment_required": true
+    },
+    "defect_deduction_schedule": [
+      {
+        "defect": "Hiányzó vagy el nem végzett munkarész",
+        "percent": 100,
+        "minimum_amount": 0,
+        "basis": "az érintett munkarész szerződéses értéke",
+        "release_condition": "hiánytalan kijavítás, új műszaki átvétel és aláírt TIG"
+      },
+      {
+        "defect": "Eltakart munkarész előzetes műszaki átvétel vagy fotódokumentáció nélkül",
+        "percent": 20,
+        "minimum_amount": 150000,
+        "basis": "az érintett munkarész értéke",
+        "release_condition": "feltárás, megfelelőség igazolása és helyreállítás"
+      },
+      {
+        "defect": "Méret-, sík-, függő- vagy szinteltérés a tűrésen túl",
+        "percent": 10,
+        "minimum_amount": 100000,
+        "basis": "az érintett munkarész értéke",
+        "release_condition": "szakszerű javítás és ismételt mérés"
+      },
+      {
+        "defect": "Esztétikai vagy felületi hiba",
+        "percent": 5,
+        "minimum_amount": 50000,
+        "basis": "az érintett munkarész értéke",
+        "release_condition": "hibamentes javítás és átvétel"
+      },
+      {
+        "defect": "Hiányzó megfelelőségi vagy megvalósulási dokumentáció",
+        "percent": 5,
+        "minimum_amount": 100000,
+        "basis": "az adott számla bruttó értéke",
+        "release_condition": "hiánytalan dokumentáció átadása"
+      },
+      {
+        "defect": "Súlyos műszaki nemmegfelelőség vagy teljes újrakészítést igénylő hiba",
+        "percent": 25,
+        "minimum_amount": 250000,
+        "basis": "az érintett munkarész értéke",
+        "release_condition": "teljes helyreállítás és új TIG"
+      },
+      {
+        "defect": "Rendezetlen vagy balesetveszélyes munkaterület",
+        "amount": 100000,
+        "minimum_amount": 100000,
+        "basis": "eseményenként",
+        "release_condition": "rendezett munkaterület átadása"
+      }
+    ]
+  }
+}
