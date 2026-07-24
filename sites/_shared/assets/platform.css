@@ -1181,3 +1181,67 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+.ii-live-module {
+  margin-top: 1.5rem;
+  border-color: rgba(201, 164, 72, 0.45);
+  background:
+    linear-gradient(135deg, rgba(201, 164, 72, 0.08), transparent 42%),
+    var(--ii-surface);
+}
+
+.ii-live-module > header,
+.ii-journey-test > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ii-live-module.is-degraded {
+  border-color: rgba(209, 93, 93, 0.5);
+}
+
+.ii-live-meta,
+.ii-live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.ii-live-meta span {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--ii-border);
+  border-radius: 0.65rem;
+  color: var(--ii-muted);
+  font-size: 0.78rem;
+}
+
+.ii-live-meta strong {
+  color: var(--ii-text);
+}
+
+.ii-journey-test ol {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 25rem;
+  margin: 1rem 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.ii-journey-test li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.7fr) 1.3fr;
+  gap: 0.7rem;
+  padding: 0.5rem 0.65rem;
+  border-left: 3px solid var(--ii-border);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.8rem;
+}
+
+.ii-journey-test li[data-state="completed"] {
+  border-left-color: #5fcf9a;
+}

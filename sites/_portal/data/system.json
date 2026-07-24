@@ -14,19 +14,19 @@
       "id": "owner",
       "label": "Tulajdonos",
       "initials": "TU",
-      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "integration-control-room", "completion-audit", "financial-control", "crm", "project-control", "digital-project-managers"]
+      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "integration-control-room", "completion-audit", "financial-control", "finance-intelligence", "crm", "project-control", "digital-project-managers", "pm-cockpit", "operations-workspace"]
     },
     {
       "id": "managing-director",
       "label": "Ügyvezető",
       "initials": "ÜV",
-      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "crm", "project-control", "digital-project-managers", "smart-calendar", "financial-control", "procurement", "document-evidence", "workflow-center"]
+      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "crm", "project-control", "digital-project-managers", "pm-cockpit", "operations-workspace", "smart-calendar", "financial-control", "finance-intelligence", "procurement", "document-evidence", "workflow-center"]
     },
     {
       "id": "marketing",
       "label": "Marketing",
       "initials": "MK",
-      "moduleAccess": ["workspace", "marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "lead-intelligence", "housematch", "housevision", "crm", "answer-center"]
+      "moduleAccess": ["workspace", "marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "lead-intelligence", "b2b-project-intake", "housematch", "housevision", "crm", "answer-center"]
     },
     {
       "id": "technical-prep",
@@ -44,13 +44,13 @@
       "id": "finance",
       "label": "Pénzügy",
       "initials": "PÜ",
-      "moduleAccess": ["workspace", "financial-control", "procurement", "project-control", "change-control", "document-evidence", "executive-dashboard"]
+      "moduleAccess": ["workspace", "financial-control", "finance-intelligence", "procurement", "import-center", "tendermail", "project-control", "change-control", "document-evidence", "executive-dashboard"]
     },
     {
       "id": "project-manager",
       "label": "Projektmenedzser",
       "initials": "PM",
-      "moduleAccess": ["workspace", "project-control", "digital-project-managers", "smart-calendar", "procurement", "change-control", "my-imperial", "document-evidence", "partner-connect", "partner-field", "imperial-care"]
+      "moduleAccess": ["workspace", "project-control", "digital-project-managers", "pm-cockpit", "operations-workspace", "smart-calendar", "procurement", "change-control", "my-imperial", "document-evidence", "partner-connect", "partner-field", "field-pwa", "imperial-care"]
     },
     {
       "id": "designer",
@@ -62,7 +62,7 @@
       "id": "subcontractor",
       "label": "Alvállalkozó",
       "initials": "AV",
-      "moduleAccess": ["workspace", "partner-connect", "partner-field", "procurement", "document-evidence", "imperial-care"]
+      "moduleAccess": ["workspace", "partner-connect", "partner-field", "field-pwa", "operations-workspace", "procurement", "document-evidence", "imperial-care"]
     },
     {
       "id": "customer",
@@ -80,7 +80,7 @@
       "id": "platform-admin",
       "label": "Platform admin",
       "initials": "PA",
-      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "integration-control-room", "completion-audit", "admin", "workflow-center", "crm", "sales", "contract-generator", "my-imperial", "booking-engine", "reservation-engine", "house-catalog", "housebuild-agent", "housematch", "plotcheck", "buildconfig", "plancheck", "engineering-workspace", "housevision", "project-control", "digital-project-managers", "smart-calendar", "change-control", "document-center", "document-evidence", "procurement", "partner-connect", "partner-control", "partner-field", "financial-control", "imperial-care", "marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "answer-center", "lead-intelligence"]
+      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "integration-control-room", "completion-audit", "admin", "workflow-center", "crm", "sales", "contract-generator", "my-imperial", "booking-engine", "reservation-engine", "house-catalog", "housebuild-agent", "housematch", "plotcheck", "buildconfig", "plancheck", "engineering-workspace", "housevision", "project-control", "digital-project-managers", "pm-cockpit", "operations-workspace", "smart-calendar", "change-control", "document-center", "document-evidence", "import-center", "tendermail", "procurement", "partner-connect", "partner-control", "partner-field", "field-pwa", "financial-control", "finance-intelligence", "imperial-care", "marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "answer-center", "lead-intelligence", "b2b-project-intake"]
     }
   ],
   "moduleRecords": {

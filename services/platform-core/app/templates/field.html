@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Helyszíni mobil | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="field-shell">
+  <header class="field-header"><div><span class="eyebrow light">FIELD PWA</span><h1>Helyszíni mobil</h1><p>Napi jelentés, akadály, minőség, anyagátvétel és bizonyíték — telefonról is.</p></div><div class="connection-pill" id="connection-pill">Kapcsolat ellenőrzése…</div></header>
+  <div class="field-project-grid">
+  {% for row in projects %}<a class="field-project-card {% if row.project.blocked %}blocked{% endif %}" href="/field/{{ row.project.project_id }}"><div class="field-card-top"><span class="risk-label {{ row.project.risk_level }}">{{ row.project.risk_level }}</span><b>{{ row.progress_pct }}%</b></div><h2>{{ row.project.name }}</h2><p>{{ row.project.next_action or 'Nincs következő lépés.' }}</p><div class="field-card-stats"><span>{{ row.packages|length }} munkacsomag</span><span>{{ row.open_issues|length }} nyitott ügy</span><span>{{ row.deliveries_today }} mai átvétel</span></div><small>{% if row.latest_report %}Utolsó jelentés: {{ row.latest_report.report_date|dt }}{% else %}Még nincs napi jelentés{% endif %}</small></a>{% else %}<div class="empty-state"><b>Nincs helyszíni projekt.</b></div>{% endfor %}
+  </div>
+</section>
+<script src="/static/field.js"></script>
+{% endblock %}

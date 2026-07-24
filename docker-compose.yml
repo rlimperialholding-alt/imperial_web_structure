@@ -29,6 +29,64 @@ services:
       retries: 5
       start_period: 5s
     stop_grace_period: 10s
+    depends_on:
+      platform-core:
+        condition: service_healthy
+
+  platform-core:
+    build:
+      context: ./services/platform-core
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+    restart: unless-stopped
+    init: true
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: sqlite:////app/runtime/platform_core.db
+      DEMO_RUNTIME_PATH: /app/runtime/platform_demo_runtime.json
+      SESSION_SECRET: ${PLATFORM_SESSION_SECRET:-local-demo-session-key-not-for-production}
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver,gateway,platform-core
+      REQUIRE_HTTPS: "false"
+    volumes:
+      - platform_core_runtime:/app/runtime
+    ports:
+      - "127.0.0.1:${PLATFORM_CORE_PORT:-8091}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')",
+        ]
+      interval: 10s
+      timeout: 4s
+      retries: 15
+      start_period: 10s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  platform-core-tests:
+    build:
+      context: ./services/platform-core
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+    profiles: ["platform-test"]
+    command: ["pytest", "-q"]
+    environment:
+      ENVIRONMENT: test
+      DATABASE_URL: sqlite:////tmp/platform_core_test.db
+      DEMO_RUNTIME_PATH: /tmp/platform_demo_runtime.json
+      SESSION_SECRET: local-test-session-key-not-for-production
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   dpm-postgres:
     image: ${DPM_POSTGRES_IMAGE:-postgres:17-alpine}
@@ -223,6 +281,7 @@ services:
 
 volumes:
   dpm_postgres_data:
+  platform_core_runtime:
 
 secrets:
   dpm_db_password:

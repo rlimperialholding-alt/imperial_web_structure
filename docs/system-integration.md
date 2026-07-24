@@ -2,13 +2,15 @@
 
 ## Kanonikus helyi modell
 
-Az integrációs prototípus három adatforrást választ szét:
+Az integrációs prototípus négy adatforrást választ szét:
 
-- `platform.json`: alap üzleti törzsadatok, 39 modul és stabil útvonal;
+- `platform.json`: alap üzleti törzsadatok, 47 modul és stabil útvonal;
 - `system.json`: szerepkörök, modulteszt-rekordok, event contractok,
   HouseBuild- és Campaign Factory fixture-ök;
-- böngésző `localStorage`: kizárólag a felhasználó által indított helyi
-  tesztfutások, outbox és eseménynapló.
+- `platform_demo_seed.json`: minden modul működő sandbox rekordja, művelete és
+  a két teljes E2E tesztút;
+- böngésző `localStorage`: a review megjegyzések és a korábbi, kiegészítő
+  HouseBuild/Campaign UI-próbák helyi állapota.
 
 Az adatmodell szintetikus. A rendszer nem hív Drive-ot, CRM-et, CMS-t,
 hirdetési platformot vagy más külső API-t futásidőben.
@@ -42,9 +44,10 @@ A `system.json` producer–consumer event contractokat tartalmaz, többek közö
 - Campaign Factory → Content Factory / Claim Registry / Marketing Control;
 - Content Factory → Control Center / CRM / Marketing Control.
 
-A kliens minden tesztművelethez correlation ID-val ellátott helyi eventet és
-outbox-rekordot készít. Ez a delivery, retry és idempotencia felületét demonstrálja;
-valódi üzenetközvetítő nincs mögötte.
+A `platform-core` backend minden tesztművelethez kötelező ProjectID-val,
+CorrelationID-val és idempotency key-jel ellátott eventet, outbox-kézbesítést és
+auditrekordot készít. A retry, dead-letter és reconciliation sandboxban
+tesztelhető; valódi külső üzenetközvetítő nincs mögötte.
 
 ## Production előtt kötelező
 

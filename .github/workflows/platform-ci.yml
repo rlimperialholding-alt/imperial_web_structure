@@ -38,6 +38,9 @@ jobs:
       - name: Validate client syntax
         run: node --check sites/_shared/assets/platform.js
 
+      - name: Run shared platform backend tests
+        run: docker compose --profile platform-test run --rm platform-core-tests
+
       - name: Validate Compose configuration
         run: docker compose config --quiet
 
@@ -90,6 +93,13 @@ jobs:
             answer-center
             lead-intelligence
             digital-project-managers
+            pm-cockpit
+            operations-workspace
+            field-pwa
+            finance-intelligence
+            import-center
+            tendermail
+            b2b-project-intake
           )
 
           for route in "${routes[@]}"; do
@@ -103,7 +113,7 @@ jobs:
           platform_json="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
             http://127.0.0.1:8080/data/platform.json)"
-          python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d["modules"]) == 40; assert len(d["leads"]) >= 10; assert len(d["customers"]) >= 5; assert len(d["projects"]) >= 3; assert len(d["partners"]) >= 5; assert len(d["offers"]) >= 8; assert len(d["contracts"]) >= 4; assert len(d["financialItems"]) >= 20; assert len(d["careTickets"]) >= 6; assert d["meta"]["synthetic"] is True; assert d["meta"]["containsCustomerData"] is False' <<<"$platform_json"
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d["modules"]) == 47; assert len(d["leads"]) >= 10; assert len(d["customers"]) >= 5; assert len(d["projects"]) >= 3; assert len(d["partners"]) >= 5; assert len(d["offers"]) >= 8; assert len(d["contracts"]) >= 4; assert len(d["financialItems"]) >= 20; assert len(d["careTickets"]) >= 6; assert d["meta"]["synthetic"] is True; assert d["meta"]["containsCustomerData"] is False' <<<"$platform_json"
 
           system_json="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
@@ -114,6 +124,19 @@ jobs:
             --header "Host: localhost" \
             http://127.0.0.1:8080/assets/platform.js)"
           grep --quiet 'history.pushState' <<<"$platform_js"
+
+          demo_state="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/core/api/demo/state)"
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["summary"]["registeredModules"] == 47; assert d["summary"]["testableModules"] == 47; assert d["meta"]["containsCustomerData"] is False' <<<"$demo_state"
+
+          journey_result="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            --header "Content-Type: application/json" \
+            --request POST \
+            --data '{"actor":"ci@demo.imperial.local"}' \
+            http://127.0.0.1:8080/core/api/demo/journeys/campaign-to-profit/run)"
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["journey"]["status"] == "completed"; assert len(d["events"]) == 11; assert len({e["correlationId"] for e in d["events"]}) == 1' <<<"$journey_result"
 
           health_response="$(curl --fail --silent --show-error \
             http://127.0.0.1:8080/healthz)"

@@ -10,6 +10,7 @@ SYSTEM_FILE = ROOT / "sites/_portal/data/system.json"
 PORTAL_FILE = ROOT / "sites/_portal/index.html"
 SCRIPT_FILE = ROOT / "sites/_shared/assets/platform.js"
 STYLE_FILE = ROOT / "sites/_shared/assets/platform.css"
+DEMO_SEED_FILE = ROOT / "services/platform-core/data/platform_demo_seed.json"
 
 EXPECTED_MODULES = {
     "executive-dashboard",
@@ -52,6 +53,13 @@ EXPECTED_MODULES = {
     "answer-center",
     "lead-intelligence",
     "digital-project-managers",
+    "pm-cockpit",
+    "operations-workspace",
+    "field-pwa",
+    "finance-intelligence",
+    "import-center",
+    "tendermail",
+    "b2b-project-intake",
 }
 
 MINIMUM_COUNTS = {
@@ -112,6 +120,7 @@ def main():
     portal = load_text(PORTAL_FILE)
     script = load_text(SCRIPT_FILE)
     style = load_text(STYLE_FILE)
+    demo_seed = json.loads(load_text(DEMO_SEED_FILE))
 
     meta = data.get("meta", {})
     required_meta = {
@@ -162,6 +171,39 @@ def main():
     admin_role = next((role for role in roles if role["id"] == "platform-admin"), None)
     if not admin_role or set(admin_role["moduleAccess"]) != module_ids:
         fail("platform-admin must have access to every registered module")
+
+    demo_meta = demo_seed.get("meta", {})
+    for key, expected in {
+        "synthetic": True,
+        "containsCustomerData": False,
+        "usesExternalApis": False,
+        "containsProductionSecrets": False,
+        "projectIdPolicy": "required",
+    }.items():
+        if demo_meta.get(key) != expected:
+            fail(f"demo runtime meta.{key} must be {expected!r}")
+    demo_modules = demo_seed.get("modules", [])
+    demo_module_ids = {module.get("id") for module in demo_modules}
+    if demo_module_ids != module_ids:
+        fail(f"demo runtime module set mismatch: {sorted(demo_module_ids ^ module_ids)}")
+    for module in demo_modules:
+        if not module.get("records") or not module.get("actions"):
+            fail(f"demo runtime module {module.get('id')} requires records and actions")
+        for action in module["actions"]:
+            if not action.get("eventKey") or not action.get("nextStatus"):
+                fail(f"demo action {module['id']}.{action.get('id')} is incomplete")
+            if set(action.get("consumers", [])) - demo_module_ids:
+                fail(f"demo action {module['id']}.{action.get('id')} has unknown consumers")
+    journeys = demo_seed.get("journeys", [])
+    if {journey.get("id") for journey in journeys} != {"customer-to-care", "campaign-to-profit"}:
+        fail("demo runtime requires customer and marketing E2E journeys")
+    for journey in journeys:
+        if len(journey.get("steps", [])) < 10:
+            fail(f"demo journey {journey.get('id')} is incomplete")
+        for step in journey["steps"]:
+            module = next((item for item in demo_modules if item["id"] == step.get("moduleId")), None)
+            if not module or step.get("actionId") not in {action["id"] for action in module["actions"]}:
+                fail(f"demo journey {journey['id']} references an unknown action")
 
     event_contracts = system.get("eventContracts", [])
     event_keys = [contract.get("eventKey") for contract in event_contracts]
@@ -324,6 +366,9 @@ def main():
         "HOUSE_PLAN_DRAFTED",
         "HOUSE_PLAN_APPROVED",
         "CAMPAIGN_BRIEF_APPROVED",
+        "/core/api/demo",
+        "data-backend-action",
+        "data-backend-journey",
     ):
         if marker not in script:
             fail(f"platform client marker missing: {marker}")
@@ -341,6 +386,7 @@ def main():
         "Imperial Intelligence validation passed: "
         f"{len(modules)} modules, {len(roles)} role workspaces, "
         f"{len(event_contracts)} event contracts, {len(steps)} journey steps, "
+        f"{len(journeys)} backend E2E journeys, "
         f"{sum(len(data[name]) for name in MINIMUM_COUNTS)} core fixture records."
     )
 

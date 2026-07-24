@@ -329,6 +329,62 @@
       "shortLabel": "Digital PM",
       "icon": "DP",
       "description": "Digitális Kálmán, Máté és Misi projektkiosztása, feladat-, memória-, jóváhagyás- és auditnézete."
+    },
+    {
+      "id": "pm-cockpit",
+      "route": "/pm-cockpit/",
+      "label": "PM Cockpit",
+      "shortLabel": "PM Cockpit",
+      "icon": "PM",
+      "description": "Projektvezetői döntési kapuk, blokkolók, kockázatok és portfóliószintű teendők."
+    },
+    {
+      "id": "operations-workspace",
+      "route": "/operations-workspace/",
+      "label": "Operations Workspace",
+      "shortLabel": "Operations",
+      "icon": "OW",
+      "description": "Munkacsomagok, teljesítés, kapuk, helyszíni adatok és operációs portfólió."
+    },
+    {
+      "id": "field-pwa",
+      "route": "/field-pwa/",
+      "label": "Field PWA",
+      "shortLabel": "Field PWA",
+      "icon": "FP",
+      "description": "Mobil napi jelentés, ellenőrzőlista, fotó- és dokumentumbizonyíték sandbox."
+    },
+    {
+      "id": "finance-intelligence",
+      "route": "/finance-intelligence/",
+      "label": "Finance Intelligence",
+      "shortLabel": "Finance Intel",
+      "icon": "FI",
+      "description": "Projektfedezet, cash-flow, előrejelzés, eltérés és profit-attribúció."
+    },
+    {
+      "id": "import-center",
+      "route": "/import-center/",
+      "label": "Enterprise Import Center",
+      "shortLabel": "Import",
+      "icon": "IC",
+      "description": "Staging, review, commit, rollback és kanonikus rekordbetöltés."
+    },
+    {
+      "id": "tendermail",
+      "route": "/tendermail/",
+      "label": "TenderMail",
+      "shortLabel": "TenderMail",
+      "icon": "TM",
+      "description": "Jóváhagyott sandbox tenderkiküldés, címzettlista, esemény- és leiratkozáskövetés."
+    },
+    {
+      "id": "b2b-project-intake",
+      "route": "/b2b-project-intake/",
+      "label": "B2B Project Intake",
+      "shortLabel": "B2B Intake",
+      "icon": "B2",
+      "description": "B2B projektjelek forrás-, deduplikációs, műszaki és pénzügyi előszűrése."
     }
   ],
   "journey": {

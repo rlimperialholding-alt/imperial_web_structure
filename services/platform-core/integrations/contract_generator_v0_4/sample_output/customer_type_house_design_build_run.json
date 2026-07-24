@@ -1,0 +1,224 @@
+{
+  "output_dir": "sample_output/customer_type_house_design_build",
+  "zip_path": "sample_output/customer_type_house_design_build.zip",
+  "manifest": {
+    "generator_version": "0.4.0",
+    "generated_at": "2026-07-18T20:12:16Z",
+    "contract_type": "customer_type_house_design_build",
+    "contract_number": "VEVO-TIPUS-2026-0001",
+    "template": {
+      "drive_file_id": "1ududByaogoPZVsd84h42IqQzgw3KlpmA",
+      "file_name": "customer_type_house_design_build.docx",
+      "sha256": "7712c39018bb4f65630d262476e2054384657bb788c9b34022b472e6f4dc026e"
+    },
+    "ids": {
+      "CompanyID": "COM-VEVO-TIPUS-2026-0001",
+      "PersonID": "PER-VEVO-TIPUS-2026-0001",
+      "OpportunityID": "OPP-VEVO-TIPUS-2026-0001",
+      "ProjectID": "PRJ-VEVO-TIPUS-2026-0001",
+      "PartnerID": "PAR-VEVO-TIPUS-2026-0001"
+    },
+    "field_fill_audit": [
+      {
+        "field": "table_row_0",
+        "changed": true,
+        "target": "table:0:row:0:cell:1"
+      },
+      {
+        "field": "table_row_1",
+        "changed": true,
+        "target": "table:0:row:1:cell:1"
+      },
+      {
+        "field": "table_row_2",
+        "changed": true,
+        "target": "table:0:row:2:cell:1"
+      },
+      {
+        "field": "table_row_3",
+        "changed": true,
+        "target": "table:0:row:3:cell:1"
+      },
+      {
+        "field": "table_row_4",
+        "changed": true,
+        "target": "table:0:row:4:cell:1"
+      },
+      {
+        "field": "table_row_5",
+        "changed": true,
+        "target": "table:0:row:5:cell:1"
+      },
+      {
+        "field": "table_row_6",
+        "changed": true,
+        "target": "table:0:row:6:cell:1"
+      },
+      {
+        "field": "table_row_7",
+        "changed": true,
+        "target": "table:0:row:7:cell:1"
+      },
+      {
+        "field": "table_row_8",
+        "changed": true,
+        "target": "table:0:row:8:cell:1"
+      },
+      {
+        "field": "table_row_9",
+        "changed": true,
+        "target": "table:0:row:9:cell:1"
+      },
+      {
+        "field": "table_row_10",
+        "changed": true,
+        "target": "table:0:row:10:cell:1"
+      },
+      {
+        "field": "table_row_11",
+        "changed": true,
+        "target": "table:0:row:11:cell:1"
+      },
+      {
+        "field": "table_row_12",
+        "changed": true,
+        "target": "table:0:row:12:cell:1"
+      },
+      {
+        "field": "table_row_13",
+        "changed": true,
+        "target": "table:0:row:13:cell:1"
+      },
+      {
+        "field": "table_row_14",
+        "changed": true,
+        "target": "table:0:row:14:cell:1"
+      },
+      {
+        "field": "table_row_15",
+        "changed": true,
+        "target": "table:0:row:15:cell:1"
+      },
+      {
+        "field": "table_row_16",
+        "changed": true,
+        "target": "table:0:row:16:cell:1"
+      },
+      {
+        "field": "table_row_17",
+        "changed": true,
+        "target": "table:0:row:17:cell:1"
+      },
+      {
+        "field": "table_row_18",
+        "changed": true,
+        "target": "table:0:row:18:cell:1"
+      },
+      {
+        "field": "table_row_19",
+        "changed": true,
+        "target": "table:0:row:19:cell:1"
+      },
+      {
+        "field": "contract_date",
+        "changed": true,
+        "target": "paragraph:143"
+      },
+      {
+        "field": "signature_names",
+        "changed": true,
+        "target": "paragraph:147"
+      },
+      {
+        "field": "remove_stale_signer",
+        "changed": true,
+        "target": "paragraph:148"
+      },
+      {
+        "field": "remove_stale_signature_company",
+        "changed": true,
+        "target": "paragraph:149"
+      },
+      {
+        "field": "mandatory_delivery_clause",
+        "changed": true,
+        "target": "before_paragraph:143"
+      }
+    ],
+    "field_fill_failures": [],
+    "unresolved_placeholders": [],
+    "all_fields_complete": true,
+    "dispatch_gate": {
+      "allowed": false,
+      "blockers": [
+        "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+        "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+        "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+        "SIGNED_ORIGINAL_NOT_POSTED",
+        "POSTAL_SENT_AT_MISSING",
+        "POSTAL_TRACKING_NUMBER_MISSING",
+        "POSTAL_PROOF_MISSING",
+        "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+        "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+        "ELECTRONIC_SENT_AT_MISSING",
+        "ELECTRONIC_MESSAGE_ID_MISSING"
+      ]
+    },
+    "work_start_gate": {
+      "allowed": false,
+      "blockers": [
+        "CONTRACT_NOT_SIGNED",
+        "SIGNED_FILE_MISSING",
+        "BOTH_PARTIES_SIGNATURE_MISSING",
+        "SIGNED_CONTRACT_FILE_ID_MISSING",
+        "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+        "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+        "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+        "SIGNED_ORIGINAL_NOT_POSTED",
+        "POSTAL_SENT_AT_MISSING",
+        "POSTAL_TRACKING_NUMBER_MISSING",
+        "POSTAL_PROOF_MISSING",
+        "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+        "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+        "ELECTRONIC_SENT_AT_MISSING",
+        "ELECTRONIC_MESSAGE_ID_MISSING"
+      ],
+      "dispatch_gate": {
+        "allowed": false,
+        "blockers": [
+          "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+          "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+          "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+          "SIGNED_ORIGINAL_NOT_POSTED",
+          "POSTAL_SENT_AT_MISSING",
+          "POSTAL_TRACKING_NUMBER_MISSING",
+          "POSTAL_PROOF_MISSING",
+          "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+          "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+          "ELECTRONIC_SENT_AT_MISSING",
+          "ELECTRONIC_MESSAGE_ID_MISSING"
+        ]
+      }
+    },
+    "owner_approved_policy": {
+      "version": "ICG-PAY-2026-07-18",
+      "approval_basis": "tulajdonosi döntés",
+      "effective_date": "2026-07-18"
+    },
+    "signing_queue_status": "READY_FOR_APPROVAL",
+    "files": [
+      {
+        "name": "00_contract_filled.docx",
+        "sha256": "e09ea0203475c0d6e61ff72a25590d2395d752b9a904a9036ab881eaa37b412e"
+      },
+      {
+        "name": "01_contract_data_and_terms.docx",
+        "sha256": "1f9c3f9e6bea4483d6993d4a5069758da16c3a6836ef49929a3e55f6eda9d667"
+      },
+      {
+        "name": "02_approval_delivery_and_gate_checklist.docx",
+        "sha256": "49b2eb11fea9b58f4a99d6e3ce9836f1347a866184337ed24710b65cae6528eb"
+      }
+    ]
+  }
+}

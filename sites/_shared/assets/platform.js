@@ -39,7 +39,14 @@
     "/claim-registry": "claim-registry",
     "/answer-center": "answer-center",
     "/lead-intelligence": "lead-intelligence",
-    "/digital-project-managers": "digital-project-managers"
+    "/digital-project-managers": "digital-project-managers",
+    "/pm-cockpit": "pm-cockpit",
+    "/operations-workspace": "operations-workspace",
+    "/field-pwa": "field-pwa",
+    "/finance-intelligence": "finance-intelligence",
+    "/import-center": "import-center",
+    "/tendermail": "tendermail",
+    "/b2b-project-intake": "b2b-project-intake"
   };
 
   const normalizedPath = location.pathname.replace(/\/+$/, "") || "/";
@@ -58,7 +65,9 @@
     previewDevice: "desktop",
     drawerReturnFocus: null,
     currentRoleId: localStorage.getItem("ii-current-role") || "platform-admin",
-    runtime: null
+    runtime: null,
+    backend: null,
+    backendStatus: "connecting"
   };
 
   const runtimeStorageKey = "imperial-intelligence-runtime-v2";
@@ -144,8 +153,8 @@
     { id: "overview", label: "Áttekintés", modules: ["workspace", "executive-dashboard", "control-center", "integration-control-room"] },
     { id: "commercial", label: "Ügyfél és értékesítés", modules: ["crm", "sales", "contract-generator", "booking-engine", "reservation-engine", "my-imperial"] },
     { id: "house", label: "Típusház és műszaki", modules: ["house-catalog", "housebuild-agent", "housematch", "plotcheck", "buildconfig", "plancheck", "engineering-workspace", "housevision"] },
-    { id: "delivery", label: "Projekt és teljesítés", modules: ["project-control", "digital-project-managers", "smart-calendar", "change-control", "document-center", "document-evidence", "procurement", "partner-connect", "partner-control", "partner-field", "financial-control", "imperial-care"] },
-    { id: "marketing", label: "Marketing és web", modules: ["marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "answer-center", "lead-intelligence"] },
+    { id: "delivery", label: "Projekt és teljesítés", modules: ["project-control", "digital-project-managers", "pm-cockpit", "operations-workspace", "smart-calendar", "change-control", "document-center", "document-evidence", "import-center", "tendermail", "procurement", "partner-connect", "partner-control", "partner-field", "field-pwa", "financial-control", "finance-intelligence", "imperial-care"] },
+    { id: "marketing", label: "Marketing és web", modules: ["marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "answer-center", "lead-intelligence", "b2b-project-intake"] },
     { id: "governance", label: "Irányítás", modules: ["workflow-center", "completion-audit", "admin"] }
   ];
 
@@ -739,6 +748,91 @@
     `;
   }
 
+  function backendModule(moduleId) {
+    return state.backend?.modules?.find((module) => module.id === moduleId) || null;
+  }
+
+  function renderBackendModule(moduleId) {
+    if (!state.backend) {
+      return `
+        <section class="ii-panel ii-live-module is-degraded">
+          <header><div><p class="ii-kicker">Közös platform runtime</p><h2>A backend kapcsolat nem érhető el</h2></div>${badge("attention")}</header>
+          <p>A statikus mintaadatok böngészhetők, de a modulműveletekhez indítsd el a teljes Docker Compose stacket.</p>
+        </section>
+      `;
+    }
+    const live = backendModule(moduleId);
+    if (!live) {
+      return `
+        <section class="ii-panel ii-live-module is-degraded">
+          <header><div><p class="ii-kicker">Közös platform runtime</p><h2>Nincs backend-regisztráció</h2></div>${badge("blocked")}</header>
+          <p>A modul a portálon szerepel, de a közös demo runtime-ban még nincs regisztrálva.</p>
+        </section>
+      `;
+    }
+    const events = (state.backend.events || [])
+      .filter((event) => event.producer === moduleId || event.consumers?.includes(moduleId))
+      .slice(0, 4);
+    return `
+      <section class="ii-panel ii-live-module" data-live-module="${escapeHtml(moduleId)}">
+        <header>
+          <div>
+            <p class="ii-kicker">Működő moduladapter · ${escapeHtml(live.sourceRelease)}</p>
+            <h2>Interaktív sandbox teszt</h2>
+          </div>
+          ${badge(live.status)}
+        </header>
+        <div class="ii-live-meta">
+          <span><strong>ProjectID</strong> PRJ-DEMO-001</span>
+          <span><strong>Adat</strong> kizárólag szintetikus</span>
+          <span><strong>Külső írás</strong> tiltva</span>
+        </div>
+        ${renderSystemRecords((live.records || []).map((record) => ({ ...record, __type: "systemRecord" })), "Backend demo rekord")}
+        <div class="ii-live-actions">
+          ${(live.actions || []).map((action) => `
+            <button class="ii-button is-small" type="button"
+              data-backend-action="${escapeHtml(action.id)}"
+              data-backend-module="${escapeHtml(moduleId)}">
+              ${escapeHtml(action.label)}
+            </button>
+          `).join("")}
+        </div>
+        <div class="ii-section-head"><h3>Legutóbbi producer–consumer események</h3><span class="ii-badge">${events.length}</span></div>
+        <div class="ii-runtime-list">
+          ${events.map((event) => `
+            <div class="ii-runtime-row">
+              <span class="ii-id">${escapeHtml(event.id)}</span>
+              <strong>${escapeHtml(event.eventKey)}</strong>
+              <span>${escapeHtml(event.producer)} → ${escapeHtml(event.consumers.join(", "))}</span>
+              ${badge(event.status)}
+            </div>
+          `).join("") || `<p class="ii-empty">Még nincs esemény. Futtasd a fenti műveletet vagy egy teljes tesztutat.</p>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderBackendJourneys() {
+    if (!state.backend?.journeys) return "";
+    return `
+      <div class="ii-section-head"><h2>Keresztmodul E2E tesztutak</h2><button class="ii-button is-secondary is-small" type="button" data-backend-reset>Demo visszaállítása</button></div>
+      <div class="ii-grid is-two">
+        ${state.backend.journeys.map((journey) => {
+          const completed = journey.steps.filter((step) => step.status === "completed").length;
+          return `
+            <article class="ii-panel ii-journey-test">
+              <header><span class="ii-id">${escapeHtml(journey.id)}</span>${badge(journey.status)}</header>
+              <h3>${escapeHtml(journey.name)}</h3>
+              <p>${completed}/${journey.steps.length} lépés · ${escapeHtml(journey.projectId)}</p>
+              <ol>${journey.steps.map((step) => `<li data-state="${escapeHtml(step.status)}"><span>${escapeHtml(step.moduleId)}</span><strong>${escapeHtml(step.label)}</strong></li>`).join("")}</ol>
+              <button class="ii-button" type="button" data-backend-journey="${escapeHtml(journey.id)}">Teljes tesztút futtatása</button>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
   function renderWorkspace() {
     const role = currentRole();
     const access = role.moduleAccess.map(moduleById).filter(Boolean);
@@ -955,6 +1049,8 @@
       html = renderTable(records.filter((r) => r.__type === type), type);
     } else html = renderSystemRecords(records, `${moduleTitle(module)} tesztfolyamat`);
 
+    if (module.id === "workspace") html += renderBackendJourneys();
+    html += renderBackendModule(module.id);
     document.querySelector("#module-view").innerHTML = html;
   }
 
@@ -1191,6 +1287,24 @@
     renderModule();
   }
 
+  async function backendRequest(path, options = {}) {
+    const response = await fetch(`/core/api/demo${path}`, {
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(detail.detail || `Backend hiba (${response.status})`);
+    }
+    return response.json();
+  }
+
+  async function refreshBackend() {
+    state.backend = await backendRequest("/state");
+    state.backendStatus = "connected";
+  }
+
   function bindEvents() {
     document.addEventListener("submit", (event) => {
       if (event.target.matches("#housebuild-form")) {
@@ -1203,7 +1317,60 @@
       }
     });
 
-    document.addEventListener("click", (event) => {
+    document.addEventListener("click", async (event) => {
+      const backendAction = event.target.closest("[data-backend-action]");
+      if (backendAction) {
+        backendAction.disabled = true;
+        try {
+          const result = await backendRequest("/actions", {
+            method: "POST",
+            body: JSON.stringify({
+              module_id: backendAction.dataset.backendModule,
+              action_id: backendAction.dataset.backendAction,
+              project_id: "PRJ-DEMO-001",
+              actor: `${state.currentRoleId}@demo.imperial.local`
+            })
+          });
+          await refreshBackend();
+          showToast(`${result.event.eventKey} kézbesítve · ${result.event.correlationId}`);
+          renderModule();
+        } catch (error) {
+          backendAction.disabled = false;
+          showToast(error.message);
+        }
+        return;
+      }
+      const backendJourney = event.target.closest("[data-backend-journey]");
+      if (backendJourney) {
+        backendJourney.disabled = true;
+        try {
+          const result = await backendRequest(`/journeys/${encodeURIComponent(backendJourney.dataset.backendJourney)}/run`, {
+            method: "POST",
+            body: JSON.stringify({ actor: `${state.currentRoleId}@demo.imperial.local` })
+          });
+          await refreshBackend();
+          showToast(`${result.journey.name}: ${result.events.length} esemény sikeresen kézbesítve.`);
+          renderModule();
+        } catch (error) {
+          backendJourney.disabled = false;
+          showToast(error.message);
+        }
+        return;
+      }
+      const backendReset = event.target.closest("[data-backend-reset]");
+      if (backendReset) {
+        backendReset.disabled = true;
+        try {
+          await backendRequest("/reset", { method: "POST", body: "{}" });
+          await refreshBackend();
+          showToast("A teljes backend demoállapot visszaállt.");
+          renderModule();
+        } catch (error) {
+          backendReset.disabled = false;
+          showToast(error.message);
+        }
+        return;
+      }
       const houseBuildAction = event.target.closest("[data-housebuild-action]");
       if (houseBuildAction) {
         approveHouseBuildJob(houseBuildAction.dataset.jobId);
@@ -1313,16 +1480,24 @@
     document.body.dataset.moduleId = state.moduleId;
     document.body.innerHTML = `<main class="ii-empty">Imperial Intelligence betöltése…</main>`;
     try {
-      const [platformResponse, brandResponse, systemResponse] = await Promise.all([
+      const [platformResponse, brandResponse, systemResponse, backendResponse] = await Promise.all([
         fetch("/data/platform.json", { cache: "no-store" }),
         fetch("/data/brands.json", { cache: "no-store" }),
-        fetch("/data/system.json", { cache: "no-store" })
+        fetch("/data/system.json", { cache: "no-store" }),
+        fetch("/core/api/demo/state", { cache: "no-store" }).catch(() => null)
       ]);
       if (!platformResponse.ok || !brandResponse.ok || !systemResponse.ok) throw new Error("A lokális tesztadat nem érhető el.");
       state.data = await platformResponse.json();
       const brandData = await brandResponse.json();
       state.brands = brandData.brands || [];
       state.system = await systemResponse.json();
+      if (backendResponse?.ok) {
+        state.backend = await backendResponse.json();
+        state.backendStatus = "connected";
+      } else {
+        state.backend = null;
+        state.backendStatus = "degraded";
+      }
       state.runtime = loadRuntime();
       if (!state.system.roles.some((role) => role.id === state.currentRoleId)) state.currentRoleId = "platform-admin";
       document.body.innerHTML = platformMarkup();
