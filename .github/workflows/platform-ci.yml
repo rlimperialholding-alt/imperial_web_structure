@@ -100,24 +100,24 @@ jobs:
             grep --quiet '/assets/platform.js' <<<"$module_html"
           done
 
-          curl --fail --silent --show-error \
+          platform_json="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/data/platform.json \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d["modules"]) == 40; assert len(d["leads"]) >= 10; assert len(d["customers"]) >= 5; assert len(d["projects"]) >= 3; assert len(d["partners"]) >= 5; assert len(d["offers"]) >= 8; assert len(d["contracts"]) >= 4; assert len(d["financialItems"]) >= 20; assert len(d["careTickets"]) >= 6; assert d["meta"]["synthetic"] is True; assert d["meta"]["containsCustomerData"] is False'
+            http://127.0.0.1:8080/data/platform.json)"
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d["modules"]) == 40; assert len(d["leads"]) >= 10; assert len(d["customers"]) >= 5; assert len(d["projects"]) >= 3; assert len(d["partners"]) >= 5; assert len(d["offers"]) >= 8; assert len(d["contracts"]) >= 4; assert len(d["financialItems"]) >= 20; assert len(d["careTickets"]) >= 6; assert d["meta"]["synthetic"] is True; assert d["meta"]["containsCustomerData"] is False' <<<"$platform_json"
 
-          curl --fail --silent --show-error \
+          system_json="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/data/system.json \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d["roles"]) >= 10; assert len(d["eventContracts"]) >= 12; assert len(d["houseBuild"]["sources"]) >= 3; assert d["meta"]["usesExternalApis"] is False; assert d["meta"]["containsProductionSecrets"] is False'
+            http://127.0.0.1:8080/data/system.json)"
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d["roles"]) >= 10; assert len(d["eventContracts"]) >= 12; assert len(d["houseBuild"]["sources"]) >= 3; assert d["meta"]["usesExternalApis"] is False; assert d["meta"]["containsProductionSecrets"] is False' <<<"$system_json"
 
-          curl --fail --silent --show-error \
+          platform_js="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/assets/platform.js \
-            | grep --quiet 'history.pushState'
+            http://127.0.0.1:8080/assets/platform.js)"
+          grep --quiet 'history.pushState' <<<"$platform_js"
 
-          curl --fail --silent --show-error \
-            http://127.0.0.1:8080/healthz \
-            | grep --quiet "^ok$"
+          health_response="$(curl --fail --silent --show-error \
+            http://127.0.0.1:8080/healthz)"
+          grep --quiet "^ok$" <<<"$health_response"
 
       - name: Show container logs on failure
         if: failure()
