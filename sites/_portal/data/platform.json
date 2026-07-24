@@ -1,0 +1,283 @@
+{
+  "meta": {
+    "environment": "local-prototype",
+    "locale": "hu-HU",
+    "synthetic": true,
+    "containsCustomerData": false,
+    "usesExternalApis": false,
+    "containsProductionSecrets": false,
+    "version": "1.0.0",
+    "updatedAt": "2026-07-23"
+  },
+  "modules": [
+    {
+      "id": "executive-dashboard",
+      "route": "/executive-dashboard/",
+      "label": "Executive Dashboard",
+      "shortLabel": "Executive",
+      "icon": "◇",
+      "description": "Vezetői összkép az értékesítésről, projektekről, pénzügyekről és ügyfélélményről."
+    },
+    {
+      "id": "my-imperial",
+      "route": "/my-imperial/",
+      "label": "MyImperial",
+      "shortLabel": "MyImperial",
+      "icon": "◎",
+      "description": "Szintetikus ügyfélprofilok, projektállapot, dokumentumok és garanciális kapcsolatok."
+    },
+    {
+      "id": "crm",
+      "route": "/crm/",
+      "label": "CRM",
+      "shortLabel": "CRM",
+      "icon": "◉",
+      "description": "Lead- és ügyféltörzs, státuszok, kapcsolatok és teljes keresztmodul ügyfélnézet."
+    },
+    {
+      "id": "sales",
+      "route": "/sales/",
+      "label": "Sales / ajánlatkezelés",
+      "shortLabel": "Sales",
+      "icon": "↗",
+      "description": "Ajánlatok, értékek, verziók, döntési határidők és konverziós állapotok."
+    },
+    {
+      "id": "contract-generator",
+      "route": "/contract-generator/",
+      "label": "Contract Generator",
+      "shortLabel": "Contracts",
+      "icon": "≣",
+      "description": "Szerződésminták és kattintható, lokális szerződés-életciklus."
+    },
+    {
+      "id": "project-control",
+      "route": "/project-control/",
+      "label": "Project Control",
+      "shortLabel": "Projects",
+      "icon": "▦",
+      "description": "Aktív építési projektek, készültség, mérföldkövek, feladatok és kockázatok."
+    },
+    {
+      "id": "financial-control",
+      "route": "/financial-control/",
+      "label": "Financial Control",
+      "shortLabel": "Finance",
+      "icon": "¤",
+      "description": "Számlák, pénzügyi tételek, esedékességek és projektfedezeti összkép."
+    },
+    {
+      "id": "imperial-care",
+      "route": "/imperial-care/",
+      "label": "Imperial Care",
+      "shortLabel": "Care",
+      "icon": "✦",
+      "description": "Átadás utáni hibajegyek, SLA, felelősök és garanciális nyomon követés."
+    },
+    {
+      "id": "partner-control",
+      "route": "/partner-control/",
+      "label": "Partner Control",
+      "shortLabel": "Partners",
+      "icon": "⬡",
+      "description": "Kivitelezői és beszállítói partnerek, minősítés, kapacitás és projektkapcsolatok."
+    },
+    {
+      "id": "marketing-control",
+      "route": "/marketing-control/",
+      "label": "Marketing Control",
+      "shortLabel": "Marketing",
+      "icon": "◌",
+      "description": "Kampányok, csatornák, leadforrások és lokális teljesítménymutatók."
+    },
+    {
+      "id": "website-content-control",
+      "route": "/website-content-control/",
+      "label": "Website & Content Control",
+      "shortLabel": "Web & Content",
+      "icon": "◫",
+      "description": "A 12 márka staging oldala, reszponzív preview és lokális review-folyamat."
+    },
+    {
+      "id": "document-center",
+      "route": "/document-center/",
+      "label": "Document Center",
+      "shortLabel": "Documents",
+      "icon": "▤",
+      "description": "Ügyfél-, projekt-, szerződés- és pénzügyi dokumentumok szintetikus jegyzéke."
+    },
+    {
+      "id": "workflow-center",
+      "route": "/workflow-center/",
+      "label": "Workflow Center",
+      "shortLabel": "Workflows",
+      "icon": "⇄",
+      "description": "Feladatok, jóváhagyások, SLA-k és keresztmodul folyamatállapotok."
+    },
+    {
+      "id": "admin",
+      "route": "/admin/",
+      "label": "Admin / jogosultságok",
+      "shortLabel": "Admin",
+      "icon": "⚙",
+      "description": "Tesztfelhasználók, szerepkörök, jogosultságok és lokális auditnapló."
+    }
+  ],
+  "journey": {
+    "id": "journey-demo-001",
+    "title": "Kovács Dóra teljes bemutató ügyfélútja",
+    "customerId": "C-2001",
+    "steps": [
+      { "moduleId": "marketing-control", "entityType": "campaign", "entityId": "MKT-01", "label": "Kampányérkezés", "state": "completed" },
+      { "moduleId": "crm", "entityType": "lead", "entityId": "L-1001", "label": "Minősített lead", "state": "completed" },
+      { "moduleId": "sales", "entityType": "offer", "entityId": "O-3001", "label": "Elfogadott ajánlat", "state": "completed" },
+      { "moduleId": "contract-generator", "entityType": "contract", "entityId": "CT-4001", "label": "Aláírt szerződés", "state": "completed" },
+      { "moduleId": "partner-control", "entityType": "partner", "entityId": "PT-01", "label": "Partnerkiosztás", "state": "completed" },
+      { "moduleId": "project-control", "entityType": "project", "entityId": "P-5001", "label": "Kivitelezés", "state": "completed" },
+      { "moduleId": "financial-control", "entityType": "financialItem", "entityId": "FIN-001", "label": "Pénzügyi teljesítés", "state": "completed" },
+      { "moduleId": "document-center", "entityType": "document", "entityId": "DOC-001", "label": "Átadási dokumentáció", "state": "completed" },
+      { "moduleId": "workflow-center", "entityType": "task", "entityId": "TASK-001", "label": "Átadási workflow", "state": "completed" },
+      { "moduleId": "my-imperial", "entityType": "customer", "entityId": "C-2001", "label": "Ügyfélportál", "state": "completed" },
+      { "moduleId": "imperial-care", "entityType": "careTicket", "entityId": "CARE-6001", "label": "Garanciális ügy", "state": "active" }
+    ]
+  },
+  "leads": [
+    { "id": "L-1001", "name": "Kovács Dóra", "email": "dora.kovacs@example.test", "phone": "+36 30 000 1001", "source": "Liapor otthon kampány", "campaignId": "MKT-01", "location": "Szentendre", "interest": "Prefab 126", "value": 128000000, "status": "won", "owner": "Nagy Anna", "customerId": "C-2001", "offerId": "O-3001", "createdAt": "2026-01-08" },
+    { "id": "L-1002", "name": "Szabó Márton", "email": "marton.szabo@example.test", "phone": "+36 30 000 1002", "source": "Organikus keresés", "campaignId": "MKT-02", "location": "Érd", "interest": "Family 104", "value": 97000000, "status": "qualified", "owner": "Nagy Anna", "customerId": "C-2002", "offerId": "O-3002", "createdAt": "2026-02-14" },
+    { "id": "L-1003", "name": "Tóth Júlia", "email": "julia.toth@example.test", "phone": "+36 30 000 1003", "source": "Ajánlás", "campaignId": "MKT-03", "location": "Győr", "interest": "Danish 118", "value": 115000000, "status": "won", "owner": "Varga Bence", "customerId": "C-2003", "offerId": "O-3003", "createdAt": "2026-02-28" },
+    { "id": "L-1004", "name": "Farkas Levente", "email": "levente.farkas@example.test", "phone": "+36 30 000 1004", "source": "Nyílt nap", "campaignId": "MKT-04", "location": "Balatonfüred", "interest": "Casa 142", "value": 152000000, "status": "proposal", "owner": "Varga Bence", "customerId": "C-2004", "offerId": "O-3004", "createdAt": "2026-03-05" },
+    { "id": "L-1005", "name": "Molnár Eszter", "email": "eszter.molnar@example.test", "phone": "+36 30 000 1005", "source": "Meta tesztkampány", "campaignId": "MKT-01", "location": "Debrecen", "interest": "Everyday 92", "value": 84000000, "status": "new", "owner": "Kiss Márk", "customerId": null, "offerId": null, "createdAt": "2026-04-01" },
+    { "id": "L-1006", "name": "Balogh Ádám", "email": "adam.balogh@example.test", "phone": "+36 30 000 1006", "source": "Google tesztkampány", "campaignId": "MKT-02", "location": "Pécs", "interest": "Timber 110", "value": 108000000, "status": "contacted", "owner": "Kiss Márk", "customerId": null, "offerId": "O-3005", "createdAt": "2026-04-11" },
+    { "id": "L-1007", "name": "Lakatos Nóra", "email": "nora.lakatos@example.test", "phone": "+36 30 000 1007", "source": "Property 360", "campaignId": "MKT-03", "location": "Budapest", "interest": "Telek + ház", "value": 165000000, "status": "qualified", "owner": "Nagy Anna", "customerId": "C-2005", "offerId": "O-3006", "createdAt": "2026-04-19" },
+    { "id": "L-1008", "name": "Horváth Gábor", "email": "gabor.horvath@example.test", "phone": "+36 30 000 1008", "source": "Webinár", "campaignId": "MKT-04", "location": "Vác", "interest": "Prefab 98", "value": 91000000, "status": "proposal", "owner": "Varga Bence", "customerId": null, "offerId": "O-3007", "createdAt": "2026-05-02" },
+    { "id": "L-1009", "name": "Kiss Réka", "email": "reka.kiss@example.test", "phone": "+36 30 000 1009", "source": "Organikus keresés", "campaignId": "MKT-02", "location": "Kecskemét", "interest": "Family 126", "value": 121000000, "status": "new", "owner": "Kiss Márk", "customerId": null, "offerId": null, "createdAt": "2026-05-18" },
+    { "id": "L-1010", "name": "Németh András", "email": "andras.nemeth@example.test", "phone": "+36 30 001 1010", "source": "Partnerajánlás", "campaignId": "MKT-03", "location": "Székesfehérvár", "interest": "Liapor 154", "value": 176000000, "status": "lost", "owner": "Nagy Anna", "customerId": null, "offerId": "O-3008", "createdAt": "2026-06-01" }
+  ],
+  "customers": [
+    { "id": "C-2001", "name": "Kovács Dóra", "segment": "Prémium családi otthon", "status": "active", "leadId": "L-1001", "offerIds": ["O-3001"], "contractIds": ["CT-4001"], "projectIds": ["P-5001"], "financialItemIds": ["FIN-001", "FIN-002", "FIN-003", "FIN-004", "FIN-005", "FIN-006", "FIN-007"], "careTicketIds": ["CARE-6001", "CARE-6004"], "profileStatus": "Aktív", "lastActivity": "2026-07-22" },
+    { "id": "C-2002", "name": "Szabó Márton", "segment": "Első otthon", "status": "active", "leadId": "L-1002", "offerIds": ["O-3002"], "contractIds": ["CT-4002"], "projectIds": ["P-5002"], "financialItemIds": ["FIN-008", "FIN-009", "FIN-010", "FIN-011", "FIN-012", "FIN-013"], "careTicketIds": ["CARE-6002"], "profileStatus": "Aktív", "lastActivity": "2026-07-21" },
+    { "id": "C-2003", "name": "Tóth Júlia", "segment": "Energiatudatos építtető", "status": "active", "leadId": "L-1003", "offerIds": ["O-3003"], "contractIds": ["CT-4003"], "projectIds": ["P-5003"], "financialItemIds": ["FIN-014", "FIN-015", "FIN-016", "FIN-017", "FIN-018"], "careTicketIds": ["CARE-6003", "CARE-6006"], "profileStatus": "Aktív", "lastActivity": "2026-07-20" },
+    { "id": "C-2004", "name": "Farkas Levente", "segment": "Prémium befektető", "status": "negotiation", "leadId": "L-1004", "offerIds": ["O-3004"], "contractIds": ["CT-4004"], "projectIds": [], "financialItemIds": ["FIN-019"], "careTicketIds": [], "profileStatus": "Meghívva", "lastActivity": "2026-07-18" },
+    { "id": "C-2005", "name": "Lakatos Nóra", "segment": "Telek és otthon", "status": "qualified", "leadId": "L-1007", "offerIds": ["O-3006"], "contractIds": [], "projectIds": [], "financialItemIds": ["FIN-020"], "careTicketIds": ["CARE-6005"], "profileStatus": "Előkészítve", "lastActivity": "2026-07-16" }
+  ],
+  "offers": [
+    { "id": "O-3001", "customerId": "C-2001", "leadId": "L-1001", "title": "Prefab 126 – kulcsrakész", "version": "v3", "amount": 128000000, "status": "accepted", "validUntil": "2026-02-28", "contractId": "CT-4001", "owner": "Nagy Anna" },
+    { "id": "O-3002", "customerId": "C-2002", "leadId": "L-1002", "title": "Family 104 – közép szint", "version": "v2", "amount": 97000000, "status": "accepted", "validUntil": "2026-04-15", "contractId": "CT-4002", "owner": "Nagy Anna" },
+    { "id": "O-3003", "customerId": "C-2003", "leadId": "L-1003", "title": "Danish 118 – prémium", "version": "v4", "amount": 115000000, "status": "accepted", "validUntil": "2026-04-30", "contractId": "CT-4003", "owner": "Varga Bence" },
+    { "id": "O-3004", "customerId": "C-2004", "leadId": "L-1004", "title": "Casa 142 – prémium", "version": "v2", "amount": 152000000, "status": "negotiation", "validUntil": "2026-08-15", "contractId": "CT-4004", "owner": "Varga Bence" },
+    { "id": "O-3005", "customerId": null, "leadId": "L-1006", "title": "Timber 110 – közép", "version": "v1", "amount": 108000000, "status": "sent", "validUntil": "2026-08-01", "contractId": null, "owner": "Kiss Márk" },
+    { "id": "O-3006", "customerId": "C-2005", "leadId": "L-1007", "title": "Property 360 csomag", "version": "v1", "amount": 165000000, "status": "draft", "validUntil": "2026-08-30", "contractId": null, "owner": "Nagy Anna" },
+    { "id": "O-3007", "customerId": null, "leadId": "L-1008", "title": "Prefab 98 – alap", "version": "v2", "amount": 91000000, "status": "sent", "validUntil": "2026-08-10", "contractId": null, "owner": "Varga Bence" },
+    { "id": "O-3008", "customerId": null, "leadId": "L-1010", "title": "Liapor 154 – prémium", "version": "v1", "amount": 176000000, "status": "declined", "validUntil": "2026-07-01", "contractId": null, "owner": "Nagy Anna" }
+  ],
+  "contracts": [
+    { "id": "CT-4001", "customerId": "C-2001", "offerId": "O-3001", "projectId": "P-5001", "template": "Generálkivitelezés v4.2", "amount": 128000000, "status": "active", "signedAt": "2026-03-05", "nextAction": "Garanciális melléklet lezárása" },
+    { "id": "CT-4002", "customerId": "C-2002", "offerId": "O-3002", "projectId": "P-5002", "template": "Generálkivitelezés v4.2", "amount": 97000000, "status": "active", "signedAt": "2026-04-20", "nextAction": "Műszaki tartalom 2. melléklet" },
+    { "id": "CT-4003", "customerId": "C-2003", "offerId": "O-3003", "projectId": "P-5003", "template": "Danish prémium v2.8", "amount": 115000000, "status": "active", "signedAt": "2026-05-12", "nextAction": "Átadási jegyzőkönyv" },
+    { "id": "CT-4004", "customerId": "C-2004", "offerId": "O-3004", "projectId": null, "template": "Prémium beruházói v1.6", "amount": 152000000, "status": "review", "signedAt": null, "nextAction": "Ügyfél jogi jóváhagyás" }
+  ],
+  "projects": [
+    { "id": "P-5001", "customerId": "C-2001", "contractId": "CT-4001", "name": "Szentendre Panorama", "location": "Szentendre – minta helyszín", "technology": "Liapor előregyártott agyagbeton", "status": "warranty", "active": true, "progress": 100, "budget": 128000000, "spent": 125400000, "partnerIds": ["PT-01", "PT-03"], "nextMilestone": "Garanciális felülvizsgálat", "risk": "low" },
+    { "id": "P-5002", "customerId": "C-2002", "contractId": "CT-4002", "name": "Érd Liget Otthon", "location": "Érd – minta helyszín", "technology": "Favázas könnyűszerkezet", "status": "construction", "active": true, "progress": 64, "budget": 97000000, "spent": 61800000, "partnerIds": ["PT-02", "PT-04"], "nextMilestone": "Gépészeti alapszerelés", "risk": "medium" },
+    { "id": "P-5003", "customerId": "C-2003", "contractId": "CT-4003", "name": "Győr Nordic House", "location": "Győr – minta helyszín", "technology": "SIP panel", "status": "handover", "active": true, "progress": 94, "budget": 115000000, "spent": 107900000, "partnerIds": ["PT-01", "PT-05"], "nextMilestone": "Műszaki átadás", "risk": "low" }
+  ],
+  "partners": [
+    { "id": "PT-01", "name": "MintaSzerkezet Kft.", "category": "Szerkezetépítés", "rating": 4.8, "capacity": "70%", "status": "approved", "projectIds": ["P-5001", "P-5003"], "contact": "partner01@example.test" },
+    { "id": "PT-02", "name": "TesztGépészet Kft.", "category": "Épületgépészet", "rating": 4.5, "capacity": "85%", "status": "approved", "projectIds": ["P-5002"], "contact": "partner02@example.test" },
+    { "id": "PT-03", "name": "AranyVill Kft.", "category": "Elektromos kivitelezés", "rating": 4.6, "capacity": "45%", "status": "approved", "projectIds": ["P-5001"], "contact": "partner03@example.test" },
+    { "id": "PT-04", "name": "PróbaBelsőépítészet Bt.", "category": "Belsőépítészet", "rating": 4.2, "capacity": "60%", "status": "review", "projectIds": ["P-5002"], "contact": "partner04@example.test" },
+    { "id": "PT-05", "name": "DemoKert és Tér Kft.", "category": "Kert és tereprendezés", "rating": 4.7, "capacity": "55%", "status": "approved", "projectIds": ["P-5003"], "contact": "partner05@example.test" }
+  ],
+  "financialItems": [
+    { "id": "FIN-001", "customerId": "C-2001", "projectId": "P-5001", "type": "invoice", "label": "Előlegszámla", "amount": 12800000, "status": "paid", "dueDate": "2026-03-12" },
+    { "id": "FIN-002", "customerId": "C-2001", "projectId": "P-5001", "type": "invoice", "label": "Alapozási részszámla", "amount": 19200000, "status": "paid", "dueDate": "2026-04-18" },
+    { "id": "FIN-003", "customerId": "C-2001", "projectId": "P-5001", "type": "invoice", "label": "Szerkezetkész részszámla", "amount": 32000000, "status": "paid", "dueDate": "2026-05-30" },
+    { "id": "FIN-004", "customerId": "C-2001", "projectId": "P-5001", "type": "invoice", "label": "Gépészeti részszámla", "amount": 19200000, "status": "paid", "dueDate": "2026-06-20" },
+    { "id": "FIN-005", "customerId": "C-2001", "projectId": "P-5001", "type": "invoice", "label": "Belsőépítészeti részszámla", "amount": 25600000, "status": "paid", "dueDate": "2026-07-02" },
+    { "id": "FIN-006", "customerId": "C-2001", "projectId": "P-5001", "type": "invoice", "label": "Átadási végszámla", "amount": 19200000, "status": "paid", "dueDate": "2026-07-15" },
+    { "id": "FIN-007", "customerId": "C-2001", "projectId": "P-5001", "type": "retention", "label": "Garanciális visszatartás", "amount": 2600000, "status": "open", "dueDate": "2027-07-15" },
+    { "id": "FIN-008", "customerId": "C-2002", "projectId": "P-5002", "type": "invoice", "label": "Előlegszámla", "amount": 9700000, "status": "paid", "dueDate": "2026-04-28" },
+    { "id": "FIN-009", "customerId": "C-2002", "projectId": "P-5002", "type": "invoice", "label": "Tervezési részszámla", "amount": 9700000, "status": "paid", "dueDate": "2026-05-12" },
+    { "id": "FIN-010", "customerId": "C-2002", "projectId": "P-5002", "type": "invoice", "label": "Alapozási részszámla", "amount": 19400000, "status": "paid", "dueDate": "2026-06-05" },
+    { "id": "FIN-011", "customerId": "C-2002", "projectId": "P-5002", "type": "invoice", "label": "Szerkezetkész részszámla", "amount": 24250000, "status": "paid", "dueDate": "2026-06-28" },
+    { "id": "FIN-012", "customerId": "C-2002", "projectId": "P-5002", "type": "invoice", "label": "Gépészeti részszámla", "amount": 19400000, "status": "due", "dueDate": "2026-08-05" },
+    { "id": "FIN-013", "customerId": "C-2002", "projectId": "P-5002", "type": "cost", "label": "Partner előleg", "amount": -8400000, "status": "booked", "dueDate": "2026-07-10" },
+    { "id": "FIN-014", "customerId": "C-2003", "projectId": "P-5003", "type": "invoice", "label": "Előlegszámla", "amount": 11500000, "status": "paid", "dueDate": "2026-05-20" },
+    { "id": "FIN-015", "customerId": "C-2003", "projectId": "P-5003", "type": "invoice", "label": "Szerkezetkész részszámla", "amount": 34500000, "status": "paid", "dueDate": "2026-06-12" },
+    { "id": "FIN-016", "customerId": "C-2003", "projectId": "P-5003", "type": "invoice", "label": "Gépészeti részszámla", "amount": 23000000, "status": "paid", "dueDate": "2026-06-30" },
+    { "id": "FIN-017", "customerId": "C-2003", "projectId": "P-5003", "type": "invoice", "label": "Belsőépítészeti részszámla", "amount": 28750000, "status": "due", "dueDate": "2026-08-01" },
+    { "id": "FIN-018", "customerId": "C-2003", "projectId": "P-5003", "type": "cost", "label": "Partner teljesítés", "amount": -10100000, "status": "booked", "dueDate": "2026-07-12" },
+    { "id": "FIN-019", "customerId": "C-2004", "projectId": null, "type": "fee", "label": "Tervezési díj", "amount": 1800000, "status": "due", "dueDate": "2026-08-12" },
+    { "id": "FIN-020", "customerId": "C-2005", "projectId": null, "type": "fee", "label": "Telekfelmérési díj", "amount": 480000, "status": "paid", "dueDate": "2026-07-05" }
+  ],
+  "careTickets": [
+    { "id": "CARE-6001", "customerId": "C-2001", "projectId": "P-5001", "title": "Teraszajtó finombeállítás", "category": "Nyílászáró", "priority": "normal", "status": "in_progress", "sla": "2 nap", "owner": "Care Team A", "openedAt": "2026-07-19" },
+    { "id": "CARE-6002", "customerId": "C-2002", "projectId": "P-5002", "title": "Munkaterületi észrevétel", "category": "Kivitelezés", "priority": "low", "status": "resolved", "sla": "5 nap", "owner": "Projekt Team", "openedAt": "2026-07-11" },
+    { "id": "CARE-6003", "customerId": "C-2003", "projectId": "P-5003", "title": "Átadási festési javítás", "category": "Felületképzés", "priority": "normal", "status": "scheduled", "sla": "3 nap", "owner": "Care Team B", "openedAt": "2026-07-21" },
+    { "id": "CARE-6004", "customerId": "C-2001", "projectId": "P-5001", "title": "Okosotthon szenzor ellenőrzés", "category": "Elektromos", "priority": "high", "status": "resolved", "sla": "1 nap", "owner": "Care Team A", "openedAt": "2026-07-05" },
+    { "id": "CARE-6005", "customerId": "C-2005", "projectId": null, "title": "Telekfelmérés pontosítása", "category": "Előkészítés", "priority": "low", "status": "new", "sla": "5 nap", "owner": "Care Triage", "openedAt": "2026-07-22" },
+    { "id": "CARE-6006", "customerId": "C-2003", "projectId": "P-5003", "title": "Garázskapu távirányító párosítás", "category": "Gépészet", "priority": "normal", "status": "new", "sla": "3 nap", "owner": "Care Team B", "openedAt": "2026-07-23" }
+  ],
+  "milestones": [
+    { "id": "MS-001", "projectId": "P-5001", "label": "Tervezés lezárva", "date": "2026-03-18", "status": "completed" },
+    { "id": "MS-002", "projectId": "P-5001", "label": "Szerkezetkész", "date": "2026-05-28", "status": "completed" },
+    { "id": "MS-003", "projectId": "P-5001", "label": "Műszaki átadás", "date": "2026-07-14", "status": "completed" },
+    { "id": "MS-004", "projectId": "P-5002", "label": "Alapozás", "date": "2026-06-03", "status": "completed" },
+    { "id": "MS-005", "projectId": "P-5002", "label": "Szerkezetkész", "date": "2026-07-20", "status": "completed" },
+    { "id": "MS-006", "projectId": "P-5002", "label": "Gépészeti alapszerelés", "date": "2026-08-10", "status": "active" },
+    { "id": "MS-007", "projectId": "P-5003", "label": "Belsőépítészet", "date": "2026-07-15", "status": "completed" },
+    { "id": "MS-008", "projectId": "P-5003", "label": "Műszaki átadás", "date": "2026-07-30", "status": "active" },
+    { "id": "MS-009", "projectId": "P-5003", "label": "Birtokbaadás", "date": "2026-08-08", "status": "planned" }
+  ],
+  "documents": [
+    { "id": "DOC-001", "customerId": "C-2001", "projectId": "P-5001", "contractId": "CT-4001", "title": "Átadási dokumentáció – minta", "category": "Átadás", "version": "v1.0", "status": "approved", "updatedAt": "2026-07-14" },
+    { "id": "DOC-002", "customerId": "C-2001", "projectId": "P-5001", "contractId": "CT-4001", "title": "Generálkivitelezési szerződés – minta", "category": "Szerződés", "version": "v4.2", "status": "signed", "updatedAt": "2026-03-05" },
+    { "id": "DOC-003", "customerId": "C-2002", "projectId": "P-5002", "contractId": "CT-4002", "title": "Műszaki tartalom – Family 104", "category": "Műszaki", "version": "v2.1", "status": "approved", "updatedAt": "2026-06-01" },
+    { "id": "DOC-004", "customerId": "C-2002", "projectId": "P-5002", "contractId": "CT-4002", "title": "Építési napló kivonat – minta", "category": "Projekt", "version": "v0.8", "status": "draft", "updatedAt": "2026-07-22" },
+    { "id": "DOC-005", "customerId": "C-2003", "projectId": "P-5003", "contractId": "CT-4003", "title": "Danish prémium szerződés – minta", "category": "Szerződés", "version": "v2.8", "status": "signed", "updatedAt": "2026-05-12" },
+    { "id": "DOC-006", "customerId": "C-2003", "projectId": "P-5003", "contractId": "CT-4003", "title": "Átadási hibajegyzék – minta", "category": "Átadás", "version": "v0.3", "status": "review", "updatedAt": "2026-07-23" },
+    { "id": "DOC-007", "customerId": "C-2004", "projectId": null, "contractId": "CT-4004", "title": "Prémium beruházói szerződéstervezet", "category": "Szerződés", "version": "v1.6", "status": "review", "updatedAt": "2026-07-20" },
+    { "id": "DOC-008", "customerId": "C-2005", "projectId": null, "contractId": null, "title": "Telekfelmérési jegyzőkönyv – minta", "category": "Előkészítés", "version": "v1.0", "status": "approved", "updatedAt": "2026-07-16" },
+    { "id": "DOC-009", "customerId": null, "projectId": null, "contractId": null, "title": "Imperial Care SLA sablon", "category": "Sablon", "version": "v1.4", "status": "approved", "updatedAt": "2026-07-10" },
+    { "id": "DOC-010", "customerId": null, "projectId": null, "contractId": null, "title": "Partner minősítési adatlap", "category": "Sablon", "version": "v2.0", "status": "approved", "updatedAt": "2026-07-09" }
+  ],
+  "tasks": [
+    { "id": "TASK-001", "moduleId": "workflow-center", "customerId": "C-2001", "projectId": "P-5001", "title": "Átadási csomag lezárása", "assignee": "Nagy Anna", "dueDate": "2026-07-24", "status": "active", "priority": "high" },
+    { "id": "TASK-002", "moduleId": "imperial-care", "customerId": "C-2001", "projectId": "P-5001", "title": "Teraszajtó helyszíni ellenőrzés", "assignee": "Care Team A", "dueDate": "2026-07-25", "status": "active", "priority": "normal" },
+    { "id": "TASK-003", "moduleId": "project-control", "customerId": "C-2002", "projectId": "P-5002", "title": "Gépészeti kooperáció", "assignee": "Projekt Team", "dueDate": "2026-07-28", "status": "planned", "priority": "normal" },
+    { "id": "TASK-004", "moduleId": "financial-control", "customerId": "C-2002", "projectId": "P-5002", "title": "Részszámla egyeztetés", "assignee": "Pénzügy", "dueDate": "2026-07-29", "status": "active", "priority": "high" },
+    { "id": "TASK-005", "moduleId": "document-center", "customerId": "C-2003", "projectId": "P-5003", "title": "Átadási hibajegyzék jóváhagyása", "assignee": "Műszaki kontroll", "dueDate": "2026-07-26", "status": "review", "priority": "normal" },
+    { "id": "TASK-006", "moduleId": "contract-generator", "customerId": "C-2004", "projectId": null, "title": "Szerződés jogi review", "assignee": "Jogi kontroll", "dueDate": "2026-07-31", "status": "review", "priority": "high" },
+    { "id": "TASK-007", "moduleId": "sales", "customerId": "C-2005", "projectId": null, "title": "Ajánlat műszaki pontosítása", "assignee": "Nagy Anna", "dueDate": "2026-07-27", "status": "planned", "priority": "normal" },
+    { "id": "TASK-008", "moduleId": "partner-control", "customerId": null, "projectId": "P-5002", "title": "Partner kapacitás megerősítése", "assignee": "Beszerzés", "dueDate": "2026-07-24", "status": "active", "priority": "high" },
+    { "id": "TASK-009", "moduleId": "marketing-control", "customerId": null, "projectId": null, "title": "Kampány heti riport", "assignee": "Marketing", "dueDate": "2026-07-25", "status": "planned", "priority": "low" },
+    { "id": "TASK-010", "moduleId": "website-content-control", "customerId": null, "projectId": null, "title": "Prefab landing review", "assignee": "Web Team", "dueDate": "2026-07-26", "status": "review", "priority": "normal" },
+    { "id": "TASK-011", "moduleId": "admin", "customerId": null, "projectId": null, "title": "Tesztjogosultság audit", "assignee": "Platform Admin", "dueDate": "2026-07-30", "status": "planned", "priority": "low" },
+    { "id": "TASK-012", "moduleId": "crm", "customerId": null, "projectId": null, "title": "Új leadek minősítése", "assignee": "Kiss Márk", "dueDate": "2026-07-24", "status": "active", "priority": "normal" }
+  ],
+  "campaigns": [
+    { "id": "MKT-01", "name": "Liapor otthon – tesztkampány", "channel": "Meta", "status": "active", "budget": 1200000, "leads": 28, "qualified": 9, "owner": "Marketing Team" },
+    { "id": "MKT-02", "name": "Modern otthon keresés – teszt", "channel": "Google", "status": "active", "budget": 1800000, "leads": 41, "qualified": 13, "owner": "Marketing Team" },
+    { "id": "MKT-03", "name": "Ajánlói program – teszt", "channel": "Referral", "status": "active", "budget": 350000, "leads": 17, "qualified": 8, "owner": "CRM Team" },
+    { "id": "MKT-04", "name": "Nyílt nap és webinár – teszt", "channel": "Event", "status": "completed", "budget": 760000, "leads": 22, "qualified": 7, "owner": "Marketing Team" }
+  ],
+  "workflows": [
+    { "id": "WF-01", "name": "Leadből ajánlat", "moduleIds": ["marketing-control", "crm", "sales"], "status": "active", "instances": 6, "sla": "48 óra" },
+    { "id": "WF-02", "name": "Ajánlatból szerződés", "moduleIds": ["sales", "contract-generator", "document-center"], "status": "active", "instances": 4, "sla": "5 nap" },
+    { "id": "WF-03", "name": "Projektátadás", "moduleIds": ["project-control", "financial-control", "document-center", "my-imperial"], "status": "active", "instances": 2, "sla": "10 nap" },
+    { "id": "WF-04", "name": "Garanciális ügy", "moduleIds": ["my-imperial", "imperial-care", "partner-control"], "status": "active", "instances": 3, "sla": "3 nap" }
+  ],
+  "users": [
+    { "id": "USR-01", "name": "Demo Vezérigazgató", "email": "executive@example.test", "role": "Executive", "status": "active", "moduleAccess": ["executive-dashboard", "crm", "sales", "project-control", "financial-control"] },
+    { "id": "USR-02", "name": "Demo Értékesítő", "email": "sales@example.test", "role": "Sales Manager", "status": "active", "moduleAccess": ["crm", "sales", "contract-generator", "document-center"] },
+    { "id": "USR-03", "name": "Demo Projektvezető", "email": "project@example.test", "role": "Project Manager", "status": "active", "moduleAccess": ["project-control", "partner-control", "workflow-center", "document-center"] },
+    { "id": "USR-04", "name": "Demo Care munkatárs", "email": "care@example.test", "role": "Care Agent", "status": "active", "moduleAccess": ["my-imperial", "imperial-care", "document-center"] },
+    { "id": "USR-05", "name": "Demo Admin", "email": "admin@example.test", "role": "Platform Admin", "status": "active", "moduleAccess": ["executive-dashboard", "my-imperial", "crm", "sales", "contract-generator", "project-control", "financial-control", "imperial-care", "partner-control", "marketing-control", "website-content-control", "document-center", "workflow-center", "admin"] }
+  ],
+  "auditEvents": [
+    { "id": "AUD-001", "actor": "Demo Admin", "action": "Tesztfelhasználó megnyitása", "target": "USR-02", "time": "2026-07-23 09:14" },
+    { "id": "AUD-002", "actor": "Demo Projektvezető", "action": "Mérföldkő státusz ellenőrzése", "target": "MS-008", "time": "2026-07-23 09:02" },
+    { "id": "AUD-003", "actor": "Demo Értékesítő", "action": "Ajánlat részleteinek megnyitása", "target": "O-3004", "time": "2026-07-23 08:48" },
+    { "id": "AUD-004", "actor": "Demo Care munkatárs", "action": "Hibajegy szűrése", "target": "CARE-6001", "time": "2026-07-23 08:31" }
+  ]
+}
