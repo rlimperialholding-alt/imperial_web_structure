@@ -95,10 +95,10 @@ jobs:
             grep --quiet "id=\"${section_id}\"" <<<"$imperial_html"
           done
 
-          curl --fail --silent --show-error \
+          preview_html="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            'http://127.0.0.1:8080/site-preview/imperial/?review=1' \
-            | grep 'id="hero"' >/dev/null
+            'http://127.0.0.1:8080/site-preview/imperial/?review=1')"
+          grep --quiet 'id="hero"' <<<"$preview_html"
 
           drive_previews=(
             "site-preview/imperial/drive/venture/venture-studio.html?review=1"
@@ -108,20 +108,20 @@ jobs:
           )
 
           for preview in "${drive_previews[@]}"; do
-            curl --fail --silent --show-error \
+            drive_preview_html="$(curl --fail --silent --show-error \
               --header "Host: localhost" \
-              "http://127.0.0.1:8080/${preview}" \
-              | grep '/assets/review-bridge.js' >/dev/null
+              "http://127.0.0.1:8080/${preview}")"
+            grep --quiet '/assets/review-bridge.js' <<<"$drive_preview_html"
           done
 
-          curl --fail --silent --show-error \
+          imperial_data_json="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/assets/data/imperial-home.json \
-            | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False'
+            http://127.0.0.1:8080/assets/data/imperial-home.json)"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False' <<<"$imperial_data_json"
 
-          curl --fail --silent --show-error \
-            http://127.0.0.1:8080/healthz \
-            | grep "^ok$" >/dev/null
+          health_response="$(curl --fail --silent --show-error \
+            http://127.0.0.1:8080/healthz)"
+          grep --quiet "^ok$" <<<"$health_response"
 
       - name: Show container logs on failure
         if: failure()
