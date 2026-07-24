@@ -13,6 +13,19 @@ The existing project, customer and user collections in
 through an adapter and persists only their identifiers in assignments, tasks,
 memories and audit events.
 
+## Source package
+
+The original development package was supplied after the first integration:
+
+- file: `Imperial_Intelligence_Digital_PM_v0.2.0.zip`;
+- SHA-256:
+  `182CEE82C91CB356A844DF89C8A9F0D5FF534E06D572FF06B7596B7ABDB02E36`.
+
+Its knowledge-base and action-type policy concepts are integrated. Its SQLite
+fallback, runtime `create_all()` bootstrap, duplicate user/project tables,
+hard-coded local administrator, inline credentials and automatically successful
+mock external writes are intentionally not carried over.
+
 ## Data and migration
 
 Alembic revision `20260724_0001` creates:
@@ -28,6 +41,9 @@ It seeds Digitális Kálmán, Digitális Máté and Digitális Misi with identic
 `standard-r0-r7` authority profiles and deterministic UUIDs. Each manager starts
 with one canonical prototype project and a distinct project-memory row.
 
+Revision `20260724_0002` adds audited `knowledge_documents` and
+`knowledge_chunks`, plus approval rationale and decision timestamps.
+
 All mutable business tables have PostgreSQL triggers that write before/after
 images and the transaction actor to `audit_events`. Application transactions set
 the actor with a transaction-local PostgreSQL setting.
@@ -42,6 +58,8 @@ the actor with a transaction-local PostgreSQL setting.
 - R4-R5 require human approval.
 - R6 external commitments and R7 critical actions are blocked and escalated;
   approval cannot automatically execute them.
+- Server-side action classification enforces minimum risk independently of the
+  caller-supplied risk level; unknown side effects fail closed at R5.
 - Contract modification, liability recognition, performance certification and
   other binding external acts therefore remain human-only.
 

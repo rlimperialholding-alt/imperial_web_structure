@@ -16,15 +16,18 @@ from app.auth import (
 )
 from app.config import get_settings
 from app.db import get_session, set_audit_actor
+from app.knowledge import add_chunks
+from app.knowledge import search as search_knowledge
 from app.models import (
     AgentTask,
     ApprovalRequest,
     AuditEvent,
     DigitalProjectManager,
+    KnowledgeDocument,
     ProjectAssignment,
     ProjectMemory,
 )
-from app.policy import evaluate_risk
+from app.policy import classify_action_risk, evaluate_risk
 from app.queue import enqueue_task
 from app.schemas import (
     ApprovalDecision,
@@ -32,6 +35,10 @@ from app.schemas import (
     AssignmentCreate,
     AssignmentOut,
     AuditOut,
+    KnowledgeCreate,
+    KnowledgeDocumentOut,
+    KnowledgeSearchRequest,
+    KnowledgeSearchResult,
     ManagerOut,
     MemoryOut,
     MemoryPatch,
@@ -202,6 +209,71 @@ def update_memory(
 
 
 @router.post(
+    "/knowledge",
+    response_model=KnowledgeDocumentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_knowledge_document(
+    request: KnowledgeCreate,
+    session: Session = Depends(get_session),
+    principal: Principal = Depends(require_scope("digital-pm:write")),
+    platform: PlatformModelAdapter = Depends(get_platform_adapter),
+) -> KnowledgeDocument:
+    if request.external_project_id is not None:
+        enforce_project_access(principal, request.external_project_id)
+        if platform.get_project(request.external_project_id) is None:
+            raise HTTPException(status_code=404, detail="Canonical project not found")
+    elif principal.role != "platform-admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Company-wide knowledge requires platform-admin",
+        )
+    set_audit_actor(session, principal.subject)
+    document = KnowledgeDocument(
+        external_project_id=request.external_project_id,
+        title=request.title,
+        content=request.content,
+        source_type=request.source_type,
+        version=request.version,
+        precedence=request.precedence,
+        metadata_json=request.metadata_json,
+        created_by=principal.subject,
+    )
+    session.add(document)
+    add_chunks(session, document)
+    session.commit()
+    session.refresh(document)
+    return document
+
+
+@router.post(
+    "/knowledge/search",
+    response_model=list[KnowledgeSearchResult],
+)
+def knowledge_search(
+    request: KnowledgeSearchRequest,
+    session: Session = Depends(get_session),
+    principal: Principal = Depends(require_scope("digital-pm:read")),
+    platform: PlatformModelAdapter = Depends(get_platform_adapter),
+) -> list[dict[str, object]]:
+    if request.external_project_id is not None:
+        enforce_project_access(principal, request.external_project_id)
+        if platform.get_project(request.external_project_id) is None:
+            raise HTTPException(status_code=404, detail="Canonical project not found")
+    elif principal.role != "platform-admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Company-wide knowledge search requires platform-admin",
+        )
+    return search_knowledge(
+        session,
+        request.query,
+        request.external_project_id,
+        request.limit,
+    )
+
+
+@router.post(
     "/agents/{agent_id}/tasks",
     response_model=TaskCreateResult,
     status_code=status.HTTP_201_CREATED,
@@ -225,14 +297,15 @@ def create_task(
     )
     if assignment is None:
         raise HTTPException(status_code=409, detail="Project is not assigned to agent")
-    decision = evaluate_risk(request.risk_level)
+    effective_risk_level = classify_action_risk(request.task_type, request.risk_level)
+    decision = evaluate_risk(effective_risk_level)
     task = AgentTask(
         external_project_id=request.external_project_id,
         owner_agent_id=agent_id,
         task_type=request.task_type,
         objective=request.objective,
         priority=request.priority,
-        risk_level=request.risk_level,
+        risk_level=effective_risk_level,
         status=decision.status,
         escalation_level=decision.escalation_level,
         requires_approval=decision.requires_approval,
@@ -302,6 +375,8 @@ def decide_approval(
     set_audit_actor(session, principal.subject)
     approval.status = request.decision
     approval.approver_ref = principal.subject
+    approval.decision_rationale = request.rationale
+    approval.decided_at = datetime.now(UTC)
     task = session.get(AgentTask, approval.task_id)
     if task is None:
         raise HTTPException(status_code=409, detail="Approval task is missing")

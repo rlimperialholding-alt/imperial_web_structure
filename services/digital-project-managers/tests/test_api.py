@@ -44,6 +44,51 @@ def test_project_context_uses_canonical_adapter(client: TestClient) -> None:
     assert payload["customer"]["id"] == payload["project"]["customerId"]
 
 
+def test_package_knowledge_is_project_scoped_searchable_and_audited(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/knowledge",
+        headers=ADMIN_HEADERS,
+        json={
+            "external_project_id": "P-5001",
+            "title": "Betontechnológiai projektjegyzet",
+            "content": (
+                "A betonozás előtt ellenőrizni kell a zsaluzatot és a vasalást. "
+                "A projekt jóváhagyott betonminősége C30/37."
+            ),
+            "source_type": "package-import",
+            "version": "0.2.0",
+            "precedence": 25,
+            "metadata_json": {"package": "Imperial_Intelligence_Digital_PM_v0.2.0"},
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["external_project_id"] == "P-5001"
+
+    search = client.post(
+        "/api/v1/knowledge/search",
+        headers=ADMIN_HEADERS,
+        json={
+            "external_project_id": "P-5001",
+            "query": "jóváhagyott betonminőség",
+        },
+    )
+    assert search.status_code == 200
+    created_hit = next(
+        item for item in search.json() if item["document_id"] == created.json()["id"]
+    )
+    assert "C30/37" in created_hit["chunk"]
+
+    audit = client.get(
+        "/api/v1/audit/events?project_id=P-5001",
+        headers=ADMIN_HEADERS,
+    )
+    assert audit.status_code == 200
+    entity_types = {item["entity_type"] for item in audit.json()}
+    assert {"knowledge_documents", "knowledge_chunks"} <= entity_types
+
+
 def test_project_assignment_and_memory_are_audited(client: TestClient) -> None:
     response = client.post(
         f"/api/v1/agents/{KALMAN_ID}/assignments",
@@ -151,6 +196,32 @@ def test_r6_r7_block_and_escalate_before_execution(client: TestClient) -> None:
     )
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "REJECTED"
+
+
+def test_caller_cannot_underclassify_binding_actions(client: TestClient) -> None:
+    for task_type, expected_risk, escalation in (
+        ("external-commitment", 6, "E3"),
+        ("modify-contract", 7, "E4"),
+        ("liability-recognition", 7, "E4"),
+        ("completion-certificate", 7, "E4"),
+    ):
+        response = client.post(
+            f"/api/v1/agents/{KALMAN_ID}/tasks",
+            headers=ADMIN_HEADERS,
+            json={
+                "external_project_id": "P-5001",
+                "task_type": task_type,
+                "objective": f"Attempt underclassified binding action: {task_type}",
+                "risk_level": 0,
+                "impact": {"legal": "binding"},
+            },
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["task"]["risk_level"] == expected_risk
+        assert body["task"]["status"] == "BLOCKED"
+        assert body["policy"]["escalation_level"] == escalation
+        assert body["queued"] is False
 
 
 def test_memory_optimistic_lock_and_workqueue(client: TestClient) -> None:

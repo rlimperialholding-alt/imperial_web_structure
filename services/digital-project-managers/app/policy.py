@@ -12,6 +12,74 @@ class PolicyDecision:
     reason: str
 
 
+R7_ACTIONS = frozenset(
+    {
+        "approve_extra_work",
+        "completion_certificate",
+        "contract_change",
+        "contract_signature",
+        "data_breach",
+        "final_performance_certificate",
+        "liability_recognition",
+        "modify_contract",
+        "performance_certificate",
+        "performance_certification",
+        "recognize_liability",
+        "safety_incident",
+        "sign_contract",
+        "structural_incident",
+    }
+)
+R6_ACTIONS = frozenset(
+    {
+        "change_deadline",
+        "commit_company",
+        "commitment",
+        "external_commitment",
+        "grant_discount",
+        "place_order",
+        "purchase_order",
+    }
+)
+R0_R3_ACTIONS = frozenset(
+    {
+        "classify_ticket",
+        "create_internal_task",
+        "internal_administration",
+        "prepare_report",
+        "prepare_technical_explanation",
+        "publish_tender",
+        "rank_quotes",
+        "read_project",
+        "request_document",
+        "request_quote",
+        "send_reminder",
+        "send_standard_email",
+        "status_report",
+        "sync_partner_control",
+        "update_status",
+    }
+)
+
+
+def normalize_action_type(action_type: str) -> str:
+    return "_".join(action_type.strip().lower().replace("-", "_").split())
+
+
+def classify_action_risk(action_type: str, declared_risk_level: int) -> int:
+    """Return the server-enforced risk level without trusting caller classification."""
+    if not 0 <= declared_risk_level <= 7:
+        raise ValueError("risk_level must be between R0 and R7")
+    normalized = normalize_action_type(action_type)
+    if normalized in R7_ACTIONS:
+        return 7
+    if normalized in R6_ACTIONS:
+        return max(6, declared_risk_level)
+    if normalized in R0_R3_ACTIONS:
+        return declared_risk_level
+    return max(5, declared_risk_level)
+
+
 def evaluate_risk(risk_level: int) -> PolicyDecision:
     if not 0 <= risk_level <= 7:
         raise ValueError("risk_level must be between R0 and R7")

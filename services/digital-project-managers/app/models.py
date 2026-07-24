@@ -152,8 +152,71 @@ class ApprovalRequest(Base):
     escalation_level: Mapped[str] = mapped_column(String(8), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
     approver_ref: Mapped[str | None] = mapped_column(String(128))
+    decision_rationale: Mapped[str | None] = mapped_column(Text)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class KnowledgeDocument(Base):
+    __tablename__ = "knowledge_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    external_project_id: Mapped[str | None] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, default="manual")
+    version: Mapped[str] = mapped_column(String(64), nullable=False, default="1.0")
+    precedence: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    created_by: Mapped[str] = mapped_column(String(256), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    chunks: Mapped[list[KnowledgeChunk]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "precedence BETWEEN 0 AND 1000",
+            name="ck_knowledge_document_precedence",
+        ),
+        Index(
+            "ix_knowledge_documents_project_precedence",
+            "external_project_id",
+            "precedence",
+        ),
+    )
+
+
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("knowledge_documents.id", ondelete="CASCADE"), nullable=False
+    )
+    external_project_id: Mapped[str | None] = mapped_column(String(128))
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    search_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    document: Mapped[KnowledgeDocument] = relationship(back_populates="chunks")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "sequence",
+            name="uq_knowledge_chunk_sequence",
+        ),
+        Index("ix_knowledge_chunks_project", "external_project_id"),
     )
 
 

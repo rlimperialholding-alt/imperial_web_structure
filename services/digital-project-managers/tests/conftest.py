@@ -26,7 +26,7 @@ ADMIN_HEADERS = {
 def database_is_migrated() -> None:
     with get_engine().connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "20260724_0001"
+    assert revision == "20260724_0002"
 
 
 @pytest.fixture()

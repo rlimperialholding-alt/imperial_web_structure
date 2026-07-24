@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.policy import assert_external_action_allowed, evaluate_risk
+from app.policy import (
+    assert_external_action_allowed,
+    classify_action_risk,
+    evaluate_risk,
+)
 
 
 @pytest.mark.parametrize("risk_level", [0, 1, 2, 3])
@@ -30,3 +34,23 @@ def test_r6_and_r7_are_blocked(risk_level: int, escalation_level: str) -> None:
 def test_invalid_risk_is_rejected() -> None:
     with pytest.raises(ValueError):
         evaluate_risk(8)
+
+
+@pytest.mark.parametrize(
+    ("action_type", "declared_risk", "effective_risk"),
+    [
+        ("modify-contract", 0, 7),
+        ("liability_recognition", 1, 7),
+        ("completion certificate", 2, 7),
+        ("external-commitment", 0, 6),
+        ("commit_company", 3, 6),
+        ("request-quote", 2, 2),
+        ("unknown-side-effect", 0, 5),
+    ],
+)
+def test_action_type_sets_a_fail_closed_minimum_risk(
+    action_type: str,
+    declared_risk: int,
+    effective_risk: int,
+) -> None:
+    assert classify_action_risk(action_type, declared_risk) == effective_risk

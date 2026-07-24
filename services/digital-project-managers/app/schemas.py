@@ -94,6 +94,44 @@ class MemoryOut(ORMModel):
     updated_at: datetime
 
 
+class KnowledgeCreate(BaseModel):
+    external_project_id: str | None = Field(default=None, max_length=128)
+    title: str = Field(min_length=1, max_length=255)
+    content: str = Field(min_length=1, max_length=2_000_000)
+    source_type: str = Field(default="manual", min_length=1, max_length=64)
+    version: str = Field(default="1.0", min_length=1, max_length=64)
+    precedence: int = Field(default=100, ge=0, le=1000)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class KnowledgeDocumentOut(ORMModel):
+    id: uuid.UUID
+    external_project_id: str | None
+    title: str
+    source_type: str
+    version: str
+    precedence: int
+    metadata_json: dict[str, Any]
+    created_by: str
+    created_at: datetime
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=2, max_length=1000)
+    external_project_id: str | None = Field(default=None, max_length=128)
+    limit: int = Field(default=10, ge=1, le=100)
+
+
+class KnowledgeSearchResult(BaseModel):
+    score: float
+    document_id: uuid.UUID
+    external_project_id: str | None
+    title: str
+    version: str
+    precedence: int
+    chunk: str
+
+
 class ApprovalDecision(BaseModel):
     decision: str = Field(pattern="^(APPROVED|REJECTED)$")
     rationale: str = Field(min_length=3, max_length=4000)
@@ -109,6 +147,8 @@ class ApprovalOut(ORMModel):
     escalation_level: str
     status: str
     approver_ref: str | None
+    decision_rationale: str | None
+    decided_at: datetime | None
     created_at: datetime
 
 

@@ -9,6 +9,8 @@ database and no committed credential fallback.
 - PostgreSQL is the only supported persistence layer.
 - Alembic owns schema changes and deterministic seed data.
 - PostgreSQL triggers audit every insert, update and delete, including seeds.
+- Project- and company-scoped knowledge documents are chunked, searchable and
+  audited without duplicating canonical project records.
 - Redis/RQ runs eligible R0-R3 tasks asynchronously.
 - OIDC/JWT authenticates API calls. Project claims and scopes are enforced on
   every project-scoped endpoint.
@@ -21,6 +23,8 @@ database and no committed credential fallback.
 - R6 and R7 actions are blocked before queue or adapter execution. A structured
   approval/escalation record is created, but approval never turns an R6-R7 task
   into an automatically executable external action.
+- Binding action types are classified server-side, so a caller cannot label a
+  contract change, liability recognition or completion certificate as R0-R3.
 
 ## Local start
 
@@ -67,7 +71,7 @@ docker compose --profile digital-pm-test run --rm dpm-tests
 ```
 
 The GitHub workflow also starts the API and worker, checks both health endpoints,
-verifies the Alembic head and confirms exactly three seeded managers.
+verifies Alembic head `20260724_0002` and confirms exactly three seeded managers.
 
 ## Required deployment credentials
 
