@@ -50,6 +50,7 @@ jobs:
             http://127.0.0.1:8080/)"
 
           grep --quiet 'id="brand-select"' <<<"$portal_html"
+          grep --quiet 'id="page-select"' <<<"$portal_html"
           grep --quiet 'id="review-panel"' <<<"$portal_html"
           grep --quiet 'data-device="desktop"' <<<"$portal_html"
           grep --quiet 'data-device="tablet"' <<<"$portal_html"
@@ -59,6 +60,11 @@ jobs:
             --header "Host: localhost" \
             http://127.0.0.1:8080/data/brands.json)"
           python3 -c 'import json,sys; data=json.load(sys.stdin); assert len(data["brands"]) == 12' <<<"$brands_json"
+
+          artifacts_json="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/data/artifacts.json)"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False; assert sum(len(x["pages"]) for x in data["brands"].values()) == 50' <<<"$artifacts_json"
 
           sites=(
             imperial
@@ -93,6 +99,20 @@ jobs:
             --header "Host: localhost" \
             'http://127.0.0.1:8080/site-preview/imperial/?review=1' \
             | grep --quiet 'id="hero"'
+
+          drive_previews=(
+            "site-preview/imperial/drive/venture/venture-studio.html?review=1"
+            "site-preview/bautica/drive/b2b-belsoepiteszet-kivitelezes.html?review=1"
+            "site-preview/prefab/drive/knowledge/osszes-tudasoldal.html?review=1"
+            "site-preview/budapesti-magasepito-vallalat/drive/index.html?review=1"
+          )
+
+          for preview in "${drive_previews[@]}"; do
+            curl --fail --silent --show-error \
+              --header "Host: localhost" \
+              "http://127.0.0.1:8080/${preview}" \
+              | grep --quiet '/assets/review-bridge.js'
+          done
 
           curl --fail --silent --show-error \
             --header "Host: localhost" \

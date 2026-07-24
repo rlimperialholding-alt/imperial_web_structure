@@ -84,8 +84,8 @@
             <dd id="brand-metric">12</dd>
           </div>
           <div>
-            <dt>Aktív prototípus</dt>
-            <dd>01</dd>
+            <dt>Tesztelhető oldal</dt>
+            <dd id="page-metric">50</dd>
           </div>
           <div>
             <dt>Tartalmi szekció</dt>
@@ -104,11 +104,18 @@
             <p class="section-kicker">Weboldalak modul</p>
             <h2 id="websites-title">Portfólió</h2>
           </div>
-          <label class="brand-select-label" for="brand-select">
-            <span>Márkaválasztó</span>
-            <select id="brand-select" aria-describedby="brand-help"></select>
-            <small id="brand-help">A preview automatikusan frissül.</small>
-          </label>
+          <div class="catalog-selectors">
+            <label class="brand-select-label" for="brand-select">
+              <span>Márkaválasztó</span>
+              <select id="brand-select" aria-describedby="brand-help"></select>
+              <small id="brand-help">A preview automatikusan frissül.</small>
+            </label>
+            <label class="brand-select-label" for="page-select">
+              <span>Oldal vagy részprototípus</span>
+              <select id="page-select" aria-describedby="page-help"></select>
+              <small id="page-help">Drive-import és helyi prototípusok.</small>
+            </label>
+          </div>
         </header>
         <div class="brand-strip" id="brand-strip" role="list" aria-label="A 12 Imperial márka"></div>
       </section>

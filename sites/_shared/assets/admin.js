@@ -1,6 +1,11 @@
 const state = {
   brands: [],
+  artifacts: {},
   currentBrand: "imperial",
+  currentPage: {
+    title: "Imperial Holding főoldal",
+    path: "/"
+  },
   currentSection: {
     id: "hero",
     label: "Nyitó szekció"
@@ -18,8 +23,10 @@ const viewportConfig = {
 
 const elements = {
   brandSelect: document.querySelector("#brand-select"),
+  pageSelect: document.querySelector("#page-select"),
   brandStrip: document.querySelector("#brand-strip"),
   brandMetric: document.querySelector("#brand-metric"),
+  pageMetric: document.querySelector("#page-metric"),
   navBrandCount: document.querySelector("#nav-brand-count"),
   sectionMetric: document.querySelector("#section-metric"),
   selectedBrandAvatar: document.querySelector("#selected-brand-avatar"),
@@ -89,13 +96,41 @@ function renderBrands() {
       >
         <span>${escapeHtml(brand.initials)}</span>
         <strong>${escapeHtml(brand.shortName)}</strong>
-        <small>${brand.status === "active" ? "Aktív" : "Előkészítve"}</small>
+        <small>${brand.pageCount > 0 ? `${brand.pageCount} oldal` : "Forrásanyag"}</small>
       </button>
     `)
     .join("");
 
   elements.brandMetric.textContent = String(state.brands.length).padStart(2, "0");
   elements.navBrandCount.textContent = String(state.brands.length);
+}
+
+function pagesForBrand(brandId) {
+  const configured = state.artifacts[brandId]?.pages;
+  if (Array.isArray(configured) && configured.length > 0) {
+    return configured;
+  }
+
+  return [{
+    title: "Staging helyőrző",
+    path: "/",
+    kind: "placeholder",
+    sourceId: null
+  }];
+}
+
+function renderPageOptions(brandId) {
+  const pages = pagesForBrand(brandId);
+  elements.pageSelect.innerHTML = pages
+    .map((page) => `<option value="${escapeHtml(page.path)}">${escapeHtml(page.title)}</option>`)
+    .join("");
+  elements.pageSelect.disabled = pages.length === 1 && pages[0].kind === "placeholder";
+}
+
+function previewUrl(brandId, pagePath, includeReview) {
+  const normalizedPath = pagePath.startsWith("/") ? pagePath : `/${pagePath}`;
+  const base = `/site-preview/${brandId}${normalizedPath}`;
+  return includeReview ? `${base}${base.includes("?") ? "&" : "?"}review=1` : base;
 }
 
 function setBrand(brandId) {
@@ -105,24 +140,13 @@ function setBrand(brandId) {
   }
 
   state.currentBrand = brand.id;
-  state.currentSection = brand.id === "imperial"
-    ? { id: "hero", label: "Nyitó szekció" }
-    : { id: "site-overview", label: `${brand.name} webhely áttekintése` };
-
   elements.brandSelect.value = brand.id;
   elements.selectedBrandAvatar.textContent = brand.initials;
   elements.selectedBrandAvatar.style.borderColor = brand.accent;
   elements.selectedBrandAvatar.style.color = brand.accent;
   elements.selectedBrandName.textContent = brand.name;
   elements.selectedBrandStatus.textContent = brand.statusLabel;
-  elements.sectionMetric.textContent = String(brand.sectionCount).padStart(2, "0");
-  elements.selectedSection.textContent = state.currentSection.id;
-  elements.selectedSectionLabel.textContent = state.currentSection.label;
-
-  const previewUrl = `/site-preview/${brand.id}/?review=1`;
-  elements.preview.src = previewUrl;
-  elements.openPreview.href = `/site-preview/${brand.id}/`;
-  elements.previewAddress.textContent = `${brand.id}.localhost / home`;
+  renderPageOptions(brand.id);
 
   document.querySelectorAll(".brand-card").forEach((card) => {
     const active = card.dataset.brand === brand.id;
@@ -130,6 +154,28 @@ function setBrand(brandId) {
     card.setAttribute("aria-pressed", String(active));
   });
 
+  const defaultPath = state.artifacts[brand.id]?.defaultPath || pagesForBrand(brand.id)[0].path;
+  setPage(defaultPath);
+}
+
+function setPage(pagePath) {
+  const page = pagesForBrand(state.currentBrand).find((item) => item.path === pagePath)
+    || pagesForBrand(state.currentBrand)[0];
+  const brand = state.brands.find((item) => item.id === state.currentBrand);
+
+  state.currentPage = page;
+  state.currentSection = {
+    id: "page-overview",
+    label: `${page.title} – oldaláttekintés`
+  };
+
+  elements.pageSelect.value = page.path;
+  elements.sectionMetric.textContent = String(brand?.sectionCount || 1).padStart(2, "0");
+  elements.selectedSection.textContent = state.currentSection.id;
+  elements.selectedSectionLabel.textContent = state.currentSection.label;
+  elements.preview.src = previewUrl(state.currentBrand, page.path, true);
+  elements.openPreview.href = previewUrl(state.currentBrand, page.path, false);
+  elements.previewAddress.textContent = `${state.currentBrand}.localhost${page.path}`;
   renderReviews();
 }
 
@@ -146,7 +192,10 @@ function setDevice(device) {
 }
 
 function renderReviews() {
-  const brandReviews = state.reviews.filter((review) => review.brandId === state.currentBrand);
+  const brandReviews = state.reviews.filter((review) => (
+    review.brandId === state.currentBrand
+    && (review.pagePath || "/") === state.currentPage.path
+  ));
   const total = state.reviews.length;
 
   elements.reviewMetric.textContent = String(total).padStart(2, "0");
@@ -156,7 +205,7 @@ function renderReviews() {
   if (brandReviews.length === 0) {
     elements.reviewList.innerHTML = `
       <div class="review-empty">
-        Még nincs megjegyzés ehhez a márkához. Kattints az Imperial preview egyik szekciójára, majd rögzíts review elemet.
+        Még nincs megjegyzés ehhez az oldalhoz. Kattints a preview egyik szekciójára, majd rögzíts review elemet.
       </div>
     `;
     return;
@@ -192,6 +241,8 @@ function addReview(formData) {
   state.reviews.push({
     id: `review-${now.getTime()}`,
     brandId: state.currentBrand,
+    pagePath: state.currentPage.path,
+    pageTitle: state.currentPage.title,
     sectionId: state.currentSection.id,
     sectionLabel: state.currentSection.label,
     title: formData.get("title").trim(),
@@ -243,12 +294,22 @@ async function init() {
   renderReviews();
 
   try {
-    const response = await fetch("/data/brands.json", { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    const [brandsResponse, artifactsResponse] = await Promise.all([
+      fetch("/data/brands.json", { cache: "no-store" }),
+      fetch("/data/artifacts.json", { cache: "no-store" })
+    ]);
+    if (!brandsResponse.ok || !artifactsResponse.ok) {
+      throw new Error(`HTTP ${brandsResponse.status}/${artifactsResponse.status}`);
     }
-    const data = await response.json();
-    state.brands = data.brands;
+    const [brandsData, artifactsData] = await Promise.all([
+      brandsResponse.json(),
+      artifactsResponse.json()
+    ]);
+    state.brands = brandsData.brands;
+    state.artifacts = artifactsData.brands;
+    const totalPages = Object.values(state.artifacts)
+      .reduce((total, brand) => total + brand.pages.length, 0);
+    elements.pageMetric.textContent = String(totalPages).padStart(2, "0");
     renderBrands();
     setBrand(state.currentBrand);
   } catch (error) {
@@ -258,6 +319,7 @@ async function init() {
 }
 
 elements.brandSelect.addEventListener("change", (event) => setBrand(event.target.value));
+elements.pageSelect.addEventListener("change", (event) => setPage(event.target.value));
 
 elements.brandStrip.addEventListener("click", (event) => {
   const button = event.target.closest("[data-brand]");

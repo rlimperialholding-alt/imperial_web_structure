@@ -15,7 +15,8 @@ ellenőrzése és szekciószintű review-zása.
 
 - központi Imperial Intelligence admin dashboard;
 - weboldalak modul az Imperial cégcsoport mind a 12 márkájával;
-- márkaválasztó és egy kattintással frissülő, same-origin preview;
+- márka- és oldalválasztó, összesen 50 kattintható tesztoldallal;
+- elkülönített, forrásazonosítóval követhető Google Drive HTML-importok;
 - desktop (1440), tablet (834) és mobile (390) nézet;
 - teljes Imperial Holding főoldalprototípus sötétkék–arany–fehér arculattal;
 - nyolc stabil, JSON-ban is dokumentált tartalmi szekcióazonosító;
@@ -65,16 +66,22 @@ fel, hosts fájl módosítása általában nem szükséges.
 
 1. A **Weboldalak / Portfólió** modulban válassz márkát a selectből vagy a 12
    márkakártya egyikével.
-2. A preview eszköztáron válts **Desktop**, **Tablet** vagy **Mobile** nézetre.
-3. Az Imperial preview jobb felső szekciójelölői (`#hero`, `#portfolio` stb.)
-   kijelölik a review célját.
-4. Írd be a megjegyzés címét, részleteit és prioritását, majd rögzítsd.
-5. A megjegyzések a böngésző `localStorage` tárában maradnak.
-6. A **JSON export** gombbal letölthető egy hordozható tesztfájl.
+2. Az **Oldal vagy részprototípus** listában válaszd ki az adott márka
+   főoldalát, aloldalát, kalkulátorát vagy tudásoldalát.
+3. A preview eszköztáron válts **Desktop**, **Tablet** vagy **Mobile** nézetre.
+4. Kattints a preview bármely kijelölhető tartalmi szekciójára. Az importált
+   oldalakon a review bridge determinisztikus azonosítót ad az azonosító nélküli
+   szekcióknak is.
+5. Írd be a megjegyzés címét, részleteit és prioritását, majd rögzítsd.
+6. A megjegyzések oldalútvonalhoz és szekcióazonosítóhoz kötve, a böngésző
+   `localStorage` tárában maradnak.
+7. A **JSON export** gombbal letölthető egy hordozható tesztfájl.
 
-A többi 11 márka jelenleg a már meglévő staging helyőrzőjét mutatja. Az
-adminplatform és a reszponzív preview mindegyikhez működik; a teljes tartalmi
-prototípus ebben a mérföldkőben az Imperial Holding márkához készült el.
+Jelenleg négy márkához van futtatható webes anyag: Imperial Holding (10 oldal),
+Bautica (6 oldal), Prefab (19 oldal) és Budapesti Magasépítő Vállalat
+(15 oldalas webhely). A másik nyolc márkához a Drive-on tartalmi és
+komponensforrások találhatók, de önállóan futtatható HTML még nem; ezek a
+márkák ezért továbbra is egyértelműen jelölt staging állapotot mutatnak.
 
 ## Stabil tartalmi szekcióazonosítók
 
@@ -99,19 +106,42 @@ validáció hibával leáll, ha a két forrás eltér.
 sites/
 ├── _portal/
 │   ├── index.html                 # központi admin dashboard
-│   └── data/brands.json           # a 12 márka lokális tesztadata
+│   └── data/
+│       ├── brands.json            # a 12 márka lokális tesztadata
+│       └── artifacts.json         # 50 tesztoldal és Drive-forrásazonosító
 ├── _shared/assets/
 │   ├── tokens.css                 # közös szín-, térköz-, tipó- és radius tokenek
 │   ├── components.css             # közös gomb, ikon, logó és accessibility alapok
 │   ├── admin.css / admin.js       # dashboard megjelenés és működés
 │   ├── imperial.css / imperial.js # főoldal megjelenés és működés
+│   ├── review-bridge.*             # szekciókijelölés minden importált oldalon
+│   ├── preview-bootstrap.css       # lokális kompatibilitási stílus, CDN nélkül
 │   └── data/imperial-home.json    # szintetikus főoldaladatok
 ├── imperial/index.html            # teljes Imperial Holding prototípus
-└── <további 11 márka>/index.html  # elkülönített staging oldalak
+├── <aktív márka>/drive/            # változatlan Drive HTML/CSS/JS források
+└── <további márka>/index.html      # elkülönített staging állapot
 ```
 
 Az admin JavaScript kizárólag same-origin JSON fájlokat tölt be. Nincs
-analytics, cookie-alapú követés, külső font, CDN, API vagy adatküldés.
+analytics, cookie-alapú követés, külső font, futásidejű CDN, API vagy
+adatküldés. A Drive csak fejlesztési forrásként szolgált; a böngésző nem
+kapcsolódik a Drive-hoz.
+
+## Drive-import és forráskövetés
+
+A `sites/_portal/data/artifacts.json` az egyetlen tesztoldal-katalógus. Minden
+Drive-ból importált elemhez tartozik:
+
+- márkaazonosító és helyi útvonal;
+- felhasználóbarát oldalnév;
+- típus (`drive-full-site`, `drive-partial` vagy `drive-knowledge`);
+- az eredeti Google Drive fájlazonosító.
+
+Csak futtatható webes artefaktumok kerültek a repositoryba. Ügyféladatot,
+értékesítési adatbázist, üzleti spreadsheetet, production secretet és
+operatív dokumentumot a rendszer nem importál. A Drive-ról származó oldalak
+`noindex,nofollow` jelölést és közös review bridge-et kapnak; az űrlapok
+tesztmódban nem továbbítanak adatot.
 
 ## A 12 márka
 
@@ -135,6 +165,8 @@ analytics, cookie-alapú követés, külső font, CDN, API vagy adatküldés.
 ### Tesztadatok
 
 - `brands.json`: márkanév, slug, monogram, prototípusállapot és vizuális akcentus.
+- `artifacts.json`: az oldalválasztó 50 bejegyzése és a Drive-források
+  visszakövethetősége.
 - `imperial-home.json`: szekciók, szintetikus mutatók, portfólió-, projekt- és
   hírkártyák.
 - A `containsCustomerData: false` mezőt a CI és a helyi validátor is ellenőrzi.
@@ -147,6 +179,8 @@ A review rekord mezői:
 ```json
 {
   "brandId": "imperial",
+  "pagePath": "/drive/venture/venture-studio.html",
+  "pageTitle": "Imperial Venture Studio",
   "sectionId": "hero",
   "title": "CTA pontosítása",
   "comment": "A fő CTA legyen rövidebb.",
@@ -180,6 +214,10 @@ sem `.env` fájlba, sem a JSON fixture-ökbe.
   preview iframe-et enged;
 - a `/site-preview/<brand>/` útvonal explicit, 12 elemű allow-listet használ;
 - nincs production deployment workflow.
+- az importált, önálló HTML-prototípusok saját inline megjelenítési logikája
+  csak a loopback staging környezetben engedélyezett; hálózati kapcsolataikat a
+  CSP továbbra is same-originra korlátozza;
+- a külső Bootstrap CDN-hivatkozásokat lokális kompatibilitási CSS váltja ki.
 
 Az iframe támogatása miatt `X-Frame-Options: SAMEORIGIN` és
 `frame-ancestors 'self'` van beállítva; külső oldal továbbra sem ágyazhatja be a
@@ -210,13 +248,14 @@ docker compose down --remove-orphans
 A `.github/workflows/ci.yml`:
 
 1. ellenőrzi a 12 site belépési pontját és a noindex jelölést;
-2. parse-olja a JSON fixture-öket;
-3. összeveti a stabil szekció-ID-ket a DOM-mal;
-4. validálja a Compose konfigurációt;
-5. elindítja az nginx stacket;
-6. HTTP-n ellenőrzi az admint, a márkaadatokat, mind a 12 hostot, az Imperial
-   szekciókat, a same-origin preview útvonalat és a health endpointot;
-7. minden esetben eltávolítja a tesztstacket.
+2. parse-olja a JSON fixture-öket és validálja mind az 50 katalógusbejegyzést;
+3. ellenőrzi az importált fájlok Drive-forrásazonosítóját, review bridge-ét és
+   a futásidejű Bootstrap CDN hiányát;
+4. összeveti a stabil Imperial szekció-ID-ket a DOM-mal;
+5. validálja a Compose konfigurációt és elindítja az nginx stacket;
+6. HTTP-n ellenőrzi az admint, a márka- és artefaktumadatokat, mind a 12 hostot,
+   valamint négy reprezentatív Drive-preview útvonalat;
+7. ellenőrzi a health endpointot, majd minden esetben eltávolítja a tesztstacket.
 
 ## Branch-modell és kiadás
 
@@ -230,7 +269,8 @@ deploymentet vagy automatikus merge-et.
 
 ## Következő, külön jóváhagyást igénylő lépések
 
-- a további 11 márka teljes, márkaspecifikus prototípusa;
+- a még csak dokumentum- és komponensforrással rendelkező nyolc márka
+  futtatható HTML-prototípusa;
 - tartós review backend, SSO és jogosultságkezelés;
 - jóváhagyott CMS vagy tartalom-API integráció;
 - éles domainek, TLS, secret store, monitoring és release folyamat;
