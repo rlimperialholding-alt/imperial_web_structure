@@ -1,0 +1,231 @@
+{
+  "meta": {
+    "environment": "local-integration-prototype",
+    "synthetic": true,
+    "containsCustomerData": false,
+    "usesExternalApis": false,
+    "containsProductionSecrets": false,
+    "schemaVersion": "2.0.0",
+    "canonicalSource": "00 – START HERE – Kanonikus fejlesztői és rendszergazdai végrehajtási master v2.0",
+    "canonicalSourceId": "1dT10yNtNWMzkZ292Bw8zaLC3vnzopc7AMHMrQyvlxug"
+  },
+  "roles": [
+    {
+      "id": "owner",
+      "label": "Tulajdonos",
+      "initials": "TU",
+      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "integration-control-room", "completion-audit", "financial-control", "crm", "project-control", "digital-project-managers"]
+    },
+    {
+      "id": "managing-director",
+      "label": "Ügyvezető",
+      "initials": "ÜV",
+      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "crm", "project-control", "digital-project-managers", "smart-calendar", "financial-control", "procurement", "document-evidence", "workflow-center"]
+    },
+    {
+      "id": "marketing",
+      "label": "Marketing",
+      "initials": "MK",
+      "moduleAccess": ["workspace", "marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "lead-intelligence", "housematch", "housevision", "crm", "answer-center"]
+    },
+    {
+      "id": "technical-prep",
+      "label": "Műszaki előkészítő",
+      "initials": "ME",
+      "moduleAccess": ["workspace", "house-catalog", "housebuild-agent", "housematch", "plotcheck", "buildconfig", "plancheck", "engineering-workspace", "document-evidence", "project-control"]
+    },
+    {
+      "id": "sales",
+      "label": "Értékesítő",
+      "initials": "ÉR",
+      "moduleAccess": ["workspace", "crm", "sales", "housematch", "plotcheck", "buildconfig", "booking-engine", "reservation-engine", "contract-generator", "my-imperial"]
+    },
+    {
+      "id": "finance",
+      "label": "Pénzügy",
+      "initials": "PÜ",
+      "moduleAccess": ["workspace", "financial-control", "procurement", "project-control", "change-control", "document-evidence", "executive-dashboard"]
+    },
+    {
+      "id": "project-manager",
+      "label": "Projektmenedzser",
+      "initials": "PM",
+      "moduleAccess": ["workspace", "project-control", "digital-project-managers", "smart-calendar", "procurement", "change-control", "my-imperial", "document-evidence", "partner-connect", "partner-field", "imperial-care"]
+    },
+    {
+      "id": "designer",
+      "label": "Tervező partner",
+      "initials": "TP",
+      "moduleAccess": ["workspace", "engineering-workspace", "plancheck", "plotcheck", "buildconfig", "my-imperial", "document-evidence"]
+    },
+    {
+      "id": "subcontractor",
+      "label": "Alvállalkozó",
+      "initials": "AV",
+      "moduleAccess": ["workspace", "partner-connect", "partner-field", "procurement", "document-evidence", "imperial-care"]
+    },
+    {
+      "id": "customer",
+      "label": "Ügyfél",
+      "initials": "ÜF",
+      "moduleAccess": ["workspace", "my-imperial", "housematch", "plotcheck", "buildconfig", "booking-engine", "reservation-engine", "change-control", "imperial-care"]
+    },
+    {
+      "id": "legal",
+      "label": "Jogász",
+      "initials": "JG",
+      "moduleAccess": ["workspace", "contract-generator", "change-control", "document-evidence", "my-imperial", "claim-registry"]
+    },
+    {
+      "id": "platform-admin",
+      "label": "Platform admin",
+      "initials": "PA",
+      "moduleAccess": ["workspace", "executive-dashboard", "control-center", "integration-control-room", "completion-audit", "admin", "workflow-center", "crm", "sales", "contract-generator", "my-imperial", "booking-engine", "reservation-engine", "house-catalog", "housebuild-agent", "housematch", "plotcheck", "buildconfig", "plancheck", "engineering-workspace", "housevision", "project-control", "digital-project-managers", "smart-calendar", "change-control", "document-center", "document-evidence", "procurement", "partner-connect", "partner-control", "partner-field", "financial-control", "imperial-care", "marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "answer-center", "lead-intelligence"]
+    }
+  ],
+  "moduleRecords": {
+    "control-center": [
+      {"id": "MOD-CRM", "name": "Imperial CRM", "status": "integration_pending", "decision": "extend", "version": "1.4.0", "owner": "Értékesítés", "nextGate": "Élő adapter + ProjectID UAT"},
+      {"id": "MOD-ENG", "name": "Engineering Workspace", "status": "artifact_verified", "decision": "integrate", "version": "1.0.0", "owner": "Műszaki", "nextGate": "Stagingimport + pilot"},
+      {"id": "MOD-DMS", "name": "Document & Evidence", "status": "artifact_verified", "decision": "extend", "version": "1.2.0", "owner": "Dokumentumkontroll", "nextGate": "OCR + 100 dokumentum"},
+      {"id": "MOD-HB", "name": "HouseBuild Agent", "status": "prototype", "decision": "build", "version": "0.1.0", "owner": "Termék / műszaki", "nextGate": "10 forrásos UAT"},
+      {"id": "MOD-MKT", "name": "Marketing Automation", "status": "integration_pending", "decision": "integrate", "version": "1.6.0", "owner": "Marketing", "nextGate": "Kampány E2E"}
+    ],
+    "integration-control-room": [
+      {"id": "CON-CRM", "name": "CRM adapter", "status": "simulated", "lastSyncAt": "2026-07-24T08:20:00Z", "queue": 2, "dlq": 0, "owner": "Platform"},
+      {"id": "CON-DMS", "name": "Document & Evidence adapter", "status": "simulated", "lastSyncAt": "2026-07-24T08:18:00Z", "queue": 1, "dlq": 0, "owner": "Platform"},
+      {"id": "CON-CALENDAR", "name": "Calendar adapter", "status": "auth_required", "lastSyncAt": null, "queue": 3, "dlq": 1, "owner": "Platform"},
+      {"id": "CON-CMS", "name": "CMS publication adapter", "status": "sandbox", "lastSyncAt": "2026-07-24T08:12:00Z", "queue": 0, "dlq": 0, "owner": "Marketing"}
+    ],
+    "completion-audit": [
+      {"id": "ART-PLANCHECK", "name": "PlanCheck v0.1", "status": "verified", "decision": "extend", "sourceId": "195L__44UZExkhieKdx2E1gspehbVxWlFNqUurhh3QQk", "evidence": "7/7 teszt"},
+      {"id": "ART-HOUSEMATCH", "name": "HouseMatch v0.3", "status": "verified", "decision": "integrate", "sourceId": "1KHsr8IunxUOrKtE2cr1u_JcenC4U8GTxAnFpSLbxwsU", "evidence": "7/7 teszt"},
+      {"id": "ART-PLOTCHECK", "name": "PlotCheck v0.2", "status": "verified", "decision": "extend", "sourceId": "143apfnxw0mwcDKHq4u8YreoqDQ6yKFixeZGiSOtWi2w", "evidence": "5/5 teszt"},
+      {"id": "ART-BUILDCONFIG", "name": "BuildConfig v0.2", "status": "verified", "decision": "integrate", "sourceId": "12kZJbTe19nGr6vhRuozL1W64iKCzfsMJ3nIBBfFoxeU", "evidence": "7/7 teszt"},
+      {"id": "ART-CHANGECONTROL", "name": "ChangeControl v0.1", "status": "verified", "decision": "integrate", "sourceId": "1h-_5X0-zHZmVSKYdg5t13rZQQktZRHlcXYWUZYyvXCo", "evidence": "9/9 teszt"},
+      {"id": "ART-PARTNER", "name": "Partner Connect v0.3", "status": "verified", "decision": "integrate", "sourceId": "1-KnMgtTSeiWQw3lav-IodjxyLNXIoOWi0IhVvoMec2o", "evidence": "12/12 teszt"},
+      {"id": "ART-IMPORT", "name": "Enterprise Import Center", "status": "verification_required", "decision": "verify", "sourceId": null, "evidence": "külön Drive-release nem igazolt"},
+      {"id": "ART-TENDERMAIL", "name": "TenderMail", "status": "verification_required", "decision": "verify", "sourceId": null, "evidence": "provider- és domain-UAT hiányzik"}
+    ],
+    "smart-calendar": [
+      {"id": "CAL-001", "name": "Alapozás műszaki átadás", "status": "scheduled", "projectId": "P-5001", "dueAt": "2026-08-04T08:00:00Z", "owner": "Nagy Anna", "evidenceRequired": true},
+      {"id": "CAL-002", "name": "Gépészeti kooperáció", "status": "delayed", "projectId": "P-5002", "dueAt": "2026-07-23T09:00:00Z", "owner": "Projekt Team", "evidenceRequired": false}
+    ],
+    "digital-project-managers": [
+      {"id": "DPM-KALMAN", "name": "Digitális Kálmán", "status": "active", "mode": "limited-autonomy", "riskAuthority": "R0–R7 policy", "projectId": "P-5001", "memory": "isolated", "queue": "enabled", "externalWrites": false},
+      {"id": "DPM-MATE", "name": "Digitális Máté", "status": "active", "mode": "limited-autonomy", "riskAuthority": "R0–R7 policy", "projectId": "P-5002", "memory": "isolated", "queue": "enabled", "externalWrites": false},
+      {"id": "DPM-MISI", "name": "Digitális Misi", "status": "active", "mode": "limited-autonomy", "riskAuthority": "R0–R7 policy", "projectId": "P-5003", "memory": "isolated", "queue": "enabled", "externalWrites": false}
+    ],
+    "change-control": [
+      {"id": "CHG-001", "name": "Teraszburkolat módosítása", "status": "customer_approval", "projectId": "P-5001", "costImpact": 1640000, "scheduleImpactDays": 3, "version": 2},
+      {"id": "CHG-002", "name": "Gépészeti nyomvonal korrekció", "status": "technical_review", "projectId": "P-5002", "costImpact": 780000, "scheduleImpactDays": 1, "version": 1}
+    ],
+    "document-evidence": [
+      {"id": "EVD-001", "name": "Jóváhagyott építészeti tervcsomag", "status": "verified", "projectId": "P-5001", "version": 3, "checksum": "sha256:test-a17f", "reviewOwner": "Műszaki"},
+      {"id": "EVD-002", "name": "Szállítólevél – teszt", "status": "review", "projectId": "P-5002", "version": 1, "checksum": "sha256:test-b38a", "reviewOwner": "Beszerzés"}
+    ],
+    "procurement": [
+      {"id": "PO-001", "name": "Nyílászáró csomag", "status": "ordered", "projectId": "P-5001", "partnerId": "PT-01", "amount": 12800000, "deliveryAt": "2026-08-12"},
+      {"id": "RFQ-002", "name": "Gépészeti tender", "status": "clarification", "projectId": "P-5002", "partnerId": null, "amount": 0, "deliveryAt": null}
+    ],
+    "partner-connect": [
+      {"id": "TND-001", "name": "Szerkezetépítési tender", "status": "evaluation", "projectId": "P-5002", "bids": 4, "openClarifications": 1, "certificateGate": true},
+      {"id": "PCHK-002", "name": "Mintapartner előminősítés", "status": "approved", "projectId": null, "bids": 0, "openClarifications": 0, "certificateGate": true}
+    ],
+    "partner-field": [
+      {"id": "FLD-001", "name": "Alaplemez vasalás ellenőrzése", "status": "evidence_submitted", "projectId": "P-5001", "owner": "Care Team A", "photos": 4},
+      {"id": "FLD-002", "name": "Napi helyszíni jelentés", "status": "draft", "projectId": "P-5002", "owner": "Mintapartner brigád", "photos": 2}
+    ],
+    "house-catalog": [
+      {"id": "HP-IM-126", "name": "Imperial 126 tesztház", "status": "approved", "brandKey": "imperial", "grossArea": 126, "bedrooms": 4, "technology": "Liapor", "sourceId": "SRC-IM-001", "version": 3},
+      {"id": "HP-PF-104", "name": "Prefab 104 tesztház", "status": "approved", "brandKey": "prefab", "grossArea": 104, "bedrooms": 3, "technology": "Precast concrete", "sourceId": "SRC-PF-001", "version": 2}
+    ],
+    "housematch": [
+      {"id": "MATCH-001", "name": "Fiatal család – 3 háló", "status": "shortlisted", "customerId": "C-2002", "housePlanIds": ["HP-PF-104", "HP-LOCAL-118"], "explanation": "Kompakt alapterület és bővíthető nappali"},
+      {"id": "MATCH-002", "name": "Prémium földszintes otthon", "status": "review", "customerId": "C-2004", "housePlanIds": ["HP-IM-126"], "explanation": "Akadálymentes közlekedés és nagy kertkapcsolat"}
+    ],
+    "plotcheck": [
+      {"id": "PLOT-001", "name": "Szentendre mintatelek", "status": "engineer_review", "projectId": "P-5001", "risk": "medium", "sourceStatus": "verified", "housePlanId": "HP-IM-126"},
+      {"id": "PLOT-002", "name": "Érd mintatelek", "status": "stop", "projectId": "P-5002", "risk": "high", "sourceStatus": "demo", "housePlanId": "HP-PF-104"}
+    ],
+    "buildconfig": [
+      {"id": "CFG-001", "name": "Imperial 126 – kulcsrakész", "status": "financial_review", "projectId": "P-5001", "housePlanId": "HP-IM-126", "priceProfileId": "PRICE-IM-LIA-2026-07", "offerVersionId": "OV-001", "marginGate": "pass"},
+      {"id": "CFG-002", "name": "Prefab 104 – fűtéskész", "status": "technical_review", "projectId": "P-5002", "housePlanId": "HP-PF-104", "priceProfileId": "PRICE-PF-PC-2026-07", "offerVersionId": "OV-002", "marginGate": "pending"}
+    ],
+    "plancheck": [
+      {"id": "PLC-001", "name": "P-5001 tervcsomag v3", "status": "human_approval", "projectId": "P-5001", "confidenceClass": "B", "openIssues": 2, "criticalIssues": 0, "planVersionId": "PV-003"},
+      {"id": "PLC-002", "name": "P-5002 tervcsomag v1", "status": "stop", "projectId": "P-5002", "confidenceClass": "C", "openIssues": 5, "criticalIssues": 1, "planVersionId": "PV-101"}
+    ],
+    "engineering-workspace": [
+      {"id": "GATE-001", "name": "Tervezési program jóváhagyása", "status": "ready_for_review", "projectId": "P-5001", "owner": "Vezető tervező", "blockingReasons": []},
+      {"id": "GATE-002", "name": "Gyártmánytervi kapu", "status": "blocked", "projectId": "P-5002", "owner": "Vezető tervező", "blockingReasons": ["ISSUE-CRIT-01", "EVD-MISSING-02"]}
+    ],
+    "housevision": [
+      {"id": "HVJ-001", "name": "Imperial 126 vizuális csomag", "status": "qa_review", "housePlanId": "HP-IM-126", "sourceRights": "approved", "geometryLock": "pass", "outputs": 8},
+      {"id": "HVJ-002", "name": "Prefab 104 vizuális csomag", "status": "rights_blocked", "housePlanId": "HP-PF-104", "sourceRights": "unknown", "geometryLock": "pending", "outputs": 0}
+    ],
+    "booking-engine": [
+      {"id": "BKG-001", "name": "Online műszaki konzultáció", "status": "confirmed", "brandKey": "imperial", "leadId": "L-1002", "calendarEventId": "CAL-EVT-001"},
+      {"id": "BKG-002", "name": "Helyszíni telekfelmérés", "status": "slot_reserved", "brandKey": "property-360", "leadId": "L-1005", "calendarEventId": "CAL-EVT-002"}
+    ],
+    "reservation-engine": [
+      {"id": "RSV-001", "name": "Imperial 126 lekötés", "status": "terms_review", "housePlanId": "HP-IM-126", "offerVersionId": "OV-001", "priceSnapshotId": "PS-001", "termsVersionId": "TV-001"},
+      {"id": "RSV-002", "name": "Prefab 104 szándéknyilatkozat", "status": "intent_recorded", "housePlanId": "HP-PF-104", "offerVersionId": "OV-002", "priceSnapshotId": "PS-002", "termsVersionId": "TV-002"}
+    ],
+    "content-factory": [
+      {"id": "CNT-001", "name": "Telekválasztási pillar oldal", "status": "source_review", "brandKey": "imperial", "topicId": "TOPIC-PLOT-01", "claimIds": ["CLM-001"], "nextReviewAt": "2026-08-15"},
+      {"id": "CNT-002", "name": "Prefab technológiai összehasonlító", "status": "editorial_review", "brandKey": "prefab", "topicId": "TOPIC-PREFAB-02", "claimIds": ["CLM-002"], "nextReviewAt": "2026-08-10"}
+    ],
+    "claim-registry": [
+      {"id": "CLM-001", "name": "Telekvizsgálat döntési támogatás", "status": "approved", "type": "technical", "evidenceId": "EVD-001", "expiresAt": "2026-12-31"},
+      {"id": "CLM-002", "name": "Prefab kivitelezési idő tesztállítás", "status": "human_approval", "type": "schedule", "evidenceId": null, "expiresAt": "2026-08-01"}
+    ],
+    "answer-center": [
+      {"id": "ANS-001", "name": "Mikor alkalmas egy telek típustervhez?", "status": "source_ready", "domain": "telek", "confidence": "B", "sources": ["PlotCheck v0.2", "START HERE v2.0"]},
+      {"id": "ANS-002", "name": "Milyen terv kell ajánlatadáshoz?", "status": "human_review", "domain": "műszaki", "confidence": "C", "sources": ["PlanCheck v0.1"]}
+    ],
+    "lead-intelligence": [
+      {"id": "LINT-001", "name": "Publikus B2B projektjel – teszt", "status": "qualified", "sourceType": "approved-public", "score": 82, "crmStatus": "ready"},
+      {"id": "LINT-002", "name": "Telekkeresési jel – teszt", "status": "deduplication", "sourceType": "approved-public", "score": 64, "crmStatus": "blocked"}
+    ]
+  },
+  "eventContracts": [
+    {"eventKey": "HOUSE_SOURCE_APPROVED", "producer": "housebuild-agent", "consumers": ["house-catalog", "document-evidence"], "idempotency": "SourceID+version"},
+    {"eventKey": "HOUSE_PLAN_DRAFTED", "producer": "housebuild-agent", "consumers": ["house-catalog", "plancheck", "buildconfig"], "idempotency": "HousePlanID+version"},
+    {"eventKey": "HOUSE_PLAN_APPROVED", "producer": "plancheck", "consumers": ["house-catalog", "housematch", "housevision"], "idempotency": "HousePlanID+version+ApprovalID"},
+    {"eventKey": "HOUSE_VISUAL_PACKAGE_READY", "producer": "housevision", "consumers": ["house-catalog", "content-factory", "website-content-control"], "idempotency": "HousePlanID+AssetPackageID"},
+    {"eventKey": "HOUSE_SELECTED", "producer": "housematch", "consumers": ["crm", "plotcheck", "buildconfig"], "idempotency": "CustomerID+HousePlanID+version"},
+    {"eventKey": "PLOTCHECK_COMPLETED", "producer": "plotcheck", "consumers": ["engineering-workspace", "crm", "my-imperial"], "idempotency": "PlotCheckID+version"},
+    {"eventKey": "CONFIGURATION_APPROVED", "producer": "buildconfig", "consumers": ["sales", "contract-generator", "reservation-engine"], "idempotency": "ConfigID+version"},
+    {"eventKey": "CONTRACT_SIGNED", "producer": "contract-generator", "consumers": ["crm", "project-control", "financial-control", "document-evidence"], "idempotency": "ContractID+version+signedAt"},
+    {"eventKey": "PROJECT_STOP", "producer": "project-control", "consumers": ["smart-calendar", "workspace", "control-center"], "idempotency": "ProjectID+reason+timestamp"},
+    {"eventKey": "DPM_TASK_ESCALATED", "producer": "digital-project-managers", "consumers": ["workflow-center", "project-control", "workspace"], "idempotency": "TaskID+EscalationLevel+version"},
+    {"eventKey": "CHANGE_APPROVAL_REQUIRED", "producer": "change-control", "consumers": ["my-imperial", "financial-control", "smart-calendar"], "idempotency": "ChangeID+version"},
+    {"eventKey": "EVIDENCE_SUBMITTED", "producer": "document-evidence", "consumers": ["workflow-center", "project-control", "plancheck"], "idempotency": "EvidenceID"},
+    {"eventKey": "CAMPAIGN_BRIEF_APPROVED", "producer": "campaign-factory", "consumers": ["content-factory", "claim-registry", "marketing-control"], "idempotency": "CampaignID+BriefVersion"},
+    {"eventKey": "PUBLICATION_COMPLETED", "producer": "content-factory", "consumers": ["control-center", "crm", "marketing-control"], "idempotency": "PublicationID"},
+    {"eventKey": "CLAIM_EXPIRING", "producer": "claim-registry", "consumers": ["campaign-factory", "content-factory", "workflow-center"], "idempotency": "ClaimID+expiresAt"},
+    {"eventKey": "CONNECTOR_DEGRADED", "producer": "integration-control-room", "consumers": ["control-center", "workspace"], "idempotency": "ConnectorID+status+timestamp"}
+  ],
+  "houseBuild": {
+    "sources": [
+      {"id": "SRC-IM-001", "label": "Imperial élő katalógus – tesztpillanatkép", "status": "approved", "rights": "internal-approved", "brandKey": "imperial", "sourceType": "catalog-snapshot", "retrievedAt": "2026-07-24T07:00:00Z", "contentHash": "sha256:test-imperial-source"},
+      {"id": "SRC-PF-001", "label": "Prefab műszaki típusterv – tesztpillanatkép", "status": "approved", "rights": "internal-approved", "brandKey": "prefab", "sourceType": "catalog-snapshot", "retrievedAt": "2026-07-24T07:05:00Z", "contentHash": "sha256:test-prefab-source"},
+      {"id": "SRC-EXT-001", "label": "Külső inspirációs forrás – nem publikálható", "status": "rights_blocked", "rights": "unknown", "brandKey": "imperial", "sourceType": "reference-only", "retrievedAt": "2026-07-24T07:10:00Z", "contentHash": "sha256:test-external-source"}
+    ],
+    "jobs": [
+      {"id": "HBJ-001", "sourceId": "SRC-IM-001", "housePlanId": "HP-LOCAL-118", "name": "Visegrád 118 tesztház", "status": "plancheck_review", "brandKey": "imperial", "grossArea": 118, "bedrooms": 4, "storeys": 1, "technology": "Liapor", "style": "kortárs", "version": 1, "qa": {"source": "pass", "rights": "pass", "grossArea": "pass", "topology": "pass", "duplicates": "pass", "humanApproval": "pending"}}
+    ]
+  },
+  "campaignFactory": {
+    "briefs": [
+      {"id": "CMP-LOCAL-001", "name": "Imperial telekvizsgálati kampány", "status": "brief_quality_gate", "brandKey": "imperial", "family": "lead-generation", "objective": "Minősített telekvizsgálati konzultáció", "audience": "Telekkel rendelkező családok", "claimIds": ["CLM-001"], "channels": ["landing", "email", "meta", "google-ads"], "gates": {"marketing": "pass", "legal": "not_relevant", "finance": "not_relevant", "technical": "pending"}}
+    ]
+  },
+  "consistencyChecks": [
+    {"id": "CHK-001", "name": "Szerződés–pénzügy bevétel", "status": "pass", "severity": "critical", "left": "Contract.approvedRevenue", "right": "Finance.approvedRevenue"},
+    {"id": "CHK-002", "name": "ChangeControl–Finance pótmunka", "status": "warning", "severity": "high", "left": "Change.approvedTotal", "right": "Finance.changeTotal"},
+    {"id": "CHK-003", "name": "Nyilvános ár–BuildConfig snapshot", "status": "pass", "severity": "critical", "left": "Content.PriceSnapshotID", "right": "BuildConfig.activePriceSnapshotID"},
+    {"id": "CHK-004", "name": "HousePlan–HouseVision Geometry Lock", "status": "blocked", "severity": "critical", "left": "HousePlan.geometrySignature", "right": "VisualPackage.geometrySignature"}
+  ]
+}

@@ -13,7 +13,33 @@
     "/website-content-control": "website-content-control",
     "/document-center": "document-center",
     "/workflow-center": "workflow-center",
-    "/admin": "admin"
+    "/admin": "admin",
+    "/workspace": "workspace",
+    "/control-center": "control-center",
+    "/integration-control-room": "integration-control-room",
+    "/completion-audit": "completion-audit",
+    "/smart-calendar": "smart-calendar",
+    "/change-control": "change-control",
+    "/document-evidence": "document-evidence",
+    "/procurement": "procurement",
+    "/partner-connect": "partner-connect",
+    "/partner-field": "partner-field",
+    "/house-catalog": "house-catalog",
+    "/housebuild-agent": "housebuild-agent",
+    "/housematch": "housematch",
+    "/plotcheck": "plotcheck",
+    "/buildconfig": "buildconfig",
+    "/plancheck": "plancheck",
+    "/engineering-workspace": "engineering-workspace",
+    "/housevision": "housevision",
+    "/booking-engine": "booking-engine",
+    "/reservation-engine": "reservation-engine",
+    "/campaign-factory": "campaign-factory",
+    "/content-factory": "content-factory",
+    "/claim-registry": "claim-registry",
+    "/answer-center": "answer-center",
+    "/lead-intelligence": "lead-intelligence",
+    "/digital-project-managers": "digital-project-managers"
   };
 
   const normalizedPath = location.pathname.replace(/\/+$/, "") || "/";
@@ -23,14 +49,19 @@
 
   const state = {
     data: null,
+    system: null,
     brands: [],
     moduleId: routeMap[normalizedPath],
     query: "",
     status: "all",
     selectedSite: "imperial",
     previewDevice: "desktop",
-    drawerReturnFocus: null
+    drawerReturnFocus: null,
+    currentRoleId: localStorage.getItem("ii-current-role") || "platform-admin",
+    runtime: null
   };
+
+  const runtimeStorageKey = "imperial-intelligence-runtime-v2";
 
   const typeConfig = {
     lead: { collection: "leads", moduleId: "crm", label: "Lead", title: "name" },
@@ -80,8 +111,43 @@
     "website-content-control": "WC",
     "document-center": "DC",
     "workflow-center": "WF",
-    admin: "AD"
+    admin: "AD",
+    workspace: "WS",
+    "control-center": "CC",
+    "integration-control-room": "IR",
+    "completion-audit": "CA",
+    "smart-calendar": "SC",
+    "change-control": "CH",
+    "document-evidence": "DE",
+    procurement: "PR",
+    "partner-connect": "PN",
+    "partner-field": "PF",
+    "house-catalog": "HC",
+    "housebuild-agent": "HB",
+    housematch: "HM",
+    plotcheck: "PK",
+    buildconfig: "BC",
+    plancheck: "PL",
+    "engineering-workspace": "EW",
+    housevision: "HV",
+    "booking-engine": "BK",
+    "reservation-engine": "RS",
+    "campaign-factory": "CF",
+    "content-factory": "CT",
+    "claim-registry": "CL",
+    "answer-center": "AC",
+    "lead-intelligence": "LI",
+    "digital-project-managers": "DP"
   };
+
+  const moduleGroups = [
+    { id: "overview", label: "Áttekintés", modules: ["workspace", "executive-dashboard", "control-center", "integration-control-room"] },
+    { id: "commercial", label: "Ügyfél és értékesítés", modules: ["crm", "sales", "contract-generator", "booking-engine", "reservation-engine", "my-imperial"] },
+    { id: "house", label: "Típusház és műszaki", modules: ["house-catalog", "housebuild-agent", "housematch", "plotcheck", "buildconfig", "plancheck", "engineering-workspace", "housevision"] },
+    { id: "delivery", label: "Projekt és teljesítés", modules: ["project-control", "digital-project-managers", "smart-calendar", "change-control", "document-center", "document-evidence", "procurement", "partner-connect", "partner-control", "partner-field", "financial-control", "imperial-care"] },
+    { id: "marketing", label: "Marketing és web", modules: ["marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "answer-center", "lead-intelligence"] },
+    { id: "governance", label: "Irányítás", modules: ["workflow-center", "completion-audit", "admin"] }
+  ];
 
   const statusLabels = {
     active: "Aktív",
@@ -113,7 +179,50 @@
     low: "Alacsony",
     medium: "Közepes",
     high: "Magas",
-    urgent: "Sürgős"
+    urgent: "Sürgős",
+    integration_pending: "Integrációra vár",
+    artifact_verified: "Artifact igazolt",
+    prototype: "Prototípus",
+    simulated: "Szimulált",
+    auth_required: "Hitelesítés kell",
+    sandbox: "Sandbox",
+    verification_required: "Ellenőrizendő",
+    verified: "Igazolt",
+    scheduled: "Ütemezett",
+    delayed: "Késésben",
+    customer_approval: "Ügyfél-jóváhagyás",
+    technical_review: "Műszaki review",
+    financial_review: "Pénzügyi review",
+    evidence_submitted: "Bizonyíték beküldve",
+    evaluation: "Értékelés",
+    clarification: "Hiánypótlás",
+    shortlisted: "Shortlist",
+    engineer_review: "Mérnöki review",
+    stop: "STOP",
+    human_approval: "Emberi jóváhagyás",
+    ready_for_review: "Review-ra kész",
+    blocked: "Blokkolt",
+    qa_review: "QA review",
+    rights_blocked: "Jog miatt blokkolt",
+    confirmed: "Visszaigazolva",
+    slot_reserved: "Idősáv foglalva",
+    terms_review: "Feltételek ellenőrzése",
+    intent_recorded: "Szándék rögzítve",
+    source_review: "Forrásellenőrzés",
+    editorial_review: "Szerkesztői review",
+    source_ready: "Forrás kész",
+    deduplication: "Deduplikáció",
+    plancheck_review: "PlanCheck review",
+    ready: "Kész",
+    brief_quality_gate: "Brief minőségi kapu",
+    approved_for_production: "Gyártásra jóváhagyva",
+    export_ready: "Export kész",
+    warning: "Figyelmeztetés",
+    pass: "PASS",
+    attention: "Figyelmet kér",
+    queued: "Sorban áll",
+    retry: "Újrapróbálás",
+    not_relevant: "Nem releváns"
   };
 
   const tableColumns = {
@@ -184,13 +293,70 @@
   }
 
   function toneFor(value) {
-    if (["active", "qualified", "won", "accepted", "construction", "paid", "approved", "completed", "low"].includes(value)) return "green";
-    if (["lost", "expired", "overdue", "suspended", "urgent", "high"].includes(value)) return "red";
+    if (["active", "qualified", "won", "accepted", "construction", "paid", "approved", "completed", "low",
+      "verified", "artifact_verified", "simulated", "sandbox", "pass", "ready", "confirmed",
+      "approved_for_production", "export_ready", "intent_recorded", "source_ready"].includes(value)) return "green";
+    if (["lost", "expired", "overdue", "suspended", "urgent", "high", "stop", "blocked",
+      "rights_blocked", "auth_required"].includes(value)) return "red";
     return "amber";
   }
 
   function badge(value) {
     return `<span class="ii-badge" data-tone="${toneFor(value)}">${escapeHtml(statusLabels[value] || value || "—")}</span>`;
+  }
+
+  function loadRuntime() {
+    const defaults = {
+      events: [
+        { id: "EVT-LOCAL-001", eventKey: "CONTRACT_SIGNED", producer: "contract-generator", status: "delivered", correlationId: "CORR-DEMO-001", at: "2026-07-24T07:30:00Z" },
+        { id: "EVT-LOCAL-002", eventKey: "CONNECTOR_DEGRADED", producer: "integration-control-room", status: "attention", correlationId: "CORR-DEMO-002", at: "2026-07-24T08:00:00Z" }
+      ],
+      outbox: [
+        { id: "OUT-001", eventKey: "PLOTCHECK_COMPLETED", status: "queued", attempts: 0, target: "engineering-workspace" },
+        { id: "OUT-002", eventKey: "CLAIM_EXPIRING", status: "retry", attempts: 2, target: "content-factory" }
+      ],
+      houseBuildJobs: [],
+      campaignBriefs: []
+    };
+    try {
+      const stored = JSON.parse(localStorage.getItem(runtimeStorageKey) || "null");
+      return stored && typeof stored === "object" ? { ...defaults, ...stored } : defaults;
+    } catch {
+      return defaults;
+    }
+  }
+
+  function saveRuntime() {
+    localStorage.setItem(runtimeStorageKey, JSON.stringify(state.runtime));
+  }
+
+  function currentRole() {
+    return state.system.roles.find((role) => role.id === state.currentRoleId) || state.system.roles.at(-1);
+  }
+
+  function emitLocalEvent(eventKey, producer, target, payload = {}) {
+    const stamp = new Date().toISOString();
+    const serial = String(state.runtime.events.length + 1).padStart(3, "0");
+    const event = {
+      id: `EVT-LOCAL-${serial}`,
+      eventKey,
+      producer,
+      status: "delivered",
+      correlationId: `CORR-LOCAL-${Date.now()}`,
+      target,
+      payload,
+      at: stamp
+    };
+    state.runtime.events.unshift(event);
+    state.runtime.outbox.unshift({
+      id: `OUT-LOCAL-${serial}`,
+      eventKey,
+      status: "delivered",
+      attempts: 1,
+      target
+    });
+    saveRuntime();
+    return event;
   }
 
   function moduleById(id) {
@@ -223,6 +389,20 @@
     if (moduleId === "website-content-control") {
       return state.brands.map((brand) => ({ ...brand, __type: "brand" }));
     }
+    if (state.system?.moduleRecords?.[moduleId]) {
+      return state.system.moduleRecords[moduleId].map((record) => ({ ...record, __type: "systemRecord", __moduleId: moduleId }));
+    }
+    if (moduleId === "housebuild-agent") {
+      return [...new Map([...state.system.houseBuild.jobs, ...state.runtime.houseBuildJobs].map((record) => [record.id, record])).values()]
+        .map((record) => ({ ...record, __type: "systemRecord", __moduleId: moduleId }));
+    }
+    if (moduleId === "campaign-factory") {
+      return [...new Map([...state.system.campaignFactory.briefs, ...state.runtime.campaignBriefs].map((record) => [record.id, record])).values()]
+        .map((record) => ({ ...record, __type: "systemRecord", __moduleId: moduleId }));
+    }
+    if (moduleId === "workspace") {
+      return state.data.tasks.map((record) => ({ ...record, __type: "task" }));
+    }
     return (moduleSources[moduleId] || []).flatMap((type) =>
       state.data[typeConfig[type].collection].map((record) => ({ ...record, __type: type }))
     );
@@ -244,6 +424,9 @@
   function countForModule(moduleId) {
     if (moduleId === "executive-dashboard") return state.data.projects.length;
     if (moduleId === "website-content-control") return state.brands.length;
+    if (moduleId === "integration-control-room") {
+      return recordsForModule(moduleId).length + state.runtime.outbox.length;
+    }
     return recordsForModule(moduleId).length;
   }
 
@@ -252,7 +435,7 @@
       <a class="ii-skip-link" href="#module-view">Ugrás a modul tartalmához</a>
       <div class="ii-app">
         <aside class="ii-sidebar" id="platform-sidebar" aria-label="Imperial Intelligence modulok">
-          <a class="ii-brand" href="/executive-dashboard/" data-nav-module="executive-dashboard">
+          <a class="ii-brand" href="/workspace/" data-nav-module="workspace">
             <span class="ii-brand-mark" aria-hidden="true">II</span>
             <span><strong>Imperial</strong><small>Intelligence</small></span>
           </a>
@@ -272,9 +455,14 @@
               <span class="ii-skip-link">Keresés az aktuális modulban</span>
               <input id="global-search" type="search" placeholder="Keresés az aktuális modulban…" autocomplete="off">
             </label>
-            <div class="ii-user">
-              <div><strong>Demo Admin</strong><small>Szintetikus profil</small></div>
-              <span class="ii-user-avatar" aria-hidden="true">DA</span>
+            <div class="ii-user ii-role-switcher">
+              <label>
+                <span class="ii-visually-hidden">Aktív tesztszerepkör</span>
+                <select id="role-switcher" aria-label="Aktív tesztszerepkör">
+                  ${state.system.roles.map((role) => `<option value="${escapeHtml(role.id)}" ${role.id === state.currentRoleId ? "selected" : ""}>${escapeHtml(role.label)}</option>`).join("")}
+                </select>
+              </label>
+              <span class="ii-user-avatar" id="role-avatar" aria-hidden="true">${escapeHtml(currentRole().initials)}</span>
             </div>
           </header>
           <div class="ii-content">
@@ -312,16 +500,29 @@
 
   function renderNav() {
     const nav = document.querySelector("#module-nav");
-    nav.innerHTML = state.data.modules.map((module) => `
-      <a class="ii-nav-link ${module.id === state.moduleId ? "is-active" : ""}"
-         href="${escapeHtml(module.route)}"
-         data-nav-module="${escapeHtml(module.id)}"
-         ${module.id === state.moduleId ? 'aria-current="page"' : ""}>
-        <span class="ii-nav-icon" aria-hidden="true">${icons[module.id]}</span>
-        <span>${escapeHtml(moduleTitle(module))}</span>
-        <span class="ii-nav-count">${countForModule(module.id)}</span>
-      </a>
-    `).join("");
+    const access = new Set(currentRole().moduleAccess);
+    nav.innerHTML = moduleGroups.map((group) => {
+      const modules = group.modules
+        .map(moduleById)
+        .filter(Boolean)
+        .filter((module) => access.has(module.id));
+      if (!modules.length) return "";
+      return `
+        <section class="ii-nav-group" aria-labelledby="nav-group-${escapeHtml(group.id)}">
+          <p class="ii-nav-group-label" id="nav-group-${escapeHtml(group.id)}">${escapeHtml(group.label)}</p>
+          ${modules.map((module) => `
+            <a class="ii-nav-link ${module.id === state.moduleId ? "is-active" : ""}"
+               href="${escapeHtml(module.route)}"
+               data-nav-module="${escapeHtml(module.id)}"
+               ${module.id === state.moduleId ? 'aria-current="page"' : ""}>
+              <span class="ii-nav-icon" aria-hidden="true">${icons[module.id] || "II"}</span>
+              <span>${escapeHtml(moduleTitle(module))}</span>
+              <span class="ii-nav-count">${countForModule(module.id)}</span>
+            </a>
+          `).join("")}
+        </section>
+      `;
+    }).join("");
   }
 
   function renderJourney() {
@@ -508,6 +709,205 @@
     `;
   }
 
+  function recordTitle(record) {
+    return record.name || record.title || record.label || record.eventKey || record.id;
+  }
+
+  function renderRecordFields(record, excluded = []) {
+    const hidden = new Set(["id", "name", "title", "label", "status", "__type", "__moduleId", ...excluded]);
+    return Object.entries(record)
+      .filter(([key]) => !hidden.has(key))
+      .map(([key, value]) => {
+        const rendered = typeof value === "object" && value !== null
+          ? Object.entries(value).map(([childKey, childValue]) => `${childKey}: ${displayValue(childKey, childValue)}`).join(" · ")
+          : displayValue(key, value);
+        return `<div class="ii-record-field"><span>${escapeHtml(key)}</span><strong>${escapeHtml(rendered)}</strong></div>`;
+      }).join("");
+  }
+
+  function renderSystemRecords(records, title = "Tesztadatok") {
+    if (!records.length) return `<div class="ii-panel ii-empty">Nincs a szűrésnek megfelelő tesztadat.</div>`;
+    return `
+      <div class="ii-section-head"><h2>${escapeHtml(title)}</h2><span class="ii-badge">${records.length} rekord</span></div>
+      <div class="ii-grid is-two">${records.map((record) => `
+        <article class="ii-panel ii-record-card">
+          <header><span class="ii-id">${escapeHtml(record.id)}</span>${badge(recordStatus(record))}</header>
+          <h3>${escapeHtml(recordTitle(record))}</h3>
+          <div class="ii-record-fields">${renderRecordFields(record)}</div>
+        </article>
+      `).join("")}</div>
+    `;
+  }
+
+  function renderWorkspace() {
+    const role = currentRole();
+    const access = role.moduleAccess.map(moduleById).filter(Boolean);
+    const tasks = filteredRecords("workspace");
+    return `
+      <div class="ii-kpi-grid">
+        <article class="ii-panel ii-kpi"><span>Aktív tesztszerepkör</span><strong>${escapeHtml(role.label)}</strong><small>felület-szimuláció, nem biztonsági határ</small></article>
+        <article class="ii-panel ii-kpi"><span>Elérhető modul</span><strong>${access.length}</strong><small>a szerepkör munkaterületén</small></article>
+        <article class="ii-panel ii-kpi"><span>Helyi esemény</span><strong>${state.runtime.events.length}</strong><small>event contract naplóban</small></article>
+        <article class="ii-panel ii-kpi"><span>Outbox tétel</span><strong>${state.runtime.outbox.length}</strong><small>szimulált integrációs kézbesítés</small></article>
+      </div>
+      <div class="ii-section-head"><h2>Saját modulok</h2><span class="ii-badge" data-tone="green">${escapeHtml(role.label)}</span></div>
+      <div class="ii-module-links">${access.map((module) => `
+        <a class="ii-panel ii-module-link" href="${escapeHtml(module.route)}" data-nav-module="${escapeHtml(module.id)}">
+          <span class="ii-nav-icon" aria-hidden="true">${icons[module.id] || "II"}</span>
+          <span><strong>${escapeHtml(moduleTitle(module))}</strong><small>${escapeHtml(module.description)}</small></span>
+        </a>
+      `).join("")}</div>
+      <div class="ii-section-head"><h2>Közös feladatlista</h2><span class="ii-badge">${tasks.length} feladat</span></div>
+      ${renderTable(tasks, "task")}
+    `;
+  }
+
+  function renderControlCenter(records) {
+    const checks = state.system.consistencyChecks;
+    return `
+      <div class="ii-kpi-grid">
+        <article class="ii-panel ii-kpi"><span>Regisztrált modul</span><strong>${state.data.modules.length}</strong><small>stabil modulazonosítóval</small></article>
+        <article class="ii-panel ii-kpi"><span>Eseményszerződés</span><strong>${state.system.eventContracts.length}</strong><small>producer–consumer térkép</small></article>
+        <article class="ii-panel ii-kpi"><span>Konzisztencia PASS</span><strong>${checks.filter((item) => item.status === "pass").length}</strong><small>${checks.length} automatikus ellenőrzésből</small></article>
+        <article class="ii-panel ii-kpi"><span>Nyitott blokk</span><strong>${checks.filter((item) => ["blocked", "warning"].includes(item.status)).length}</strong><small>emberi vagy integrációs döntést kér</small></article>
+      </div>
+      ${renderSystemRecords(records, "Modulportfólió és döntési kapuk")}
+      ${renderSystemRecords(checks.map((item) => ({ ...item, __type: "systemRecord" })), "Keresztmodul-konzisztencia")}
+    `;
+  }
+
+  function renderIntegrationControlRoom(records) {
+    const eventRows = state.runtime.events.slice(0, 10);
+    return `
+      ${renderSystemRecords(records, "Sandbox adapterek")}
+      <div class="ii-section-head"><h2>Helyi outbox</h2><button class="ii-button is-secondary is-small" type="button" data-runtime-action="reset">Tesztfutás visszaállítása</button></div>
+      <div class="ii-panel ii-runtime-list">
+        ${state.runtime.outbox.map((item) => `
+          <div class="ii-runtime-row">
+            <span class="ii-id">${escapeHtml(item.id)}</span>
+            <strong>${escapeHtml(item.eventKey)}</strong>
+            <span>${escapeHtml(item.target || "—")}</span>
+            ${badge(item.status)}
+            <button class="ii-button is-secondary is-small" type="button" data-runtime-action="retry" data-runtime-id="${escapeHtml(item.id)}">Újraküldés</button>
+          </div>
+        `).join("") || `<p class="ii-empty">Az outbox üres.</p>`}
+      </div>
+      <div class="ii-section-head"><h2>Legutóbbi event contract események</h2><span class="ii-badge">${state.runtime.events.length} esemény</span></div>
+      <div class="ii-panel ii-runtime-list">
+        ${eventRows.map((event) => `
+          <div class="ii-runtime-row">
+            <span class="ii-id">${escapeHtml(event.id)}</span>
+            <strong>${escapeHtml(event.eventKey)}</strong>
+            <span>${escapeHtml(event.producer)} → ${escapeHtml(event.target || "szerződés szerinti fogyasztók")}</span>
+            ${badge(event.status)}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderHouseBuild() {
+    const approvedSources = state.system.houseBuild.sources.filter((source) => source.status === "approved");
+    const jobs = filteredRecords("housebuild-agent");
+    return `
+      <section class="ii-agent-grid">
+        <form class="ii-panel ii-agent-form" id="housebuild-form">
+          <p class="ii-kicker">Különálló generáló ügynök · helyi szimuláció</p>
+          <h2>Új típusház-jelölt</h2>
+          <p>A HouseBuild kizárólag jogtisztaság-ellenőrzött forrásból készít verziózott HousePlan-jelöltet. Nem publikál közvetlenül.</p>
+          <label>Adatforrás
+            <select name="sourceId" required>${approvedSources.map((source) => `<option value="${escapeHtml(source.id)}">${escapeHtml(source.label)}</option>`).join("")}</select>
+          </label>
+          <label>Ház neve<input name="name" required value="Dunakanyar tesztház"></label>
+          <div class="ii-form-row">
+            <label>Bruttó m²<input name="grossArea" required type="number" min="45" max="450" value="126"></label>
+            <label>Hálószoba<input name="bedrooms" required type="number" min="1" max="10" value="4"></label>
+          </div>
+          <div class="ii-form-row">
+            <label>Szintek<input name="storeys" required type="number" min="1" max="3" value="1"></label>
+            <label>Technológia<select name="technology"><option>Liapor</option><option>Prefab</option><option>Hibrid</option></select></label>
+          </div>
+          <label>Építészeti karakter<select name="style"><option>kortárs</option><option>klasszikus</option><option>mediterrán</option></select></label>
+          <button class="ii-button" type="submit">Jelölt generálása</button>
+          <small>Generálás → deduplikáció → PlanCheck → emberi jóváhagyás → BuildConfig → HouseVision → HouseMatch.</small>
+        </form>
+        <div>
+          <div class="ii-section-head"><h2>Forrásregiszter</h2><span class="ii-badge">${state.system.houseBuild.sources.length} forrás</span></div>
+          <div class="ii-source-stack">${state.system.houseBuild.sources.map((source) => `
+            <article class="ii-panel ii-source-card">
+              <header><span class="ii-id">${escapeHtml(source.id)}</span>${badge(source.status)}</header>
+              <strong>${escapeHtml(source.label)}</strong>
+              <small>${escapeHtml(source.rights)} · ${escapeHtml(source.sourceType)} · ${escapeHtml(source.contentHash)}</small>
+            </article>
+          `).join("")}</div>
+        </div>
+      </section>
+      <div class="ii-section-head"><h2>HousePlan munkasor</h2><span class="ii-badge">${jobs.length} job</span></div>
+      <div class="ii-grid is-two">${jobs.map((job) => `
+        <article class="ii-panel ii-record-card">
+          <header><span class="ii-id">${escapeHtml(job.id)} · ${escapeHtml(job.housePlanId)}</span>${badge(job.status)}</header>
+          <h3>${escapeHtml(job.name)}</h3>
+          <p>${escapeHtml(job.grossArea)} m² · ${escapeHtml(job.bedrooms)} háló · ${escapeHtml(job.storeys)} szint · ${escapeHtml(job.technology)}</p>
+          <div class="ii-stepper">
+            ${["source", "rights", "grossArea", "topology", "duplicates", "humanApproval"].map((gate) => `<span data-tone="${toneFor(job.qa?.[gate])}">${escapeHtml(gate)}: ${escapeHtml(job.qa?.[gate] || "pending")}</span>`).join("")}
+          </div>
+          <footer>
+            <span>Forrás: ${escapeHtml(job.sourceId)} · v${escapeHtml(job.version)}</span>
+            ${job.status !== "approved" ? `<button class="ii-button is-small" type="button" data-housebuild-action="approve" data-job-id="${escapeHtml(job.id)}">PlanCheck jóváhagyás</button>` : `<a class="ii-button is-small" href="/buildconfig/" data-nav-module="buildconfig">BuildConfig megnyitása</a>`}
+          </footer>
+        </article>
+      `).join("")}</div>
+    `;
+  }
+
+  function renderCampaignFactory() {
+    const briefs = filteredRecords("campaign-factory");
+    return `
+      <section class="ii-agent-grid">
+        <form class="ii-panel ii-agent-form" id="campaign-form">
+          <p class="ii-kicker">Marketing automatizmus · helyi szimuláció</p>
+          <h2>Kampánybrief létrehozása</h2>
+          <label>Kampány neve<input name="name" required value="Típusház-választó tesztkampány"></label>
+          <label>Cél<textarea name="objective" required>Minősített HouseMatch konzultációk indítása.</textarea></label>
+          <label>Célcsoport<input name="audience" required value="Építkezést tervező családok"></label>
+          <label>Márka<select name="brandKey">${state.brands.map((brand) => `<option value="${escapeHtml(brand.id)}">${escapeHtml(brand.name)}</option>`).join("")}</select></label>
+          <fieldset><legend>Csatornák</legend><label><input type="checkbox" name="channels" value="landing" checked> Landing</label><label><input type="checkbox" name="channels" value="email" checked> Email</label><label><input type="checkbox" name="channels" value="meta"> Meta</label></fieldset>
+          <button class="ii-button" type="submit">Brief létrehozása</button>
+          <small>A prototípus nem publikál és nem kapcsolódik hirdetési fiókhoz.</small>
+        </form>
+        <article class="ii-panel ii-agent-form">
+          <p class="ii-kicker">Kötelező minőségi kapuk</p>
+          <h2>Biztonságos publikációs lánc</h2>
+          <ol class="ii-process-list">
+            <li>Brief és célközönség ellenőrzése</li>
+            <li>Claim Registry állítás- és forráskapu</li>
+            <li>Marketing / jogi / pénzügyi / műszaki jóváhagyás</li>
+            <li>Content Factory csatornaváltozatok</li>
+            <li>Sandbox export és auditnapló</li>
+          </ol>
+        </article>
+      </section>
+      <div class="ii-section-head"><h2>Kampány munkasor</h2><span class="ii-badge">${briefs.length} brief</span></div>
+      <div class="ii-grid is-two">${briefs.map((brief) => `
+        <article class="ii-panel ii-record-card">
+          <header><span class="ii-id">${escapeHtml(brief.id)}</span>${badge(brief.status)}</header>
+          <h3>${escapeHtml(brief.name)}</h3>
+          <p>${escapeHtml(brief.objective)}</p>
+          <p>${escapeHtml(brief.audience)} · ${escapeHtml(brief.channels?.join(", "))}</p>
+          <div class="ii-stepper">${Object.entries(brief.gates || {}).map(([gate, value]) => `<span data-tone="${toneFor(value)}">${escapeHtml(gate)}: ${escapeHtml(value)}</span>`).join("")}</div>
+          <footer>
+            <span>${escapeHtml(brief.brandKey)} · ${escapeHtml(brief.family)}</span>
+            ${brief.status === "export_ready"
+              ? `<span class="ii-badge" data-tone="green">Sandbox csomag elkészült</span>`
+              : brief.status === "approved_for_production"
+                ? `<button class="ii-button is-small" type="button" data-campaign-action="export" data-campaign-id="${escapeHtml(brief.id)}">Sandbox export</button>`
+                : `<button class="ii-button is-small" type="button" data-campaign-action="gates" data-campaign-id="${escapeHtml(brief.id)}">Kapuk jóváhagyása</button>`}
+          </footer>
+        </article>
+      `).join("")}</div>
+    `;
+  }
+
   function renderModule() {
     const module = moduleById(state.moduleId);
     document.body.dataset.moduleId = state.moduleId;
@@ -527,7 +927,12 @@
     const records = filteredRecords(module.id);
     let html = "";
 
-    if (module.id === "executive-dashboard") html = renderDashboard(records.filter((r) => r.__type === "project"));
+    if (module.id === "workspace") html = renderWorkspace();
+    else if (module.id === "control-center") html = renderControlCenter(records);
+    else if (module.id === "integration-control-room") html = renderIntegrationControlRoom(records);
+    else if (module.id === "housebuild-agent") html = renderHouseBuild();
+    else if (module.id === "campaign-factory") html = renderCampaignFactory();
+    else if (module.id === "executive-dashboard") html = renderDashboard(records.filter((r) => r.__type === "project"));
     else if (module.id === "my-imperial") html = renderCustomerCards(records.filter((r) => r.__type === "customer"));
     else if (module.id === "crm") html = renderCrm(records);
     else if (module.id === "project-control") {
@@ -545,10 +950,10 @@
       html = `${renderUserCards(records.filter((r) => r.__type === "user"))}
         <div class="ii-section-head" style="margin-top:1.2rem"><h2>Audit események</h2></div>
         ${renderTable(records.filter((r) => r.__type === "auditEvent"), "auditEvent")}`;
-    } else {
+    } else if (moduleSources[module.id]) {
       const type = moduleSources[module.id][0];
       html = renderTable(records.filter((r) => r.__type === type), type);
-    }
+    } else html = renderSystemRecords(records, `${moduleTitle(module)} tesztfolyamat`);
 
     document.querySelector("#module-view").innerHTML = html;
   }
@@ -690,8 +1095,143 @@
     document.querySelector("#sidebar-overlay").classList.remove("is-open");
   }
 
+  function upsertRuntime(collection, record) {
+    const index = state.runtime[collection].findIndex((item) => item.id === record.id);
+    if (index >= 0) state.runtime[collection][index] = record;
+    else state.runtime[collection].unshift(record);
+    saveRuntime();
+  }
+
+  function createHouseBuildJob(form) {
+    const values = new FormData(form);
+    const source = state.system.houseBuild.sources.find((item) => item.id === values.get("sourceId"));
+    if (!source || source.status !== "approved") {
+      showToast("A kiválasztott forrás jogtisztasági kapuja nem PASS.");
+      return;
+    }
+    const serial = String(recordsForModule("housebuild-agent").length + 1).padStart(3, "0");
+    const job = {
+      id: `HBJ-LOCAL-${serial}`,
+      sourceId: source.id,
+      housePlanId: `HP-LOCAL-${Date.now().toString().slice(-6)}`,
+      name: values.get("name"),
+      status: "plancheck_review",
+      brandKey: source.brandKey,
+      grossArea: Number(values.get("grossArea")),
+      bedrooms: Number(values.get("bedrooms")),
+      storeys: Number(values.get("storeys")),
+      technology: values.get("technology"),
+      style: values.get("style"),
+      version: 1,
+      geometrySignature: `geo-local-${Date.now().toString(36)}`,
+      qa: { source: "pass", rights: "pass", grossArea: "pass", topology: "pass", duplicates: "pass", humanApproval: "pending" }
+    };
+    upsertRuntime("houseBuildJobs", job);
+    emitLocalEvent("HOUSE_PLAN_DRAFTED", "housebuild-agent", "plancheck", { jobId: job.id, housePlanId: job.housePlanId, sourceId: job.sourceId });
+    showToast(`${job.housePlanId} elkészült, PlanCheck review szükséges.`);
+    renderModule();
+  }
+
+  function approveHouseBuildJob(jobId) {
+    const job = recordsForModule("housebuild-agent").find((item) => item.id === jobId);
+    if (!job) return;
+    const approved = {
+      ...job,
+      status: "approved",
+      approvedAt: new Date().toISOString(),
+      qa: { ...job.qa, humanApproval: "pass" }
+    };
+    delete approved.__type;
+    delete approved.__moduleId;
+    upsertRuntime("houseBuildJobs", approved);
+    emitLocalEvent("HOUSE_PLAN_APPROVED", "plancheck", "buildconfig", { jobId: approved.id, housePlanId: approved.housePlanId, version: approved.version });
+    showToast(`${approved.housePlanId} jóváhagyva; továbbadva a BuildConfig felé.`);
+    renderModule();
+  }
+
+  function createCampaignBrief(form) {
+    const values = new FormData(form);
+    const serial = String(recordsForModule("campaign-factory").length + 1).padStart(3, "0");
+    const brief = {
+      id: `CMP-LOCAL-${serial}`,
+      name: values.get("name"),
+      status: "brief_quality_gate",
+      brandKey: values.get("brandKey"),
+      family: "lead-generation",
+      objective: values.get("objective"),
+      audience: values.get("audience"),
+      claimIds: ["CLM-001"],
+      channels: values.getAll("channels"),
+      gates: { marketing: "pending", legal: "pending", finance: "not_relevant", technical: "pending" }
+    };
+    upsertRuntime("campaignBriefs", brief);
+    emitLocalEvent("CAMPAIGN_BRIEF_DRAFTED", "campaign-factory", "claim-registry", { campaignId: brief.id, brandKey: brief.brandKey });
+    showToast(`${brief.id} brief elkészült; jóváhagyási kapuk várnak.`);
+    renderModule();
+  }
+
+  function updateCampaign(campaignId, action) {
+    const brief = recordsForModule("campaign-factory").find((item) => item.id === campaignId);
+    if (!brief) return;
+    const next = { ...brief };
+    delete next.__type;
+    delete next.__moduleId;
+    if (action === "gates") {
+      next.status = "approved_for_production";
+      next.gates = { marketing: "pass", legal: "pass", finance: "not_relevant", technical: "pass" };
+      emitLocalEvent("CAMPAIGN_BRIEF_APPROVED", "campaign-factory", "content-factory", { campaignId: next.id, briefVersion: 1 });
+      showToast(`${next.id} átment a kapukon; Content Factory feladat létrejött.`);
+    } else {
+      next.status = "export_ready";
+      next.export = { mode: "sandbox", packageId: `PKG-${Date.now().toString().slice(-6)}`, externalDelivery: false };
+      emitLocalEvent("CAMPAIGN_SANDBOX_PACKAGE_READY", "content-factory", "marketing-control", { campaignId: next.id, packageId: next.export.packageId });
+      showToast(`${next.id} sandbox exportcsomag elkészült.`);
+    }
+    upsertRuntime("campaignBriefs", next);
+    renderModule();
+  }
+
   function bindEvents() {
+    document.addEventListener("submit", (event) => {
+      if (event.target.matches("#housebuild-form")) {
+        event.preventDefault();
+        createHouseBuildJob(event.target);
+      }
+      if (event.target.matches("#campaign-form")) {
+        event.preventDefault();
+        createCampaignBrief(event.target);
+      }
+    });
+
     document.addEventListener("click", (event) => {
+      const houseBuildAction = event.target.closest("[data-housebuild-action]");
+      if (houseBuildAction) {
+        approveHouseBuildJob(houseBuildAction.dataset.jobId);
+        return;
+      }
+      const campaignAction = event.target.closest("[data-campaign-action]");
+      if (campaignAction) {
+        updateCampaign(campaignAction.dataset.campaignId, campaignAction.dataset.campaignAction);
+        return;
+      }
+      const runtimeAction = event.target.closest("[data-runtime-action]");
+      if (runtimeAction) {
+        if (runtimeAction.dataset.runtimeAction === "reset") {
+          localStorage.removeItem(runtimeStorageKey);
+          state.runtime = loadRuntime();
+          showToast("A helyi integrációs tesztfutás visszaállt.");
+        } else {
+          const item = state.runtime.outbox.find((entry) => entry.id === runtimeAction.dataset.runtimeId);
+          if (item) {
+            item.status = "delivered";
+            item.attempts += 1;
+            saveRuntime();
+            showToast(`${item.id} szimulált újraküldése sikeres.`);
+          }
+        }
+        renderModule();
+        return;
+      }
       const nav = event.target.closest("[data-nav-module]");
       if (nav) {
         event.preventDefault();
@@ -742,6 +1282,14 @@
       state.status = event.target.value;
       renderModule();
     });
+    document.querySelector("#role-switcher").addEventListener("change", (event) => {
+      state.currentRoleId = event.target.value;
+      localStorage.setItem("ii-current-role", state.currentRoleId);
+      document.querySelector("#role-avatar").textContent = currentRole().initials;
+      state.query = "";
+      state.status = "all";
+      navigate("workspace");
+    });
     document.querySelector("#clear-filters").addEventListener("click", () => {
       state.query = "";
       state.status = "all";
@@ -765,14 +1313,18 @@
     document.body.dataset.moduleId = state.moduleId;
     document.body.innerHTML = `<main class="ii-empty">Imperial Intelligence betöltése…</main>`;
     try {
-      const [platformResponse, brandResponse] = await Promise.all([
+      const [platformResponse, brandResponse, systemResponse] = await Promise.all([
         fetch("/data/platform.json", { cache: "no-store" }),
-        fetch("/data/brands.json", { cache: "no-store" })
+        fetch("/data/brands.json", { cache: "no-store" }),
+        fetch("/data/system.json", { cache: "no-store" })
       ]);
-      if (!platformResponse.ok || !brandResponse.ok) throw new Error("A lokális tesztadat nem érhető el.");
+      if (!platformResponse.ok || !brandResponse.ok || !systemResponse.ok) throw new Error("A lokális tesztadat nem érhető el.");
       state.data = await platformResponse.json();
       const brandData = await brandResponse.json();
       state.brands = brandData.brands || [];
+      state.system = await systemResponse.json();
+      state.runtime = loadRuntime();
+      if (!state.system.roles.some((role) => role.id === state.currentRoleId)) state.currentRoleId = "platform-admin";
       document.body.innerHTML = platformMarkup();
       bindEvents();
       renderJourney();

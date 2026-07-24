@@ -37,6 +37,8 @@ $requiredFiles = @(
   'sites/_portal/index.html',
   'sites/_portal/data/brands.json',
   'sites/_portal/data/artifacts.json',
+  'sites/_portal/data/platform.json',
+  'sites/_portal/data/system.json',
   'sites/_shared/assets/tokens.css',
   'sites/_shared/assets/components.css',
   'sites/_shared/assets/admin.css',
@@ -79,6 +81,23 @@ if ($artifactsData.meta.containsCustomerData -ne $false) {
 
 if ($artifactsData.meta.runtimeExternalApis -ne $false) {
   throw 'artifacts.json must explicitly declare runtimeExternalApis=false.'
+}
+
+$platformData = Get-Content -LiteralPath (Join-Path $repositoryRoot 'sites\_portal\data\platform.json') -Raw | ConvertFrom-Json
+$systemData = Get-Content -LiteralPath (Join-Path $repositoryRoot 'sites\_portal\data\system.json') -Raw | ConvertFrom-Json
+
+if (@($platformData.modules).Count -ne 40) {
+  throw "Expected 40 registered Imperial Intelligence modules, found $(@($platformData.modules).Count)."
+}
+
+if (@($systemData.roles).Count -lt 10 -or @($systemData.eventContracts).Count -lt 12) {
+  throw 'system.json requires role workspaces and canonical event contracts.'
+}
+
+if ($systemData.meta.containsCustomerData -ne $false -or
+    $systemData.meta.usesExternalApis -ne $false -or
+    $systemData.meta.containsProductionSecrets -ne $false) {
+  throw 'system.json must remain synthetic and offline without production secrets.'
 }
 
 $totalTestPages = 0
