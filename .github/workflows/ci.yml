@@ -98,7 +98,7 @@ jobs:
           curl --fail --silent --show-error \
             --header "Host: localhost" \
             'http://127.0.0.1:8080/site-preview/imperial/?review=1' \
-            | grep --quiet 'id="hero"'
+            | grep 'id="hero"' >/dev/null
 
           drive_previews=(
             "site-preview/imperial/drive/venture/venture-studio.html?review=1"
@@ -111,7 +111,7 @@ jobs:
             curl --fail --silent --show-error \
               --header "Host: localhost" \
               "http://127.0.0.1:8080/${preview}" \
-              | grep --quiet '/assets/review-bridge.js'
+              | grep '/assets/review-bridge.js' >/dev/null
           done
 
           curl --fail --silent --show-error \
@@ -121,7 +121,7 @@ jobs:
 
           curl --fail --silent --show-error \
             http://127.0.0.1:8080/healthz \
-            | grep --quiet "^ok$"
+            | grep "^ok$" >/dev/null
 
       - name: Show container logs on failure
         if: failure()
