@@ -1,0 +1,823 @@
+{
+  "target_repository": "rlimperialholding-alt/imperial_web_structure",
+  "branch": "agent/operational-guidance-v0.8.1",
+  "base": "staging",
+  "file_count_excluding_manifest": 163,
+  "files": [
+    {
+      "path": ".github/workflows/operational-guidance-ci.yml",
+      "size": 2090,
+      "sha256": "0efe7cfab55b04872569a38d341e39aac48b3b0de373309e98675d04f7cfb89e"
+    },
+    {
+      "path": "docs/integrations/operational-guidance-v0.8.1.md",
+      "size": 3033,
+      "sha256": "c23bfe50cf4de8f46068e8c84bf1cce5d5d53887f0a5b93ef91475f65e60555d"
+    },
+    {
+      "path": "services/operational-guidance/.dockerignore",
+      "size": 88,
+      "sha256": "6bc63e8e361f1050c0cdedd4df26e370f6c8d77ce2da8fdf34df378df5f6e871"
+    },
+    {
+      "path": "services/operational-guidance/.env.example",
+      "size": 3339,
+      "sha256": "7973e2b27e9dd3f0ad2a55dfc659005fddc52f7779b26165c28821944eaf8bc6"
+    },
+    {
+      "path": "services/operational-guidance/.env.production.example",
+      "size": 3167,
+      "sha256": "9f06be5d8ce114603f217c45c97ec6ed0e72fff0521e229bb6f1fa5045b10ab5"
+    },
+    {
+      "path": "services/operational-guidance/.env.staging.example",
+      "size": 3181,
+      "sha256": "c9c0b203b41194b04ae4c70f1984690f7a9f3c747185f96d5ecb516356932308"
+    },
+    {
+      "path": "services/operational-guidance/.gitignore",
+      "size": 217,
+      "sha256": "28a3ca8e8d03ec344bffeb0de6027c86fab32f049bcddc8d4de089fad51dc52c"
+    },
+    {
+      "path": "services/operational-guidance/COORDINATION.json",
+      "size": 679,
+      "sha256": "45e78d305fe719536722337c531049e132cafc792e6e88fd3f823adc7f458109"
+    },
+    {
+      "path": "services/operational-guidance/Dockerfile",
+      "size": 732,
+      "sha256": "49d83b025b068aceed72d64c1778865d69fdfeae98a8e01e44d33ba05045bf4f"
+    },
+    {
+      "path": "services/operational-guidance/FINAL-QA-v0.8.1.txt",
+      "size": 1241,
+      "sha256": "f24a5cbf452f2ed9e4eeb5d78f0b4958a21da33075da38527a3f073e0c204441"
+    },
+    {
+      "path": "services/operational-guidance/FINAL-QA.txt",
+      "size": 2554,
+      "sha256": "d62f26e126e9e16942ec71b899427464e4c13fd8a9c44a5999473a4c89f3b5b7"
+    },
+    {
+      "path": "services/operational-guidance/INTEGRATION-QA.md",
+      "size": 1964,
+      "sha256": "6d26330638d8b3c765cbcb8dee4a8f50bc1fa303223a88983f343bc7069a2bed"
+    },
+    {
+      "path": "services/operational-guidance/MONOREPO.md",
+      "size": 513,
+      "sha256": "c3141b6106146ca1ecf341bb9e140d43295018d3b9c36f765395c16576b52bb9"
+    },
+    {
+      "path": "services/operational-guidance/Makefile",
+      "size": 2345,
+      "sha256": "722e1b99a4a890053765503a8dbfb2fd0bbc1d20473ddd8a32089fb779d60971"
+    },
+    {
+      "path": "services/operational-guidance/README.md",
+      "size": 11712,
+      "sha256": "5b4d15cc3decae7a6f9b25e92e9954ef96cbc402f07f1c2bc28a05b4c0c94ac9"
+    },
+    {
+      "path": "services/operational-guidance/RELEASE-MANIFEST-v0.8.1.json",
+      "size": 949,
+      "sha256": "2f402ae3ee784f97cb6db9b644eac65de6fc1d26aceb2c33693bc281765687ab"
+    },
+    {
+      "path": "services/operational-guidance/RELEASE-MANIFEST.json",
+      "size": 949,
+      "sha256": "2f402ae3ee784f97cb6db9b644eac65de6fc1d26aceb2c33693bc281765687ab"
+    },
+    {
+      "path": "services/operational-guidance/UPSTREAM-INTEGRATION.json",
+      "size": 924,
+      "sha256": "ade37dc0531c7f569b9a2969840a179a0ff68009c67641a224378e61edde66ed"
+    },
+    {
+      "path": "services/operational-guidance/alembic.ini",
+      "size": 617,
+      "sha256": "fb105a6fc14caaa1a222e5b7b390ceae89264e69c54d79a115ebb86505dafa8c"
+    },
+    {
+      "path": "services/operational-guidance/app/__init__.py",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/app/api/__init__.py",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/__init__.py",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/brands.py",
+      "size": 824,
+      "sha256": "64c57721de6fc3d8d9c67c55e49b3c5bcb6306e87b689fa2836618b5b2f53600"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/checklists.py",
+      "size": 5453,
+      "sha256": "c9c8f0c0e6bffec86845b126ec88d3073ee280b4722a403a94c6e2fcfaa89bfc"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/health.py",
+      "size": 1096,
+      "sha256": "147784ed9449df1cd7314b157f02cc37ec78e018eb4c6d5868003434c62807f0"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/ingatlan.py",
+      "size": 3556,
+      "sha256": "14ed90fef317bf70301c46d299737ecfc6963c75762520851e0d0867aad425a0"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/operations.py",
+      "size": 3031,
+      "sha256": "f4d936ba9704ec1cba5c9706a62fb0ecd67e6d5904b73d8b22a69ed819678251"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/process_cards.py",
+      "size": 5329,
+      "sha256": "23cb1545fac5e485dd9a77c66aaf1e550e75fd4c83beaa75624b66e5ecf29343"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/publications.py",
+      "size": 4095,
+      "sha256": "749e8ff11b0418e4f5b9384c0f6c7c9bc8fbabfc017ed76b8679fdce5f74e748"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/sync.py",
+      "size": 5428,
+      "sha256": "0974846bcdeeb7940fb91a6ba906b9473119d170665bc8d3b17082e64b6fc816"
+    },
+    {
+      "path": "services/operational-guidance/app/auth.py",
+      "size": 3832,
+      "sha256": "68ec5304bbf4ec3b1f4e7920860968cad8dbcc0b28dd96050bb2925a8c8b9b2e"
+    },
+    {
+      "path": "services/operational-guidance/app/brand_registry.py",
+      "size": 6580,
+      "sha256": "02defb954a0c598d6da722325aecbd4cb63a71f70e52af57f0062483e8f72549"
+    },
+    {
+      "path": "services/operational-guidance/app/checklists/__init__.py",
+      "size": 502,
+      "sha256": "c4ee274244c34a4d1d4aacfc27b11f0b1bc5606c1341dc91535f3f3fce0456aa"
+    },
+    {
+      "path": "services/operational-guidance/app/checklists/domain.py",
+      "size": 5817,
+      "sha256": "9cbce1fec8a01d93ab50de77234ae791326d86e2ec7c2cd248cfafa51b204c6a"
+    },
+    {
+      "path": "services/operational-guidance/app/checklists/render.py",
+      "size": 7199,
+      "sha256": "7bfeacc831b74308a361ad6b9548a2d3bf928d270e31b1151f0ecd1d1cae98fc"
+    },
+    {
+      "path": "services/operational-guidance/app/checklists/service.py",
+      "size": 14422,
+      "sha256": "c6b70dca8539e58462d61c374ab4037dc12b6882dee7c0ab21789c2a09fbd102"
+    },
+    {
+      "path": "services/operational-guidance/app/checklists/store.py",
+      "size": 7208,
+      "sha256": "50e3f68363a9cb17652e0538330fd7d92d45bd245d4a4f0067cc409e8ebe9973"
+    },
+    {
+      "path": "services/operational-guidance/app/config.py",
+      "size": 12647,
+      "sha256": "9b031e415ec0acd6e0dccaff8bb0b0a79f261cc95611de9914fa84812d2ab0f2"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/__init__.py",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/base.py",
+      "size": 503,
+      "sha256": "925f3a975f65435ab882ae15d9103a05835d76df5b650b4645ea662abcd1d07b"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/directus.py",
+      "size": 2963,
+      "sha256": "7a37eeaf4f30205b151024c589347a7963cc1d9273e2082f258fecfcc94ef20e"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/ga4.py",
+      "size": 4653,
+      "sha256": "cf5cf4c4a3225b5e9339cf12860527d00188d25cf83ccfb811a54c65bd3419af"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/google_auth.py",
+      "size": 1361,
+      "sha256": "3f0bd99a9ffd21c06f932e377dcf282e97f74e1f289e1a796ad9b482032ea03d"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/google_business.py",
+      "size": 9031,
+      "sha256": "c827bdb3689b10a8b7d4a185f70da4ac2ddc78657ce1262e641eccc81428f579"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/ingatlan.py",
+      "size": 6007,
+      "sha256": "2921bfb0bb05e9fdc4c00a77aaec22b0e0eda33c62af7eba8c3e71a847b4db0f"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/search_console.py",
+      "size": 2251,
+      "sha256": "39d888c5c11b9031ffd39310950bb82f258f710534a3d18863b3630fbdf602ed"
+    },
+    {
+      "path": "services/operational-guidance/app/connectors/website_publisher.py",
+      "size": 2378,
+      "sha256": "ed2c8c2d16ee6ef027c16db3de0f0455bb13660a546e139c2d8202cdc944502a"
+    },
+    {
+      "path": "services/operational-guidance/app/db.py",
+      "size": 576,
+      "sha256": "3c2acc47f192d6d3714b5fb482fff04125ba64abe6ffd6c0718cd9f6d23e1237"
+    },
+    {
+      "path": "services/operational-guidance/app/main.py",
+      "size": 2719,
+      "sha256": "0de7fb51313e770b8dc1b9a67020f86f6f8c6e7f57dcde7bda8059890e498dbd"
+    },
+    {
+      "path": "services/operational-guidance/app/models.py",
+      "size": 12831,
+      "sha256": "649b646590da5a1d96b74c470bf72323ea3580493bfba9f3f548eeb83cfd5eff"
+    },
+    {
+      "path": "services/operational-guidance/app/observability.py",
+      "size": 7098,
+      "sha256": "196cb8ffa296de4fad95b350b6e4a8251e780786ca4a4bbe7820c132f91e8227"
+    },
+    {
+      "path": "services/operational-guidance/app/operations/__init__.py",
+      "size": 263,
+      "sha256": "4f3fbd86ad0f8d1ab5eb8319e3c9b2d1db5fe8ab657d97d25ce589de002c4b04"
+    },
+    {
+      "path": "services/operational-guidance/app/operations/adapters.py",
+      "size": 4503,
+      "sha256": "81f9fd1574bd3e0caf593fe993310c7f6ad0887c03d82f131be555dcd990b2ea"
+    },
+    {
+      "path": "services/operational-guidance/app/operations/factory.py",
+      "size": 2822,
+      "sha256": "565e4d10dd09aa47f380374e4bcf1a4c8a5c0fef1713ed1122f3ed2dc90c835e"
+    },
+    {
+      "path": "services/operational-guidance/app/process_cards/adapters.py",
+      "size": 10296,
+      "sha256": "59b23319c23f2b703bd85ca7b9146b68fbfc02acb3b2cff464d82cfc633ce436"
+    },
+    {
+      "path": "services/operational-guidance/app/process_cards/domain.py",
+      "size": 8583,
+      "sha256": "115fac4788579960a63fa1ba44c41414bd374746baf8e6bc165501399915f411"
+    },
+    {
+      "path": "services/operational-guidance/app/process_cards/render.py",
+      "size": 4367,
+      "sha256": "04696416a4f037bbfb678272e4ae4a06eb82f3bf717b31ce2b994f25778cd063"
+    },
+    {
+      "path": "services/operational-guidance/app/process_cards/service.py",
+      "size": 16453,
+      "sha256": "3f3c544508c8319931de8fb5e965034e213065ed3ca4d94094b562994c13d336"
+    },
+    {
+      "path": "services/operational-guidance/app/process_cards/store.py",
+      "size": 5293,
+      "sha256": "543a15797bff03a150e3283140b28431815d81459a5f61ad6045bd745fdea1fa"
+    },
+    {
+      "path": "services/operational-guidance/app/readiness.py",
+      "size": 4229,
+      "sha256": "c89410db19dd32d2183463919662f9adb5b76f72b4b732add0daa840a0c9380f"
+    },
+    {
+      "path": "services/operational-guidance/app/schemas.py",
+      "size": 1948,
+      "sha256": "973227c9ff07330b27b3adb80163c63891218ee8df0f3b928b55b2289e6fa159"
+    },
+    {
+      "path": "services/operational-guidance/app/security.py",
+      "size": 2392,
+      "sha256": "685c1b1e0e7307ce921dc4416571d6476599856553b23166f4ad5cce3d199a70"
+    },
+    {
+      "path": "services/operational-guidance/app/services/__init__.py",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/app/services/business_profile_service.py",
+      "size": 5319,
+      "sha256": "17f8b9e76b5ce0d9e9b9f648011667d6adef65af8da01d13b8a74e4a78ef55af"
+    },
+    {
+      "path": "services/operational-guidance/app/services/ingatlan_service.py",
+      "size": 2673,
+      "sha256": "9f861044631382fca7de0fbe08daa3e85ad44f1672aff7e4b63d380816f02bed"
+    },
+    {
+      "path": "services/operational-guidance/app/services/publication_service.py",
+      "size": 3692,
+      "sha256": "2c1f87666d192fdcd3755784c85f2185e031e72874be8ed1b42992c702b32bd6"
+    },
+    {
+      "path": "services/operational-guidance/app/services/sync_service.py",
+      "size": 2570,
+      "sha256": "c14cf629bbf7bc673c4aa856de2c08dc26d350803cb1e044f9e7da75ad81a727"
+    },
+    {
+      "path": "services/operational-guidance/app/tasks/__init__.py",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/app/tasks/celery_app.py",
+      "size": 1844,
+      "sha256": "9b14f3b8fa8a7f81405c4ae0e231fbfd3f3c6ad44bad1f597030cf5cf8fc7ddf"
+    },
+    {
+      "path": "services/operational-guidance/app/tasks/jobs.py",
+      "size": 6712,
+      "sha256": "99cacc74cdb87a3a9b47861679e24a0e870bee04fc8421d8e0462b17ebb61c82"
+    },
+    {
+      "path": "services/operational-guidance/config/brand-registry.json",
+      "size": 9500,
+      "sha256": "8e7ca330b996bd66a6e16b2bfcb8b1dd91f2c5da979a97805addc01854fcecef"
+    },
+    {
+      "path": "services/operational-guidance/config/operational-process-catalog-v1.0.json",
+      "size": 516013,
+      "sha256": "c09441f951eb6bbbe70861318862ceb34fc49dd9ada95223607d20b1d656de59"
+    },
+    {
+      "path": "services/operational-guidance/config/website-targets.json",
+      "size": 3815,
+      "sha256": "635c3ccaa4ef1edb22082484888c183e72c9757628d5a744b5677675f618bf39"
+    },
+    {
+      "path": "services/operational-guidance/deploy/staging/staging.env.template",
+      "size": 3191,
+      "sha256": "a40360baf61e9ab79a38a507eae92678544be136b63978b8f4ff40bee6a842a5"
+    },
+    {
+      "path": "services/operational-guidance/directus/README.md",
+      "size": 155,
+      "sha256": "eee04bd40f045da4ab54cbf2cd4e9143add3523258cd0406123275a48559812f"
+    },
+    {
+      "path": "services/operational-guidance/docker-compose.production.yml",
+      "size": 3819,
+      "sha256": "c950f85549bf784182c07d89805b8526090440a699ea108d44effcd7498ba58a"
+    },
+    {
+      "path": "services/operational-guidance/docker-compose.staging.yml",
+      "size": 1929,
+      "sha256": "ea0ac926959e75f60f62b1e7d42e397c76c3311618607466ee8f2c0e438b2b0e"
+    },
+    {
+      "path": "services/operational-guidance/docker-compose.yml",
+      "size": 5507,
+      "sha256": "ae57f108c28bd9dae3780752a120288e6ff53c9d5b55d9f22df931addfa89147"
+    },
+    {
+      "path": "services/operational-guidance/docs/ACCESS-CHECKLIST.md",
+      "size": 2335,
+      "sha256": "ff97c2e9fedee85211d80ecc5d0227fd8d5d66e7f5f8f91d62d03d713cb8feff"
+    },
+    {
+      "path": "services/operational-guidance/docs/ARCHITECTURE.md",
+      "size": 5741,
+      "sha256": "eba9b4503fb5921208c036736090de6ab2a89102ee104db3991a7e2dc8498683"
+    },
+    {
+      "path": "services/operational-guidance/docs/AUTHORIZATION-MATRIX-v0.7.0.md",
+      "size": 2179,
+      "sha256": "ff6ad6972a779133febedb364ee813a9617ae4c147b454ddc3ce50fe12ba0c6d"
+    },
+    {
+      "path": "services/operational-guidance/docs/BACKUP-RESTORE-v0.7.0.md",
+      "size": 1691,
+      "sha256": "42c95fc39659bf18875a61217123b478513ed882b49260488a7b7196e8ce3581"
+    },
+    {
+      "path": "services/operational-guidance/docs/BRAND-REGISTRY.md",
+      "size": 3290,
+      "sha256": "03a9ea7782fb34e1d74d9cb5337e4a869d9ef6cf5d353fc8b00847e1d21b3da7"
+    },
+    {
+      "path": "services/operational-guidance/docs/CHECKLIST-ENGINE.md",
+      "size": 2301,
+      "sha256": "b2009308e91ed1f99ffd7f994f9ee8b0bf05b4e7fd99b7cd15b97719fc72c611"
+    },
+    {
+      "path": "services/operational-guidance/docs/DEPLOYMENT.md",
+      "size": 5303,
+      "sha256": "59fde985020a34bec490b9fbda745c0ac951e3213ba8ae25fd9251324d83a142"
+    },
+    {
+      "path": "services/operational-guidance/docs/DIRECTUS-FLOW.md",
+      "size": 1793,
+      "sha256": "ab57f865757e01be3ac56ba932a4f2c0c075cb5461411af4055768b13b5a9651"
+    },
+    {
+      "path": "services/operational-guidance/docs/INGATLAN-MAPPING.md",
+      "size": 1906,
+      "sha256": "c49fd1aff2c4c2935f2aa8a2f069797fe638fc7ceb4796d404333d3cf5305275"
+    },
+    {
+      "path": "services/operational-guidance/docs/ONLINE-STAGING-UAT-v0.8.1.md",
+      "size": 3121,
+      "sha256": "90ba9dcfa7a22d95e23678ac72eb7eca5070b813f7fc64e6d6d02002d416dd34"
+    },
+    {
+      "path": "services/operational-guidance/docs/OPERATIONAL-GUIDANCE-ENGINE.md",
+      "size": 4672,
+      "sha256": "d02a0c3425f76a154f46920297ded6d76c3132d8f7acf904eb7c7cd2a6f26e4a"
+    },
+    {
+      "path": "services/operational-guidance/docs/PROCESS-CARD-GENERATOR-QA.md",
+      "size": 1892,
+      "sha256": "1db0b6e9bac230c081a2bd870ea43045b8b9d938db1bba9335db97faad5278de"
+    },
+    {
+      "path": "services/operational-guidance/docs/PROCESS-CARD-GENERATOR.md",
+      "size": 1867,
+      "sha256": "1d40f1ca88a6c2c9a563baeab1b4578c2c59fd312e72871545702352750bf27e"
+    },
+    {
+      "path": "services/operational-guidance/docs/PRODUCTION-UAT-v0.7.0.md",
+      "size": 2954,
+      "sha256": "0de1560f35578c330c847c1fd9e2ea3b63d24240e0ffa4ec7a87191cb925253d"
+    },
+    {
+      "path": "services/operational-guidance/docs/QA-REPORT-v0.6.0.md",
+      "size": 1334,
+      "sha256": "0feb52d2ed0aa6b6ac2fb001062fbcf9c5d1f7a3b4aaa0338f6e6a00607d55f5"
+    },
+    {
+      "path": "services/operational-guidance/docs/QA-REPORT-v0.7.0-production-gate.json",
+      "size": 4169,
+      "sha256": "a3e763bf29987de6ff8d0222510628df4a1f63831dd4bb19b99ae02837ae8c81"
+    },
+    {
+      "path": "services/operational-guidance/docs/QA-REPORT-v0.7.0-production-preflight.json",
+      "size": 1957,
+      "sha256": "3374c650883b2829691a5efa9708bfe19eb96b20548eea28d4c12557518f3e07"
+    },
+    {
+      "path": "services/operational-guidance/docs/QA-REPORT-v0.7.0-staging-gate.json",
+      "size": 5297,
+      "sha256": "e75986c7bc2273cfcc5dcfbb66dd1b598a92dc8cdf89735d8e2dacf87e5c3afb"
+    },
+    {
+      "path": "services/operational-guidance/docs/QA-REPORT.md",
+      "size": 3922,
+      "sha256": "3a43b5474735694617012f90d108aa123b673c6d559de6fa51f8084b3a3e15d9"
+    },
+    {
+      "path": "services/operational-guidance/docs/RELEASE-NOTES-v0.5.0.md",
+      "size": 1822,
+      "sha256": "6dcc3389b0d981a55c4210f8b95aecab1baced6f57cb0225bb2dcafc65ca5479"
+    },
+    {
+      "path": "services/operational-guidance/docs/RELEASE-NOTES-v0.6.0.md",
+      "size": 1656,
+      "sha256": "43212f3e54d27a64e25d482b1f0ef721c330229f68e285fa088224a775ac53bf"
+    },
+    {
+      "path": "services/operational-guidance/docs/RELEASE-NOTES-v0.7.0.md",
+      "size": 1662,
+      "sha256": "6e581e910cbb117a99ac1d8d01d78bf646a8a9fa5452df7a7c165f4084026315"
+    },
+    {
+      "path": "services/operational-guidance/docs/RELEASE-NOTES-v0.8.1.md",
+      "size": 929,
+      "sha256": "dd0aa783fdc4b298ffb65c1f0c7f3bb9eddf9f919c717d7b3d65be8820ccc803"
+    },
+    {
+      "path": "services/operational-guidance/docs/STAGING-UAT-v0.6.0.md",
+      "size": 3767,
+      "sha256": "4181f111daab856446d6ec2a934a706ccf1e12a45b9867b30b42253e7144602d"
+    },
+    {
+      "path": "services/operational-guidance/docs/WORDPRESS-FLEET.md",
+      "size": 2993,
+      "sha256": "c0b97a5b65f187cb29ecd00748c6003d01ec9ebfd256902bc71d67f4527a1a63"
+    },
+    {
+      "path": "services/operational-guidance/docs/qa/operational-guidance-qa-report-v0.6.0.json",
+      "size": 310,
+      "sha256": "f6214f1415fdc172b9c54230ea3232da580cf636759eaec4ba5ea514b6b2513e"
+    },
+    {
+      "path": "services/operational-guidance/docs/qa/operational-guidance-qa-report.json",
+      "size": 310,
+      "sha256": "f6214f1415fdc172b9c54230ea3232da580cf636759eaec4ba5ea514b6b2513e"
+    },
+    {
+      "path": "services/operational-guidance/docs/qa/staging-gate-report-v0.6.0.json",
+      "size": 4670,
+      "sha256": "2de023e053626e8a7ad81ff62e07f597078f55967ea1b343792bf893156799f5"
+    },
+    {
+      "path": "services/operational-guidance/docs/qa/staging-preflight-offline-v0.6.0.json",
+      "size": 1209,
+      "sha256": "faab6ca89a44c09aebd91b1361c86d3851e2e4508c468aca9233cd278dd7fa6d"
+    },
+    {
+      "path": "services/operational-guidance/examples/ingatlan-ad-minimal.json",
+      "size": 284,
+      "sha256": "61f4d03f225c093461aa4fbfc7585f3111d05949e15e8ca424db5bb5ae96d39a"
+    },
+    {
+      "path": "services/operational-guidance/examples/process_cards/project_start.json",
+      "size": 1427,
+      "sha256": "7add0d210d8db5a1f8c796895553d247c0a6892399b8541b90fe5ceb385de9f4"
+    },
+    {
+      "path": "services/operational-guidance/examples/publication-request.json",
+      "size": 228,
+      "sha256": "61deb6fad466c3abdc69ca89ff28017135a8f5703f1662032436b0b132244dd1"
+    },
+    {
+      "path": "services/operational-guidance/examples/wordpress-article-publication.json",
+      "size": 179,
+      "sha256": "a3f0969da8b31472e8018772931e3ab2a1b88904179594522e295efed63143f8"
+    },
+    {
+      "path": "services/operational-guidance/migrations/env.py",
+      "size": 1385,
+      "sha256": "51169b994b60b2c98808b301bbc6f8b302ab2f0af46598ee939795f7a8c5296c"
+    },
+    {
+      "path": "services/operational-guidance/migrations/script.py.mako",
+      "size": 593,
+      "sha256": "c20f6ab92d4ed36d77fbccb82bc410cd2ced42f2c162eebb43ddd45ae93dd90e"
+    },
+    {
+      "path": "services/operational-guidance/migrations/versions/431439b9fde5_initial_application_schema.py",
+      "size": 17585,
+      "sha256": "d20a8bbea7730f158b25b89fdccfef748804a635ada17d5a1ad65448566a8b80"
+    },
+    {
+      "path": "services/operational-guidance/migrations/versions/8f6db9b7a701_add_audit_events.py",
+      "size": 2636,
+      "sha256": "a9cc8f1b2f82809cbb5fd60559c426cdb73813a5216ad0f7e336f25dd209f5c1"
+    },
+    {
+      "path": "services/operational-guidance/n8n/imperial-content-publish-workflow.json",
+      "size": 1722,
+      "sha256": "60aea36f3de27bb42644da52907b9054f0d87a2ff8f513b379c0644658523dac"
+    },
+    {
+      "path": "services/operational-guidance/n8n/imperial-operational-guidance-workflow.json",
+      "size": 4952,
+      "sha256": "d6704c472be982cd2b7b6f9bb4135037aca2496401c2e47aa36e0f1b2cce665e"
+    },
+    {
+      "path": "services/operational-guidance/pyproject.toml",
+      "size": 1155,
+      "sha256": "48f045577b6ba257ef32bd6a03777d997f21554d6d86d7a3e4e4d6e122849858"
+    },
+    {
+      "path": "services/operational-guidance/scripts/__init__.py",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/scripts/bootstrap_directus.py",
+      "size": 16483,
+      "sha256": "ff3647585148ca18ab0888401657f8e3391fefae061e1fe0fe957f3622af91a0"
+    },
+    {
+      "path": "services/operational-guidance/scripts/credential_manifest.py",
+      "size": 2681,
+      "sha256": "e955abd94987e4bd12a122a929df53fefd685d8fe76f0a45ff357dfd4eb554a2"
+    },
+    {
+      "path": "services/operational-guidance/scripts/google_business_oauth.py",
+      "size": 1356,
+      "sha256": "387d28fdacd5e59505c75110f941dc06859ff7138ad2a9aad95e3a4ca22680cf"
+    },
+    {
+      "path": "services/operational-guidance/scripts/import_operational_catalog.py",
+      "size": 1530,
+      "sha256": "d1ba6adffe895d7ca6b881e09c27681f04a742a53170fbc02b7f3822dab5d887"
+    },
+    {
+      "path": "services/operational-guidance/scripts/online_staging_uat.py",
+      "size": 17118,
+      "sha256": "feeca80a3a4bb46b5e283a82ff88041dfc5c5ab04943e6a4946f2b33a7da8292"
+    },
+    {
+      "path": "services/operational-guidance/scripts/operational_guidance_demo.py",
+      "size": 2549,
+      "sha256": "735ae41d83e5d328729888b7b6e4344c6014d03446f6a0f24ac3fe4d5c9ab9db"
+    },
+    {
+      "path": "services/operational-guidance/scripts/ops/backup.sh",
+      "size": 639,
+      "sha256": "120f1a9214353f7010bb85af605cfb73df5ac00d82ed0df04b133d666fbcf7bd"
+    },
+    {
+      "path": "services/operational-guidance/scripts/ops/deploy-production.sh",
+      "size": 2191,
+      "sha256": "2d3bd40ccffbe848cefa3bebd6664e7194fd853fd2de48fcac2c387e08353ce2"
+    },
+    {
+      "path": "services/operational-guidance/scripts/ops/deploy-staging-remote.sh",
+      "size": 3758,
+      "sha256": "e2beb34784ce325a105e20908ba8a3159f6f93d174cfa4200c54248b7efa95f0"
+    },
+    {
+      "path": "services/operational-guidance/scripts/ops/restore-drill.sh",
+      "size": 649,
+      "sha256": "574794e5cd858849f79e664d86f2c139c523e38f9658a87e5c792c73ccf2a81b"
+    },
+    {
+      "path": "services/operational-guidance/scripts/ops/rollback-release.sh",
+      "size": 777,
+      "sha256": "b5ab875df5a3bb2992f9714d996e665a436118cce9aeab144e7233bd5af81b53"
+    },
+    {
+      "path": "services/operational-guidance/scripts/ops/rollback-staging-remote.sh",
+      "size": 1020,
+      "sha256": "ac2a93262a8e188f7e7a2fdf8cecc656c894e5325d4e6e613e54d6d47af340e6"
+    },
+    {
+      "path": "services/operational-guidance/scripts/ops/verify-backup.sh",
+      "size": 613,
+      "sha256": "7f9ba33df00ec02348875ae9daaae4cb68c01426abefce987b2ac398d8f45298"
+    },
+    {
+      "path": "services/operational-guidance/scripts/postgres/init.sql",
+      "size": 211,
+      "sha256": "c57d42bf1929c6da11f6f92a4ace2a5d3b034b5c190bc702e8c3b48911b302a6"
+    },
+    {
+      "path": "services/operational-guidance/scripts/process_card_demo.py",
+      "size": 695,
+      "sha256": "7c450b4e9db7929ee8c9b17e423ed9b555bcb01bd15de326692ccea43df52ad7"
+    },
+    {
+      "path": "services/operational-guidance/scripts/production_canary.py",
+      "size": 9486,
+      "sha256": "c724ebecd52ecfa2f6a187b79d780307c4f5f3c458c36011d561282c0acdc619"
+    },
+    {
+      "path": "services/operational-guidance/scripts/production_gate.py",
+      "size": 4761,
+      "sha256": "008dc44d1476550b54409faf21731808f9ce0d2dc4506f15c27ae37bdd242501"
+    },
+    {
+      "path": "services/operational-guidance/scripts/production_preflight.py",
+      "size": 7131,
+      "sha256": "f16ade203ff5d17ba7fdaa59936b0b9a798a3050b16eca67f3bf375ed4876d48"
+    },
+    {
+      "path": "services/operational-guidance/scripts/qa_operational_guidance.py",
+      "size": 3152,
+      "sha256": "9aa7c39ead492c0487e8be90f5a6a4cd3e8c11815c3c8a9c1444beb15b9fe910"
+    },
+    {
+      "path": "services/operational-guidance/scripts/staging_gate.py",
+      "size": 6391,
+      "sha256": "2d1ade0daac31c6f6dd952d0dbf7ba1b29a43badbe91403f9aa6ce59bddd262e"
+    },
+    {
+      "path": "services/operational-guidance/scripts/staging_preflight.py",
+      "size": 12360,
+      "sha256": "0dfe5a960d50dd8dfdec5a35c5ac2767d7390ed1ffe55ac04347a209fd0602d2"
+    },
+    {
+      "path": "services/operational-guidance/scripts/static_check.py",
+      "size": 1182,
+      "sha256": "f7c58fceaeb7b387e4545a207b1a61c0ff022678b681382a37dc9140a001e7d4"
+    },
+    {
+      "path": "services/operational-guidance/scripts/validate_brand_registry.py",
+      "size": 1135,
+      "sha256": "37fb0ece913e1b671e7c2fcb94c3f38471c2749c9decf8a531bac1c3d0f3214b"
+    },
+    {
+      "path": "services/operational-guidance/scripts/verify_connections.py",
+      "size": 1782,
+      "sha256": "a993fe40bbab3f95c10e4742eff581df3c4e1477fde7c21d00a3dbb8454be2ee"
+    },
+    {
+      "path": "services/operational-guidance/secrets/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_auth.py",
+      "size": 2967,
+      "sha256": "93daeffce8c8fb1ad94236bc75c73d1fc7f94299e2867f421309e1eab60cb2f8"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_brand_registry.py",
+      "size": 4302,
+      "sha256": "c0312582a70992c75e9ad60ea1e6e5525648620642ca71fa52490d55573bb44d"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_checklist_engine.py",
+      "size": 5802,
+      "sha256": "068c2547a371bab26bf173a88e6e510c52eb37e0be4017dc615f9914dea27305"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_credential_manifest.py",
+      "size": 473,
+      "sha256": "241ae9da07734bafc6e1828b3dea54a4025bf17d8cf592984df4d45a2414d408"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_ingatlan_connector.py",
+      "size": 3182,
+      "sha256": "37a73417317b8e39210f6c74394a54989dc0c64961171a6b1631eb2fcf590b8c"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_monorepo_integration.py",
+      "size": 2007,
+      "sha256": "0716c7a7965abc301f8e16b2685dde3dce531d0009faccafa58ccf9490a1785b"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_online_staging_uat.py",
+      "size": 534,
+      "sha256": "30ea709729e980145fcf401f15954a5c9077705d7190e606270fd736e2acfcb1"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_operational_catalog.py",
+      "size": 1528,
+      "sha256": "55644102d74715d1b8d7616d5400a5fbe75ddf910de39d09890082b4105e5f77"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_operational_persistence.py",
+      "size": 5244,
+      "sha256": "2e799838d91b0d8b540dc9a6b5f02eda1cbbc7f1a33eecb599122447ecf34e52"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_process_card_generator.py",
+      "size": 6217,
+      "sha256": "5463b07abb35675e47d2f532655bad61d6cf5d8c2638b656514d0c114a18a4fa"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_production_hardening.py",
+      "size": 2258,
+      "sha256": "097ac2bff1f036578f79728893051127e6d3594977cc276cde18dcbda9eb6772"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_request_controls.py",
+      "size": 658,
+      "sha256": "0b42b6d3927691f9ef166edc890ffe519289a34c55690e0b28b4cb8d781f1aaa"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_security.py",
+      "size": 1745,
+      "sha256": "1f48eb1c6b850e5d4cbc1d4b792cad049179643ee383ba1635152fe1817c284a"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_staging_deploy_handoff.py",
+      "size": 1505,
+      "sha256": "8b1b495e693e17ae0929e4dd4968ef5812deb891cccbff884298d9551a4430c6"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_staging_readiness.py",
+      "size": 3588,
+      "sha256": "0f1492b902364ce0577d8be4c998f7c0d1bbaa98fa89ed789ed9e9f2cde75287"
+    },
+    {
+      "path": "services/operational-guidance/tools/check_changed_paths.py",
+      "size": 1529,
+      "sha256": "761b12f87f15114bd6b1ded701ec32991ba496defacc9d26592236e9f2b7204b"
+    },
+    {
+      "path": "services/operational-guidance/tools/validate_human_roles.py",
+      "size": 2171,
+      "sha256": "16c1fd2522ee30296d19941fc049b06d4cc13a72fdda705c481a45b18b30da3c"
+    },
+    {
+      "path": "services/operational-guidance/website-sdk/nextjs/app/api/internal/content-publish/route.ts",
+      "size": 1396,
+      "sha256": "1659f8b1e1f6e8636679d367f1d0c31698db62fe9b54444d56546776ab559997"
+    },
+    {
+      "path": "services/operational-guidance/website-sdk/nextjs/lib/imperial-content-webhook.ts",
+      "size": 945,
+      "sha256": "9b12da0fca5cce58885c2568ca76592aad82b351c4797997bcb9b23bca0807bb"
+    }
+  ]
+}

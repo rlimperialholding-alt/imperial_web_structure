@@ -1,0 +1,53 @@
+IMPERIAL INTELLIGENCE INTEGRATION HUB v0.7.0
+PRODUCTION-CANDIDATE SOURCE RELEASE – FINAL QA
+
+Release status: OFFLINE PRODUCTION GATE PASS
+
+Verified:
+- 51/51 automated tests passed
+- Python AST/JSON static check passed (78 Python files)
+- Python compileall passed
+- Docker Compose base + staging + production overlay structure passed
+- Alembic upgrade -> downgrade -> upgrade cycle passed
+- Alembic head: 8f6db9b7a701
+- 99/99 ProcessID and checklist TemplateID mapping passed
+- Exactly five approved human roles are enforced
+- Human-role, service and manager-only authorization tests passed
+- Checklist-start idempotency and collision protection tests passed
+- 396/396 Process Card and checklist PDF/PNG artifacts passed
+- Missing or empty artifacts: 0
+- Offline production preflight passed
+- Pinned-image policy check passed on the controlled test environment
+- Backup, verify, restore-drill and deployment shell scripts passed syntax validation
+- Production release gate passed
+- Source ZIP extracted successfully and its packaged source passed 51/51 tests and static validation
+- Packaged archive contains no runtime cache, .env secret file or compiled Python artifact
+
+Added in v0.7.0:
+- Bearer-token RBAC for the five real roles
+- separate service identities for machine integrations
+- manager-only Process Card and checklist approval
+- role-bound checklist execution
+- authenticated actor attribution instead of payload-supplied names
+- idempotent checklist creation
+- X-Request-ID, structured request logs and PostgreSQL audit_events table
+- protected Prometheus metrics endpoint
+- operational status and recent-audit endpoints
+- production trusted-host/CORS/request-size/docs controls
+- production Compose overlay with pinned-image requirements
+- backup, checksum verification and non-destructive restore drill
+- production preflight, production canary, deployment and image rollback scripts
+
+Not yet verified because real production/staging credentials and a deployed Docker host were not available:
+- live Docker Compose interpolation and startup on the target host
+- live PostgreSQL/Redis/Directus deployment
+- live Directus 99/99 collection count
+- live Google Drive folder write
+- live Gmail domain-wide delegation and delivery
+- backup against the real persistent volumes
+- restore drill against a real PostgreSQL backup
+- reverse proxy / HTTPS / DNS
+- online production canary
+- end-to-end CRM/project workflow transition in the deployed environment
+
+These remaining checks are mandatory and are defined in docs/PRODUCTION-UAT-v0.7.0.md.
