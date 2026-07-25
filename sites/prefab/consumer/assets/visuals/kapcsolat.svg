@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 680" role="img" aria-labelledby="t d">
+<title id="t">Prefab – kapcsolat</title><desc id="d">Márkaspecifikus absztrakt építészeti kompozíció.</desc>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F1F4F5"/><stop offset="1" stop-color="#B8C0C7"/></linearGradient><pattern id="p" width="44" height="44" patternUnits="userSpaceOnUse"><path d="M0 0H36V36" fill="none" stroke="#202A33" stroke-opacity=".12"/></pattern></defs>
+<rect width="900" height="680" fill="url(#g)"/><rect width="900" height="680" fill="url(#p)"/>
+<circle cx="185" cy="191" r="162" fill="#00A7C4" opacity=".88"/><path d="M80 570L593 268L820 570Z" fill="#202A33" opacity=".92"/>
+<path d="M160 570V330L430 204L720 330V570" fill="#F1F4F5" stroke="#111820" stroke-width="10"/>
+<rect x="374" y="390" width="150" height="180" fill="#B8C0C7"/><rect x="500" y="370" width="130" height="100" fill="#00A7C4" opacity=".76"/>
+</svg>

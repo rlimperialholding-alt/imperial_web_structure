@@ -5,8 +5,8 @@
     "runtimeExternalApis": false,
     "source": "Repository and approved Google Drive web artifacts",
     "importedAt": "2026-07-25",
-    "notes": "All standalone preview screens are registered. Runtime assets are brand-local; editorial fragments and WordPress-only templates are excluded.",
-    "catalogPageCount": 70
+    "notes": "Every completed standalone screen and every H2-defined Drive source page is registered. Runtime assets are brand-local; non-standalone WordPress templates remain source evidence rather than misleading previews.",
+    "catalogPageCount": 131
   },
   "brands": {
     "imperial": {
@@ -71,6 +71,132 @@
           "path": "/drive/venture/sicily-project.html",
           "kind": "drive-partial",
           "sourceId": "1Bvv24LgXDBDheMaeLu23XFyEv9egFAra"
+        },
+        {
+          "title": "Műszaki készültségi szintek",
+          "path": "/drive/knowledge/muszaki-keszultsegi-szintek.html",
+          "kind": "drive-knowledge",
+          "sourceId": "17gk2fNHzMckWMkmjdaMSG26ib4u75XUU",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Talajcsavaros alapozás",
+          "path": "/drive/knowledge/talajcsavaros-alapozas.html",
+          "kind": "drive-knowledge",
+          "sourceId": "1zTHKv-pZCa0DazsBaZCC8j3nIRiCIBea",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Szigetelésvastagság",
+          "path": "/drive/knowledge/szigeteles-vastagsag.html",
+          "kind": "drive-knowledge",
+          "sourceId": "1Aaa0yJiMgIQEKlbQSWkBtFmQyjz5870Y",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Födémtükör",
+          "path": "/drive/knowledge/fodemtukor.html",
+          "kind": "drive-knowledge",
+          "sourceId": "1zkdN180WgrKpM1eQoGxGASkJ98BDxY12",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Mérnöki válaszok könnyűszerkezethez",
+          "path": "/drive/knowledge/mernoki-valaszok-konnyuszerkezet.html",
+          "kind": "drive-knowledge",
+          "sourceId": "1_MRFUabtDw5SrF4hMSTQseD3JNB4KYnS",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Hőszivattyú-összehasonlító",
+          "path": "/drive/knowledge/hoszivattyu-osszehasonlito.html",
+          "kind": "drive-knowledge",
+          "sourceId": "17E_qLIZvZeUkR8brd4BYljio3nfo-KpA",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Egyszerűsített bejelentési eljárás",
+          "path": "/drive/knowledge/egyszerusitett-bejelentesi-eljaras.html",
+          "kind": "drive-knowledge",
+          "sourceId": "1o-RKpYapwgSMdZJTDHgTZ3xpv21YrXDC",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "ISOLA műanyag nyílászárók",
+          "path": "/drive/knowledge/isola-muanyag-nyilaszarok.html",
+          "kind": "drive-knowledge",
+          "sourceId": "1Y2udO9yYCJsarXs0R_ZZ-9hK38OhtUpu",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Szeglemezes tetőszerkezet",
+          "path": "/drive/knowledge/szeglemezes-tetoszerkezet.html",
+          "kind": "drive-knowledge",
+          "sourceId": "1L66IpU1C6EvcO2kGw1oEeg1RVcQjLt4b",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Felújítás vagy új építés",
+          "path": "/drive/knowledge/felujitas-vagy-uj-epites.html",
+          "kind": "drive-knowledge",
+          "sourceId": "1nlSF42Xz3vEMUV2qyzUHKVjd9s4-A62v",
+          "brandCorrection": "prefab-package-to-imperial"
+        },
+        {
+          "title": "Kezdőlap",
+          "path": "/consumer/index.html",
+          "kind": "drive-source-page",
+          "sourceId": "1FS_rHRKBarfzOWCzMT56e0QSwnoIRbuk",
+          "brandGuideId": "1VkZsQzZ2wSXiAAwCNZi71EdVBfkkfRM2MCpuUCAFuio",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Listaoldal",
+          "path": "/consumer/pages/tipushaz-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1FS_rHRKBarfzOWCzMT56e0QSwnoIRbuk",
+          "brandGuideId": "1VkZsQzZ2wSXiAAwCNZi71EdVBfkkfRM2MCpuUCAFuio",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Termékoldal",
+          "path": "/consumer/pages/tipushaz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1FS_rHRKBarfzOWCzMT56e0QSwnoIRbuk",
+          "brandGuideId": "1VkZsQzZ2wSXiAAwCNZi71EdVBfkkfRM2MCpuUCAFuio",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Technológia Oldal",
+          "path": "/consumer/pages/technologia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1FS_rHRKBarfzOWCzMT56e0QSwnoIRbuk",
+          "brandGuideId": "1VkZsQzZ2wSXiAAwCNZi71EdVBfkkfRM2MCpuUCAFuio",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Finanszírozás Oldal",
+          "path": "/consumer/pages/finanszirozas-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1FS_rHRKBarfzOWCzMT56e0QSwnoIRbuk",
+          "brandGuideId": "1VkZsQzZ2wSXiAAwCNZi71EdVBfkkfRM2MCpuUCAFuio",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Referencia Oldal",
+          "path": "/consumer/pages/referencia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1FS_rHRKBarfzOWCzMT56e0QSwnoIRbuk",
+          "brandGuideId": "1VkZsQzZ2wSXiAAwCNZi71EdVBfkkfRM2MCpuUCAFuio",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat / Ajánlatkérés",
+          "path": "/consumer/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "1FS_rHRKBarfzOWCzMT56e0QSwnoIRbuk",
+          "brandGuideId": "1VkZsQzZ2wSXiAAwCNZi71EdVBfkkfRM2MCpuUCAFuio",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -78,10 +204,60 @@
       "defaultPath": "/",
       "pages": [
         {
-          "title": "Danish Fabrik – favázas otthonok",
+          "title": "Kezdőlap",
           "path": "/",
-          "kind": "drive-source-preview",
-          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW"
+          "kind": "drive-source-page",
+          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW",
+          "brandGuideId": "1_mXGnbwMH3jFl0LL6r_ADDSIXV1OomjH4kMDQp4eKK0",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Listaoldal",
+          "path": "/pages/tipushaz-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW",
+          "brandGuideId": "1_mXGnbwMH3jFl0LL6r_ADDSIXV1OomjH4kMDQp4eKK0",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Termékoldal",
+          "path": "/pages/tipushaz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW",
+          "brandGuideId": "1_mXGnbwMH3jFl0LL6r_ADDSIXV1OomjH4kMDQp4eKK0",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Build Journey Oldal",
+          "path": "/pages/build-journey-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW",
+          "brandGuideId": "1_mXGnbwMH3jFl0LL6r_ADDSIXV1OomjH4kMDQp4eKK0",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Referencia Oldal",
+          "path": "/pages/referencia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW",
+          "brandGuideId": "1_mXGnbwMH3jFl0LL6r_ADDSIXV1OomjH4kMDQp4eKK0",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Élethelyzet Oldalak",
+          "path": "/pages/elethelyzet-oldalak.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW",
+          "brandGuideId": "1_mXGnbwMH3jFl0LL6r_ADDSIXV1OomjH4kMDQp4eKK0",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat / Ajánlatkérés",
+          "path": "/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW",
+          "brandGuideId": "1_mXGnbwMH3jFl0LL6r_ADDSIXV1OomjH4kMDQp4eKK0",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -123,6 +299,70 @@
           "path": "/drive/esco-energetikai-korszerusites.html",
           "kind": "drive-partial",
           "sourceId": "1ix5qlmxd0vFTRyPTB_MUHbJjtGZxXpwq"
+        },
+        {
+          "title": "Kezdőlap",
+          "path": "/consumer/index.html",
+          "kind": "drive-source-page",
+          "sourceId": "11p3lBYwZvoiWK2kAHNnrJex_aKwQYImE",
+          "brandGuideId": "1vnsM34aDMY7EDKlktzVPKEA3YdemgLqUYpEsHnH4y4I",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Listaoldal",
+          "path": "/consumer/pages/tipushaz-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11p3lBYwZvoiWK2kAHNnrJex_aKwQYImE",
+          "brandGuideId": "1vnsM34aDMY7EDKlktzVPKEA3YdemgLqUYpEsHnH4y4I",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Termékoldal",
+          "path": "/consumer/pages/tipushaz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11p3lBYwZvoiWK2kAHNnrJex_aKwQYImE",
+          "brandGuideId": "1vnsM34aDMY7EDKlktzVPKEA3YdemgLqUYpEsHnH4y4I",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Technológia Oldal",
+          "path": "/consumer/pages/technologia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11p3lBYwZvoiWK2kAHNnrJex_aKwQYImE",
+          "brandGuideId": "1vnsM34aDMY7EDKlktzVPKEA3YdemgLqUYpEsHnH4y4I",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Stresszmentes Építkezés Oldal",
+          "path": "/consumer/pages/stresszmentes-epitkezes-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11p3lBYwZvoiWK2kAHNnrJex_aKwQYImE",
+          "brandGuideId": "1vnsM34aDMY7EDKlktzVPKEA3YdemgLqUYpEsHnH4y4I",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Garanciák Oldal",
+          "path": "/consumer/pages/garanciak-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11p3lBYwZvoiWK2kAHNnrJex_aKwQYImE",
+          "brandGuideId": "1vnsM34aDMY7EDKlktzVPKEA3YdemgLqUYpEsHnH4y4I",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Referencia Oldal",
+          "path": "/consumer/pages/referencia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11p3lBYwZvoiWK2kAHNnrJex_aKwQYImE",
+          "brandGuideId": "1vnsM34aDMY7EDKlktzVPKEA3YdemgLqUYpEsHnH4y4I",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat / Ajánlatkérés",
+          "path": "/consumer/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "11p3lBYwZvoiWK2kAHNnrJex_aKwQYImE",
+          "brandGuideId": "1vnsM34aDMY7EDKlktzVPKEA3YdemgLqUYpEsHnH4y4I",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -172,76 +412,66 @@
           "sourceId": "107K-vOZLJWZFyCXvvDAsvhJq_yG__TzH"
         },
         {
-          "title": "Összes tudásoldal katalógusa",
-          "path": "/drive/knowledge/osszes-tudasoldal.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1W_hg6KFbxefZ0iQXnD0x3t0zBPK3ox2L"
-        },
-        {
-          "title": "Műszaki készültségi szintek",
-          "path": "/drive/knowledge/muszaki-keszultsegi-szintek.html",
-          "kind": "drive-knowledge",
-          "sourceId": "17gk2fNHzMckWMkmjdaMSG26ib4u75XUU"
-        },
-        {
-          "title": "Talajcsavaros alapozás",
-          "path": "/drive/knowledge/talajcsavaros-alapozas.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1zTHKv-pZCa0DazsBaZCC8j3nIRiCIBea"
-        },
-        {
-          "title": "Szigetelésvastagság",
-          "path": "/drive/knowledge/szigeteles-vastagsag.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1Aaa0yJiMgIQEKlbQSWkBtFmQyjz5870Y"
-        },
-        {
-          "title": "Födémtükör",
-          "path": "/drive/knowledge/fodemtukor.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1zkdN180WgrKpM1eQoGxGASkJ98BDxY12"
-        },
-        {
-          "title": "Mérnöki válaszok könnyűszerkezethez",
-          "path": "/drive/knowledge/mernoki-valaszok-konnyuszerkezet.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1_MRFUabtDw5SrF4hMSTQseD3JNB4KYnS"
-        },
-        {
-          "title": "Egyszerűsített bejelentési eljárás",
-          "path": "/drive/knowledge/egyszerusitett-bejelentesi-eljaras.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1o-RKpYapwgSMdZJTDHgTZ3xpv21YrXDC"
-        },
-        {
-          "title": "ISOLA műanyag nyílászárók",
-          "path": "/drive/knowledge/isola-muanyag-nyilaszarok.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1Y2udO9yYCJsarXs0R_ZZ-9hK38OhtUpu"
-        },
-        {
-          "title": "Szeglemezes tetőszerkezet",
-          "path": "/drive/knowledge/szeglemezes-tetoszerkezet.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1L66IpU1C6EvcO2kGw1oEeg1RVcQjLt4b"
-        },
-        {
           "title": "Prefab folyamatábra",
           "path": "/drive/knowledge/prefab-folyamatabra.html",
           "kind": "drive-knowledge",
           "sourceId": "1fqKailhKzE2afRDbChpL0JsAgKdY4UTF"
         },
         {
-          "title": "Hőszivattyú-összehasonlító",
-          "path": "/drive/knowledge/hoszivattyu-osszehasonlito.html",
-          "kind": "drive-knowledge",
-          "sourceId": "17E_qLIZvZeUkR8brd4BYljio3nfo-KpA"
+          "title": "Kezdőlap",
+          "path": "/consumer/index.html",
+          "kind": "drive-source-page",
+          "sourceId": "1I4B8E3LfK2POc5yGmh9XD_ZO6GFaJZLW",
+          "brandGuideId": "19YvNQlOHO0L0Aoy-cWtAEImo2cHST6kaEfxv_Yv6amc",
+          "contentStatus": "source-aligned-preview"
         },
         {
-          "title": "Felújítás vagy új építés",
-          "path": "/drive/knowledge/felujitas-vagy-uj-epites.html",
-          "kind": "drive-knowledge",
-          "sourceId": "1nlSF42Xz3vEMUV2qyzUHKVjd9s4-A62v"
+          "title": "Típusház Listaoldal",
+          "path": "/consumer/pages/tipushaz-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1I4B8E3LfK2POc5yGmh9XD_ZO6GFaJZLW",
+          "brandGuideId": "19YvNQlOHO0L0Aoy-cWtAEImo2cHST6kaEfxv_Yv6amc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Termékoldal",
+          "path": "/consumer/pages/tipushaz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1I4B8E3LfK2POc5yGmh9XD_ZO6GFaJZLW",
+          "brandGuideId": "19YvNQlOHO0L0Aoy-cWtAEImo2cHST6kaEfxv_Yv6amc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Technológia Oldal",
+          "path": "/consumer/pages/technologia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1I4B8E3LfK2POc5yGmh9XD_ZO6GFaJZLW",
+          "brandGuideId": "19YvNQlOHO0L0Aoy-cWtAEImo2cHST6kaEfxv_Yv6amc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Finanszírozás Oldal",
+          "path": "/consumer/pages/finanszirozas-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1I4B8E3LfK2POc5yGmh9XD_ZO6GFaJZLW",
+          "brandGuideId": "19YvNQlOHO0L0Aoy-cWtAEImo2cHST6kaEfxv_Yv6amc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Referencia Oldal",
+          "path": "/consumer/pages/referencia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1I4B8E3LfK2POc5yGmh9XD_ZO6GFaJZLW",
+          "brandGuideId": "19YvNQlOHO0L0Aoy-cWtAEImo2cHST6kaEfxv_Yv6amc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat / Ajánlatkérés",
+          "path": "/consumer/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "1I4B8E3LfK2POc5yGmh9XD_ZO6GFaJZLW",
+          "brandGuideId": "19YvNQlOHO0L0Aoy-cWtAEImo2cHST6kaEfxv_Yv6amc",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -249,10 +479,60 @@
       "defaultPath": "/",
       "pages": [
         {
-          "title": "Casa Moderna – prémium otthonok",
+          "title": "Kezdőlap",
           "path": "/",
-          "kind": "drive-source-preview",
-          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1"
+          "kind": "drive-source-page",
+          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1",
+          "brandGuideId": "10JPg2WoVMajzErERN8It-QNm3GDHJ36g6d2DHi_IKBc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kollekció Listaoldal",
+          "path": "/pages/kollekcio-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1",
+          "brandGuideId": "10JPg2WoVMajzErERN8It-QNm3GDHJ36g6d2DHi_IKBc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Termékoldal",
+          "path": "/pages/termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1",
+          "brandGuideId": "10JPg2WoVMajzErERN8It-QNm3GDHJ36g6d2DHi_IKBc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Interior Universe Oldal",
+          "path": "/pages/interior-universe-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1",
+          "brandGuideId": "10JPg2WoVMajzErERN8It-QNm3GDHJ36g6d2DHi_IKBc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Referenciák / Inspirációk Oldal",
+          "path": "/pages/referenciak-inspiraciok-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1",
+          "brandGuideId": "10JPg2WoVMajzErERN8It-QNm3GDHJ36g6d2DHi_IKBc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Konzultáció Oldal",
+          "path": "/pages/konzultacio-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1",
+          "brandGuideId": "10JPg2WoVMajzErERN8It-QNm3GDHJ36g6d2DHi_IKBc",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat",
+          "path": "/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1",
+          "brandGuideId": "10JPg2WoVMajzErERN8It-QNm3GDHJ36g6d2DHi_IKBc",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -343,10 +623,52 @@
       "defaultPath": "/",
       "pages": [
         {
-          "title": "Everyday Homes – praktikus otthonok",
+          "title": "Kezdőlap",
           "path": "/",
-          "kind": "drive-source-preview",
-          "sourceId": "1VZmftOSSK1ZZs1jePp7ZJKxErvELKKCF"
+          "kind": "drive-source-page",
+          "sourceId": "1VZmftOSSK1ZZs1jePp7ZJKxErvELKKCF",
+          "brandGuideId": "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Ház Listaoldal",
+          "path": "/pages/haz-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VZmftOSSK1ZZs1jePp7ZJKxErvELKKCF",
+          "brandGuideId": "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Ház Termékoldal",
+          "path": "/pages/haz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VZmftOSSK1ZZs1jePp7ZJKxErvELKKCF",
+          "brandGuideId": "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Tudástár Oldal",
+          "path": "/pages/tudastar-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VZmftOSSK1ZZs1jePp7ZJKxErvELKKCF",
+          "brandGuideId": "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Referencia Oldal",
+          "path": "/pages/referencia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VZmftOSSK1ZZs1jePp7ZJKxErvELKKCF",
+          "brandGuideId": "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat / Ajánlatkérés",
+          "path": "/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "1VZmftOSSK1ZZs1jePp7ZJKxErvELKKCF",
+          "brandGuideId": "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -354,10 +676,52 @@
       "defaultPath": "/",
       "pages": [
         {
-          "title": "Property 360 – teljes projekt",
+          "title": "Kezdőlap",
           "path": "/",
-          "kind": "drive-source-preview",
-          "sourceId": "1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur"
+          "kind": "drive-source-page",
+          "sourceId": "1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur",
+          "brandGuideId": "14B2BEJNvNjUpgMpkBhuRVoEbQ3hn9oTsV5D6Ptc6WGU",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Szolgáltatások Oldal",
+          "path": "/pages/szolgaltatasok-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur",
+          "brandGuideId": "14B2BEJNvNjUpgMpkBhuRVoEbQ3hn9oTsV5D6Ptc6WGU",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Ház Listaoldal",
+          "path": "/pages/haz-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur",
+          "brandGuideId": "14B2BEJNvNjUpgMpkBhuRVoEbQ3hn9oTsV5D6Ptc6WGU",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Ház Termékoldal",
+          "path": "/pages/haz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur",
+          "brandGuideId": "14B2BEJNvNjUpgMpkBhuRVoEbQ3hn9oTsV5D6Ptc6WGU",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Konzultáció Oldal",
+          "path": "/pages/konzultacio-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur",
+          "brandGuideId": "14B2BEJNvNjUpgMpkBhuRVoEbQ3hn9oTsV5D6Ptc6WGU",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat",
+          "path": "/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur",
+          "brandGuideId": "14B2BEJNvNjUpgMpkBhuRVoEbQ3hn9oTsV5D6Ptc6WGU",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -460,10 +824,76 @@
       "defaultPath": "/",
       "pages": [
         {
-          "title": "BauFreund – családbarát otthonok",
+          "title": "Kezdőlap",
           "path": "/",
-          "kind": "drive-source-preview",
-          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_"
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Házaink Listaoldal",
+          "path": "/pages/hazaink-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Ház Termékoldal",
+          "path": "/pages/haz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Milyen élethelyzetben vagy? Oldalak",
+          "path": "/pages/milyen-elethelyzetben-vagy-oldalak.html",
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Hogyan építünk neked? Oldal",
+          "path": "/pages/hogyan-epitunk-neked-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Finanszírozás Oldal",
+          "path": "/pages/finanszirozas-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Korábbi munkáink Oldal",
+          "path": "/pages/korabbi-munkaink-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Tudástár Oldal",
+          "path": "/pages/tudastar-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat / Ajánlatkérés",
+          "path": "/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_",
+          "brandGuideId": "120-i4EHv_OrWXwSMUZad-gUFzXGby84UGfjXus8EyVo",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -471,10 +901,44 @@
       "defaultPath": "/",
       "pages": [
         {
-          "title": "RED Property – gyors, elérhető otthonok",
+          "title": "Kezdőlap",
           "path": "/",
-          "kind": "drive-source-preview",
-          "sourceId": "1o0sW9QmuVu6Hwl-B4StjRwOZyQkQtl28"
+          "kind": "drive-source-page",
+          "sourceId": "1o0sW9QmuVu6Hwl-B4StjRwOZyQkQtl28",
+          "brandGuideId": "192fP7Y6r_WT8za8cxv-DR81-pPuasuP2HrNdowNurQk",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Ház Listaoldal",
+          "path": "/pages/haz-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1o0sW9QmuVu6Hwl-B4StjRwOZyQkQtl28",
+          "brandGuideId": "192fP7Y6r_WT8za8cxv-DR81-pPuasuP2HrNdowNurQk",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Ház Termékoldal",
+          "path": "/pages/haz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1o0sW9QmuVu6Hwl-B4StjRwOZyQkQtl28",
+          "brandGuideId": "192fP7Y6r_WT8za8cxv-DR81-pPuasuP2HrNdowNurQk",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Akciós Házak Oldal",
+          "path": "/pages/akcios-hazak-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1o0sW9QmuVu6Hwl-B4StjRwOZyQkQtl28",
+          "brandGuideId": "192fP7Y6r_WT8za8cxv-DR81-pPuasuP2HrNdowNurQk",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat / Ajánlatkérés",
+          "path": "/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "1o0sW9QmuVu6Hwl-B4StjRwOZyQkQtl28",
+          "brandGuideId": "192fP7Y6r_WT8za8cxv-DR81-pPuasuP2HrNdowNurQk",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     },
@@ -482,10 +946,60 @@
       "defaultPath": "/",
       "pages": [
         {
-          "title": "TimberHaus – Smart & Efficient",
+          "title": "Kezdőlap",
           "path": "/",
-          "kind": "drive-source-preview",
-          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz"
+          "kind": "drive-source-page",
+          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz",
+          "brandGuideId": "1Lkf65qqksfbMSeIBszXpYNhKCVe36Qu5cGzEoFcJPus",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Listaoldal",
+          "path": "/pages/tipushaz-listaoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz",
+          "brandGuideId": "1Lkf65qqksfbMSeIBszXpYNhKCVe36Qu5cGzEoFcJPus",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Típusház Termékoldal",
+          "path": "/pages/tipushaz-termekoldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz",
+          "brandGuideId": "1Lkf65qqksfbMSeIBszXpYNhKCVe36Qu5cGzEoFcJPus",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Döntési Központ",
+          "path": "/pages/dontesi-kozpont.html",
+          "kind": "drive-source-page",
+          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz",
+          "brandGuideId": "1Lkf65qqksfbMSeIBszXpYNhKCVe36Qu5cGzEoFcJPus",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Tudástár / Blog",
+          "path": "/pages/tudastar-blog.html",
+          "kind": "drive-source-page",
+          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz",
+          "brandGuideId": "1Lkf65qqksfbMSeIBszXpYNhKCVe36Qu5cGzEoFcJPus",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Referencia Oldal",
+          "path": "/pages/referencia-oldal.html",
+          "kind": "drive-source-page",
+          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz",
+          "brandGuideId": "1Lkf65qqksfbMSeIBszXpYNhKCVe36Qu5cGzEoFcJPus",
+          "contentStatus": "source-aligned-preview"
+        },
+        {
+          "title": "Kapcsolat / Ajánlatkérés",
+          "path": "/pages/kapcsolat.html",
+          "kind": "drive-source-page",
+          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz",
+          "brandGuideId": "1Lkf65qqksfbMSeIBszXpYNhKCVe36Qu5cGzEoFcJPus",
+          "contentStatus": "source-aligned-preview"
         }
       ]
     }
