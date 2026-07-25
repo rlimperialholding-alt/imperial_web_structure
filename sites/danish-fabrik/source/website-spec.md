@@ -13,10 +13,10 @@
 
 ## Típusház Termékoldal
 - **Hero**: Látványkép és stíluselem (pl. Scandinavian design). Cím: "[Ház neve] – [Stílus]". Alcím: "Gyorsan épülő, természetes, energiatakarékos favázas otthon". Kiemelt adatok: alapterület, szobaszám, kivitelezési idő, ár. CTA: "Árajánlatot kérek".
-- **Életérzés blokk**: Rövid történet arról, milyen ebben a házban élni (hygge, természetközeli, nyugalom). 
-- **Gyártási folyamat**: Infografika: Tervezés → Gyártás → Szállítás → Összeszerelés → Kulcsátadás. Mindegyiknél 1–2 mondat. 
-- **Stílus és anyagok**: Leírás a favázas szerkezet előnyeiről (gyors kivitelezés, magas energiahatékonyság, jó belső klíma). Külön pont, hogy a falak hőszigetelése és rétegrendje, a tető, a nyílászárók, etc. 
-- **Ár‑ és kivitelezési szintek**: Szerkezetkész, Fűtéskész, Kulcsrakész, All In. Mindegyik kártyán belül, mi tartozik bele. 
+- **Életérzés blokk**: Rövid történet arról, milyen ebben a házban élni (hygge, természetközeli, nyugalom).
+- **Gyártási folyamat**: Infografika: Tervezés → Gyártás → Szállítás → Összeszerelés → Kulcsátadás. Mindegyiknél 1–2 mondat.
+- **Stílus és anyagok**: Leírás a favázas szerkezet előnyeiről (gyors kivitelezés, magas energiahatékonyság, jó belső klíma). Külön pont, hogy a falak hőszigetelése és rétegrendje, a tető, a nyílászárók, etc.
+- **Ár‑ és kivitelezési szintek**: Szerkezetkész, Fűtéskész, Kulcsrakész, All In. Mindegyik kártyán belül, mi tartozik bele.
 - **Finanszírozás**: Rövid leírás: CSOK, hitel, önerő, és hogy a gyors kivitelezés miatt kevesebb a kamatköltség. CTA: "Finanszírozási konzultáció".
 - **Referenciák**: 2–3 dán stílusú referencia (pl. Balatonrendes, Nyársapát, Tápiószentmárton, Kőszegdoroszló). Fotók, helyszín, alapterület, kivitelezési idő, ügyfélvélemény.
 - **Build Journey részletesen**: Folyamatábra bővebben, a hygge élmény kiemelése: egyszerű, könnyű, vidám folyamat; "Egy kis hygge a házépítésben".

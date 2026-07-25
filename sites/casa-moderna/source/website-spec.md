@@ -13,11 +13,11 @@
 
 ## Termékoldal
 - **Hero**: Látványkép a villáról (külső + részlet a belső térből). Cím: "[Villa neve] – [Stílus]". Alcím: "Prémium életérzés". Kiemelt adatok: alapterület, hálószobák, fürdők, építési idő, árkategória. CTA: "Privát konzultáció".
-- **Design történet**: Leírás az inspirációról, az építészeti koncepcióról, anyaghasználatról, életérzésről. 
+- **Design történet**: Leírás az inspirációról, az építészeti koncepcióról, anyaghasználatról, életérzésről.
 - **Alaprajz és belső terek**: Elegáns alaprajz, 3D nézet, belső terek moodboardokkal (konyha, fürdő, háló, nappali). Minden stílushoz külön moodboard.
-- **Prémium opciók**: Kertépítés, medence, wellness, okosotthon, lakberendezés, bútortervezés. Minden opció kártyán plusz információval. 
-- **Referenciák / Inspirációk**: Hasonló luxusprojektek fotói, ügyfélidézetek. 
-- **Processus**: Rövid leírás a prémium projektmenedzsment folyamatról: exkluzív tervezés, anyagválasztás, mesterek koordinálása, átadás. 
+- **Prémium opciók**: Kertépítés, medence, wellness, okosotthon, lakberendezés, bútortervezés. Minden opció kártyán plusz információval.
+- **Referenciák / Inspirációk**: Hasonló luxusprojektek fotói, ügyfélidézetek.
+- **Processus**: Rövid leírás a prémium projektmenedzsment folyamatról: exkluzív tervezés, anyagválasztás, mesterek koordinálása, átadás.
 - **Lead form**: Név, telefonszám, email, érdeklődő projekt helyszíne, tervezett alapterület, stílus preferencia, üzenet. CTA: "Privát konzultáció kérése".
 
 ## Interior Universe Oldal

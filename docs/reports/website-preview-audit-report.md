@@ -1,6 +1,6 @@
 # Weboldalak preview — teljes asset- és böngészőaudit
 
-Dátum: 2026-07-25  
+Dátum: 2026-07-25
 Ág: `feature/platform-foundation`
 
 ## Eredmény

@@ -8,17 +8,17 @@
 - **Garanciák**: Részletezzük, hogy kedvező ár mellett is jár: fix ár, fix határidő, fix műszaki tartalom, pénzügyi garancia. CTA: "Biztonságos építkezés".
 
 ## Ház Listaoldal
-- **Szűrő**: Ár (Ft/m² és összérték), alapterület, szobaszám. Házkategóriák. Élethelyzetek: Első otthon, Fiatal pár, Befektetés, Nyaraló, Gyors költözés. Identitás címkék: Legolcsóbb, Praktikus, Gyorsan építhető, Kompromisszummentes. 
+- **Szűrő**: Ár (Ft/m² és összérték), alapterület, szobaszám. Házkategóriák. Élethelyzetek: Első otthon, Fiatal pár, Befektetés, Nyaraló, Gyors költözés. Identitás címkék: Legolcsóbb, Praktikus, Gyorsan építhető, Kompromisszummentes.
 - **Lista**: Kártyák: kép, név, alapterület, szobák, ár, kivitelezési idő, identitás. CTA: "Részletek".
 
 ## Ház Termékoldal
 - **Hero**: Kép, cím: "[Ház neve] – megfizethető otthon". Alcím: "Gyorsan épül, alacsony költség, kompromisszummentes minőség". Kiemelt adatok: alapterület, szobák, ár, kivitelezési idő. CTA: "Kérek ajánlatot".
-- **Mitől olcsó?**: Rövid magyarázat: standardizált tervek, hatékony anyagfelhasználás, gyors technológia. 
-- **Ár- és kivitelezési szintek**: Szerkezetkész, Kulcsrakész. Ár és tartalom. 
-- **Garancia**: Fix ár, fix határidő, pénzügyi garancia. 
-- **Alaprajz és variációk**: Egyszerű, de rugalmas alaprajzok; lehetőség egy-két kiegészítő opcióra (terasz, fedett autóbeálló). 
-- **Finanszírozás**: Elsősorban alacsony önerő, kedvezményes hitel. CTA: "Finanszírozási tanács". 
-- **Referenciák**: Olcsó, gyorsan épült házak fotói, ár‑idő adatok, ügyfél vélemény. 
+- **Mitől olcsó?**: Rövid magyarázat: standardizált tervek, hatékony anyagfelhasználás, gyors technológia.
+- **Ár- és kivitelezési szintek**: Szerkezetkész, Kulcsrakész. Ár és tartalom.
+- **Garancia**: Fix ár, fix határidő, pénzügyi garancia.
+- **Alaprajz és variációk**: Egyszerű, de rugalmas alaprajzok; lehetőség egy-két kiegészítő opcióra (terasz, fedett autóbeálló).
+- **Finanszírozás**: Elsősorban alacsony önerő, kedvezményes hitel. CTA: "Finanszírozási tanács".
+- **Referenciák**: Olcsó, gyorsan épült házak fotói, ár‑idő adatok, ügyfél vélemény.
 - **Lead form**: Név, telefonszám, email, település, költségkeret, üzenet. CTA: "Elküldöm".
 
 ## Akciós Házak Oldal
