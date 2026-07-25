@@ -137,7 +137,7 @@ jobs:
             curl --fail --silent --show-error \
               --header "Host: localhost" \
               "http://127.0.0.1:8080/${preview}" \
-              | grep --quiet '/assets/review-bridge.js'
+              | grep --quiet '/assets/platform/review-bridge.js'
           done
 
           curl --fail --silent --show-error \
