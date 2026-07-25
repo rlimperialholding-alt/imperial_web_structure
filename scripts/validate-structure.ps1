@@ -83,9 +83,12 @@ if ($artifactsData.meta.runtimeExternalApis -ne $false) {
 
 $totalTestPages = 0
 foreach ($brand in $brandsData.brands) {
-  $artifactBrand = $artifactsData.brands.PSObject.Properties[$brand.id].Value
+  $artifactProperty = $artifactsData.brands.PSObject.Properties |
+    Where-Object { $_.Name -eq $brand.id } |
+    Select-Object -First 1
+  $artifactBrand = $artifactProperty.Value
   $artifactPages = if ($null -eq $artifactBrand) { @() } else { @($artifactBrand.pages) }
-  $configuredCount = $artifactPages.Count
+  $configuredCount = @($artifactPages).Count
 
   if ($brand.pageCount -ne $configuredCount) {
     throw "Page count mismatch for $($brand.id): brands.json=$($brand.pageCount), artifacts.json=$configuredCount"
@@ -113,7 +116,8 @@ foreach ($brand in $brandsData.brands) {
       if ($previewContent -notmatch 'name="robots" content="noindex,nofollow"') {
         throw "Missing noindex directive in imported preview: $relativePath"
       }
-      if ($previewContent -notmatch '/assets/review-bridge.js') {
+      $expectedReviewBridge = "/site-preview/$($brand.id)/assets/platform/review-bridge.js"
+      if (-not $previewContent.Contains($expectedReviewBridge)) {
         throw "Missing review bridge in imported preview: $relativePath"
       }
       if ($previewContent -match 'cdn\.jsdelivr\.net/npm/bootstrap') {
@@ -123,8 +127,8 @@ foreach ($brand in $brandsData.brands) {
   }
 }
 
-if ($totalTestPages -ne 50) {
-  throw "Expected 50 configured test pages, found $totalTestPages."
+if ($totalTestPages -ne 70) {
+  throw "Expected 70 configured test pages, found $totalTestPages."
 }
 
 $remoteCssAssets = Get-ChildItem (Join-Path $repositoryRoot 'sites') -Recurse -File -Filter '*.css' |

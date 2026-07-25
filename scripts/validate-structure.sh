@@ -115,13 +115,16 @@ for brand in brands["brands"]:
             preview_content = preview_file.read_text(encoding="utf-8")
             if 'name="robots" content="noindex,nofollow"' not in preview_content:
                 raise SystemExit(f"Missing noindex directive: {preview_file}")
-            if "/assets/review-bridge.js" not in preview_content:
+            expected_review_bridge = (
+                f"/site-preview/{brand['id']}/assets/platform/review-bridge.js"
+            )
+            if expected_review_bridge not in preview_content:
                 raise SystemExit(f"Missing review bridge: {preview_file}")
             if "cdn.jsdelivr.net/npm/bootstrap" in preview_content:
                 raise SystemExit(f"External Bootstrap dependency remains: {preview_file}")
 
-if total_test_pages != 50:
-    raise SystemExit(f"Expected 50 configured test pages, found {total_test_pages}.")
+if total_test_pages != 70:
+    raise SystemExit(f"Expected 70 configured test pages, found {total_test_pages}.")
 
 for css_file in root.glob("sites/*/drive/**/*.css"):
     css_content = css_file.read_text(encoding="utf-8")
