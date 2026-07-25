@@ -1,0 +1,13 @@
+{
+  "name": "imperial-website-preview-qa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CI-only browser and asset validation for the Imperial website preview catalog.",
+  "scripts": {
+    "lint:previews": "node --check playwright.config.mjs && node --check tests/website-previews.spec.mjs",
+    "test:previews": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0"
+  }
+}

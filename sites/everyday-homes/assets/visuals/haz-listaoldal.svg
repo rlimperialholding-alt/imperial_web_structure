@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 680" role="img" aria-labelledby="t d">
+<title id="t">Everyday Homes – haz-listaoldal</title><desc id="d">Márkaspecifikus absztrakt építészeti kompozíció.</desc>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F6F3EA"/><stop offset="1" stop-color="#8EAD96"/></linearGradient><pattern id="p" width="44" height="44" patternUnits="userSpaceOnUse"><path d="M0 0H36V36" fill="none" stroke="#376C76" stroke-opacity=".12"/></pattern></defs>
+<rect width="900" height="680" fill="url(#g)"/><rect width="900" height="680" fill="url(#p)"/>
+<circle cx="106" cy="100" r="181" fill="#F3B563" opacity=".88"/><path d="M80 570L506 244L820 570Z" fill="#376C76" opacity=".92"/>
+<path d="M160 570V330L430 159L720 330V570" fill="#F6F3EA" stroke="#25383C" stroke-width="10"/>
+<rect x="279" y="390" width="150" height="180" fill="#8EAD96"/><rect x="500" y="370" width="130" height="100" fill="#F3B563" opacity=".76"/>
+</svg>

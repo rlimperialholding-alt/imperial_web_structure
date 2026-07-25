@@ -4,15 +4,266 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
-    <title>Imperial — Staging</title>
-    <link rel="stylesheet" href="/assets/site.css">
-  </head>
-  <body style="--accent: #d6b36a">
+    <meta name="description" content="Imperial Holding vizuális főoldalprototípus — kizárólag helyi tesztelésre.">
+    <meta name="color-scheme" content="dark">
+    <title>Imperial Holding — Értéket építünk</title>
+    <link rel="stylesheet" href="/site-preview/imperial/assets/tokens.css">
+    <link rel="stylesheet" href="/site-preview/imperial/assets/components.css">
+    <link rel="stylesheet" href="/site-preview/imperial/assets/imperial.css">
+    <script src="/site-preview/imperial/assets/imperial.js" defer></script>
+  <link rel="stylesheet" href="/site-preview/imperial/assets/platform/review-bridge.css"><style data-imported-layout-variants>
+body.preview-layout-0 main>section:nth-child(3n+2){border-inline-start:7px solid currentColor}
+body.preview-layout-1 main>section:nth-child(even){background-image:linear-gradient(135deg,rgba(0,0,0,.045),transparent 62%)}
+body.preview-layout-1 .hero-grid,body.preview-layout-1 header.hero{direction:rtl}body.preview-layout-1 .hero-grid>*,body.preview-layout-1 header.hero>*{direction:ltr}
+body.preview-layout-2 .card,body.preview-layout-2 .cardx,body.preview-layout-2 article{border-radius:3px!important;box-shadow:none!important}
+body.preview-layout-2 main>section:nth-child(odd){border-block:1px solid rgba(0,0,0,.12)}
+body.preview-layout-3 h1{max-width:18ch!important}body.preview-layout-3 main>section:nth-child(3n){clip-path:polygon(0 3%,100% 0,100% 97%,0 100%);padding-block:clamp(5rem,9vw,9rem)}
+body.preview-layout-4 .card,body.preview-layout-4 .cardx,body.preview-layout-4 article{border-radius:34px 6px 34px 6px!important}
+body.preview-layout-4 main>section:nth-child(even) .row{flex-direction:row-reverse}
+body.preview-layout-5 main>section:nth-child(odd){background-image:repeating-linear-gradient(90deg,transparent 0,transparent calc(8.333% - 1px),rgba(0,0,0,.035) calc(8.333% - 1px),rgba(0,0,0,.035) 8.333%)}
+body.preview-layout-5 .steps{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+body.preview-layout-6 h1,body.preview-layout-6 h2{letter-spacing:-.055em!important}body.preview-layout-6 main>section:nth-child(even) .container{max-width:1040px}
+body.preview-layout-7 main>section:nth-child(3n+1){border-bottom:12px solid rgba(0,0,0,.1)}body.preview-layout-7 .card,body.preview-layout-7 .cardx,body.preview-layout-7 article{transform:translateY(var(--card-shift,0))}
+@media(min-width:768px) and (max-width:991.98px){.row.g-5{--bs-gutter-x:1.5rem}}
+@media(max-width:800px){body.preview-layout-1 .hero-grid,body.preview-layout-1 header.hero{direction:ltr}body.preview-layout-3 main>section:nth-child(3n){clip-path:none}body.preview-layout-5 .steps{grid-template-columns:1fr 1fr!important}}
+</style></head>
+  <body class="imperial-site preview-layout-0 preview-page-home" data-preview-layout="0">
+    <a class="skip-link" href="#hero">Ugrás a tartalomhoz</a>
+
+    <div class="prototype-ribbon">
+      <span>Imperial Intelligence</span>
+      <strong>Helyi vizuális prototípus · szintetikus tesztadatok</strong>
+    </div>
+
+    <header class="site-header" id="site-header">
+      <a class="site-logo" href="#hero" aria-label="Imperial Holding kezdőlap">
+        <span class="logo-gem" aria-hidden="true"><i>IH</i></span>
+        <span>
+          <strong>Imperial</strong>
+          <small>Holding</small>
+        </span>
+      </a>
+
+      <button class="menu-toggle" type="button" aria-controls="site-navigation" aria-expanded="false">
+        <span></span><span></span>
+        <span class="sr-only">Menü megnyitása</span>
+      </button>
+
+      <nav class="site-navigation" id="site-navigation" aria-label="Fő navigáció">
+        <a href="#portfolio">Portfólió</a>
+        <a href="#capabilities">Szakértelem</a>
+        <a href="#projects">Projektek</a>
+        <a href="#sustainability">Jövőkép</a>
+        <a href="#news">Hírek</a>
+      </nav>
+
+      <a class="header-contact" href="#contact">Kapcsolat <span aria-hidden="true">↗</span></a>
+    </header>
+
     <main>
-      <p class="eyebrow">Staging környezet</p>
-      <h1>Imperial</h1>
-      <p class="lede">Elkülönített fejlesztési és teszt-helyőrző. Ez nem az éles weboldal.</p>
-      <p class="meta"><span>Site ID: <strong>imperial</strong></span><span>Állapot: előkészítve</span></p>
+      <section class="hero content-section" id="hero" data-section-label="Nyitó szekció">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <p class="hero-eyebrow"><span></span> Integrált ingatlan- és építőipari értékteremtés</p>
+            <h1>Értéket építünk.<br><em>Generációkon át.</em></h1>
+            <p class="hero-lede">
+              A tervezőasztaltól az otthon kulcsáig egyetlen szemlélettel kapcsoljuk össze
+              az ingatlanfejlesztés, kivitelezés és innovatív gyártás világát.
+            </p>
+            <div class="hero-actions">
+              <a class="imperial-button imperial-button-gold" href="#portfolio">Fedezd fel a portfóliót <span>→</span></a>
+              <a class="imperial-button imperial-button-ghost" href="#projects">Kiemelt projektek</a>
+            </div>
+          </div>
+
+          <div class="hero-visual" aria-label="Absztrakt prémium építészeti kompozíció">
+            <div class="hero-orbit"></div>
+            <svg viewBox="0 0 720 760" role="img" aria-labelledby="architecture-title architecture-desc">
+              <title id="architecture-title">Imperial építészeti jövőkép</title>
+              <desc id="architecture-desc">Geometrikus épülettömegek arany kontúrokkal, sötétkék háttéren.</desc>
+              <defs>
+                <linearGradient id="tower-face" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#27435f"/>
+                  <stop offset="1" stop-color="#0a1626"/>
+                </linearGradient>
+                <linearGradient id="tower-gold" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ead49e"/>
+                  <stop offset="1" stop-color="#9d7538"/>
+                </linearGradient>
+                <filter id="soft-glow">
+                  <feGaussianBlur stdDeviation="14"/>
+                </filter>
+              </defs>
+              <circle cx="505" cy="212" r="126" fill="none" stroke="#c9a45f" stroke-opacity=".22"/>
+              <circle cx="505" cy="212" r="84" fill="#c9a45f" fill-opacity=".06" filter="url(#soft-glow)"/>
+              <path d="M124 626 306 421 306 702 124 702Z" fill="#10263c" stroke="#c9a45f" stroke-opacity=".45"/>
+              <path d="M306 421 397 476 397 702 306 702Z" fill="#081424" stroke="#c9a45f" stroke-opacity=".3"/>
+              <path d="M350 226 544 122 544 702 350 702Z" fill="url(#tower-face)" stroke="#c9a45f" stroke-opacity=".62"/>
+              <path d="M544 122 626 199 626 702 544 702Z" fill="#07111f" stroke="#c9a45f" stroke-opacity=".36"/>
+              <path d="M390 252 510 188 510 651 390 651Z" fill="#091827" stroke="#d9ba75" stroke-opacity=".2"/>
+              <g fill="url(#tower-gold)" opacity=".75">
+                <rect x="377" y="270" width="9" height="46" rx="2"/>
+                <rect x="377" y="350" width="9" height="46" rx="2"/>
+                <rect x="377" y="430" width="9" height="46" rx="2"/>
+                <rect x="377" y="510" width="9" height="46" rx="2"/>
+                <rect x="377" y="590" width="9" height="46" rx="2"/>
+                <rect x="526" y="198" width="7" height="52" rx="2"/>
+                <rect x="526" y="294" width="7" height="52" rx="2"/>
+                <rect x="526" y="390" width="7" height="52" rx="2"/>
+              </g>
+              <g fill="none" stroke="#d9ba75" stroke-opacity=".4">
+                <path d="M149 627 281 480M149 666 281 519M196 702V553M244 702V500"/>
+                <path d="M576 214V652M596 234V652"/>
+              </g>
+              <path d="M79 703H664" stroke="#ead49e" stroke-opacity=".55"/>
+              <path d="M107 727H635" stroke="#ead49e" stroke-opacity=".18"/>
+            </svg>
+            <div class="visual-caption">
+              <span>01 / 04</span>
+              <p>Rendszerszintű gondolkodás.<br>Emberléptékű terek.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-scroll">
+          <span>Görgess a felfedezéshez</span>
+          <i></i>
+        </div>
+      </section>
+
+      <section class="trust-band content-section" id="trust" data-section-label="Bizalmi mutatók">
+        <p>Az Imperial ökoszisztéma egyesíti a szakértelmet</p>
+        <div class="stat-grid" id="stat-grid" aria-label="Szintetikus vállalati mutatók"></div>
+        <small>A megjelenített számok kizárólag demonstrációs célú, szintetikus tesztadatok.</small>
+      </section>
+
+      <section class="portfolio content-section section-light" id="portfolio" data-section-label="Márkaportfólió">
+        <div class="section-heading">
+          <div>
+            <p class="section-number">01 — Portfólió</p>
+            <h2>Egy ökoszisztéma.<br><em>Tizenkét specializált márka.</em></h2>
+          </div>
+          <p>
+            Az Imperial cégcsoport márkái az értéklánc minden pontján összehangoltan
+            dolgoznak — a koncepciótól a megvalósításig.
+          </p>
+        </div>
+        <div class="portfolio-grid" id="portfolio-grid"></div>
+        <a class="section-link" href="#contact">Teljes márkaportfólió <span>→</span></a>
+      </section>
+
+      <section class="capabilities content-section" id="capabilities" data-section-label="Komplex szakértelem">
+        <div class="capability-art" aria-hidden="true">
+          <div class="blueprint-grid"></div>
+          <span class="drawing-line line-one"></span>
+          <span class="drawing-line line-two"></span>
+          <span class="drawing-line line-three"></span>
+          <div class="gold-slab"></div>
+          <p>IMPERIAL<br>SYSTEM / 01</p>
+        </div>
+        <div class="capability-copy">
+          <p class="section-number">02 — Szakértelem</p>
+          <h2>A komplexitást<br><em>versenyelőnnyé alakítjuk.</em></h2>
+          <p>
+            Saját szakági tudásunk és integrált működésünk kiszámíthatóbb folyamatot,
+            magasabb minőséget és tartósabb értéket teremt.
+          </p>
+          <ol class="capability-list">
+            <li>
+              <span>01</span>
+              <div><strong>Ingatlanfejlesztés</strong><small>Piacismerettől az élhető városi terekig</small></div>
+            </li>
+            <li>
+              <span>02</span>
+              <div><strong>Generálkivitelezés</strong><small>Felelős koordináció, átlátható minőség</small></div>
+            </li>
+            <li>
+              <span>03</span>
+              <div><strong>Innovatív gyártás</strong><small>Előregyártás és mérnöki precizitás</small></div>
+            </li>
+            <li>
+              <span>04</span>
+              <div><strong>Értékesítés és üzemeltetés</strong><small>Hosszú távú partneri szemlélet</small></div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="projects content-section section-light" id="projects" data-section-label="Kiemelt projektek">
+        <div class="section-heading section-heading-inline">
+          <div>
+            <p class="section-number">03 — Projektek</p>
+            <h2>Helyek, amelyek<br><em>történeteket indítanak.</em></h2>
+          </div>
+          <div class="project-controls" aria-label="Projekt lapozó">
+            <button type="button" id="project-prev" aria-label="Előző projektek">←</button>
+            <button type="button" id="project-next" aria-label="Következő projektek">→</button>
+          </div>
+        </div>
+        <div class="project-grid" id="project-grid"></div>
+        <p class="synthetic-note">A projektek nevei, helyszínei és adatai szintetikus mintaelemek.</p>
+      </section>
+
+      <section class="sustainability content-section" id="sustainability" data-section-label="Fenntartható jövőkép">
+        <div class="sustainability-copy">
+          <p class="section-number">04 — Jövőkép</p>
+          <h2>Nem csak a mának építünk.</h2>
+          <p>
+            A fenntarthatóság nálunk tervezési alapelv: hatékony anyaghasználat,
+            energiafókuszú megoldások és időtálló, adaptív épületek.
+          </p>
+          <a class="imperial-button imperial-button-gold" href="#contact">Jövőképünk <span>→</span></a>
+        </div>
+        <div class="sustainability-orbit" aria-hidden="true">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="orbit-center">
+            <span>∞</span>
+            <small>Értékciklus</small>
+          </div>
+          <p class="orbit-label label-a">Tervezés</p>
+          <p class="orbit-label label-b">Megvalósítás</p>
+          <p class="orbit-label label-c">Életciklus</p>
+        </div>
+      </section>
+
+      <section class="news content-section section-light" id="news" data-section-label="Hírek és perspektívák">
+        <div class="section-heading">
+          <div>
+            <p class="section-number">05 — Perspektívák</p>
+            <h2>Gondolatok az<br><em>épített jövőről.</em></h2>
+          </div>
+          <p>Szakmai nézőpontok, cégcsoport-hírek és inspirációk — egyelőre minta tartalommal.</p>
+        </div>
+        <div class="news-grid" id="news-grid"></div>
+      </section>
+
+      <section class="contact content-section" id="contact" data-section-label="Kapcsolati felhívás">
+        <div class="contact-lines" aria-hidden="true"></div>
+        <p class="section-number">06 — Kapcsolat</p>
+        <h2>Építsük meg együtt<br><em>a következő értéket.</em></h2>
+        <p>Beszéljünk a lehetőségről — ezen a prototípuson az űrlap nem küld adatot.</p>
+        <button class="imperial-button imperial-button-gold" type="button" id="prototype-contact">
+          Kapcsolatfelvétel <span>→</span>
+        </button>
+      </section>
     </main>
-  </body>
+
+    <footer class="site-footer">
+      <a class="site-logo" href="#hero">
+        <span class="logo-gem" aria-hidden="true"><i>IH</i></span>
+        <span><strong>Imperial</strong><small>Holding</small></span>
+      </a>
+      <p>Prémium minőség. Integrált szakértelem. Maradandó érték.</p>
+      <div>
+        <a href="#portfolio">Portfólió</a>
+        <a href="#projects">Projektek</a>
+        <a href="#sustainability">Jövőkép</a>
+        <a href="#contact">Kapcsolat</a>
+      </div>
+      <small>© 2026 Imperial Holding · Vizuális tesztprototípus · Nem production oldal</small>
+    </footer>
+
+    <div class="site-toast" id="site-toast" role="status" aria-live="polite"></div>
+  <script src="/site-preview/imperial/assets/platform/review-bridge.js" defer></script></body>
 </html>

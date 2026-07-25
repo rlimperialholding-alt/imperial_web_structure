@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 680" role="img" aria-labelledby="t d">
+<title id="t">RED Property – kapcsolat</title><desc id="d">Márkaspecifikus absztrakt építészeti kompozíció.</desc>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F7F7F7"/><stop offset="1" stop-color="#222222"/></linearGradient><pattern id="p" width="68" height="68" patternUnits="userSpaceOnUse"><path d="M0 0H36V36" fill="none" stroke="#C91F32" stroke-opacity=".12"/></pattern></defs>
+<rect width="900" height="680" fill="url(#g)"/><rect width="900" height="680" fill="url(#p)"/>
+<circle cx="104" cy="166" r="98" fill="#FFD400" opacity=".88"/><path d="M80 570L513 310L820 570Z" fill="#C91F32" opacity=".92"/>
+<path d="M160 570V330L430 186L720 330V570" fill="#F7F7F7" stroke="#141414" stroke-width="10"/>
+<rect x="336" y="390" width="150" height="180" fill="#222222"/><rect x="500" y="370" width="130" height="100" fill="#FFD400" opacity=".76"/>
+</svg>

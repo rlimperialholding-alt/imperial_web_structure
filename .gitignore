@@ -1,4 +1,11 @@
 .env
+node_modules/
+playwright-report/
+test-results/
+artifacts/website-previews/
+/reports/
+__pycache__/
+*.py[cod]
 .env.*
 !.env.example
 

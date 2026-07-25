@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 680" role="img" aria-labelledby="t d">
+<title id="t">Danish Fabrik – index</title><desc id="d">Márkaspecifikus absztrakt építészeti kompozíció.</desc>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F6F4EE"/><stop offset="1" stop-color="#7BB4A5"/></linearGradient><pattern id="p" width="36" height="36" patternUnits="userSpaceOnUse"><path d="M0 0H36V36" fill="none" stroke="#234B5C" stroke-opacity=".12"/></pattern></defs>
+<rect width="900" height="680" fill="url(#g)"/><rect width="900" height="680" fill="url(#p)"/>
+<circle cx="185" cy="154" r="104" fill="#F4C95D" opacity=".88"/><path d="M80 570L485 400L820 570Z" fill="#234B5C" opacity=".92"/>
+<path d="M160 570V330L430 150L720 330V570" fill="#F6F4EE" stroke="#1E3138" stroke-width="10"/>
+<rect x="260" y="390" width="150" height="180" fill="#7BB4A5"/><rect x="500" y="370" width="130" height="100" fill="#F4C95D" opacity=".76"/>
+</svg>

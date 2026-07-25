@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="hu">
+<head><meta name="robots" content="noindex,nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Felújítani vagy új házat építeni? – HTML prototípus</title>
+<style>
+:root{
+  --navy:#071a2f;
+  --navy2:#0d2f62;
+  --gold:#f0b72f;
+  --red:#b30f18;
+  --red2:#7f0810;
+  --green:#2f7d32;
+  --green2:#155c27;
+  --ink:#111827;
+  --muted:#5d6673;
+  --line:#d8dde5;
+  --paper:#f6f7f9;
+  --white:#ffffff;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:#e9edf2;
+  color:var(--ink);
+}
+.ih-renew-build{
+  width:min(1180px,calc(100% - 28px));
+  margin:28px auto;
+  border-radius:20px;
+  overflow:hidden;
+  background:var(--paper);
+  box-shadow:0 24px 70px rgba(6,18,43,.24);
+  border:1px solid rgba(7,26,47,.14);
+}
+.header{
+  padding:22px 28px;
+  color:white;
+  background:
+    radial-gradient(circle at 12% 30%,rgba(240,183,47,.16),transparent 24%),
+    linear-gradient(135deg,#061425,#0a2858 64%,#061425);
+  display:grid;
+  grid-template-columns:210px 1fr;
+  gap:24px;
+  align-items:center;
+}
+.logo{
+  display:flex;
+  align-items:center;
+  gap:13px;
+  border-right:2px solid rgba(255,255,255,.75);
+  padding-right:22px;
+}
+.mark{
+  width:72px;height:72px;
+  clip-path:polygon(50% 0,100% 100%,73% 100%,50% 40%,26% 100%,0 100%);
+  background:linear-gradient(90deg,#d8dde5 0 48%,#ffd400 48% 100%);
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.32));
+}
+.logo-text{
+  text-transform:uppercase;
+  line-height:1.03;
+  font-size:20px;
+  font-weight:850;
+  letter-spacing:.08em;
+}
+.header h1{
+  margin:0;
+  font-size:clamp(32px,5vw,58px);
+  line-height:.98;
+  text-transform:uppercase;
+  letter-spacing:-.04em;
+}
+.header h1 span{display:block;color:var(--gold)}
+.header p{
+  margin:8px 0 0;
+  color:rgba(255,255,255,.88);
+  font-size:17px;
+}
+.intro{
+  padding:20px 28px 10px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:24px;
+  align-items:center;
+}
+.question{
+  display:grid;
+  grid-template-columns:58px 1fr;
+  gap:16px;
+  align-items:center;
+}
+.qmark{
+  width:58px;height:58px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:var(--gold);
+  color:#071a2f;
+  font-size:36px;
+  font-weight:1000;
+}
+.question h2{margin:0 0 5px;font-size:21px}
+.question p{margin:0;color:var(--ink);font-weight:700}
+.tip{
+  display:grid;
+  grid-template-columns:64px 1fr;
+  gap:14px;
+  padding:14px 18px;
+  border-radius:14px;
+  color:white;
+  background:linear-gradient(135deg,var(--navy),#0d2f62);
+}
+.bulb{
+  width:54px;height:54px;border-radius:50%;
+  border:2px solid var(--gold);
+  display:grid;place-items:center;
+  color:var(--gold);
+  font-size:30px;
+}
+.tip p{margin:0;line-height:1.45;font-size:16px}
+.main{
+  padding:0 28px 18px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:22px;
+}
+.option{
+  background:white;
+  border-radius:12px;
+  overflow:hidden;
+  border:1px solid var(--line);
+  box-shadow:0 12px 24px rgba(9,24,51,.07);
+}
+.option.red .opt-title{background:linear-gradient(90deg,var(--red2),var(--red))}
+.option.green .opt-title{background:linear-gradient(90deg,var(--green2),var(--green))}
+.opt-title{
+  padding:12px 18px;
+  color:white;
+  text-transform:uppercase;
+  font-weight:1000;
+  text-align:center;
+  font-size:20px;
+}
+.photo{
+  min-height:210px;
+  position:relative;
+  display:flex;
+  align-items:flex-end;
+  padding:18px;
+  background-size:cover;
+  background-position:center;
+}
+.old{
+  background-image:
+    linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.38)),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 650 300' xmlns='http://www.w3.org/2000/svg'%3E%3Crect fill='%23c8c2b4' width='650' height='300'/%3E%3Crect x='70' y='120' width='400' height='110' fill='%23d9d1bf'/%3E%3Cpath d='M45 125 L270 45 L500 125 Z' fill='%23644'/%3E%3Crect x='115' y='150' width='55' height='55' fill='%237b8794'/%3E%3Crect x='235' y='150' width='55' height='55' fill='%237b8794'/%3E%3Cpath d='M70 210 C170 190 250 250 470 218' stroke='%23744' stroke-width='10' fill='none'/%3E%3Ccircle cx='560' cy='85' r='70' fill='%237d8b48'/%3E%3C/svg%3E");
+}
+.new{
+  background-image:
+    linear-gradient(180deg,rgba(0,0,0,.04),rgba(0,0,0,.34)),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 650 300' xmlns='http://www.w3.org/2000/svg'%3E%3Crect fill='%23c7d9e9' width='650' height='300'/%3E%3Crect y='205' width='650' height='95' fill='%23749b5b'/%3E%3Crect x='90' y='115' width='420' height='100' fill='%23f2f4f2'/%3E%3Cpath d='M70 118 L300 48 L535 118 Z' fill='%23242b32'/%3E%3Crect x='160' y='140' width='90' height='75' fill='%232b3f50'/%3E%3Crect x='300' y='140' width='130' height='75' fill='%232b3f50'/%3E%3Crect x='455' y='145' width='45' height='70' fill='%23ddd'/%3E%3C/svg%3E");
+}
+.size{
+  margin-left:auto;
+  background:rgba(5,20,45,.86);
+  color:white;
+  padding:9px 12px;
+  border-radius:10px;
+  text-align:right;
+  font-weight:900;
+  line-height:1.25;
+}
+.cost-head{
+  padding:14px 16px 8px;
+  text-align:center;
+}
+.cost-head h3{
+  margin:0;
+  text-transform:uppercase;
+  font-size:20px;
+}
+.red .cost-head h3{color:var(--red)}
+.green .cost-head h3{color:var(--green)}
+.price{
+  margin-top:6px;
+  font-size:22px;
+  font-weight:1000;
+}
+.price.redtxt{color:var(--red)}
+.price.greentxt{color:var(--green)}
+.cost-head small{display:block;margin-top:3px;color:#111;font-weight:800}
+.cost-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:14px;
+}
+.cost-table th,.cost-table td{
+  padding:9px 12px;
+  border-top:1px solid var(--line);
+}
+.cost-table th{
+  background:#eef1f5;
+  text-transform:uppercase;
+  text-align:left;
+  font-size:13px;
+}
+.cost-table td:last-child,.cost-table th:last-child{text-align:right;font-weight:800}
+.total{
+  margin:14px;
+  border-radius:9px;
+  padding:15px;
+  color:white;
+  text-align:center;
+}
+.red .total{background:linear-gradient(135deg,var(--red2),var(--red))}
+.green .total{background:linear-gradient(135deg,var(--green2),var(--green))}
+.total span{display:block;text-transform:uppercase;font-weight:900}
+.total strong{display:block;font-size:34px;line-height:1.1}
+.note-small{
+  text-align:center;
+  font-size:12px;
+  margin:0 0 12px;
+  color:#111;
+  font-weight:700;
+}
+.summary{
+  padding:0 28px 18px;
+  display:grid;
+  grid-template-columns:1.35fr .85fr;
+  gap:18px;
+}
+.compare-box,.info-box,.decision-box{
+  background:white;
+  border:1px solid var(--line);
+  border-radius:12px;
+  overflow:hidden;
+}
+.box-title{
+  padding:10px 16px;
+  color:white;
+  background:linear-gradient(90deg,var(--navy),var(--navy2));
+  text-transform:uppercase;
+  font-weight:1000;
+  font-size:19px;
+}
+.compare-grid{
+  display:grid;
+  grid-template-columns:1fr 130px 1fr;
+  gap:18px;
+  align-items:center;
+  padding:22px;
+  text-align:center;
+}
+.house-red,.house-green{
+  font-size:66px;
+  line-height:1;
+}
+.house-red{color:var(--red)}
+.house-green{color:var(--green)}
+.compare-grid h3{
+  margin:7px 0 8px;
+  text-transform:uppercase;
+  font-size:17px;
+}
+.compare-grid strong{font-size:23px}
+.scale{
+  width:92px;height:92px;
+  margin:auto;
+  border-radius:50%;
+  background:var(--navy);
+  color:white;
+  display:grid;
+  place-items:center;
+  font-size:42px;
+}
+.diff{font-weight:1000;margin-top:8px}
+.info-box{padding-bottom:14px}
+.info-box .box-title{background:#f4f6f8;color:var(--navy)}
+.info-box ul{
+  margin:14px 18px 0;
+  padding-left:18px;
+  line-height:1.55;
+  color:#1f2937;
+}
+.bottom{
+  padding:0 28px 18px;
+  display:grid;
+  grid-template-columns:1fr 1fr .95fr;
+  gap:18px;
+}
+.advice{
+  background:white;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:18px;
+}
+.advice h3{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  margin:0 0 12px;
+  text-transform:uppercase;
+  font-size:18px;
+}
+.ok{color:var(--green)}.no{color:var(--red)}
+.round{
+  width:38px;height:38px;border-radius:50%;
+  display:grid;place-items:center;
+  color:white;
+  font-size:24px;
+}
+.ok .round{background:var(--green)}
+.no .round{background:var(--red)}
+.advice ul{
+  margin:0;
+  padding-left:18px;
+  line-height:1.55;
+  font-size:14px;
+}
+.conclusion{
+  border-radius:12px;
+  padding:20px;
+  color:white;
+  background:linear-gradient(135deg,var(--navy),#0b2b63);
+}
+.conclusion .home{color:var(--gold);font-size:60px}
+.conclusion h3{margin:5px 0 10px;text-transform:uppercase;font-size:23px}
+.conclusion p{margin:0;line-height:1.55}
+.conclusion strong{display:block;margin-top:14px;color:var(--gold);font-size:18px}
+.footer{
+  padding:18px 28px;
+  color:white;
+  background:linear-gradient(135deg,#061425,#092858);
+  display:grid;
+  grid-template-columns:220px 1fr 260px;
+  gap:20px;
+  align-items:center;
+}
+.footer .logo{border-right:0;padding-right:0}
+.slogan{
+  color:var(--gold);
+  font-weight:1000;
+  font-size:20px;
+  text-align:center;
+  text-transform:uppercase;
+}
+.subslogan{text-align:center;color:rgba(255,255,255,.9);font-size:14px;margin-top:5px}
+.contact{line-height:1.7;font-size:16px}
+.disclaimer{
+  padding:10px 28px 18px;
+  text-align:center;
+  color:#1f2937;
+  font-size:12px;
+  background:#f8fafc;
+}
+@media(max-width:980px){
+  .header{grid-template-columns:1fr}.logo{border-right:0;justify-content:center}.header{text-align:center}
+  .intro,.main,.summary,.bottom{grid-template-columns:1fr}
+  .footer{grid-template-columns:1fr;text-align:center}.footer .logo{justify-content:center}
+}
+@media(max-width:640px){
+  .ih-renew-build{width:calc(100% - 16px);margin:8px auto;border-radius:14px}
+  .header,.intro,.main,.summary,.bottom,.footer{padding-left:16px;padding-right:16px}
+  .compare-grid{grid-template-columns:1fr}.scale{width:74px;height:74px;font-size:32px}
+  .header h1{font-size:34px}
+}
+</style>
+<link rel="stylesheet" href="/site-preview/imperial/assets/platform/review-bridge.css"><style data-imported-layout-variants>
+body.preview-layout-0 main>section:nth-child(3n+2){border-inline-start:7px solid currentColor}
+body.preview-layout-1 main>section:nth-child(even){background-image:linear-gradient(135deg,rgba(0,0,0,.045),transparent 62%)}
+body.preview-layout-1 .hero-grid,body.preview-layout-1 header.hero{direction:rtl}body.preview-layout-1 .hero-grid>*,body.preview-layout-1 header.hero>*{direction:ltr}
+body.preview-layout-2 .card,body.preview-layout-2 .cardx,body.preview-layout-2 article{border-radius:3px!important;box-shadow:none!important}
+body.preview-layout-2 main>section:nth-child(odd){border-block:1px solid rgba(0,0,0,.12)}
+body.preview-layout-3 h1{max-width:18ch!important}body.preview-layout-3 main>section:nth-child(3n){clip-path:polygon(0 3%,100% 0,100% 97%,0 100%);padding-block:clamp(5rem,9vw,9rem)}
+body.preview-layout-4 .card,body.preview-layout-4 .cardx,body.preview-layout-4 article{border-radius:34px 6px 34px 6px!important}
+body.preview-layout-4 main>section:nth-child(even) .row{flex-direction:row-reverse}
+body.preview-layout-5 main>section:nth-child(odd){background-image:repeating-linear-gradient(90deg,transparent 0,transparent calc(8.333% - 1px),rgba(0,0,0,.035) calc(8.333% - 1px),rgba(0,0,0,.035) 8.333%)}
+body.preview-layout-5 .steps{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+body.preview-layout-6 h1,body.preview-layout-6 h2{letter-spacing:-.055em!important}body.preview-layout-6 main>section:nth-child(even) .container{max-width:1040px}
+body.preview-layout-7 main>section:nth-child(3n+1){border-bottom:12px solid rgba(0,0,0,.1)}body.preview-layout-7 .card,body.preview-layout-7 .cardx,body.preview-layout-7 article{transform:translateY(var(--card-shift,0))}
+@media(min-width:768px) and (max-width:991.98px){.row.g-5{--bs-gutter-x:1.5rem}}
+@media(max-width:800px){body.preview-layout-1 .hero-grid,body.preview-layout-1 header.hero{direction:ltr}body.preview-layout-3 main>section:nth-child(3n){clip-path:none}body.preview-layout-5 .steps{grid-template-columns:1fr 1fr!important}}
+</style></head>
+<body class="preview-layout-3 preview-page-felujitas-vagy-uj-epites" data-preview-layout="3">
+<section class="ih-renew-build">
+  <header class="header">
+    <div class="logo">
+      <div class="mark"></div>
+      <div class="logo-text">Imperial<br>Holding<br>Group</div>
+    </div>
+    <div>
+      <h1>Felújítani érdemes vagy <span>új házat építeni?</span></h1>
+      <p>Mérnöki és gazdasági összehasonlítás a pesti agglomerációban – 2025. májusi piaci árak alapján</p>
+    </div>
+  </header>
+
+  <div class="intro">
+    <div class="question">
+      <div class="qmark">?</div>
+      <div>
+        <h2>Vegyünk egy rossz állapotú agglomerációs családi házat.</h2>
+        <p>Teljes körű felújítás vagy új építés? Nézzük a valós számokat!</p>
+      </div>
+    </div>
+    <div class="tip">
+      <div class="bulb">💡</div>
+      <p>Első ránézésre a felújítás tűnik olcsóbbnak, de a valóságban sok esetben megközelíti, vagy akár meg is haladja egy új építés költségét.</p>
+    </div>
+  </div>
+
+  <main class="main">
+    <article class="option red">
+      <div class="opt-title">1. Teljes körű felújítás – rossz állapotú ház</div>
+      <div class="photo old"><div class="size">100–120 m²<br>1970–1990 között épült</div></div>
+      <div class="cost-head">
+        <h3>Teljes körű felújítás költségei</h3>
+        <div class="price redtxt">Reálisan: 250.000 – 450.000 Ft/m²</div>
+        <small>100–120 m²-es ház esetén</small>
+      </div>
+      <table class="cost-table">
+        <thead><tr><th>Munkanem</th><th>Költség (Ft)</th></tr></thead>
+        <tbody>
+          <tr><td>Bontás, sitt elszállítás</td><td>1,5 – 3 M</td></tr>
+          <tr><td>Villamos hálózat teljes csere</td><td>2 – 3,5 M</td></tr>
+          <tr><td>Víz-csatorna, gépészet alapcsere</td><td>3 – 5 M</td></tr>
+          <tr><td>Fűtési rendszer / hőszivattyú</td><td>5 – 9 M</td></tr>
+          <tr><td>Nyílászárók cseréje</td><td>3 – 5 M</td></tr>
+          <tr><td>Homlokzati hőszigetelés</td><td>4 – 7 M</td></tr>
+          <tr><td>Tetőjavítás / részleges felújítás</td><td>4 – 10 M</td></tr>
+          <tr><td>Belső burkolás</td><td>4 – 7 M</td></tr>
+          <tr><td>Festés, glettelés</td><td>1,5 – 3 M</td></tr>
+          <tr><td>Fürdő + szaniterek</td><td>2 – 4 M</td></tr>
+          <tr><td>Tartalék rejtett hibákra</td><td>3 – 8 M</td></tr>
+        </tbody>
+      </table>
+      <div class="total"><span>Összesen bruttó</span><strong>25 – 54 millió Ft</strong><small>100–120 m²-es ház esetén</small></div>
+      <p class="note-small">Az árak a telek árát nem tartalmazzák!</p>
+    </article>
+
+    <article class="option green">
+      <div class="opt-title">2. Új építésű családi ház – nulláról</div>
+      <div class="photo new"><div class="size">100–120 m²<br>modern, A+ energetika</div></div>
+      <div class="cost-head">
+        <h3>Új építésű családi ház kivitelezési költségei</h3>
+        <div class="price greentxt">Reálisan: 650.000 – 850.000 Ft/m²</div>
+        <small>100–120 m²-es ház esetén</small>
+      </div>
+      <table class="cost-table">
+        <thead><tr><th>Munkanem</th><th>Költség (Ft)</th></tr></thead>
+        <tbody>
+          <tr><td>Alapozás, földmunka, közműbekötések</td><td>8 – 13 M</td></tr>
+          <tr><td>Falazat, szerkezet, födém</td><td>18 – 28 M</td></tr>
+          <tr><td>Tetőszerkezet, héjazat</td><td>8 – 14 M</td></tr>
+          <tr><td>Nyílászárók</td><td>5 – 9 M</td></tr>
+          <tr><td>Homlokzat, hőszigetelés</td><td>6 – 10 M</td></tr>
+          <tr><td>Gépészet</td><td>10 – 18 M</td></tr>
+          <tr><td>Villamos rendszer</td><td>4 – 7 M</td></tr>
+          <tr><td>Burkolatok és belső munkák</td><td>10 – 18 M</td></tr>
+          <tr><td>Szaniterek, belső ajtók, szerelvények</td><td>4 – 8 M</td></tr>
+          <tr><td>Szervezés, tervezés, tartalék</td><td>6 – 12 M</td></tr>
+        </tbody>
+      </table>
+      <div class="total"><span>Összesen bruttó</span><strong>75 – 100 millió Ft</strong><small>100–120 m²-es ház esetén</small></div>
+      <p class="note-small">Az árak a telek árát nem tartalmazzák!</p>
+    </article>
+  </main>
+
+  <section class="summary">
+    <div class="compare-box">
+      <div class="box-title">Összefoglaló összehasonlítás (100–120 m²)</div>
+      <div class="compare-grid">
+        <div><div class="house-red">⌂</div><h3 class="redtxt">Teljes felújítás</h3><strong>25 – 54 millió Ft</strong><p>250.000 – 450.000 Ft/m²</p></div>
+        <div><div class="scale">⚖</div><div class="diff">Árkülönbség<br>20 – 50 millió Ft</div></div>
+        <div><div class="house-green">⌂</div><h3 class="greentxt">Új építés</h3><strong>75 – 100 millió Ft</strong><p>650.000 – 850.000 Ft/m²</p></div>
+      </div>
+    </div>
+    <div class="info-box">
+      <div class="box-title">Fontos tudnivaló</div>
+      <ul>
+        <li>Az árak bruttó kivitelezési költségek, telek nélkül értendők.</li>
+        <li>A 2025. májusi átlagárak agglomerációs családi házakra vonatkoznak.</li>
+        <li>A felújítás költsége nagyban függ a rejtett hibáktól és az épület állapotától.</li>
+        <li>Az új építés ára kulcsrakész állapotra, átlagos műszaki tartalommal értendő.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div class="advice">
+      <h3 class="ok"><span class="round">✓</span>Mikor érdemes felújítani?</h3>
+      <ul>
+        <li>Jó a ház szerkezeti állapota, nincs komoly statikai vagy vizesedési probléma.</li>
+        <li>Kiváló lokáció, ahol az új építés engedélyezése nehézkes.</li>
+        <li>Fontos a meglévő hangulat, karakter megőrzése.</li>
+        <li>Kisebb mértékű felújítás, nem teljes körű korszerűsítés.</li>
+      </ul>
+    </div>
+    <div class="advice">
+      <h3 class="no"><span class="round">×</span>Mikor érdemes inkább újat építeni?</h3>
+      <ul>
+        <li>Rossz szerkezeti állapot, vizesedés, alapozási problémák.</li>
+        <li>Teljes gépészeti és villamos csere szükséges.</li>
+        <li>Rossz elrendezés, alacsony belmagasság.</li>
+        <li>Energetikailag nem korszerűsíthető gazdaságosan.</li>
+      </ul>
+    </div>
+    <div class="conclusion">
+      <div class="home">⌂</div>
+      <h3>Konklúzió</h3>
+      <p>Egy rossz állapotú, 100–120 m²-es agglomerációs ház teljes felújítása reálisan 25–54 millió Ft között mozoghat, míg egy új építésű családi ház 75–100 millió Ft között.</p>
+      <strong>A döntést nem csak ár, hanem műszaki állapot, energetika, értékállóság és hosszú távú költségek alapján érdemes meghozni.</strong>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="logo">
+      <div class="mark"></div>
+      <div class="logo-text">Imperial<br>Holding<br>Group</div>
+    </div>
+    <div>
+      <div class="slogan">Biztonság. Szakértelem. Értékteremtés.</div>
+      <div class="subslogan">Mérnöki és jogi szemlélettel segítünk a legjobb döntést meghozni!</div>
+    </div>
+    <div class="contact">☎ 06-70-676-5379<br>✉ info@imperialholding.hu<br>🌐 www.imperialholding.hu</div>
+  </footer>
+
+  <div class="disclaimer">Jelen tájékoztató nem minősül ajánlattételnek. Az árak tájékoztató jellegűek, a konkrét költségek helyszíni felmérés és műszaki tartalom alapján változhatnak.</div>
+</section>
+<script src="/site-preview/imperial/assets/platform/review-bridge.js" defer></script></body>
+</html>

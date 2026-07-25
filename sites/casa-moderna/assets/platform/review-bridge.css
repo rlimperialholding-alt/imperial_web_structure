@@ -1,0 +1,65 @@
+.review-mode .review-section {
+  position: relative;
+  scroll-margin-top: 5rem;
+}
+
+.review-mode .review-section::after {
+  position: absolute;
+  z-index: 9997;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid rgb(201 164 95 / 50%);
+  border-radius: 999px;
+  color: #f7e5b8;
+  background: rgb(5 18 35 / 88%);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 22%);
+  content: "#" attr(data-review-section);
+  font: 700 10px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.review-mode .review-section:hover {
+  outline: 1px dashed rgb(201 164 95 / 75%);
+  outline-offset: -1px;
+}
+
+.review-mode .review-section:hover::after,
+.review-mode .review-section.is-review-selected::after {
+  opacity: 1;
+}
+
+.review-mode .review-section.is-review-selected {
+  outline: 2px solid #c9a45f;
+  outline-offset: -2px;
+}
+
+.review-form-notice {
+  position: fixed;
+  z-index: 10000;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: min(24rem, calc(100% - 2rem));
+  padding: 0.8rem 1rem;
+  border: 1px solid rgb(201 164 95 / 45%);
+  border-radius: 0.65rem;
+  color: #fff7e5;
+  background: #0b1f35;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 32%);
+  font: 650 0.8rem/1.4 Inter, system-ui, sans-serif;
+}
+
+@media (max-width: 575.98px) {
+  /*
+   * Several imported Bootstrap fragments place a .row directly inside a
+   * section instead of a padded .container. Bootstrap's negative gutter
+   * margins would otherwise extend 12 px beyond each mobile viewport edge.
+   */
+  .review-mode .row {
+    margin-right: 0;
+    margin-left: 0;
+  }
+}

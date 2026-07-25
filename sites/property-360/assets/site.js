@@ -1,0 +1,4 @@
+const menu=document.querySelector('[data-menu]');const nav=document.querySelector('[data-nav]');
+if(menu&&nav){menu.addEventListener('click',()=>{const open=nav.classList.toggle('open');menu.setAttribute('aria-expanded',String(open));});}
+if(new URLSearchParams(location.search).get('review')==='1'){document.querySelectorAll('a[href]').forEach(a=>{const raw=a.getAttribute('href');if(!raw||raw.startsWith('#')||/^(mailto:|tel:|https?:)/.test(raw))return;const u=new URL(raw,location.href);u.searchParams.set('review','1');a.href=u.pathname+u.search+u.hash;});}
+document.querySelectorAll('form[data-preview-form]').forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();form.querySelector('[data-form-state]').textContent='Preview mód: az adatokat nem küldtük el.';}));

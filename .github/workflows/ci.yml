@@ -19,9 +19,9 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate and smoke test
+    name: Validate, crawl and browser test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       COMPOSE_PROJECT_NAME: imperial-ci-${{ github.run_id }}
       HTTP_PORT: "8080"
@@ -31,8 +31,37 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install browser test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
       - name: Validate repository structure
         run: sh scripts/validate-structure.sh
+
+      - name: Lint preview audit sources
+        run: |
+          python3 -m py_compile \
+            scripts/audit-preview-assets.py \
+            scripts/audit-preview-content.py \
+            scripts/differentiate-imported-layouts.py \
+            scripts/generate-brand-previews.py \
+            scripts/localize-preview-assets.py \
+            scripts/sanitize-multibrand-previews.py \
+            scripts/serve-preview.py \
+            scripts/update-preview-catalog.py
+          npm run lint:previews
 
       - name: Validate Compose configuration
         run: docker compose config --quiet
@@ -45,9 +74,26 @@ jobs:
         run: |
           set -euo pipefail
 
-          curl --fail --silent --show-error \
+          portal_html="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/ >/dev/null
+            http://127.0.0.1:8080/)"
+
+          grep --quiet 'id="brand-select"' <<<"$portal_html"
+          grep --quiet 'id="page-select"' <<<"$portal_html"
+          grep --quiet 'id="review-panel"' <<<"$portal_html"
+          grep --quiet 'data-device="desktop"' <<<"$portal_html"
+          grep --quiet 'data-device="tablet"' <<<"$portal_html"
+          grep --quiet 'data-device="mobile"' <<<"$portal_html"
+
+          brands_json="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/data/brands.json)"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert len(data["brands"]) == 12' <<<"$brands_json"
+
+          artifacts_json="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/data/artifacts.json)"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False; assert sum(len(x["pages"]) for x in data["brands"].values()) == 131' <<<"$artifacts_json"
 
           sites=(
             imperial
@@ -65,15 +111,83 @@ jobs:
           )
 
           for site in "${sites[@]}"; do
-            curl --fail --silent --show-error \
+            site_html="$(curl --fail --silent --show-error \
               --header "Host: ${site}.localhost" \
-              http://127.0.0.1:8080/ \
-              | grep --quiet "Staging környezet"
+              http://127.0.0.1:8080/)"
+            grep --quiet 'name="robots" content="noindex,nofollow"' <<<"$site_html"
           done
+
+          imperial_html="$(curl --fail --silent --show-error \
+            --header "Host: imperial.localhost" \
+            http://127.0.0.1:8080/)"
+          for section_id in hero trust portfolio capabilities projects sustainability news contact; do
+            grep --quiet "id=\"${section_id}\"" <<<"$imperial_html"
+          done
+
+          curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            'http://127.0.0.1:8080/site-preview/imperial/?review=1' \
+            | grep --quiet 'id="hero"'
+
+          drive_previews=(
+            "site-preview/imperial/drive/venture/venture-studio.html?review=1"
+            "site-preview/bautica/drive/b2b-belsoepiteszet-kivitelezes.html?review=1"
+            "site-preview/prefab/drive/knowledge/prefab-folyamatabra.html?review=1"
+            "site-preview/budapesti-magasepito-vallalat/drive/index.html?review=1"
+          )
+
+          for preview in "${drive_previews[@]}"; do
+            curl --fail --silent --show-error \
+              --header "Host: localhost" \
+              "http://127.0.0.1:8080/${preview}" \
+              | grep --quiet '/assets/platform/review-bridge.js'
+          done
+
+          curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            'http://127.0.0.1:8080/site-preview/family-homes/drive/tipushazak.html?review=1' \
+            | grep --quiet 'Family Homes'
+
+          curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/assets/data/imperial-home.json \
+            | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False'
 
           curl --fail --silent --show-error \
             http://127.0.0.1:8080/healthz \
             | grep --quiet "^ok$"
+
+      - name: Crawl every preview dependency
+        run: |
+          python3 scripts/audit-preview-assets.py \
+            --base-url http://127.0.0.1:8080 \
+            --expected-pages 131 \
+            --json-output reports/website-preview-asset-audit.json \
+            --markdown-output reports/website-preview-asset-audit.md
+
+      - name: Audit copy uniqueness, brand purity and guide alignment
+        run: |
+          python3 scripts/audit-preview-content.py \
+            --json-output reports/website-preview-content-audit.json \
+            --markdown-output reports/website-preview-content-audit.md
+
+      - name: Test all previews at three viewport sizes
+        env:
+          PREVIEW_BASE_URL: http://127.0.0.1:8080
+        run: npm run test:previews
+
+      - name: Upload preview audit and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-preview-qa
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            reports/
+            artifacts/website-previews/
+            playwright-report/
+            test-results/
 
       - name: Show container logs on failure
         if: failure()

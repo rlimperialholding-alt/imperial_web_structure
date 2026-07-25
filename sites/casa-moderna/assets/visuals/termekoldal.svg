@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 680" role="img" aria-labelledby="t d">
+<title id="t">Casa Moderna – termekoldal</title><desc id="d">Márkaspecifikus absztrakt építészeti kompozíció.</desc>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F5F1E9"/><stop offset="1" stop-color="#8E8A82"/></linearGradient><pattern id="p" width="52" height="52" patternUnits="userSpaceOnUse"><path d="M0 0H36V36" fill="none" stroke="#191816" stroke-opacity=".12"/></pattern></defs>
+<rect width="900" height="680" fill="url(#g)"/><rect width="900" height="680" fill="url(#p)"/>
+<circle cx="208" cy="126" r="129" fill="#B79A6B" opacity=".88"/><path d="M80 570L491 412L820 570Z" fill="#191816" opacity=".92"/>
+<path d="M160 570V330L430 168L720 330V570" fill="#F5F1E9" stroke="#181715" stroke-width="10"/>
+<rect x="298" y="390" width="150" height="180" fill="#8E8A82"/><rect x="500" y="370" width="130" height="100" fill="#B79A6B" opacity=".76"/>
+</svg>
