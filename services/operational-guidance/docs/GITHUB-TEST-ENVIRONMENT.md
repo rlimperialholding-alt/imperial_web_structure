@@ -46,6 +46,10 @@ Optional environment variables:
 8. uploads logs and diagnostics;
 9. destroys all test databases and volumes.
 
+Before the workflow exists on the default branch, add the `run-live-crm` label
+to the pull request to trigger the protected pre-merge run. Removing and
+re-adding the label starts a new run after secret or adapter changes.
+
 ## Safety
 
 - no production database is mounted;
