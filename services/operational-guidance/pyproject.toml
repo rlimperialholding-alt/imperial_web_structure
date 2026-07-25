@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imperial-intelligence-integration-hub"
-version = "0.8.1"
+version = "0.9.0.dev0"
 description = "Integration and publishing control plane for Imperial Intelligence"
 requires-python = ">=3.12"
 dependencies = [
@@ -33,6 +33,7 @@ dependencies = [
 dev = [
   "pytest>=8.3,<10",
   "pytest-cov>=6,<8",
+  "pytest-asyncio>=0.25,<1",
   "ruff>=0.9,<1",
 ]
 

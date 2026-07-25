@@ -5,6 +5,7 @@ __pycache__/
 .ruff_cache/
 *.pyc
 *.log
+*.egg-info/
 secrets/*
 !secrets/.gitkeep
 postgres_data/

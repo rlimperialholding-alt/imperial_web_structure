@@ -1,0 +1,8 @@
+import type { TaskPriority, TaskStatus } from "../domain/types.js";
+export interface ReportingTaskSnapshot { id:string; organizationId:string; assigneeId:string; issuerId:string; priority:TaskPriority; status:TaskStatus; createdAt:Date; dueAt:Date; closedAt?:Date; reminderLevel:number; sensitivity:string; }
+export interface IncidentSnapshot { id:string; severity:"LOW"|"MEDIUM"|"HIGH"|"CRITICAL"; status:"OPEN"|"ACKNOWLEDGED"|"IN_PROGRESS"|"RESOLVED"|"DISMISSED"; category:string; createdAt:Date; resolvedAt?:Date; }
+export interface ReportingWindow { from:Date; to:Date; }
+export interface PriorityMetrics { total:number; open:number; closed:number; overdue:number; completionRate:number; slaRate:number; averageDelayHours:number; medianDelayHours:number; }
+export interface AssigneePerformance { assigneeId:string; assigned:number; closed:number; overdueOpen:number; completionRate:number; averageDelayHours:number; }
+export interface ExecutiveMetrics { window:ReportingWindow; totalTasks:number; openTasks:number; closedTasks:number; overdueTasks:number; completionRate:number; slaRate:number; averageDelayHours:number; medianDelayHours:number; criticalOpenTasks:number; openIncidents:number; criticalIncidents:number; byPriority:Record<TaskPriority,PriorityMetrics>; topPerformers:AssigneePerformance[]; highestRiskAssignees:AssigneePerformance[]; recurringIncidentCategories:Array<{category:string;count:number}>; }
+export interface ExecutiveBriefing { title:string; generatedAt:Date; periodLabel:string; summary:string; highlights:string[]; risks:string[]; recommendedActions:string[]; humanAnneQueue:string[]; metrics:ExecutiveMetrics; }
