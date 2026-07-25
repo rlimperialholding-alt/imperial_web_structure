@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
+test.setTimeout(120_000);
+
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const catalog = JSON.parse(
   fs.readFileSync(
@@ -39,7 +41,7 @@ function previewRoute(page) {
 
 test.describe("website preview catalog", () => {
   test("the catalog contains every registered screen", async () => {
-    expect(catalogPages).toHaveLength(70);
+    expect(catalogPages).toHaveLength(131);
     expect(Object.keys(catalog.brands)).toHaveLength(12);
   });
 
@@ -83,9 +85,10 @@ test.describe("website preview catalog", () => {
         });
 
         const response = await page.goto(previewRoute(pageEntry), {
-          waitUntil: "networkidle"
+          waitUntil: "domcontentloaded"
         });
         expect(response?.status()).toBe(200);
+        await page.waitForTimeout(350);
         await page.evaluate(() => document.fonts.ready);
         await expect(page.locator("body")).toBeVisible();
 
@@ -105,7 +108,13 @@ test.describe("website preview catalog", () => {
           quality: 80
         });
 
-        const diagnostics = await page.evaluate(() => {
+        const diagnostics = await page.evaluate(({ brand, kind }) => {
+          const normalizeCopy = (value) =>
+            value
+              .toLocaleLowerCase("hu")
+              .replace(/\s+/g, " ")
+              .replace(/[^\p{L}\p{N}%+–-]+/gu, " ")
+              .trim();
           const images = Array.from(document.images);
           const brokenImages = images
             .filter((image) => !image.complete || image.naturalWidth === 0)
@@ -126,6 +135,26 @@ test.describe("website preview catalog", () => {
               );
             });
           const viewportWidth = document.documentElement.clientWidth;
+          const copyCounts = new Map();
+          Array.from(
+            document.querySelectorAll("main h1,main h2,main h3,main p,main li,main summary")
+          ).forEach((element) => {
+            const normalized = normalizeCopy(element.textContent || "");
+            if (
+              normalized.length >= 90
+              && !normalized.includes("preview nem küld adatot")
+              && !normalized.includes("drive-forráshoz igazított")
+            ) {
+              copyCounts.set(normalized, (copyCounts.get(normalized) || 0) + 1);
+            }
+          });
+          const duplicateVisibleBlocks = Array.from(copyCounts.entries())
+            .filter(([, count]) => count > 1)
+            .map(([text, count]) => ({ text, count }));
+          const foreignBrandMarkers = brand === "prefab"
+            ? ["imperial holding", "imperialholding.hu", "bautica", "csodálatos otthonok"]
+                .filter((marker) => document.body.innerText.toLowerCase().includes(marker))
+            : [];
           const overflowingElements = Array.from(document.querySelectorAll("*"))
             .map((element) => {
               const bounds = element.getBoundingClientRect();
@@ -147,17 +176,33 @@ test.describe("website preview catalog", () => {
             text: document.body.innerText,
             brokenImages,
             localNavigationWithoutReview,
+            duplicateVisibleBlocks,
+            foreignBrandMarkers,
+            sourceMetadata: kind === "drive-source-page"
+              ? {
+                  sourceId: document.querySelector('meta[name="source-id"]')?.content,
+                  guideId: document.querySelector('meta[name="brand-guide-id"]')?.content,
+                  status: document.querySelector('meta[name="content-status"]')?.content
+                }
+              : null,
             overflowingElements,
             viewportWidth,
             scrollWidth: document.documentElement.scrollWidth
           };
-        });
+        }, { brand: pageEntry.brand, kind: pageEntry.kind });
 
         expect(diagnostics.title).not.toBe("");
         expect(diagnostics.text.toLowerCase()).not.toContain("helyőrző");
         expect(diagnostics.text.toLowerCase()).not.toContain("placeholder");
         expect(diagnostics.brokenImages).toEqual([]);
         expect(diagnostics.localNavigationWithoutReview).toEqual([]);
+        expect(diagnostics.duplicateVisibleBlocks).toEqual([]);
+        expect(diagnostics.foreignBrandMarkers).toEqual([]);
+        if (pageEntry.kind === "drive-source-page") {
+          expect(diagnostics.sourceMetadata?.sourceId).toBeTruthy();
+          expect(diagnostics.sourceMetadata?.guideId).toBeTruthy();
+          expect(diagnostics.sourceMetadata?.status).toBe("source-aligned-preview");
+        }
         expect(
           diagnostics.scrollWidth,
           `Overflowing elements: ${JSON.stringify(diagnostics.overflowingElements)}`

@@ -1,118 +1,127 @@
-# Weboldalak preview — teljes asset- és böngészőaudit
+# Weboldalak preview — teljes forrás-, tartalom-, asset- és böngészőaudit
 
 Dátum: 2026-07-25
 Ág: `feature/platform-foundation`
 
 ## Eredmény
 
-- Katalógus: **70 oldal / 12 márka** (az eredeti 50 oldal és 20, Drive-forrásból
-  visszaállított vagy előállított tényleges preview).
-- Statikus és HTTP asset-audit: **0 blokkoló hiba**, **791 sikeres helyi
-  függőség**.
+- Katalógus: **131 oldal / 12 márka**.
+- Drive-ból visszakeresett, verziózott weboldalspecifikáció: **10 márka / 69 oldal**.
+- Statikus és HTTP asset-audit: **0 hiba, 0 figyelmeztetés, 1703 sikeres helyi függőség**.
+- Tartalom- és márkaaudit: **0 hiba, 0 figyelmeztetés**.
 - Külső runtime kérés: **0**.
-- Külső navigáció vagy forrás-metaadat: **37**; ezeket a böngésző nem tölti be
-  oldalfüggőségként.
-- Hiányzó katalógusoldal: **0**.
-- Playwright-mátrix: **211/211 sikeres** (**70 × 3 nézetméret + 1
-  katalógusteszt**), helyi futásidő 6,1 perc.
+- Külső navigáció vagy forrás-metaadat: **37**; ezek nem runtime függőségek.
+- Hiányzó, forrásban definiált katalógusoldal: **0**.
+- Playwright-mátrix: **394/394 sikeres** (**131 × 3 nézetméret + 1
+  katalógusteszt**), helyi futásidő 5,5 perc.
 
-| Kért hibakategória | Végleges darabszám |
+| Ellenőrzött hibakategória | Végleges darabszám |
 |---|---:|
 | HTTP 404 / nem 200 helyi függőség | 0 |
 | Blokkolt külső runtime függőség | 0 |
 | Nem létező helyi fájl | 0 |
 | Hibás relatív vagy abszolút útvonal | 0 |
 | Márkaspecifikus, közös `/assets/` hivatkozás | 0 |
+| Azonos hosszú szövegblokk egy oldalon belül | 0 |
+| Azonos hosszú szövegblokk külön oldalak között | 0 |
+| Márkakeveredés a Prefab csomagban | 0 |
+| Forrásspecifikáció nélküli automatikus helyőrző | 0 |
 
-Az audit minden HTML `href`, `src`, `srcset`, inline `style`, CSS `url()` és
-`@import`, valamint statikus JavaScript `import`/dinamikus `import()` hivatkozást
-rekurzívan követ. A katalógusoldalak és minden helyi függőség fájlrendszeren,
-majd HTTP-n is ellenőrzésre kerül.
+Az asset-crawler minden HTML `href`, `src`, `srcset`, inline `style`, CSS
+`url()` és `@import`, valamint statikus és dinamikus JavaScript-import
+hivatkozását rekurzívan követi. A katalógusoldalakat és minden helyi
+függőséget fájlrendszeren, majd HTTP-n is ellenőrzi.
 
-## Kiinduló állapot és javítás
+## Drive-források és arculati szabályok
 
-Az eredeti 50 oldalas baseline 136 blokkoló hibát tartalmazott. Mind a 136
-márkaspecifikus fájl közös `/assets/` névtérre mutató hivatkozás volt:
+A Google Drive audit során megtaláltuk a központi Conversion Architecture
+v1.5 dokumentumot, a közös design-token megfeleltetést, a lokalizációs mátrixot,
+valamint a márkánkénti arculati és conversion guide-okat. A korábban
+„source-only” jelölésű csomagok egyetlen oldal helyett összesen 47 konkrét
+oldalt írtak le. Az Imperial, Bautica és Prefab további forrásfájljai 22
+fogyasztói oldalt adtak a katalógushoz.
 
-| Márka | Baseline oldal | Baseline hiba | Javítás |
-|---|---:|---:|---|
-| Imperial Holding | 10 | 31 | tokenek, komponensek, saját CSS/JS/adat és teljes Bootstrap helyi csomagolása |
-| Bautica | 6 | 18 | teljes Bootstrap, Bootstrap Icons és review assetek márkakönyvtárba helyezése |
-| Prefab | 19 | 42 | teljes Bootstrap, Bootstrap Icons és review assetek márkakönyvtárba helyezése |
-| Budapesti Magasépítő Vállalat | 15 | 45 | teljes Bootstrap, Bootstrap Icons és review assetek márkakönyvtárba helyezése |
+Minden forrásalapú oldal metaadatként tartalmazza:
 
-A Bootstrap 5.3.3 teljes minifikált CSS-e és bundle JavaScriptje, valamint a
-Bootstrap Icons 1.11.3 CSS- és fontfájljai az érintett márkák saját
-`assets/vendor/` könyvtárában találhatók, licencfájlokkal együtt. A korábbi
-részleges kompatibilitási réteg nincs bekötve a preview-kba.
+- a Drive-forrás azonosítóját;
+- a márka arculati kézikönyvének azonosítóját;
+- a `source-aligned-preview` tartalmi státuszt.
 
-A hét dokumentumforrásos márka valódi Drive-specifikációja
-`source/website-spec.md` alatt maradt meg, és abból reprodukálható,
-márkaspecifikus, nem helyőrző oldal készült. A Family Homes Drive-csomagjának
-mind a 13 teljes HTML-oldala bekerült.
+A generátor márkánként külön színeket, tipográfiát, logót, vizuális assetet,
+oldaltípust és konverziós struktúrát alkalmaz. A tartalom forrásból készül, a
+CTA-k pedig a következő ellenőrizhető döntésre vezetnek, nem tesznek
+automatikus kötelezettségvállalást.
 
 ## Márkánkénti állapot
 
-| Márka | Elérhető | Hiányzó | Ellenőrzött helyi hivatkozás | Javított assetek | Fennmaradó blokkoló probléma |
+| Márka | Elérhető | Hiányzó | Ellenőrzött helyi hivatkozás | Forrás- és márkajavítás | Fennmaradó blokkoló probléma |
 |---|---:|---:|---:|---|---|
-| Imperial Holding | 10 | 0 | 78 | 31 útvonal; saját közös és vendor csomag | nincs |
-| Danish Fabrik | 1 | 0 | 8 | helyi CSS, JS, SVG, Inter font | nincs |
-| Bautica | 6 | 0 | 42 | 18 útvonal; teljes Bootstrap/Icons | nincs |
-| Prefab | 19 | 0 | 74 | 42 útvonal; teljes Bootstrap/Icons | nincs |
-| Casa Moderna | 1 | 0 | 8 | helyi CSS, JS, SVG, Inter font | nincs |
-| Family Homes | 13 | 0 | 223 | 13 oldal; teljes Bootstrap/Icons és review assetek | nincs |
-| Everyday Homes | 1 | 0 | 8 | helyi CSS, JS, SVG, Inter font | nincs |
-| Property 360 | 1 | 0 | 8 | helyi CSS, JS, SVG, Inter font | nincs |
-| Budapesti Magasépítő Vállalat | 15 | 0 | 318 | 45 útvonal; teljes Bootstrap/Icons | nincs |
-| BauFreund | 1 | 0 | 8 | helyi CSS, JS, SVG, Inter font | nincs |
-| RED Property | 1 | 0 | 8 | helyi CSS, JS, SVG, Inter font | nincs |
-| Timberhaus | 1 | 0 | 8 | helyi CSS, JS, SVG, Inter font | nincs |
+| Imperial Holding | 27 | 0 | 196 | fogyasztói és B2B oldalak; 10 tudásoldal helyes márkához mozgatva | nincs |
+| Danish Fabrik | 7 | 0 | 98 | 7 Drive-oldal, saját tokenek és vizuálok | nincs |
+| Bautica | 14 | 0 | 162 | 8 fogyasztói + 6 B2B oldal, külön Bautica arculat | nincs |
+| Prefab | 15 | 0 | 150 | 9 fogyasztói + 6 B2B oldal; Imperial tartalom eltávolítva | nincs |
+| Casa Moderna | 7 | 0 | 98 | 7 Drive-oldal, saját tokenek és vizuálok | nincs |
+| Family Homes | 13 | 0 | 223 | mind a 13 teljes HTML-oldal, oldalanként egyedi compliance-szöveg | nincs |
+| Everyday Homes | 6 | 0 | 78 | 6 Drive-oldal, saját tokenek és vizuálok | nincs |
+| Property 360 | 6 | 0 | 78 | 6 Drive-oldal, saját tokenek és vizuálok | nincs |
+| Budapesti Magasépítő Vállalat | 15 | 0 | 318 | teljes Bootstrap/Icons és márkahelyi assetcsomag | nincs |
+| BauFreund | 9 | 0 | 144 | 9 Drive-oldal, saját tokenek és vizuálok | nincs |
+| RED Property | 5 | 0 | 60 | 5 Drive-oldal, saját tokenek és vizuálok | nincs |
+| Timberhaus | 7 | 0 | 98 | 7 Drive-oldal, saját tokenek és vizuálok | nincs |
 
-## Navigáció és reszponzivitás
+A korábbi, Prefab alatt tárolt többmárkás belső katalógus nem publikus
+márkaoldal: `sites/_portal/review/` alá került. A Prefab csomagban nincs
+Imperial Holding-, Bautica- vagy más idegen márkaszöveg.
 
-A márkán belüli linkeket a helyi review bridge a
-`/site-preview/<brand>/...` névtérben tartja, és `review=1` módban a query
-paramétert minden belső navigáción megőrzi. A teszt ezt az oldal betöltése után
-az összes belső anchoron ellenőrzi.
+## Assetek, navigáció és reszponzivitás
 
-Az importált Bootstrap-fragmentumok közvetlen, konténer nélküli `.row`
-elemeinek negatív gutter margója mobilon 12 pixeles vízszintes kilógást okozott.
-A márkánként másolt review-stílus célzott, `575.98px` alatti korrekciója ezt
-megszünteti anélkül, hogy a desktop vagy tablet elrendezést módosítaná.
+Minden márka önálló csomag: HTML, CSS, JavaScript, kép, ikon és font a saját
+könyvtárában található. A Bootstrap 5.3.3 teljes minifikált CSS-e és bundle
+JavaScriptje, valamint a Bootstrap Icons 1.11.3 CSS- és fontfájljai helyben
+érhetők el, licencfájlokkal. Nincs CDN-, Google Fonts-, külső kép-, ikon- vagy
+JavaScript-függőség.
+
+A review bridge a márkán belüli linkeket a
+`/site-preview/<brand>/...` névtérben tartja, és megőrzi a `review=1`
+paramétert. A reszponzív audit javítja a Bootstrap nagy guttereinek tablet
+túlcsordulását, valamint a B2B lépéssáv hosszú címkéinek mobil tördelését.
 
 ## Biztonsági korlátok
 
-- Minden runtime asset same-origin és márkaspecifikus.
-- Nincs CDN-, Google Fonts-, külső kép-, ikon- vagy JavaScript-függőség.
-- A CSP same-originra korlátozza az asseteket és kapcsolatokat.
-- Minden oldal `noindex,nofollow`, az nginx `X-Robots-Tag` fejlécet is ad.
-- Az importált űrlapok tesztmódban nem küldenek adatot.
-- Az adatkatalógus `containsCustomerData=false` és
-  `runtimeExternalApis=false` korlátját a CI ellenőrzi.
+- A preview oldalak `noindex,nofollow` és `X-Robots-Tag` védelmet kapnak.
+- Az űrlapok review módban nem küldenek adatot.
+- A katalógus `containsCustomerData=false` és `runtimeExternalApis=false`
+  korlátját a CI ellenőrzi.
+- Ár, határidő, garancia vagy vállalás csak jóváhagyott forrásadatból válhat
+  éles állítássá; a preview fail-closed figyelmeztetést mutat.
+- Nincs automatikus szerződésmódosítás, kötelezettségvállalás,
+  felelősségelismerés vagy teljesítésigazolás.
 - Titok, credential és ügyféladat nem került a repositoryba.
 
 ## Reprodukálás
 
 ```bash
 python3 scripts/audit-preview-assets.py \
-  --base-url http://127.0.0.1:8080 \
-  --expected-pages 70 \
-  --json-output reports/website-preview-asset-audit.json \
-  --markdown-output reports/website-preview-asset-audit.md
+  --base-url http://127.0.0.1:18080 \
+  --expected-pages 131 \
+  --json-output docs/reports/website-preview-asset-audit-final.json \
+  --markdown-output docs/reports/website-preview-asset-audit-final.md
+python3 scripts/audit-preview-content.py
 npm ci
 npx playwright install chromium
-PREVIEW_BASE_URL=http://127.0.0.1:8080 npm run test:previews
+PREVIEW_BASE_URL=http://127.0.0.1:18080 npm run test:previews
 ```
 
 A Playwright minden oldalt 1440×900, 834×1112 és 390×844 méretben nyit meg,
-ellenőrzi a konzolhibákat, page errorokat, sikertelen vagy külső runtime
-kéréseket, 4xx/5xx válaszokat, törött képeket, review-navigációt és vízszintes
-túlcsordulást. A 210 képernyőkép CI-artifactként kerül megőrzésre.
+ellenőrzi a konzol- és page errorokat, a sikertelen vagy külső runtime
+kéréseket, a 4xx/5xx válaszokat, a törött képeket, a review-navigációt, az
+ismétlődő látható szövegblokkokat, a márkakeveredést és a vízszintes
+túlcsordulást. Minden nézetről teljes oldalas képernyőkép készül CI-artifactként.
 
 ## Credentialök és fennmaradó feladatok
 
 A preview futtatásához **nem szükséges credential**. A Google Drive
-fájlazonosítók kizárólag forrásproveniencia-metaadatok; a böngésző nem kapcsolódik
-a Drive-hoz. Nincs fennmaradó blokkoló asset- vagy oldalhiány. A 37 külső
-canonical/navigációs link tartalmi felülvizsgálata opcionális, runtime függőséget
-nem jelent.
+fájlazonosítók kizárólag forrásproveniencia-metaadatok; a böngésző nem
+kapcsolódik a Drive-hoz. Nincs fennmaradó blokkoló asset-, forrás- vagy
+oldalhiány. A 37 külső canonical/navigációs link tartalmi felülvizsgálata
+opcionális, runtime függőséget nem jelent.

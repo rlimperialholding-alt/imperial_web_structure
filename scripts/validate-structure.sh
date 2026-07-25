@@ -123,8 +123,8 @@ for brand in brands["brands"]:
             if "cdn.jsdelivr.net/npm/bootstrap" in preview_content:
                 raise SystemExit(f"External Bootstrap dependency remains: {preview_file}")
 
-if total_test_pages != 70:
-    raise SystemExit(f"Expected 70 configured test pages, found {total_test_pages}.")
+if total_test_pages != 131:
+    raise SystemExit(f"Expected 131 configured test pages, found {total_test_pages}.")
 
 for css_file in root.glob("sites/*/drive/**/*.css"):
     css_content = css_file.read_text(encoding="utf-8")

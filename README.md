@@ -15,7 +15,7 @@ ellenőrzése és szekciószintű review-zása.
 
 - központi Imperial Intelligence admin dashboard;
 - weboldalak modul az Imperial cégcsoport mind a 12 márkájával;
-- márka- és oldalválasztó, összesen 70 kattintható tesztoldallal;
+- márka- és oldalválasztó, összesen 131 kattintható tesztoldallal;
 - elkülönített, forrásazonosítóval követhető Google Drive HTML-importok;
 - desktop (1440), tablet (834) és mobile (390) nézet;
 - teljes Imperial Holding főoldalprototípus sötétkék–arany–fehér arculattal;
@@ -117,7 +117,7 @@ sites/
 │   ├── index.html                 # központi admin dashboard
 │   └── data/
 │       ├── brands.json            # a 12 márka lokális tesztadata
-│       └── artifacts.json         # 70 tesztoldal és Drive-forrásazonosító
+│       └── artifacts.json         # 131 tesztoldal és Drive-forrásazonosító
 ├── _shared/assets/
 │   ├── tokens.css                 # közös szín-, térköz-, tipó- és radius tokenek
 │   ├── components.css             # közös gomb, ikon, logó és accessibility alapok
@@ -175,7 +175,7 @@ tesztmódban nem továbbítanak adatot.
 ### Tesztadatok
 
 - `brands.json`: márkanév, slug, monogram, prototípusállapot és vizuális akcentus.
-- `artifacts.json`: az oldalválasztó 70 bejegyzése és a Drive-források
+- `artifacts.json`: az oldalválasztó 131 bejegyzése és a Drive-források
   visszakövethetősége.
 - `imperial-home.json`: szekciók, szintetikus mutatók, portfólió-, projekt- és
   hírkártyák.
@@ -259,7 +259,7 @@ docker compose down --remove-orphans
 A `.github/workflows/ci.yml`:
 
 1. ellenőrzi a 12 site belépési pontját és a noindex jelölést;
-2. parse-olja a JSON fixture-öket és validálja mind a 70 katalógusbejegyzést;
+2. parse-olja a JSON fixture-öket és validálja mind a 131 katalógusbejegyzést;
 3. ellenőrzi az importált fájlok Drive-forrásazonosítóját, review bridge-ét és
    a futásidejű Bootstrap CDN hiányát;
 4. összeveti a stabil Imperial szekció-ID-ket a DOM-mal;
@@ -268,8 +268,8 @@ A `.github/workflows/ci.yml`:
    valamint négy reprezentatív Drive-preview útvonalat;
 7. asset-crawlerrel minden HTML-, CSS- és JavaScript-függőséget HTTP-n is
    ellenőriz;
-8. mind a 70 oldalt desktop, tablet és mobil nézetben megnyitja, ellenőrzi a
-   konzolt és a hálózati hibákat, majd 210 képernyőképet készít;
+8. mind a 131 oldalt desktop, tablet és mobil nézetben megnyitja, ellenőrzi a
+   konzolt és a hálózati hibákat, majd 393 képernyőképet készít;
 9. ellenőrzi a health endpointot, majd minden esetben eltávolítja a tesztstacket.
 
 ## Branch-modell és kiadás

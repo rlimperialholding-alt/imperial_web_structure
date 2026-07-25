@@ -54,8 +54,11 @@ jobs:
         run: |
           python3 -m py_compile \
             scripts/audit-preview-assets.py \
+            scripts/audit-preview-content.py \
+            scripts/differentiate-imported-layouts.py \
             scripts/generate-brand-previews.py \
             scripts/localize-preview-assets.py \
+            scripts/sanitize-multibrand-previews.py \
             scripts/serve-preview.py \
             scripts/update-preview-catalog.py
           npm run lint:previews
@@ -90,7 +93,7 @@ jobs:
           artifacts_json="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
             http://127.0.0.1:8080/data/artifacts.json)"
-          python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False; assert sum(len(x["pages"]) for x in data["brands"].values()) == 70' <<<"$artifacts_json"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False; assert sum(len(x["pages"]) for x in data["brands"].values()) == 131' <<<"$artifacts_json"
 
           sites=(
             imperial
@@ -129,7 +132,7 @@ jobs:
           drive_previews=(
             "site-preview/imperial/drive/venture/venture-studio.html?review=1"
             "site-preview/bautica/drive/b2b-belsoepiteszet-kivitelezes.html?review=1"
-            "site-preview/prefab/drive/knowledge/osszes-tudasoldal.html?review=1"
+            "site-preview/prefab/drive/knowledge/prefab-folyamatabra.html?review=1"
             "site-preview/budapesti-magasepito-vallalat/drive/index.html?review=1"
           )
 
@@ -158,9 +161,15 @@ jobs:
         run: |
           python3 scripts/audit-preview-assets.py \
             --base-url http://127.0.0.1:8080 \
-            --expected-pages 70 \
+            --expected-pages 131 \
             --json-output reports/website-preview-asset-audit.json \
             --markdown-output reports/website-preview-asset-audit.md
+
+      - name: Audit copy uniqueness, brand purity and guide alignment
+        run: |
+          python3 scripts/audit-preview-content.py \
+            --json-output reports/website-preview-content-audit.json \
+            --markdown-output reports/website-preview-content-audit.md
 
       - name: Test all previews at three viewport sizes
         env:

@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "catalogPages": 131,
+    "errors": 0,
+    "warnings": 0,
+    "policy": "Exact visible blocks of 150+ normalized characters across brands are errors; shorter/same-brand repeats and shared structures are warnings."
+  },
+  "brands": {
+    "imperial": {
+      "pages": 27,
+      "sourceAligned": 7,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "danish-fabrik": {
+      "pages": 7,
+      "sourceAligned": 7,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "bautica": {
+      "pages": 14,
+      "sourceAligned": 8,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "prefab": {
+      "pages": 15,
+      "sourceAligned": 7,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "casa-moderna": {
+      "pages": 7,
+      "sourceAligned": 7,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "family-homes": {
+      "pages": 13,
+      "sourceAligned": 0,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "everyday-homes": {
+      "pages": 6,
+      "sourceAligned": 6,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "property-360": {
+      "pages": 6,
+      "sourceAligned": 6,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "budapesti-magasepito-vallalat": {
+      "pages": 15,
+      "sourceAligned": 0,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "baufreund": {
+      "pages": 9,
+      "sourceAligned": 9,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "red-property": {
+      "pages": 5,
+      "sourceAligned": 5,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    },
+    "timberhaus": {
+      "pages": 7,
+      "sourceAligned": 7,
+      "foreignBrandErrors": 0,
+      "duplicateErrors": 0
+    }
+  },
+  "errors": [],
+  "warnings": []
+}

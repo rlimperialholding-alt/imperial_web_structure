@@ -127,8 +127,8 @@ foreach ($brand in $brandsData.brands) {
   }
 }
 
-if ($totalTestPages -ne 70) {
-  throw "Expected 70 configured test pages, found $totalTestPages."
+if ($totalTestPages -ne 131) {
+  throw "Expected 131 configured test pages, found $totalTestPages."
 }
 
 $remoteCssAssets = Get-ChildItem (Join-Path $repositoryRoot 'sites') -Recurse -File -Filter '*.css' |
