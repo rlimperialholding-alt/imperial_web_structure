@@ -44,3 +44,15 @@ It does not modify root Docker/nginx files, site folders, the platform UI, `feat
 Docker is not installed in the current execution container, so `docker compose config` and container startup were not run locally. The included path-scoped GitHub Actions workflow performs Compose model validation on GitHub's Ubuntu runner.
 
 The GitHub connector became unavailable during this run, and this isolated container could not resolve `github.com`; therefore no remote branch, commit, push, or pull request was created. The produced patch was independently applied and hash-compared in a local test repository.
+
+## Manifest integrity correction
+
+The integration manifest is generated from canonical Git bytes rather than text-mode
+working-tree reads. The path-scoped CI now runs
+`tools/verify_integration_manifest.py --source head`, which compares every tracked
+owned file with its declared byte size and SHA-256 digest. The manifest excludes only
+itself, rejects omitted or unexpected owned paths, and fails on any content mismatch.
+
+The JSON reference stores also use one shared cross-platform file-lock primitive.
+The complete isolated suite passes on Windows (**57/57 PASS**) as well as in the
+Ubuntu-based GitHub Actions test job.

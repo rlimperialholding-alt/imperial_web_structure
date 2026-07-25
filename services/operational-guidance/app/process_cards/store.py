@@ -9,6 +9,7 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
+from app.file_lock import exclusive_file_lock
 from app.process_cards.domain import HumanProcessCard, ProcessSource, RealRole
 
 
@@ -43,15 +44,9 @@ class JsonProcessCardStore:
 
     @contextmanager
     def process_lock(self, process_key: str):
-        import fcntl
-
         lock_path = self.locks_dir / f"{process_key}.lock"
-        with lock_path.open("a+", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        with exclusive_file_lock(lock_path):
+            yield
 
     def save_source(self, source: ProcessSource) -> None:
         self._write_json(

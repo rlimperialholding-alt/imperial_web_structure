@@ -67,6 +67,27 @@ curl --fail http://127.0.0.1:18080/ready
 
 The copied source intentionally excludes the generated WordPress fleet. The existing repository remains the owner of websites, brand previews and site containers. The Operational Guidance service integrates with those components through APIs and approved content records rather than duplicating their source trees.
 
+## Integration manifest integrity
+
+The integration manifest is verified against the exact bytes committed to Git:
+
+```bash
+python services/operational-guidance/tools/verify_integration_manifest.py --source head
+```
+
+After intentionally changing owned files, stage those files first and regenerate the
+manifest from the Git index:
+
+```bash
+python services/operational-guidance/tools/verify_integration_manifest.py \
+  --source index --refresh
+git add services/operational-guidance/INTEGRATION-FILE-MANIFEST.json
+python services/operational-guidance/tools/verify_integration_manifest.py --source index
+```
+
+The CI manifest-integrity job rejects missing paths, unexpected paths, size changes,
+and SHA-256 mismatches.
+
 ## Merge sequence
 
 1. Rebase `agent/operational-guidance-v0.8.1` onto the latest `staging` after active Codex PRs settle.
