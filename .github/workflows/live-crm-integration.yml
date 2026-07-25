@@ -1,0 +1,72 @@
+name: Live CRM Integration Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "services/operational-guidance/app/connectors/itep.py"
+      - "services/operational-guidance/app/api/routes/itep.py"
+      - "services/itep-core/**"
+      - "docker-compose.github-test.yml"
+      - "services/operational-guidance/scripts/crm_live_contract_test.py"
+      - "services/operational-guidance/scripts/github_test_uat.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: imperial-live-crm-test
+  cancel-in-progress: false
+
+jobs:
+  live-crm:
+    runs-on: ubuntu-latest
+    environment: imperial-test
+    env:
+      CRM_API_BASE_URL: ${{ secrets.CRM_API_BASE_URL }}
+      CRM_ACCESS_TOKEN: ${{ secrets.CRM_ACCESS_TOKEN }}
+      CRM_WORKSPACE_ID: ${{ secrets.CRM_WORKSPACE_ID }}
+      CRM_ACTIVITIES_PATH: ${{ vars.CRM_ACTIVITIES_PATH || '/api/v1/activities' }}
+      CRM_AUTH_HEADER: ${{ vars.CRM_AUTH_HEADER || 'Authorization' }}
+      CRM_AUTH_SCHEME: ${{ vars.CRM_AUTH_SCHEME || 'Bearer' }}
+      CRM_WORKSPACE_QUERY_PARAMETER: ${{ vars.CRM_WORKSPACE_QUERY_PARAMETER || 'workspace' }}
+      ITEP_IDENTITY_SHARED_SECRET: ${{ secrets.ITEP_IDENTITY_SHARED_SECRET }}
+      API_ADMIN_TOKEN: test-admin-token-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate required live CRM secrets
+        shell: bash
+        run: |
+          test -n "$CRM_API_BASE_URL"
+          test -n "$CRM_ACCESS_TOKEN"
+          test -n "$CRM_WORKSPACE_ID"
+          test "${#ITEP_IDENTITY_SHARED_SECRET}" -ge 32
+
+      - name: Read-only CRM contract test
+        run: python services/operational-guidance/scripts/crm_live_contract_test.py
+
+      - name: Start integrated test stack
+        run: docker compose -f docker-compose.github-test.yml up -d --build
+
+      - name: Run end-to-end UAT
+        run: python services/operational-guidance/scripts/github_test_uat.py
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          mkdir -p uat-results
+          docker compose -f docker-compose.github-test.yml ps > uat-results/compose-ps.txt
+          docker compose -f docker-compose.github-test.yml logs --no-color > uat-results/compose.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: imperial-integration-uat
+          path: uat-results/
+          retention-days: 14
+
+      - name: Stop stack
+        if: always()
+        run: docker compose -f docker-compose.github-test.yml down -v

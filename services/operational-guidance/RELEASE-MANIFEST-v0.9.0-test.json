@@ -1,0 +1,20 @@
+{
+  "name": "Imperial Intelligence Integrated GitHub Test Environment",
+  "version": "0.9.0-test",
+  "baseIntegrationHub": "0.8.1",
+  "embeddedItepCore": "1.4.0",
+  "dataPolicy": {
+    "crm": "live-read-only",
+    "billingo": "synthetic",
+    "bank": "synthetic",
+    "google": "disabled-unless-explicitly-configured",
+    "databases": "ephemeral-test-only"
+  },
+  "githubEnvironment": "imperial-test",
+  "requiredSecrets": [
+    "CRM_API_BASE_URL",
+    "CRM_ACCESS_TOKEN",
+    "CRM_WORKSPACE_ID",
+    "ITEP_IDENTITY_SHARED_SECRET"
+  ]
+}
