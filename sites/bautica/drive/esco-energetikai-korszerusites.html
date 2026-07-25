@@ -9,8 +9,8 @@
   <meta property="og:title" content="Energetikai korszerűsítés nagy induló beruházás nélkül | Bautica">
   <meta property="og:description" content="Csökkentse energiafogyasztását dokumentált műszaki és finanszírozási terv alapján.">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="/assets/preview-bootstrap.css">
-  <link rel="stylesheet" href="/assets/preview-bootstrap.css">
+  <link rel="stylesheet" href="/site-preview/bautica/assets/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/site-preview/bautica/assets/vendor/bootstrap/bootstrap.min.css">
   <style>
     :root{--navy:#0d2b45;--green:#117a53;--lime:#a7d64b;--sand:#f5f4ef;--ink:#172331;--muted:#66737f;--line:#dbe3df}
     html{scroll-behavior:smooth} body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:#fff}
@@ -45,7 +45,7 @@
   </style>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"Service","name":"ESCO energetikai korszerűsítés","provider":{"@type":"Organization","name":"Bautica","url":"https://www.bautica.hu"},"areaServed":"HU","description":"Energetikai felmérés, tervezés, kivitelezés és finanszírozási előkészítés nagyobb ingatlanok számára."}</script>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Valóban nem kell önerő?","acceptedAnswer":{"@type":"Answer","text":"Egyes finanszírozható projektek minimális induló saját forrással is megvalósulhatnak, de ezt műszaki vizsgálat és banki előminősítés után lehet megállapítani."}},{"@type":"Question","name":"Garantáltan fedezi a megtakarítás a törlesztést?","acceptedAnswer":{"@type":"Answer","text":"Nem minden esetben. A pontos arány dokumentált fogyasztási adatok, műszaki audit és konkrét finanszírozási ajánlat alapján határozható meg."}}]}</script>
-<link rel="stylesheet" href="/assets/review-bridge.css"></head>
+<link rel="stylesheet" href="/site-preview/bautica/assets/platform/review-bridge.css"><link rel="stylesheet" href="/site-preview/bautica/assets/vendor/bootstrap-icons/bootstrap-icons.min.css"></head>
 <body>
   <div class="topbar py-2"><div class="container d-flex justify-content-between"><span><i class="bi bi-lightning-charge-fill me-2"></i>Energetikai korszerűsítés finanszírozási előkészítéssel</span><span class="d-none d-md-inline">Első lépés: kötelezettségmentes előzetes konzultáció</span></div></div>
   <nav class="navbar navbar-expand-lg sticky-top"><div class="container"><a class="navbar-brand brand" href="#">BAUTICA<span>.</span></a><button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button><div id="nav" class="collapse navbar-collapse"><ul class="navbar-nav ms-auto align-items-lg-center gap-lg-2"><li class="nav-item"><a class="nav-link" href="#mukodes">Hogyan működik?</a></li><li class="nav-item"><a class="nav-link" href="#megoldasok">Megoldások</a></li><li class="nav-item"><a class="nav-link" href="#kalkulator">Kalkulátor</a></li><li class="nav-item"><a class="nav-link" href="#gyik">GYIK</a></li><li class="nav-item ms-lg-2"><a class="btn btn-bautica" href="#kapcsolat">Előzetes felmérést kérek</a></li></ul></div></div></nav>
@@ -85,4 +85,4 @@
     function calc(){const c=+energyCost.value,r=+savingRate.value/100,m=+term.value,s=c*r;energyCostLabel.textContent=fmt(c);savingRateLabel.textContent=Math.round(r*100)+'%';monthlySaving.textContent=fmt(s);annualSaving.textContent=fmt(s*12);financeCapacity.textContent=fmt(s*m)}
     ['energyCost','savingRate','term'].forEach(id=>document.getElementById(id).addEventListener('input',calc));calc();
   </script>
-<script src="/assets/review-bridge.js" defer></script></body></html>
+<script src="/site-preview/bautica/assets/platform/review-bridge.js" defer></script><script src="/site-preview/bautica/assets/vendor/bootstrap/bootstrap.bundle.min.js"></script></body></html>

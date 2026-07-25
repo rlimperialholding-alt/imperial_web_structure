@@ -15,7 +15,7 @@ ellenőrzése és szekciószintű review-zása.
 
 - központi Imperial Intelligence admin dashboard;
 - weboldalak modul az Imperial cégcsoport mind a 12 márkájával;
-- márka- és oldalválasztó, összesen 50 kattintható tesztoldallal;
+- márka- és oldalválasztó, összesen 70 kattintható tesztoldallal;
 - elkülönített, forrásazonosítóval követhető Google Drive HTML-importok;
 - desktop (1440), tablet (834) és mobile (390) nézet;
 - teljes Imperial Holding főoldalprototípus sötétkék–arany–fehér arculattal;
@@ -62,6 +62,15 @@ Ha a `HTTP_PORT` értékét megváltoztatod, ugyanazt a portot használd a fenti
 URL-ekben. A `.localhost` hostok modern böngészőben a loopback címre oldódnak
 fel, hosts fájl módosítása általában nem szükséges.
 
+Gyors, Docker nélküli preview-hoz Python 3.12-vel:
+
+```bash
+python3 scripts/serve-preview.py --port 8080
+```
+
+Ez ugyanazokat a `/site-preview/<brand>/`, `/assets/` és `/data/` útvonalakat
+szolgálja ki, mint az nginx staging konfiguráció.
+
 ## Admin dashboard használata
 
 1. A **Weboldalak / Portfólió** modulban válassz márkát a selectből vagy a 12
@@ -77,11 +86,11 @@ fel, hosts fájl módosítása általában nem szükséges.
    `localStorage` tárában maradnak.
 7. A **JSON export** gombbal letölthető egy hordozható tesztfájl.
 
-Jelenleg négy márkához van futtatható webes anyag: Imperial Holding (10 oldal),
-Bautica (6 oldal), Prefab (19 oldal) és Budapesti Magasépítő Vállalat
-(15 oldalas webhely). A másik nyolc márkához a Drive-on tartalmi és
-komponensforrások találhatók, de önállóan futtatható HTML még nem; ezek a
-márkák ezért továbbra is egyértelműen jelölt staging állapotot mutatnak.
+Mind a 12 márkához van futtatható, katalógusban regisztrált webes anyag. Az
+eredeti 50 oldal mellett a Drive-forrásokból hét márkaspecifikus bemutatóoldal
+és a Family Homes 13 oldalas webhelye is elérhető. A forrásból generált oldalak
+eredeti specifikációja a megfelelő márkakönyvtár `source/website-spec.md`
+fájljában marad visszakövethető.
 
 ## Stabil tartalmi szekcióazonosítók
 
@@ -108,18 +117,19 @@ sites/
 │   ├── index.html                 # központi admin dashboard
 │   └── data/
 │       ├── brands.json            # a 12 márka lokális tesztadata
-│       └── artifacts.json         # 50 tesztoldal és Drive-forrásazonosító
+│       └── artifacts.json         # 70 tesztoldal és Drive-forrásazonosító
 ├── _shared/assets/
 │   ├── tokens.css                 # közös szín-, térköz-, tipó- és radius tokenek
 │   ├── components.css             # közös gomb, ikon, logó és accessibility alapok
 │   ├── admin.css / admin.js       # dashboard megjelenés és működés
 │   ├── imperial.css / imperial.js # főoldal megjelenés és működés
 │   ├── review-bridge.*             # szekciókijelölés minden importált oldalon
-│   ├── preview-bootstrap.css       # lokális kompatibilitási stílus, CDN nélkül
 │   └── data/imperial-home.json    # szintetikus főoldaladatok
 ├── imperial/index.html            # teljes Imperial Holding prototípus
-├── <aktív márka>/drive/            # változatlan Drive HTML/CSS/JS források
-└── <további márka>/index.html      # elkülönített staging állapot
+└── <márka>/
+    ├── drive/                      # Drive-ról importált teljes oldalak
+    ├── source/                     # visszakövethető forrásspecifikáció
+    └── assets/                     # saját CSS, JS, kép, ikon, font és vendor
 ```
 
 Az admin JavaScript kizárólag same-origin JSON fájlokat tölt be. Nincs
@@ -165,7 +175,7 @@ tesztmódban nem továbbítanak adatot.
 ### Tesztadatok
 
 - `brands.json`: márkanév, slug, monogram, prototípusállapot és vizuális akcentus.
-- `artifacts.json`: az oldalválasztó 50 bejegyzése és a Drive-források
+- `artifacts.json`: az oldalválasztó 70 bejegyzése és a Drive-források
   visszakövethetősége.
 - `imperial-home.json`: szekciók, szintetikus mutatók, portfólió-, projekt- és
   hírkártyák.
@@ -217,7 +227,8 @@ sem `.env` fájlba, sem a JSON fixture-ökbe.
 - az importált, önálló HTML-prototípusok saját inline megjelenítési logikája
   csak a loopback staging környezetben engedélyezett; hálózati kapcsolataikat a
   CSP továbbra is same-originra korlátozza;
-- a külső Bootstrap CDN-hivatkozásokat lokális kompatibilitási CSS váltja ki.
+- a Bootstrap-oldalak teljes Bootstrap CSS/JavaScript és Bootstrap Icons
+  csomagja márkánként, helyben található; futásidőben nincs CDN-függőség.
 
 Az iframe támogatása miatt `X-Frame-Options: SAMEORIGIN` és
 `frame-ancestors 'self'` van beállítva; külső oldal továbbra sem ágyazhatja be a
@@ -248,14 +259,18 @@ docker compose down --remove-orphans
 A `.github/workflows/ci.yml`:
 
 1. ellenőrzi a 12 site belépési pontját és a noindex jelölést;
-2. parse-olja a JSON fixture-öket és validálja mind az 50 katalógusbejegyzést;
+2. parse-olja a JSON fixture-öket és validálja mind a 70 katalógusbejegyzést;
 3. ellenőrzi az importált fájlok Drive-forrásazonosítóját, review bridge-ét és
    a futásidejű Bootstrap CDN hiányát;
 4. összeveti a stabil Imperial szekció-ID-ket a DOM-mal;
 5. validálja a Compose konfigurációt és elindítja az nginx stacket;
 6. HTTP-n ellenőrzi az admint, a márka- és artefaktumadatokat, mind a 12 hostot,
    valamint négy reprezentatív Drive-preview útvonalat;
-7. ellenőrzi a health endpointot, majd minden esetben eltávolítja a tesztstacket.
+7. asset-crawlerrel minden HTML-, CSS- és JavaScript-függőséget HTTP-n is
+   ellenőriz;
+8. mind a 70 oldalt desktop, tablet és mobil nézetben megnyitja, ellenőrzi a
+   konzolt és a hálózati hibákat, majd 210 képernyőképet készít;
+9. ellenőrzi a health endpointot, majd minden esetben eltávolítja a tesztstacket.
 
 ## Branch-modell és kiadás
 
@@ -269,8 +284,6 @@ deploymentet vagy automatikus merge-et.
 
 ## Következő, külön jóváhagyást igénylő lépések
 
-- a még csak dokumentum- és komponensforrással rendelkező nyolc márka
-  futtatható HTML-prototípusa;
 - tartós review backend, SSO és jogosultságkezelés;
 - jóváhagyott CMS vagy tartalom-API integráció;
 - éles domainek, TLS, secret store, monitoring és release folyamat;

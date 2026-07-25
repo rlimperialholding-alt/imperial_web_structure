@@ -1,18 +1,58 @@
 <!doctype html>
-<html lang="hu">
+<html lang="hu" style="--primary:#213547;--accent:#d4a72c;--surface:#fff9e8;--ink:#213547">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
-    <title>BauFreund — Staging</title>
-    <link rel="stylesheet" href="/assets/site.css">
+    <meta name="description" content="Segítünk megtalálni és megépíteni első vagy következő családi otthonát.">
+    <title>BauFreund · tesztüzemi weboldal</title>
+    <link rel="icon" href="/site-preview/baufreund/assets/icons/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/site-preview/baufreund/assets/site.css">
+    <link rel="stylesheet" href="/site-preview/baufreund/assets/platform/review-bridge.css">
+    <script src="/site-preview/baufreund/assets/site.js" defer></script>
+    <script src="/site-preview/baufreund/assets/platform/review-bridge.js" defer></script>
   </head>
-  <body style="--accent: #f0a14a">
-    <main>
-      <p class="eyebrow">Staging környezet</p>
-      <h1>BauFreund</h1>
-      <p class="lede">Elkülönített fejlesztési és teszt-helyőrző. Ez nem az éles weboldal.</p>
-      <p class="meta"><span>Site ID: <strong>baufreund</strong></span><span>Állapot: előkészítve</span></p>
+  <body data-source-id="11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_">
+    <header class="site-header">
+      <nav class="container nav" aria-label="Fő navigáció">
+        <a class="brand" href="#top"><img src="/site-preview/baufreund/assets/icons/mark.svg" alt=""><span>BauFreund</span></a>
+        <button class="menu" type="button" data-menu aria-expanded="false">Menü</button>
+        <div class="nav-links" data-nav>
+          <a href="#miert">Miért BauFreund?</a><a href="#kollekciok">Kollekciók</a>
+          <a href="#folyamat">Folyamat</a><a href="#kapcsolat">Kapcsolat</a>
+        </div>
+      </nav>
+    </header>
+    <main id="top">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <div class="eyebrow">Családbarát tervezés · közvetlen csapat</div>
+            <h1>Otthon mindenkinek.</h1>
+            <p class="lead">Segítünk megtalálni és megépíteni első vagy következő családi otthonát.</p>
+            <div class="actions"><a class="button" href="#kollekciok">Felfedezem</a><a class="button secondary" href="#kapcsolat">Beszélgessünk az otthonról</a></div>
+            <div class="trust"><span>Közvetlen csapat</span><span>Elérhető árak</span><span>Bővíthető alaprajzok</span></div>
+          </div>
+          <figure class="hero-art"><img src="/site-preview/baufreund/assets/images/hero.svg" alt="BauFreund építészeti látvány"></figure>
+        </div>
+      </section>
+      <section id="miert">
+        <div class="container"><div class="intro"><div class="eyebrow">Márkaspecifikus ajánlat</div><h2>A döntéshez szükséges lényeg, egy helyen.</h2><p class="lead">A Drive-ban jóváhagyott weboldali specifikáció alapján összeállított, önállóan tesztelhető képernyő.</p></div><div class="grid"><article class="card"><b>01</b><h3>Egyszerű döntés</h3><p>Segítőkész szakértők és minden lépésnél érthető következő teendő.</p></article>
+<article class="card"><b>02</b><h3>Elérhető árak</h3><p>Összehasonlítható készültségi szintek, világos kizárások és tartalmak.</p></article>
+<article class="card"><b>03</b><h3>Családbarát</h3><p>Rugalmas alaprajzok, bővíthetőség és a változó élethelyzetek figyelembevétele.</p></article></div></div>
+      </section>
+      <section class="soft" id="kollekciok">
+        <div class="container"><div class="eyebrow">Választható irányok</div><h2>Találja meg a saját élethelyzetéhez illő megoldást.</h2><div class="chips"><div class="chip">Első otthonok</div><div class="chip">Kis családi házak</div><div class="chip">Nagyobb családi házak</div><div class="chip">Praktikus házak</div><div class="chip">Akciós ajánlatok</div></div></div>
+      </section>
+      <section id="folyamat">
+        <div class="container"><div class="eyebrow">Átlátható folyamat</div><h2>A briefből dokumentált átadás.</h2><div class="journey"><div>Beszélgetés</div><div>Házválasztás</div><div>Finanszírozás</div><div>Szerződés</div><div>Kivitelezés</div><div>Utógondozás</div></div></div>
+      </section>
+      <section id="kapcsolat">
+        <div class="container"><div class="cta"><div class="eyebrow">Következő lépés</div><h2>Beszélgessünk az otthonról</h2><p>Adja meg a projekt legfontosabb adatait. Tesztüzemben az űrlap semmilyen adatot nem továbbít.</p>
+          <form><label>Név<input name="name" autocomplete="name"></label><label>E-mail<input type="email" name="email" autocomplete="email"></label><label>Projekt típusa<select name="project"><option>Új otthon</option><option>Telek + ház</option><option>Egyedi projekt</option></select></label><label>Tervezett helyszín<input name="location"></label><label class="full">Rövid projektbrief<textarea name="message"></textarea></label><div class="full actions"><button class="button submit" type="submit">Beszélgessünk az otthonról</button><span class="form-note" data-form-note>Tesztüzem · nincs adattovábbítás</span></div></form>
+        </div></div>
+      </section>
     </main>
+    <footer><div class="container footer-row"><strong>BauFreund</strong><span>© <span data-year></span> · lokális, noindex tesztpreview</span></div></footer>
   </body>
 </html>

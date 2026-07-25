@@ -1,18 +1,58 @@
 <!doctype html>
-<html lang="hu">
+<html lang="hu" style="--primary:#102c3c;--accent:#4e95ad;--surface:#edf6f8;--ink:#102c3c">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
-    <title>Property 360 — Staging</title>
-    <link rel="stylesheet" href="/assets/site.css">
+    <meta name="description" content="Telekkeresés, tervezés, kivitelezés, belsőépítészet és kert egyetlen projektfolyamatban.">
+    <title>Property 360 · tesztüzemi weboldal</title>
+    <link rel="icon" href="/site-preview/property-360/assets/icons/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/site-preview/property-360/assets/site.css">
+    <link rel="stylesheet" href="/site-preview/property-360/assets/platform/review-bridge.css">
+    <script src="/site-preview/property-360/assets/site.js" defer></script>
+    <script src="/site-preview/property-360/assets/platform/review-bridge.js" defer></script>
   </head>
-  <body style="--accent: #e2c45c">
-    <main>
-      <p class="eyebrow">Staging környezet</p>
-      <h1>Property 360</h1>
-      <p class="lede">Elkülönített fejlesztési és teszt-helyőrző. Ez nem az éles weboldal.</p>
-      <p class="meta"><span>Site ID: <strong>property-360</strong></span><span>Állapot: előkészítve</span></p>
+  <body data-source-id="1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur">
+    <header class="site-header">
+      <nav class="container nav" aria-label="Fő navigáció">
+        <a class="brand" href="#top"><img src="/site-preview/property-360/assets/icons/mark.svg" alt=""><span>Property 360</span></a>
+        <button class="menu" type="button" data-menu aria-expanded="false">Menü</button>
+        <div class="nav-links" data-nav>
+          <a href="#miert">Miért Property 360?</a><a href="#kollekciok">Kollekciók</a>
+          <a href="#folyamat">Folyamat</a><a href="#kapcsolat">Kapcsolat</a>
+        </div>
+      </nav>
+    </header>
+    <main id="top">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <div class="eyebrow">Telektől a kulcsátadásig</div>
+            <h1>Egy kézben a teljes projekt.</h1>
+            <p class="lead">Telekkeresés, tervezés, kivitelezés, belsőépítészet és kert egyetlen projektfolyamatban.</p>
+            <div class="actions"><a class="button" href="#kollekciok">Felfedezem</a><a class="button secondary" href="#kapcsolat">360° projektkonzultációt kérek</a></div>
+            <div class="trust"><span>Teljes projektmenedzsment</span><span>Telek + ház</span><span>Rögzített döntési pontok</span></div>
+          </div>
+          <figure class="hero-art"><img src="/site-preview/property-360/assets/images/hero.svg" alt="Property 360 építészeti látvány"></figure>
+        </div>
+      </section>
+      <section id="miert">
+        <div class="container"><div class="intro"><div class="eyebrow">Márkaspecifikus ajánlat</div><h2>A döntéshez szükséges lényeg, egy helyen.</h2><p class="lead">A Drive-ban jóváhagyott weboldali specifikáció alapján összeállított, önállóan tesztelhető képernyő.</p></div><div class="grid"><article class="card"><b>01</b><h3>Telek és beépíthetőség</h3><p>Telekkeresés, HÉSZ-ellenőrzés és a megvalósíthatóság korai vizsgálata.</p></article>
+<article class="card"><b>02</b><h3>Tervezés és kivitelezés</h3><p>Építész, szakágak és generálkivitelezés egy közös felelősségi térképen.</p></article>
+<article class="card"><b>03</b><h3>Költözésre kész átadás</h3><p>Belsőépítészet, kert, takarítás és utógondozás a projekt részeként.</p></article></div></div>
+      </section>
+      <section class="soft" id="kollekciok">
+        <div class="container"><div class="eyebrow">Választható irányok</div><h2>Találja meg a saját élethelyzetéhez illő megoldást.</h2><div class="chips"><div class="chip">Nordic</div><div class="chip">Resort</div><div class="chip">Minimal</div><div class="chip">Jefferson</div><div class="chip">Mediterranean</div><div class="chip">Alpine</div><div class="chip">Wellness Home</div><div class="chip">Smart</div></div></div>
+      </section>
+      <section id="folyamat">
+        <div class="container"><div class="eyebrow">Átlátható folyamat</div><h2>A briefből dokumentált átadás.</h2><div class="journey"><div>Telek</div><div>Tervezés</div><div>Engedélyezés</div><div>Kivitelezés</div><div>Berendezés</div><div>Átadás</div></div></div>
+      </section>
+      <section id="kapcsolat">
+        <div class="container"><div class="cta"><div class="eyebrow">Következő lépés</div><h2>360° projektkonzultációt kérek</h2><p>Adja meg a projekt legfontosabb adatait. Tesztüzemben az űrlap semmilyen adatot nem továbbít.</p>
+          <form><label>Név<input name="name" autocomplete="name"></label><label>E-mail<input type="email" name="email" autocomplete="email"></label><label>Projekt típusa<select name="project"><option>Új otthon</option><option>Telek + ház</option><option>Egyedi projekt</option></select></label><label>Tervezett helyszín<input name="location"></label><label class="full">Rövid projektbrief<textarea name="message"></textarea></label><div class="full actions"><button class="button submit" type="submit">360° projektkonzultációt kérek</button><span class="form-note" data-form-note>Tesztüzem · nincs adattovábbítás</span></div></form>
+        </div></div>
+      </section>
     </main>
+    <footer><div class="container footer-row"><strong>Property 360</strong><span>© <span data-year></span> · lokális, noindex tesztpreview</span></div></footer>
   </body>
 </html>

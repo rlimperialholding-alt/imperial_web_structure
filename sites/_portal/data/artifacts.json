@@ -3,9 +3,10 @@
     "environment": "local-prototype",
     "containsCustomerData": false,
     "runtimeExternalApis": false,
-    "source": "Google Drive web artifacts",
-    "importedAt": "2026-07-23",
-    "notes": "Only runnable HTML/CSS/JS prototypes were imported. Business spreadsheets, customer records and operational documents are excluded."
+    "source": "Repository and approved Google Drive web artifacts",
+    "importedAt": "2026-07-25",
+    "notes": "All standalone preview screens are registered. Runtime assets are brand-local; editorial fragments and WordPress-only templates are excluded.",
+    "catalogPageCount": 70
   },
   "brands": {
     "imperial": {
@@ -70,6 +71,17 @@
           "path": "/drive/venture/sicily-project.html",
           "kind": "drive-partial",
           "sourceId": "1Bvv24LgXDBDheMaeLu23XFyEv9egFAra"
+        }
+      ]
+    },
+    "danish-fabrik": {
+      "defaultPath": "/",
+      "pages": [
+        {
+          "title": "Danish Fabrik – favázas otthonok",
+          "path": "/",
+          "kind": "drive-source-preview",
+          "sourceId": "1VAs7ftaGrf8JcoUGnmLv8J0FslQFfDSW"
         }
       ]
     },
@@ -233,6 +245,122 @@
         }
       ]
     },
+    "casa-moderna": {
+      "defaultPath": "/",
+      "pages": [
+        {
+          "title": "Casa Moderna – prémium otthonok",
+          "path": "/",
+          "kind": "drive-source-preview",
+          "sourceId": "11We-v4bq7dw_LSktJPxGNsd0oyf3yGD1"
+        }
+      ]
+    },
+    "family-homes": {
+      "defaultPath": "/drive/tipushazak.html",
+      "pages": [
+        {
+          "title": "Típusházak fiatal családoknak",
+          "path": "/drive/tipushazak.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Saját házterv megépítése",
+          "path": "/drive/egyedi-haztervek-megepitese.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Családi ház tervezés költségkeretre",
+          "path": "/drive/tervezes.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Családi ház felújítás és bővítés",
+          "path": "/drive/felujitas-bovites.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Könnyűszerkezetes, Liapor és tégla házak",
+          "path": "/drive/technologiak.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Családi ház építés árak és teljes költség",
+          "path": "/drive/arak-koltsegek.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Szerkezetkész, fűtéskész és kulcsrakész házak",
+          "path": "/drive/keszultsegi-szintek.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Műszaki tartalmak és igényszintek",
+          "path": "/drive/muszaki-tartalmaink.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Műszaki garanciák és minőségbiztosítás",
+          "path": "/drive/muszaki-garanciak.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Családi ház finanszírozás és jogi biztonság",
+          "path": "/drive/finanszirozas.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Telek és beépíthetőség családi házhoz",
+          "path": "/drive/telek-beepithetoseg.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Family Smart Home okosotthon rendszer",
+          "path": "/drive/okosotthon.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        },
+        {
+          "title": "Hogyan lesz otthonod? A házépítés folyamata",
+          "path": "/drive/folyamatunk.html",
+          "kind": "drive-full-site",
+          "sourceId": "1CPW8qi49qmn9YJfJVXlhuL_w2VFRg-Z8"
+        }
+      ]
+    },
+    "everyday-homes": {
+      "defaultPath": "/",
+      "pages": [
+        {
+          "title": "Everyday Homes – praktikus otthonok",
+          "path": "/",
+          "kind": "drive-source-preview",
+          "sourceId": "1VZmftOSSK1ZZs1jePp7ZJKxErvELKKCF"
+        }
+      ]
+    },
+    "property-360": {
+      "defaultPath": "/",
+      "pages": [
+        {
+          "title": "Property 360 – teljes projekt",
+          "path": "/",
+          "kind": "drive-source-preview",
+          "sourceId": "1bVAjyyycFcUl1qyGwU_XWWiti3rI1Hur"
+        }
+      ]
+    },
     "budapesti-magasepito-vallalat": {
       "defaultPath": "/drive/index.html",
       "pages": [
@@ -325,6 +453,39 @@
           "path": "/drive/kapcsolat.html",
           "kind": "drive-full-site",
           "sourceId": "10smrPWVaaylXHRNeMxD5IhJlcFSFhQis"
+        }
+      ]
+    },
+    "baufreund": {
+      "defaultPath": "/",
+      "pages": [
+        {
+          "title": "BauFreund – családbarát otthonok",
+          "path": "/",
+          "kind": "drive-source-preview",
+          "sourceId": "11jIKIOsmT6HAfWwm40OnSNoZW1Rztv7_"
+        }
+      ]
+    },
+    "red-property": {
+      "defaultPath": "/",
+      "pages": [
+        {
+          "title": "RED Property – gyors, elérhető otthonok",
+          "path": "/",
+          "kind": "drive-source-preview",
+          "sourceId": "1o0sW9QmuVu6Hwl-B4StjRwOZyQkQtl28"
+        }
+      ]
+    },
+    "timberhaus": {
+      "defaultPath": "/",
+      "pages": [
+        {
+          "title": "TimberHaus – Smart & Efficient",
+          "path": "/",
+          "kind": "drive-source-preview",
+          "sourceId": "1ue19H61K7gNKdynpKovTN7ucsyK2qBBz"
         }
       ]
     }

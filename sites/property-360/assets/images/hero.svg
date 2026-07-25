@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+<title id="title">Property 360 építészeti illusztráció</title><desc id="desc">Helyben tárolt, márkaspecifikus absztrakt házillusztráció.</desc>
+<defs><linearGradient id="sky" x2="1" y2="1"><stop stop-color="#b9dce4"/><stop offset="1" stop-color="#376979"/></linearGradient><linearGradient id="glass" x2="0" y2="1"><stop stop-color="#fff" stop-opacity=".88"/><stop offset="1" stop-color="#fff" stop-opacity=".34"/></linearGradient></defs>
+<rect width="1200" height="900" fill="url(#sky)"/><circle cx="965" cy="165" r="88" fill="#fff" opacity=".54"/><path d="M0 680 230 520l210 86 260-218 500 318v194H0Z" fill="#102c3c" opacity=".18"/>
+<path d="M165 705V454l328-194 319 194v251Z" fill="#f8f5ef"/><path d="m126 470 367-226 357 226-38 54-319-190-328 190Z" fill="#102c3c"/>
+<rect x="247" y="475" width="176" height="230" rx="3" fill="url(#glass)"/><rect x="545" y="443" width="176" height="262" rx="3" fill="url(#glass)"/><rect x="739" y="536" width="73" height="169" fill="#4e95ad"/>
+<path d="M0 706h1200v194H0Z" fill="#edf6f8"/><path d="M80 770c210-74 358 74 566-4s318-24 474 26" fill="none" stroke="#4e95ad" stroke-width="16" stroke-linecap="round" opacity=".55"/>
+</svg>

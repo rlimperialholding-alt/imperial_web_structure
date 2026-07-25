@@ -2,17 +2,17 @@
 <html lang="hu">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
-    <title>Bautica — Staging</title>
-    <link rel="stylesheet" href="/assets/site.css">
-  </head>
-  <body style="--accent: #e18b54">
-    <main>
-      <p class="eyebrow">Staging környezet</p>
-      <h1>Bautica</h1>
-      <p class="lede">Elkülönített fejlesztési és teszt-helyőrző. Ez nem az éles weboldal.</p>
-      <p class="meta"><span>Site ID: <strong>bautica</strong></span><span>Állapot: előkészítve</span></p>
-    </main>
-  </body>
+    <title>Bautica · tesztpreview átirányítás</title>
+    <script>
+      const previewPrefix = location.pathname.startsWith("/site-preview/bautica/")
+        ? "/site-preview/bautica"
+        : "";
+      location.replace(`${previewPrefix}/drive/b2b-belsoepiteszet-kivitelezes.html${location.search}`);
+    </script>
+  <link rel="stylesheet" href="/site-preview/bautica/assets/platform/review-bridge.css"></head>
+  <body>
+    <a href="/site-preview/bautica/drive/b2b-belsoepiteszet-kivitelezes.html">Bautica preview megnyitása</a>
+  <script src="/site-preview/bautica/assets/platform/review-bridge.js" defer></script></body>
 </html>

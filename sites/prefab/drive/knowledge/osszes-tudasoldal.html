@@ -74,7 +74,7 @@ footer{background:#0d1d28;color:rgba(255,255,255,.7);padding:2.5rem 0}
 .detail-head{background:var(--primary);color:#fff;padding:2rem}.detail-body{padding:2rem}.close-detail{position:sticky;top:1rem;float:right;border:0;border-radius:50%;width:2.7rem;height:2.7rem;font-size:1.4rem}
 .source-tags{display:flex;flex-wrap:wrap;gap:.4rem}.source-tags code{font-size:.7rem;background:#eef1f3;padding:.25rem .45rem;border-radius:.35rem}
 @media(max-width:600px){.detail-body,.detail-head{padding:1.25rem}.catalog-hero{padding-top:3rem}}
-</style><link rel="stylesheet" href="/assets/review-bridge.css"></head><body>
+</style><link rel="stylesheet" href="/site-preview/prefab/assets/platform/review-bridge.css"></head><body>
 <nav class="navbar navbar-dark sticky-top"><div class="container"><span class="navbar-brand d-flex gap-2 align-items-center"><span class="brand-mark">I</span>Imperial Intelligence tudásoldalak</span><span class="text-white-50 small">önálló HTML-katalógus</span></div></nav>
 <header class="catalog-hero"><div class="container"><div class="eyebrow">Visual-to-HTML migráció</div><h1 class="display-3 mt-3">Képalapú anyagokból kereshető weboldalak.</h1><p class="lead">71 kanonikus tartalmi oldal, 97 forráskép-megfeleltetés, márkaspecifikus hang és ellenőrzési kapuk.</p>
 <div class="catalog-search mt-4"><input id="search" class="form-control form-control-lg" placeholder="Keresés témára, márkára vagy kategóriára…" aria-label="Tudásoldalak keresése"></div>
@@ -122,4 +122,4 @@ function closeTopic(){document.getElementById('overlay').classList.remove('open'
 document.getElementById('search').oninput=render;document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')closeTopic();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTopic();});
 renderFilters();render();if(location.hash)openTopic(location.hash.slice(1));
-</script><script src="/assets/review-bridge.js" defer></script></body></html>
+</script><script src="/site-preview/prefab/assets/platform/review-bridge.js" defer></script></body></html>

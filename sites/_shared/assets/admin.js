@@ -111,12 +111,7 @@ function pagesForBrand(brandId) {
     return configured;
   }
 
-  return [{
-    title: "Staging helyőrző",
-    path: "/",
-    kind: "placeholder",
-    sourceId: null
-  }];
+  return [];
 }
 
 function renderPageOptions(brandId) {
@@ -124,7 +119,7 @@ function renderPageOptions(brandId) {
   elements.pageSelect.innerHTML = pages
     .map((page) => `<option value="${escapeHtml(page.path)}">${escapeHtml(page.title)}</option>`)
     .join("");
-  elements.pageSelect.disabled = pages.length === 1 && pages[0].kind === "placeholder";
+  elements.pageSelect.disabled = pages.length === 0;
 }
 
 function previewUrl(brandId, pagePath, includeReview) {
@@ -154,7 +149,12 @@ function setBrand(brandId) {
     card.setAttribute("aria-pressed", String(active));
   });
 
-  const defaultPath = state.artifacts[brand.id]?.defaultPath || pagesForBrand(brand.id)[0].path;
+  const pages = pagesForBrand(brand.id);
+  if (pages.length === 0) {
+    showToast("Ehhez a márkához nincs regisztrált preview.");
+    return;
+  }
+  const defaultPath = state.artifacts[brand.id]?.defaultPath || pages[0].path;
   setPage(defaultPath);
 }
 
