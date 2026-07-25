@@ -47,6 +47,7 @@ jobs:
       - run: npm run prisma:generate
       - run: npm run typecheck
       - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
 
   compose-config:
     runs-on: ubuntu-latest
