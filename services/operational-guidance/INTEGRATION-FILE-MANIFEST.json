@@ -2,7 +2,7 @@
   "target_repository": "rlimperialholding-alt/imperial_web_structure",
   "branch": "agent/operational-guidance-v0.8.1",
   "base": "staging",
-  "file_count_excluding_manifest": 165,
+  "file_count_excluding_manifest": 176,
   "files": [
     {
       "path": ".github/workflows/operational-guidance-ci.yml",
@@ -21,8 +21,8 @@
     },
     {
       "path": "services/operational-guidance/.env.example",
-      "size": 3339,
-      "sha256": "7973e2b27e9dd3f0ad2a55dfc659005fddc52f7779b26165c28821944eaf8bc6"
+      "size": 3603,
+      "sha256": "5a85a02a522f21e1ccadd02d455be54d9476ebbd7d7802a64eaf250973d449db"
     },
     {
       "path": "services/operational-guidance/.env.production.example",
@@ -36,8 +36,8 @@
     },
     {
       "path": "services/operational-guidance/.gitignore",
-      "size": 243,
-      "sha256": "db184d81b1df9a29e7e2338f08cd38fa84e613506adc8d490b8a49c85f624ce9"
+      "size": 273,
+      "sha256": "666bcda97163ad92755796727e86fe046397db1e579014c4ba625100e8c24946"
     },
     {
       "path": "services/operational-guidance/COORDINATION.json",
@@ -83,6 +83,11 @@
       "path": "services/operational-guidance/RELEASE-MANIFEST-v0.8.1.json",
       "size": 949,
       "sha256": "2f402ae3ee784f97cb6db9b644eac65de6fc1d26aceb2c33693bc281765687ab"
+    },
+    {
+      "path": "services/operational-guidance/RELEASE-MANIFEST-v0.9.0-test.json",
+      "size": 687,
+      "sha256": "9c562692b46a8f409614efb2723c8a437d4696c11c816fc04259b90712ea21e7"
     },
     {
       "path": "services/operational-guidance/RELEASE-MANIFEST.json",
@@ -133,6 +138,11 @@
       "path": "services/operational-guidance/app/api/routes/ingatlan.py",
       "size": 3556,
       "sha256": "14ed90fef317bf70301c46d299737ecfc6963c75762520851e0d0867aad425a0"
+    },
+    {
+      "path": "services/operational-guidance/app/api/routes/itep.py",
+      "size": 882,
+      "sha256": "dfada793d00ebf097eac701451204e0457ee2fef91ca050de2073e2777afd1b2"
     },
     {
       "path": "services/operational-guidance/app/api/routes/operations.py",
@@ -191,8 +201,8 @@
     },
     {
       "path": "services/operational-guidance/app/config.py",
-      "size": 12646,
-      "sha256": "6b8236bdafc3affefc220e2162fa44f06d14d1ba7e21706349d3c02722165302"
+      "size": 13570,
+      "sha256": "d256090b312d4df75e447fe6e21eb0792bf549440bea8911aa30e955860f6958"
     },
     {
       "path": "services/operational-guidance/app/connectors/__init__.py",
@@ -230,6 +240,11 @@
       "sha256": "7f0bfb295071ef769b4d48dba42567ad8822d296bec57bdf73c7ff9a35c197ac"
     },
     {
+      "path": "services/operational-guidance/app/connectors/itep.py",
+      "size": 3168,
+      "sha256": "baf6a770c9076378d01106a48777586c392f0e5d9b6895a40a3d04a37bcc1b13"
+    },
+    {
       "path": "services/operational-guidance/app/connectors/search_console.py",
       "size": 2251,
       "sha256": "39d888c5c11b9031ffd39310950bb82f258f710534a3d18863b3630fbdf602ed"
@@ -251,8 +266,8 @@
     },
     {
       "path": "services/operational-guidance/app/main.py",
-      "size": 2719,
-      "sha256": "0de7fb51313e770b8dc1b9a67020f86f6f8c6e7f57dcde7bda8059890e498dbd"
+      "size": 2789,
+      "sha256": "4727bf63166e1e94764021a002a2782b69cea86ad3b322ed4dba7656344f3b55"
     },
     {
       "path": "services/operational-guidance/app/models.py",
@@ -440,6 +455,11 @@
       "sha256": "ab57f865757e01be3ac56ba932a4f2c0c075cb5461411af4055768b13b5a9651"
     },
     {
+      "path": "services/operational-guidance/docs/GITHUB-TEST-ENVIRONMENT.md",
+      "size": 2486,
+      "sha256": "798cd137aa6c9044072f5fca2483efd348c90a6978d24b43e020405e6f7bbae7"
+    },
+    {
       "path": "services/operational-guidance/docs/INGATLAN-MAPPING.md",
       "size": 1906,
       "sha256": "c49fd1aff2c4c2935f2aa8a2f069797fe638fc7ceb4796d404333d3cf5305275"
@@ -596,8 +616,8 @@
     },
     {
       "path": "services/operational-guidance/pyproject.toml",
-      "size": 1476,
-      "sha256": "c58e50e88b7c0955c7fc7544430e749c6db886ed8475788338d7029d15f0f28b"
+      "size": 1510,
+      "sha256": "a08712338c5b49429c82f63097d3f2b5d64ebec7cdd1ed197a9e75fed12141ad"
     },
     {
       "path": "services/operational-guidance/scripts/__init__.py",
@@ -613,6 +633,21 @@
       "path": "services/operational-guidance/scripts/credential_manifest.py",
       "size": 2681,
       "sha256": "e955abd94987e4bd12a122a929df53fefd685d8fe76f0a45ff357dfd4eb554a2"
+    },
+    {
+      "path": "services/operational-guidance/scripts/crm_five_document_pilot.py",
+      "size": 5322,
+      "sha256": "2b4407b8504147bced1e300a179f01b2208e6ce2878a527ac69b48aca9baeb71"
+    },
+    {
+      "path": "services/operational-guidance/scripts/crm_live_contract_test.py",
+      "size": 1601,
+      "sha256": "def88ae7d35da15d26e51211d2929820cdbff0ed3e69f6c1416d95abac40b7b3"
+    },
+    {
+      "path": "services/operational-guidance/scripts/github_test_uat.py",
+      "size": 3032,
+      "sha256": "48d11c2f0b320d909ba7bf457be2615a7e2ffa7175b961d083156cefaa7a4dcb"
     },
     {
       "path": "services/operational-guidance/scripts/google_business_oauth.py",
@@ -720,6 +755,11 @@
       "sha256": "37fb0ece913e1b671e7c2fcb94c3f38471c2749c9decf8a531bac1c3d0f3214b"
     },
     {
+      "path": "services/operational-guidance/scripts/validate_integrated_repository.py",
+      "size": 2124,
+      "sha256": "4404025dc62b4b92f3de6d8dc70768cb53bb73d8916f311403ce0ac2b48ce65b"
+    },
+    {
       "path": "services/operational-guidance/scripts/verify_connections.py",
       "size": 1782,
       "sha256": "a993fe40bbab3f95c10e4742eff581df3c4e1477fde7c21d00a3dbb8454be2ee"
@@ -728,6 +768,16 @@
       "path": "services/operational-guidance/secrets/.gitkeep",
       "size": 0,
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "services/operational-guidance/test-env/mock-services/Dockerfile",
+      "size": 94,
+      "sha256": "1cc1b888842d8f293de39bc878dd7ddaa304eea0c8fa7671f5d33068de9bb00b"
+    },
+    {
+      "path": "services/operational-guidance/test-env/mock-services/server.py",
+      "size": 2061,
+      "sha256": "12c93a26a4096298c9e7474270f55a914c83a9bd0dbfab8303b7ae453c269c2e"
     },
     {
       "path": "services/operational-guidance/tests/test_auth.py",
@@ -753,6 +803,11 @@
       "path": "services/operational-guidance/tests/test_ingatlan_connector.py",
       "size": 3182,
       "sha256": "37a73417317b8e39210f6c74394a54989dc0c64961171a6b1631eb2fcf590b8c"
+    },
+    {
+      "path": "services/operational-guidance/tests/test_itep_connector.py",
+      "size": 1442,
+      "sha256": "5bb950187c978690d93cd9b3cb1a54241a8384ca8f84aa3b529823b87565d23e"
     },
     {
       "path": "services/operational-guidance/tests/test_monorepo_integration.py",
@@ -806,8 +861,8 @@
     },
     {
       "path": "services/operational-guidance/tools/check_changed_paths.py",
-      "size": 1529,
-      "sha256": "761b12f87f15114bd6b1ded701ec32991ba496defacc9d26592236e9f2b7204b"
+      "size": 1721,
+      "sha256": "c9e07af90fe293319bb32b03e326dffb0a460a3b09bfcfef53f83fda1e874a1e"
     },
     {
       "path": "services/operational-guidance/tools/validate_human_roles.py",

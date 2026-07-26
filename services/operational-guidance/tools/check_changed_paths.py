@@ -8,10 +8,17 @@ import sys
 from pathlib import Path
 
 ALLOWED_EXACT = {
+    ".github/workflows/live-crm-integration.yml",
     ".github/workflows/operational-guidance-ci.yml",
+    ".github/workflows/quality.yml",
+    "docker-compose.github-test.yml",
     "docs/integrations/operational-guidance-v0.8.1.md",
 }
-ALLOWED_PREFIXES = ("services/operational-guidance/",)
+ALLOWED_PREFIXES = (
+    "services/imperial-sales-crm/",
+    "services/itep-core/",
+    "services/operational-guidance/",
+)
 
 
 def changed_paths(base: str, head: str) -> list[str]:
@@ -34,7 +41,7 @@ def main() -> int:
     paths = changed_paths(args.base, args.head)
     blocked = [path for path in paths if not is_allowed(path)]
     if blocked:
-        print("Operational Guidance integration crossed ownership boundaries:")
+        print("Integrated Hub/ITEP/CRM branch crossed ownership boundaries:")
         for path in blocked:
             print(f" - {path}")
         print("Move unrelated changes to their owning branch before merging.")
