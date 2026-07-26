@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: imperial-itep-config
+data:
+  NODE_ENV: "production"
+  HOST: "0.0.0.0"
+  PORT: "3000"
+  DEFAULT_ORGANIZATION_ID: "imperial-holding"
+  DEFAULT_ASSIGNEE_ID: "human-anne"
+  DEFAULT_ESCALATION_PERSON_ID: "director"
+  API_RATE_LIMIT_MAX: "300"
+  API_RATE_LIMIT_WINDOW_MS: "60000"
+  ENFORCEMENT_INTERVAL_MS: "60000"
+  OUTBOX_INTERVAL_MS: "15000"
+  CONNECTOR_SYNC_INTERVAL_MS: "60000"

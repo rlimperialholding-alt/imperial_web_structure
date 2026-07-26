@@ -14,6 +14,7 @@ from app.api.routes import (
     checklists,
     health,
     ingatlan,
+    itep,
     operations,
     process_cards,
     publications,
@@ -78,3 +79,4 @@ app.include_router(publications.router, prefix=settings.api_prefix)
 app.include_router(process_cards.router, prefix=settings.api_prefix)
 app.include_router(checklists.router, prefix=settings.api_prefix)
 app.include_router(operations.router, prefix=settings.api_prefix)
+app.include_router(itep.router, prefix=settings.api_prefix)

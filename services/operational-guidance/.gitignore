@@ -2,11 +2,13 @@
 .venv/
 __pycache__/
 .pytest_cache/
-.pytest-tmp*/
+.pytest-cache-*/
+.pytest-tmp-*/
 .ruff_cache/
 *.egg-info/
 *.pyc
 *.log
+*.egg-info/
 secrets/*
 !secrets/.gitkeep
 postgres_data/

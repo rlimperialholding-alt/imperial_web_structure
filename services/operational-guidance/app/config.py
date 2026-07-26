@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     startup_validate_config: bool = True
     readiness_check_redis: bool = True
 
+    itep_enabled: bool = False
+    itep_base_url: str = "http://itep-api:3000"
+    itep_identity_shared_secret: SecretStr = SecretStr("change-me")
+    itep_service_actor_id: str = "integration-hub"
+    itep_organization_id: str = "imperial-holding"
+    itep_crm_connector_id: str = "crm-live"
+    itep_timeout_seconds: float = 15.0
+
     operational_guidance_enabled: bool = True
     drive_publication_enabled: bool = False
     gmail_approval_enabled: bool = False
@@ -223,6 +231,18 @@ class Settings(BaseSettings):
                     errors.append("METRICS_TOKEN must be a non-placeholder secret of at least 32 characters")
             if not self.require_idempotency_keys:
                 errors.append("REQUIRE_IDEMPOTENCY_KEYS must be true in staging and production")
+
+        if self.itep_enabled:
+            itep_secret = self.itep_identity_shared_secret.get_secret_value().strip()
+            if self.app_env in {"staging", "production"} and (
+                len(itep_secret) < 32 or _is_placeholder(itep_secret)
+            ):
+                errors.append(
+                    "ITEP_IDENTITY_SHARED_SECRET must be a non-placeholder secret "
+                    "of at least 32 characters"
+                )
+            if not self.itep_base_url.startswith(("http://", "https://")):
+                errors.append("ITEP_BASE_URL must be an HTTP(S) URL")
 
         if self.operational_guidance_enabled:
             catalog_path = self.resolved_path(self.operational_catalog_file)

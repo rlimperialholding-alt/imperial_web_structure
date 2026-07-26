@@ -1,0 +1,25 @@
+FROM node:22-bookworm-slim
+
+WORKDIR /app
+
+ARG NPM_STRICT_SSL=true
+
+ENV NODE_ENV=test
+ENV npm_config_strict_ssl=${NPM_STRICT_SSL}
+
+ENV SITES_SKIP_TARBALL_PREFLIGHT=1
+ENV SITES_INSTALL_TIMEOUT=30m
+ENV SITES_NPM_MAXSOCKETS=16
+ENV SITES_PREFER_OFFLINE=1
+
+COPY package.json package-lock.json .npmrc ./
+COPY scripts ./scripts
+RUN --mount=type=cache,target=/app/.sites-runtime/npm-cache npm run install:ci
+
+COPY . .
+
+RUN npm run typecheck
+
+EXPOSE 8787
+
+CMD ["sh", "scripts/start-github-test.sh"]
