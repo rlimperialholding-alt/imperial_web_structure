@@ -5,7 +5,6 @@ const workspaceId = process.env.CRM_WORKSPACE_ID;
 if (!workspaceId) {
   throw new Error("CRM_WORKSPACE_ID is required for the GitHub test environment");
 }
-
 await prisma.connectorAccount.upsert({
   where: {
     organizationId_kind_externalAccountId: {
@@ -30,5 +29,5 @@ await prisma.connectorAccount.upsert({
   },
 });
 
-console.log("Internal read-only CRM connector seeded.");
+console.log("Internal CRM connector seeded.");
 await prisma.$disconnect();

@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import accessStyles from "./access.module.css";
+import {
+  AgentsWorkspace,
+  AuditWorkspace,
+  CalendarWorkspace,
+  KnowledgeWorkspace,
+  ModulesWorkspace,
+  ProjectsWorkspace,
+  type IntelligenceWorkspace,
+} from "./intelligence-workspace";
 
 type View =
   | "today"
@@ -9,8 +18,15 @@ type View =
   | "records"
   | "customers"
   | "reports"
+  | "finance"
   | "control"
-  | "executive";
+  | "executive"
+  | "modules"
+  | "projects"
+  | "calendar"
+  | "knowledge"
+  | "agents"
+  | "audit";
 type Stage =
   | "new"
   | "contact"
@@ -61,6 +77,55 @@ type Identity = {
   email: string;
   name: string;
   role: "admin" | "sales_manager" | "sales";
+};
+type Invoice = {
+  id: number;
+  invoiceNumber: string;
+  invoiceType: "invoice" | "storno";
+  buyerName: string;
+  issueDate: string;
+  dueDate: string;
+  paymentMethod: string;
+  currency: string;
+  netAmount: number;
+  taxAmount: number;
+  grossAmount: number;
+  description: string;
+  referencedInvoiceNumber: string | null;
+  sourceUrl: string;
+  sourceFileName: string;
+  customerMatchStatus: "matched" | "review" | "unmatched";
+  projectMatchStatus: "matched" | "review" | "unmatched";
+  matchConfidence: number;
+  crmCustomerName: string | null;
+  projectTitle: string | null;
+};
+type ImportStatus = {
+  workspaceId: string;
+  recordCounts: {
+    recordType: string;
+    reviewStatus: string;
+    count: number;
+  }[];
+  partnerCounts: {
+    partnerType: string;
+    recordStatus: string;
+    count: number;
+  }[];
+  projectCounts: {
+    projectStatus: string;
+    customerMatchStatus: string;
+    count: number;
+  }[];
+  openReviews: { entityType: string; count: number }[];
+  recentRecords: {
+    externalId: string;
+    recordType: string;
+    title: string;
+    sourceUrl: string;
+    reviewStatus: string;
+    updatedAt: string;
+  }[];
 };
 type DataState = "connecting" | "live" | "demo" | "error";
 
@@ -443,15 +508,25 @@ function viewTitle(view: View) {
     records: "Értékesítési adatlapok",
     customers: "Ügyfelek",
     reports: "Értékesítési riportok",
+    finance: "Pénzügy",
     control: "Sales Control Center",
     executive: "Executive Dashboard",
+    modules: "Teljes rendszerleltár",
+    projects: "Projekt 360°",
+    calendar: "Okosnaptár",
+    knowledge: "Tudásbázis és dokumentumtár",
+    agents: "AI-ügynökök",
+    audit: "Auditnapló",
   }[view];
 }
 
 export default function Home() {
   const [view, setView] = useState<View>("today"),
     [leads, setLeads] = useState<Lead[]>([]),
-    [tasks, setTasksRaw] = useState<Task[]>([]);
+    [tasks, setTasksRaw] = useState<Task[]>([]),
+    [invoices, setInvoices] = useState<Invoice[]>([]),
+    [importStatus, setImportStatus] = useState<ImportStatus | null>(null),
+    [intelligence, setIntelligence] = useState<IntelligenceWorkspace | null>(null);
   const [query, setQuery] = useState(""),
     [brand, setBrand] = useState("Mind"),
     [owner, setOwner] = useState("Mind");
@@ -475,6 +550,8 @@ export default function Home() {
           identity: Identity;
           leads: Lead[];
           tasks: Task[];
+          invoices: Invoice[];
+          importStatus: ImportStatus;
         }>;
       })
       .then((data) => {
@@ -482,6 +559,8 @@ export default function Home() {
         setIdentity(data.identity);
         setLeads(data.leads);
         setTasksRaw(data.tasks);
+        setInvoices(data.invoices);
+        setImportStatus(data.importStatus);
         setDataState("live");
       })
       .catch(() => {
@@ -491,6 +570,28 @@ export default function Home() {
           setTasksRaw(initialTasks);
           setDataState("demo");
         } else setDataState("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const refreshIntelligence = async () => {
+    const response = await fetch("/api/intelligence", { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    setIntelligence(await response.json() as IntelligenceWorkspace);
+  };
+  useEffect(() => {
+    let active = true;
+    fetch("/api/intelligence", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        return response.json() as Promise<IntelligenceWorkspace>;
+      })
+      .then((data) => {
+        if (active) setIntelligence(data);
+      })
+      .catch(() => {
+        if (active) setIntelligence(null);
       });
     return () => {
       active = false;
@@ -516,6 +617,23 @@ export default function Home() {
       setView(v);
       setMobileOpen(false);
     };
+  const resolveImportReview = async (
+    id: number,
+    status: "resolved" | "dismissed",
+  ) => {
+    try {
+      const response = await fetch(`/api/intelligence/reviews/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error();
+      await refreshIntelligence();
+      notify(status === "resolved" ? "Az ellenőrzést lezártuk." : "A forrást kizártuk ebből a feldolgozásból.");
+    } catch {
+      notify("Az ellenőrzési tétel mentése nem sikerült.");
+    }
+  };
   const setTasks = (update: React.SetStateAction<Task[]>) =>
     setTasksRaw((current) => {
       const next = typeof update === "function" ? update(current) : update;
@@ -701,19 +819,15 @@ export default function Home() {
             <span>Értékesítés</span>
           </button>
           <button
-            onClick={() =>
-              notify(
-                "A Projektek modul a következő fejlesztési ütemben kapcsolódik ide.",
-              )
-            }
+            className={view === "projects" ? "active" : ""}
+            onClick={() => changeView("projects")}
           >
             <Icon name="project" />
             <span>Projektek</span>
           </button>
           <button
-            onClick={() =>
-              notify("Az Okosnaptár a v1.3 pilotból később kerül bekötésre.")
-            }
+            className={view === "calendar" ? "active" : ""}
+            onClick={() => changeView("calendar")}
           >
             <Icon name="calendar" />
             <span>Okosnaptár</span>
@@ -724,6 +838,13 @@ export default function Home() {
           </button>
           <span className="nav-label intelligence-label">INTELLIGENCE</span>
           <button
+            className={view === "modules" ? "active" : ""}
+            onClick={() => changeView("modules")}
+          >
+            <Icon name="grid" />
+            <span>Rendszerleltár</span>
+          </button>
+          <button
             className={view === "executive" ? "active" : ""}
             onClick={() => changeView("executive")}
           >
@@ -731,31 +852,29 @@ export default function Home() {
             <span>Vezetői központ</span>
           </button>
           <button
-            onClick={() => notify("A Pénzügy modul még nincs összekapcsolva.")}
+            className={view === "finance" ? "active" : ""}
+            onClick={() => changeView("finance")}
           >
             <Icon name="finance" />
             <span>Pénzügy</span>
           </button>
           <button
-            onClick={() =>
-              notify("A tudásbázis csatlakoztatása előkészítés alatt.")
-            }
+            className={view === "knowledge" ? "active" : ""}
+            onClick={() => changeView("knowledge")}
           >
             <Icon name="search" />
             <span>Tudásbázis</span>
           </button>
           <button
-            onClick={() =>
-              notify("Az AI ügynökök vezérlőfelülete külön modulban készül.")
-            }
+            className={view === "agents" ? "active" : ""}
+            onClick={() => changeView("agents")}
           >
             <Icon name="bot" />
             <span>AI ügynökök</span>
           </button>
           <button
-            onClick={() =>
-              notify("Az auditnapló csak tulajdonosi jogosultsággal érhető el.")
-            }
+            className={view === "audit" ? "active" : ""}
+            onClick={() => changeView("audit")}
           >
             <Icon name="audit" />
             <span>Audit</span>
@@ -891,6 +1010,8 @@ export default function Home() {
             <Customers leads={leads} onLead={setSelected} />
           ) : view === "reports" ? (
             <Reports leads={leads} />
+          ) : view === "finance" ? (
+            <Finance invoices={invoices} importStatus={importStatus} />
           ) : view === "executive" ? (
             <ExecutiveDashboard
               leads={leads}
@@ -899,6 +1020,30 @@ export default function Home() {
               onNavigate={changeView}
               notify={notify}
             />
+          ) : view === "modules" ? (
+            intelligence
+              ? <ModulesWorkspace data={intelligence} />
+              : <IntelligenceLoading />
+          ) : view === "projects" ? (
+            intelligence
+              ? <ProjectsWorkspace data={intelligence} />
+              : <IntelligenceLoading />
+          ) : view === "calendar" ? (
+            intelligence
+              ? <CalendarWorkspace data={intelligence} />
+              : <IntelligenceLoading />
+          ) : view === "knowledge" ? (
+            intelligence
+              ? <KnowledgeWorkspace data={intelligence} onReview={resolveImportReview} />
+              : <IntelligenceLoading />
+          ) : view === "agents" ? (
+            intelligence
+              ? <AgentsWorkspace data={intelligence} />
+              : <IntelligenceLoading />
+          ) : view === "audit" ? (
+            intelligence
+              ? <AuditWorkspace data={intelligence} />
+              : <IntelligenceLoading />
           ) : (
             <Control leads={leads} onLead={setSelected} />
           )}
@@ -934,6 +1079,15 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+}
+
+function IntelligenceLoading() {
+  return (
+    <section className="empty">
+      <h2>A közös rendszeradatok betöltése folyamatban van</h2>
+      <p>Ha ez tartósan így marad, ellenőrizni kell a helyi adatbázis-kapcsolatot.</p>
+    </section>
   );
 }
 
@@ -1520,6 +1674,203 @@ function Reports({ leads }: { leads: Lead[] }) {
           </div>
         </section>
       </div>
+    </>
+  );
+}
+function Finance({
+  invoices,
+  importStatus,
+}: {
+  invoices: Invoice[];
+  importStatus: ImportStatus | null;
+}) {
+  const signedGross = invoices.reduce(
+    (total, invoice) => total + invoice.grossAmount,
+    0,
+  );
+  const matchedCustomers = new Set(
+    invoices
+      .filter((invoice) => invoice.customerMatchStatus === "matched")
+      .map((invoice) => invoice.crmCustomerName),
+  ).size;
+  const projectReview = invoices.filter(
+    (invoice) => invoice.projectMatchStatus !== "matched",
+  ).length;
+  const sourceCount = importStatus?.recordCounts.reduce(
+    (total, row) => total + row.count,
+    0,
+  ) ?? 0;
+  const partnerCount = importStatus?.partnerCounts.reduce(
+    (total, row) => total + row.count,
+    0,
+  ) ?? 0;
+  const projectCount = importStatus?.projectCounts.reduce(
+    (total, row) => total + row.count,
+    0,
+  ) ?? 0;
+  const openReviewCount = importStatus?.openReviews.reduce(
+    (total, row) => total + row.count,
+    0,
+  ) ?? 0;
+  const huf = new Intl.NumberFormat("hu-HU", {
+    style: "currency",
+    currency: "HUF",
+    maximumFractionDigits: 0,
+  });
+  return (
+    <>
+      <section className="section-title">
+        <div>
+          <p className="eyebrow">TÉNYADATOK · KIMENŐ SZÁMLÁK</p>
+          <h2>Számlapilot</h2>
+          <p>
+            Drive-forrással igazolt, duplikációvédett számlaadatok és
+            CRM-kapcsolatok.
+          </p>
+        </div>
+      </section>
+      <section className="kpis finance-kpis">
+        <article>
+          <span>Importált bizonylat</span>
+          <strong>{invoices.length}</strong>
+          <small>A sztornók külön bizonylatként szerepelnek</small>
+        </article>
+        <article>
+          <span>Előjeles bruttó érték</span>
+          <strong>{huf.format(signedGross)}</strong>
+          <small>Az eredeti és sztornó összegek együtt</small>
+        </article>
+        <article>
+          <span>Biztos ügyfélkapcsolat</span>
+          <strong>{matchedCustomers}</strong>
+          <small>Forrásazonosító és névegyezés alapján</small>
+        </article>
+        <article className={projectReview ? "warning" : ""}>
+          <span>Projektkapcsolat ellenőrzendő</span>
+          <strong>{projectReview}</strong>
+          <small>Projekt csak valódi adatlaphoz kapcsolható</small>
+        </article>
+      </section>
+      <section className="section-title datahub-title">
+        <div>
+          <p className="eyebrow">ÉLŐ FORRÁSREGISZTER</p>
+          <h2>Importált üzleti adatok</h2>
+          <p>
+            Ügyfél-, projekt-, szerződés- és partnerforrások. A nagy Drive-fájlok
+            hivatkozásként szerepelnek, így nem foglalnak kétszer tárhelyet.
+          </p>
+        </div>
+      </section>
+      <section className="kpis datahub-kpis">
+        <article>
+          <span>Nyilvántartott forrás</span>
+          <strong>{sourceCount}</strong>
+          <small>Drive-, Gmail- és táblázatrekord</small>
+        </article>
+        <article>
+          <span>Üzleti partner</span>
+          <strong>{partnerCount}</strong>
+          <small>Alvállalkozó, tervező, beszállító és B2B partner</small>
+        </article>
+        <article>
+          <span>Projekt</span>
+          <strong>{projectCount}</strong>
+          <small>Forrásmappához kapcsolt projektadat</small>
+        </article>
+        <article className={openReviewCount ? "warning" : ""}>
+          <span>Emberi ellenőrzésre vár</span>
+          <strong>{openReviewCount}</strong>
+          <small>Bizonytalan kapcsolat vagy hiányos forrásadat</small>
+        </article>
+      </section>
+      {importStatus?.recentRecords.length ? (
+        <section className="table-panel source-panel">
+          <div className="panel-head">
+            <div>
+              <p className="eyebrow">FORRÁSHIVATKOZÁSOK</p>
+              <h3>Legutóbb nyilvántartott dokumentumok</h3>
+            </div>
+            <span className="count">{importStatus.recentRecords.length}</span>
+          </div>
+          <div className="source-list">
+            {importStatus.recentRecords.slice(0, 25).map((record) => (
+              <a
+                href={record.sourceUrl}
+                key={`${record.recordType}:${record.externalId}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span>
+                  <strong>{record.title}</strong>
+                  <small>{record.recordType.replaceAll("_", " ")}</small>
+                </span>
+                <b className={record.reviewStatus}>{record.reviewStatus}</b>
+                <Icon name="arrow" />
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      <section className="table-panel finance-panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">SZÁMLAJEGYZÉK</p>
+            <h3>Importált pénzügyi tételek</h3>
+          </div>
+          <span className="count">{invoices.length}</span>
+        </div>
+        {invoices.length ? (
+          <div className="invoice-table">
+            <div className="invoice-row invoice-head">
+              <span>Számla</span>
+              <span>Ügyfél és tétel</span>
+              <span>Dátum</span>
+              <span>Bruttó</span>
+              <span>Kapcsolatok</span>
+            </div>
+            {invoices.map((invoice) => (
+              <article className="invoice-row" key={invoice.id}>
+                <span>
+                  <strong>{invoice.invoiceNumber}</strong>
+                  <small>
+                    {invoice.invoiceType === "storno"
+                      ? `Sztornó · ${invoice.referencedInvoiceNumber}`
+                      : invoice.paymentMethod}
+                  </small>
+                </span>
+                <span>
+                  <strong>{invoice.buyerName}</strong>
+                  <small>{invoice.description}</small>
+                </span>
+                <span>
+                  <strong>{invoice.issueDate}</strong>
+                  <small>Határidő: {invoice.dueDate}</small>
+                </span>
+                <span className={invoice.grossAmount < 0 ? "negative" : ""}>
+                  <strong>{huf.format(invoice.grossAmount)}</strong>
+                  <small>Nettó: {huf.format(invoice.netAmount)}</small>
+                </span>
+                <span className="invoice-links">
+                  <b className="matched">Ügyfél kapcsolva</b>
+                  <b className={
+                    invoice.projectMatchStatus === "matched"
+                      ? "matched"
+                      : "review"
+                  }>
+                    {invoice.projectMatchStatus === "matched"
+                      ? invoice.projectTitle
+                      : "Projekt ellenőrzendő"}
+                  </b>
+                </span>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="finance-empty">
+            Még nincs importált számlaadat ebben a környezetben.
+          </div>
+        )}
+      </section>
     </>
   );
 }

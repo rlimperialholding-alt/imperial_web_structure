@@ -142,6 +142,233 @@ export const projects = sqliteTable("projects", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const financeInvoiceImports = sqliteTable("finance_invoice_imports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: text("workspace_id").notNull(),
+  sourceSystem: text("source_system").notNull(),
+  externalId: text("external_id").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  sourceFileName: text("source_file_name").notNull(),
+  sourceSha256: text("source_sha256").notNull(),
+  invoiceNumber: text("invoice_number").notNull(),
+  invoiceType: text("invoice_type", {
+    enum: ["invoice", "storno"],
+  }).notNull(),
+  sellerName: text("seller_name").notNull(),
+  buyerName: text("buyer_name").notNull(),
+  issueDate: text("issue_date").notNull(),
+  fulfillmentDate: text("fulfillment_date").notNull(),
+  dueDate: text("due_date").notNull(),
+  paymentMethod: text("payment_method").notNull(),
+  currency: text("currency").notNull(),
+  netAmount: integer("net_amount").notNull(),
+  taxAmount: integer("tax_amount").notNull(),
+  grossAmount: integer("gross_amount").notNull(),
+  description: text("description").notNull(),
+  referencedInvoiceNumber: text("referenced_invoice_number"),
+  customerImportId: integer("customer_import_id").references(
+    () => customerImports.id,
+    { onDelete: "set null" },
+  ),
+  leadId: integer("lead_id").references(() => leads.id, {
+    onDelete: "set null",
+  }),
+  projectId: text("project_id").references(() => projects.id, {
+    onDelete: "set null",
+  }),
+  customerMatchStatus: text("customer_match_status", {
+    enum: ["matched", "review", "unmatched"],
+  }).notNull(),
+  projectMatchStatus: text("project_match_status", {
+    enum: ["matched", "review", "unmatched"],
+  }).notNull(),
+  matchConfidence: integer("match_confidence").notNull(),
+  payloadSha256: text("payload_sha256").notNull(),
+  metadataJson: text("metadata_json").notNull(),
+  importedAt: text("imported_at").notNull(),
+}, (table) => [
+  uniqueIndex("finance_invoice_imports_source_idx").on(
+    table.workspaceId,
+    table.sourceSystem,
+    table.externalId,
+  ),
+  uniqueIndex("finance_invoice_imports_number_idx").on(
+    table.workspaceId,
+    table.sourceSystem,
+    table.invoiceNumber,
+  ),
+  index("finance_invoice_imports_customer_idx").on(
+    table.customerImportId,
+    table.leadId,
+  ),
+  index("finance_invoice_imports_project_idx").on(table.projectId),
+]);
+
+export const sourceRecords = sqliteTable("crm_source_records", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: text("workspace_id").notNull(),
+  sourceSystem: text("source_system").notNull(),
+  externalId: text("external_id").notNull(),
+  sourceKind: text("source_kind", {
+    enum: ["drive_file", "drive_folder", "gmail_message", "spreadsheet_row"],
+  }).notNull(),
+  recordType: text("record_type", {
+    enum: [
+      "customer_source",
+      "lead_source",
+      "project",
+      "contract",
+      "project_document",
+      "invoice_source",
+      "partner_source",
+      "restricted_source",
+      "other",
+    ],
+  }).notNull(),
+  title: text("title").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  mimeType: text("mime_type"),
+  byteSize: integer("byte_size"),
+  parentExternalId: text("parent_external_id"),
+  sourceVersion: text("source_version").notNull(),
+  storageMode: text("storage_mode", { enum: ["link"] }).notNull(),
+  reviewStatus: text("review_status", {
+    enum: ["verified", "review", "excluded"],
+  }).notNull(),
+  payloadSha256: text("payload_sha256").notNull(),
+  metadataJson: text("metadata_json").notNull(),
+  firstSeenAt: text("first_seen_at").notNull(),
+  lastSeenAt: text("last_seen_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("crm_source_records_source_idx").on(
+    table.workspaceId,
+    table.sourceSystem,
+    table.externalId,
+  ),
+  index("crm_source_records_type_idx").on(
+    table.workspaceId,
+    table.recordType,
+    table.reviewStatus,
+  ),
+  index("crm_source_records_parent_idx").on(
+    table.workspaceId,
+    table.sourceSystem,
+    table.parentExternalId,
+  ),
+]);
+
+export const businessPartners = sqliteTable("crm_business_partners", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: text("workspace_id").notNull(),
+  identityKey: text("identity_key").notNull(),
+  partnerType: text("partner_type", {
+    enum: ["subcontractor", "supplier", "designer", "architect", "b2b_partner"],
+  }).notNull(),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  location: text("location"),
+  specialties: text("specialties"),
+  recordStatus: text("record_status", {
+    enum: ["verified", "prospect", "review", "excluded"],
+  }).notNull(),
+  matchConfidence: integer("match_confidence").notNull(),
+  metadataJson: text("metadata_json").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("crm_business_partners_identity_idx").on(
+    table.workspaceId,
+    table.identityKey,
+  ),
+  index("crm_business_partners_type_idx").on(
+    table.workspaceId,
+    table.partnerType,
+    table.recordStatus,
+  ),
+]);
+
+export const businessPartnerSources = sqliteTable("crm_business_partner_sources", {
+  partnerId: integer("partner_id").notNull().references(
+    () => businessPartners.id,
+    { onDelete: "cascade" },
+  ),
+  sourceRecordId: integer("source_record_id").notNull().references(
+    () => sourceRecords.id,
+    { onDelete: "cascade" },
+  ),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.partnerId, table.sourceRecordId] }),
+  uniqueIndex("crm_business_partner_sources_record_idx").on(
+    table.sourceRecordId,
+  ),
+]);
+
+export const businessProjects = sqliteTable("crm_business_projects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: text("workspace_id").notNull(),
+  sourceRecordId: integer("source_record_id").notNull().references(
+    () => sourceRecords.id,
+    { onDelete: "cascade" },
+  ),
+  externalKey: text("external_key").notNull(),
+  title: text("title").notNull(),
+  location: text("location"),
+  projectType: text("project_type"),
+  projectStatus: text("project_status", {
+    enum: ["active", "planning", "on_hold", "completed", "archived", "review"],
+  }).notNull(),
+  customerImportId: integer("customer_import_id").references(
+    () => customerImports.id,
+    { onDelete: "set null" },
+  ),
+  customerMatchStatus: text("customer_match_status", {
+    enum: ["matched", "review", "unmatched"],
+  }).notNull(),
+  metadataJson: text("metadata_json").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("crm_business_projects_external_idx").on(
+    table.workspaceId,
+    table.externalKey,
+  ),
+  uniqueIndex("crm_business_projects_source_idx").on(table.sourceRecordId),
+  index("crm_business_projects_status_idx").on(
+    table.workspaceId,
+    table.projectStatus,
+    table.customerMatchStatus,
+  ),
+]);
+
+export const importReviewItems = sqliteTable("crm_import_review_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: text("workspace_id").notNull(),
+  sourceRecordId: integer("source_record_id").notNull().references(
+    () => sourceRecords.id,
+    { onDelete: "cascade" },
+  ),
+  entityType: text("entity_type").notNull(),
+  reasonCode: text("reason_code").notNull(),
+  summary: text("summary").notNull(),
+  status: text("status", { enum: ["open", "resolved", "dismissed"] }).notNull(),
+  createdAt: text("created_at").notNull(),
+  resolvedAt: text("resolved_at"),
+}, (table) => [
+  uniqueIndex("crm_import_review_items_source_reason_idx").on(
+    table.sourceRecordId,
+    table.entityType,
+    table.reasonCode,
+  ),
+  index("crm_import_review_items_status_idx").on(
+    table.workspaceId,
+    table.status,
+    table.entityType,
+  ),
+]);
+
 export const projectMembers = sqliteTable("project_members", {
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   email: text("email").notNull(),

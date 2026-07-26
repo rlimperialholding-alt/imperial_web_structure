@@ -459,3 +459,24 @@ model ConnectorDeadLetterItem {
   @@index([organizationId, acknowledgedAt])
   @@index([connectorId, failedAt])
 }
+
+model OrchestrationEvent {
+  id              String   @id @default(uuid())
+  organizationId  String
+  source           String
+  externalEventId  String
+  eventType        String
+  projectId        String
+  ownerId          String
+  status           String
+  payload          Json
+  taskIds          String[]
+  occurredAt       DateTime
+  receivedAt       DateTime @default(now())
+  processedAt      DateTime?
+  lastError        String?
+
+  @@unique([organizationId, source, externalEventId])
+  @@index([organizationId, status, occurredAt])
+  @@index([projectId, occurredAt])
+}

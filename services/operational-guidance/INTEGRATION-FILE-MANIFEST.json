@@ -6,8 +6,8 @@
   "files": [
     {
       "path": ".github/workflows/operational-guidance-ci.yml",
-      "size": 2367,
-      "sha256": "16b5f5cce43875120e077c3b4e70ff578785e0bad6030890a6aef1ef357be021"
+      "size": 2593,
+      "sha256": "05731d5e266681b044183e97a6226f85b4e41f90f8014e081d8914487169d3b0"
     },
     {
       "path": "docs/integrations/operational-guidance-v0.8.1.md",
@@ -46,8 +46,8 @@
     },
     {
       "path": "services/operational-guidance/Dockerfile",
-      "size": 732,
-      "sha256": "49d83b025b068aceed72d64c1778865d69fdfeae98a8e01e44d33ba05045bf4f"
+      "size": 832,
+      "sha256": "1f39e03749072c0f7df2e5ea824b01ce0f0d6d2c1799402b259140bc4c36b052"
     },
     {
       "path": "services/operational-guidance/FINAL-QA-v0.8.1.txt",

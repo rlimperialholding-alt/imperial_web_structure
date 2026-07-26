@@ -45,6 +45,7 @@ import { createConnectorAdapters } from "../connectors/connector-adapter-factory
 import { ConnectorSyncOrchestrator } from "../connectors/sync-orchestrator.js";
 import { registerConnectorRoutes } from "./connector-routes.js";
 import { OrchestratorOperationExecutor } from "../integration-control-room/adapters.js";
+import { registerOrchestrationRoutes } from "./orchestration-routes.js";
 
 export interface ServerDependencies {
   integrationExecutor?: ConnectorOperationExecutor;
@@ -140,6 +141,11 @@ export async function buildServer(
   registerReportingRoutes(app, reportingService);
   registerIngestionRoutes(app, ingestionService);
   registerIntegrationControlRoomRoutes(app, controlRoom);
+  registerOrchestrationRoutes(app, prisma, service, {
+    issuerId: "smart-calendar",
+    escalationPersonId: config.DEFAULT_ESCALATION_PERSON_ID,
+    contactEmail: config.DEFAULT_CONTACT_EMAIL,
+  });
 
   app.post("/v1/tasks", async (request, reply) => {
     const actor = requireActor(request.verifiedActor);

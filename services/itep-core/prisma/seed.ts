@@ -4,7 +4,6 @@ const prisma = new PrismaClient();
 
 async function main() {
   const now = new Date();
-
   await prisma.connectorAccount.upsert({
     where: {
       organizationId_kind_externalAccountId: {

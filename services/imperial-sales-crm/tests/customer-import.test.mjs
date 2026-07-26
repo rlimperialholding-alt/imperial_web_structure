@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("real-data pilot is capped at ten customers and uses source idempotency", async () => {
+test("real-data import is bounded at 250 customers and uses source idempotency", async () => {
   const source = await readFile("lib/customer-import.ts", "utf8");
-  assert.match(source, /MAX_CUSTOMERS_PER_PILOT = 10/);
+  assert.match(source, /MAX_CUSTOMERS_PER_BATCH = 250/);
   assert.match(source, /payloadSha256/);
   assert.match(source, /customerImports\.externalId/);
   assert.match(source, /already exists with different data/);
+  assert.match(source, /or\(\.\.\.contactMatches\)/);
 });
 
 test("customer import source mapping is durable and unique", async () => {

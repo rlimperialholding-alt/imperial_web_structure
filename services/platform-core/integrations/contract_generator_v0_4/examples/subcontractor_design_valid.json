@@ -1,0 +1,173 @@
+{
+  "contract_type": "subcontractor_design",
+  "relationship": "partner",
+  "service": "design",
+  "contract_number": "TERV-AV-2026-0001",
+  "contract_date": "2026-07-18",
+  "contract_place": "Budapest",
+  "ids": {
+    "CompanyID": "COM-TERV-AV-2026-0001",
+    "PersonID": "PER-TERV-AV-2026-0001",
+    "OpportunityID": "OPP-TERV-AV-2026-0001",
+    "ProjectID": "PRJ-TERV-AV-2026-0001",
+    "PartnerID": "PAR-TERV-AV-2026-0001"
+  },
+  "internal_entity": {
+    "party_type": "company",
+    "name": "Imperial Teszt Megrendelő Kft. (MINTAADAT)",
+    "short_name": "Imperial Teszt Kft.",
+    "registration_number": "01-09-000001",
+    "tax_number": "10000001-2-41",
+    "registered_office": "1037 Budapest, Teszt köz 1.",
+    "address": "1037 Budapest, Teszt köz 1.",
+    "postal_address": "1037 Budapest, Teszt köz 1.",
+    "bank_account": "11700000-00000001-00000001",
+    "representative": "Minta Imre",
+    "representative_title": "ügyvezető",
+    "email": "szerzodes@example.com",
+    "phone": "+36 70 000 0001"
+  },
+  "counterparty": {
+    "party_type": "company",
+    "name": "Minta Tervező Kft.",
+    "short_name": "Minta Tervező Kft.",
+    "registration_number": "01-09-888888",
+    "tax_number": "23456789-2-41",
+    "registered_office": "1024 Budapest, Terv utca 1.",
+    "address": "1024 Budapest, Terv utca 1.",
+    "postal_address": "1024 Budapest, Terv utca 1.",
+    "bank_account": "11700000-00000003-00000003",
+    "representative": "Minta Teréz",
+    "representative_title": "ügyvezető vezető tervező",
+    "email": "tervezo@example.com",
+    "phone": "+36 30 000 0003"
+  },
+  "project": {
+    "name": "Minta családi ház tervezése",
+    "site_address": "2096 Üröm, Terv utca 3.",
+    "parcel_number": "5678/9",
+    "gross_floor_area_m2": 120,
+    "scope": "építészeti, statikai és szakági kiviteli tervdokumentáció elkészítése",
+    "procedure_type": "egyszerű bejelentés"
+  },
+  "commercial": {
+    "net_price": 4200000,
+    "vat_percent": 27,
+    "vat_amount": 1134000,
+    "gross_price": 5334000,
+    "currency": "HUF",
+    "payment_schedule": [
+      {
+        "milestone": "Koncepció és egyeztetési dokumentáció",
+        "percent": 20,
+        "due_rule": "elfogadott tervezői teljesítésigazolás alapján"
+      },
+      {
+        "milestone": "Engedélyezési/bejelentési tervdokumentáció",
+        "percent": 40,
+        "due_rule": "elfogadott tervezői teljesítésigazolás alapján"
+      },
+      {
+        "milestone": "Kiviteli és szakági tervdokumentáció",
+        "percent": 40,
+        "due_rule": "hiánytalan tervátadás és elfogadott teljesítésigazolás alapján"
+      }
+    ]
+  },
+  "schedule": {
+    "start_date": "2026-08-03",
+    "deadline": "2026-10-30",
+    "milestones": [
+      {
+        "name": "Koncepció",
+        "deadline": "2026-08-21"
+      },
+      {
+        "name": "Egyszerű bejelentési terv",
+        "deadline": "2026-09-18"
+      },
+      {
+        "name": "Kiviteli tervek",
+        "deadline": "2026-10-30"
+      }
+    ]
+  },
+  "delivery_requirements": {
+    "postal_required": true,
+    "electronic_required": true,
+    "postal_method": "registered_return_receipt",
+    "postal_original_copies": 1,
+    "electronic_format": "SIGNED_PDF"
+  },
+  "required_attachments": [
+    "design_scope",
+    "deliverables_schedule",
+    "fee_schedule",
+    "professional_liability_insurance"
+  ],
+  "attachments": [
+    {
+      "type": "design_scope",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "deliverables_schedule",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "fee_schedule",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "professional_liability_insurance",
+      "status": "APPROVED",
+      "version": "1.0"
+    }
+  ],
+  "status": {
+    "contract_status": "DRAFT",
+    "signed_contract_present": false,
+    "master_hash_verified": false,
+    "all_required_annexes_present": true,
+    "commercial_approval": "APPROVED",
+    "technical_approval": "APPROVED",
+    "all_fields_complete": true,
+    "both_parties_signed": false,
+    "signed_contract_file_id": "",
+    "owner_policy_version": "ICG-PAY-2026-07-18"
+  },
+  "dispatch_status": {
+    "internal_signed_original_present": false,
+    "internal_signature_date": "",
+    "signed_document_sha256": "",
+    "postal": {
+      "sent": false,
+      "sent_at": "",
+      "recipient_address": "1024 Budapest, Terv utca 1.",
+      "original_copy_count": 0,
+      "tracking_number": "",
+      "proof_file_id": ""
+    },
+    "electronic": {
+      "sent": false,
+      "sent_at": "",
+      "recipient_email": "tervezo@example.com",
+      "message_id": "",
+      "attachment_sha256": ""
+    }
+  },
+  "designer_controls": {
+    "professional_liability_insurance": {
+      "insurer": "Minta Biztosító Zrt.",
+      "policy_number": "PL-2026-0001",
+      "coverage_amount": 50000000
+    }
+  },
+  "invoice_controls": {
+    "payment_term_days": 8,
+    "performance_certificate_type": "TERVEZŐI_TELJESÍTÉSIGAZOLÁS"
+  }
+}

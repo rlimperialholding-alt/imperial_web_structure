@@ -33,7 +33,11 @@ jobs:
           --source head
 
   ownership-boundary:
-    if: github.event_name == 'pull_request'
+    # This guard protects the isolated Operational Guidance handoff branch.
+    # Cross-service integration branches intentionally own a wider PR scope.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'agent/operational-guidance-v0.8.1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

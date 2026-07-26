@@ -2,19 +2,24 @@ name: imperial-intelligence-test
 
 services:
   crm:
+    image: ${CRM_TEST_IMAGE:-imperial-complete-test-crm:local}
     build:
       context: ./services/imperial-sales-crm
       dockerfile: Dockerfile.github-test
       args:
         NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+        NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
     environment:
       NODE_ENV: test
+      CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-test}
       CRM_MIGRATION_TOKEN: ${CRM_MIGRATION_TOKEN:?required}
       ITEP_CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:?required}
     ports:
-      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:${CRM_TEST_PORT:-8787}:8787"
     volumes:
-      - crm-local-state:/app/.wrangler
+      # Set CRM_TEST_STATE_PATH to an existing Miniflare state directory to
+      # exercise the stack against an approved local dataset without copying it.
+      - ${CRM_TEST_STATE_PATH:-crm-local-state}:/app/.wrangler/state
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
@@ -42,7 +47,11 @@ services:
       retries: 30
 
   hub-migrate:
-    build: ./services/operational-guidance
+    image: ${HUB_TEST_IMAGE:-imperial-complete-test-hub:local}
+    build:
+      context: ./services/operational-guidance
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     command: alembic upgrade head
     environment: &hub-env
       APP_ENV: test
@@ -65,10 +74,14 @@ services:
         condition: service_healthy
 
   hub-api:
-    build: ./services/operational-guidance
+    image: ${HUB_TEST_IMAGE:-imperial-complete-test-hub:local}
+    build:
+      context: ./services/operational-guidance
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     environment: *hub-env
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${HUB_TEST_PORT:-8000}:8000"
     depends_on:
       hub-migrate:
         condition: service_completed_successfully
@@ -93,9 +106,10 @@ services:
       retries: 30
 
   mock-external:
+    image: ${MOCK_TEST_IMAGE:-imperial-complete-test-mock-external:local}
     build: ./services/operational-guidance/test-env/mock-services
     ports:
-      - "127.0.0.1:9010:9010"
+      - "127.0.0.1:${MOCK_TEST_PORT:-9010}:9010"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9010/health', timeout=3)"]
       interval: 3s
@@ -103,9 +117,13 @@ services:
       retries: 20
 
   itep-migrate:
+    image: ${ITEP_BUILD_TEST_IMAGE:-imperial-complete-test-itep-build:local}
     build:
       context: ./services/itep-core
       target: build
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+        NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
     command: >
       sh -c "npx prisma migrate deploy &&
              node prisma/seed.mjs"
@@ -124,7 +142,7 @@ services:
       CRM_AUTH_HEADER: X-ITEP-Token
       CRM_AUTH_SCHEME: ""
       CRM_WORKSPACE_QUERY_PARAMETER: workspace
-      CRM_WORKSPACE_ID: imperial-test
+      CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-test}
       ITEP_CRM_CONNECTOR_ID: crm-live
       CONNECTOR_ACCESS_TOKENS_JSON: '{"crm-live":"${ITEP_CRM_READ_TOKEN:?required}"}'
       CONNECTOR_SYNC_INTERVAL_MS: "3600000"
@@ -138,12 +156,18 @@ services:
         condition: service_healthy
 
   itep-api:
+    image: ${ITEP_BUILD_TEST_IMAGE:-imperial-complete-test-itep-build:local}
     build:
       context: ./services/itep-core
-      target: runtime
+      target: build
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+        NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+    command: ["node", "dist/src/api/main.js"]
+    user: node
     environment: *itep-env
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${ITEP_TEST_PORT:-3000}:3000"
     depends_on:
       itep-migrate:
         condition: service_completed_successfully
@@ -154,10 +178,15 @@ services:
       retries: 30
 
   itep-worker:
+    image: ${ITEP_BUILD_TEST_IMAGE:-imperial-complete-test-itep-build:local}
     build:
       context: ./services/itep-core
-      target: runtime
+      target: build
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+        NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
     command: ["node", "dist/src/workers/main.js"]
+    user: node
     environment: *itep-env
     depends_on:
       itep-migrate:

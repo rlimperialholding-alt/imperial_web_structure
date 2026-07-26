@@ -3,7 +3,17 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("the Sites artifact contains the worker, bindings and all migrations", async () => {
-  const [hosting, crmMigration, portalMigration, documentMigration, invitationMigration, notificationMigration, itepMigration] = await Promise.all([
+  const [
+    hosting,
+    crmMigration,
+    portalMigration,
+    documentMigration,
+    invitationMigration,
+    notificationMigration,
+    itepMigration,
+    liveSourceMigration,
+    server,
+  ] = await Promise.all([
     readFile("dist/.openai/hosting.json", "utf8"),
     readFile("dist/.openai/drizzle/0000_crm_core.sql", "utf8"),
     readFile("dist/.openai/drizzle/0001_myimperial_core.sql", "utf8"),
@@ -11,6 +21,7 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
     readFile("dist/.openai/drizzle/0003_myimperial_invitations.sql", "utf8"),
     readFile("dist/.openai/drizzle/0004_myimperial_notifications.sql", "utf8"),
     readFile("dist/.openai/drizzle/0005_itep_migration_contract.sql", "utf8"),
+    readFile("dist/.openai/drizzle/0008_live_source_registry.sql", "utf8"),
     readFile("dist/server/index.js", "utf8"),
   ]);
   assert.deepEqual(JSON.parse(hosting), {
@@ -27,6 +38,8 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
   assert.match(notificationMigration, /CREATE TABLE `notification_preferences`/);
   assert.match(itepMigration, /CREATE TABLE `crm_migration_batches`/);
   assert.match(itepMigration, /CREATE TABLE `crm_migration_documents`/);
+  assert.match(liveSourceMigration, /CREATE TABLE `crm_source_records`/);
+  assert.match(server, /crm_source_records/);
 });
 
 test("customer email templates never expose internal commercial controls", async () => {
