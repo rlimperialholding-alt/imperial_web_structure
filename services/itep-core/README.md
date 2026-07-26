@@ -37,6 +37,9 @@ npm test
 npm run typecheck
 ```
 
+A Billingo-, Meta- és Google Ads-kapcsolatok biztonságos beállítása:
+[read-only üzleti connector útmutató](docs/BUSINESS_CONNECTORS_READ_ONLY.md).
+
 ## Következő modulok
 
 1. Prisma repository implementáció és tranzakciókezelés

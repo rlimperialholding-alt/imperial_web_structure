@@ -8,4 +8,11 @@ describe("EnvironmentConnectorSecretProvider", () => {
   it("rejects missing token", async () => {
     await expect(new EnvironmentConnectorSecretProvider("{}").getAccessToken("x")).rejects.toThrow("missing");
   });
+  it("reads a normalized per-connector environment secret", async () => {
+    const provider = new EnvironmentConnectorSecretProvider("{}", {
+      CONNECTOR_ACCESS_TOKEN_META_ADS_LIVE: "meta-secret",
+    });
+    await expect(provider.getAccessToken("meta-ads-live"))
+      .resolves.toBe("meta-secret");
+  });
 });

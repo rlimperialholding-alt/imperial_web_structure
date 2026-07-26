@@ -288,6 +288,8 @@ enum ConnectorKind {
   BILLINGO
   BANK
   CRM
+  META_ADS
+  GOOGLE_ADS
 }
 
 enum ConnectorStatus {

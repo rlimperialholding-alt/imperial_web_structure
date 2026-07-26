@@ -1,4 +1,12 @@
-export type ConnectorKind = "GMAIL" | "CALENDAR" | "DRIVE" | "BILLINGO" | "BANK" | "CRM";
+export type ConnectorKind =
+  | "GMAIL"
+  | "CALENDAR"
+  | "DRIVE"
+  | "BILLINGO"
+  | "BANK"
+  | "CRM"
+  | "META_ADS"
+  | "GOOGLE_ADS";
 export type ConnectorStatus =
   | "DISCONNECTED"
   | "CONNECTING"

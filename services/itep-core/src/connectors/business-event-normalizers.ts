@@ -19,6 +19,22 @@ export interface CrmActivityEvent {
   ownerEmail?: string; contactEmail?: string; dueAt?: Date;
   occurredAt: Date; status: string; priority?: string;
 }
+export interface MarketingMetricEvent {
+  organizationId: string;
+  provider: "META_ADS" | "GOOGLE_ADS";
+  accountId: string;
+  campaignId: string;
+  campaignName: string;
+  campaignStatus?: string;
+  dateStart: string;
+  dateStop: string;
+  impressions: number;
+  clicks: number;
+  spend: number;
+  currency?: string;
+  conversions: number;
+  updatedAt: Date;
+}
 
 export function normalizeBillingoInvoice(
   organizationId: string, event: BillingoInvoiceEvent, receivedAt: Date,
@@ -35,6 +51,7 @@ export function normalizeBillingoInvoice(
     labels: ["BILLINGO", "FINANCIAL", event.status.toUpperCase()],
     metadata: {
       provider: "BILLINGO", eventType: invoiceEventType(event.status),
+      accessMode: "READ_ONLY",
       invoiceId: event.invoiceId, invoiceNumber: event.invoiceNumber,
       projectId: event.projectId, status: event.status,
       grossAmount: event.grossAmount, currency: event.currency,
@@ -105,6 +122,58 @@ export function normalizeCrmActivity(
     fingerprint: buildSourceFingerprint({
       organizationId, source: "WEBHOOK", externalId,
       subject: event.title, occurredAt: event.occurredAt,
+    }),
+  };
+}
+
+export function normalizeMarketingMetric(
+  organizationId: string,
+  event: MarketingMetricEvent,
+  receivedAt: Date,
+): SourceEvent {
+  const externalId = [
+    event.provider.toLowerCase(),
+    event.accountId,
+    event.campaignId,
+    event.dateStart,
+  ].join(":");
+  return {
+    id: `SRC-${event.provider}-${event.accountId}-${event.campaignId}-${event.dateStart}`,
+    organizationId,
+    source: "WEBHOOK",
+    externalId,
+    occurredAt: event.updatedAt,
+    receivedAt,
+    actorId: "digital-anne",
+    subject: `${event.campaignName}: ${event.clicks} kattintás`,
+    body:
+      `${event.impressions} megjelenés; ${event.clicks} kattintás; ` +
+      `${event.conversions} konverzió; ${event.spend} ${event.currency ?? ""}`.trim(),
+    participants: [],
+    labels: [event.provider, "MARKETING", "READ_ONLY_METRIC"],
+    metadata: {
+      provider: event.provider,
+      eventType: "CAMPAIGN_METRICS_SNAPSHOT",
+      accountId: event.accountId,
+      campaignId: event.campaignId,
+      campaignName: event.campaignName,
+      campaignStatus: event.campaignStatus,
+      dateStart: event.dateStart,
+      dateStop: event.dateStop,
+      impressions: event.impressions,
+      clicks: event.clicks,
+      spend: event.spend,
+      currency: event.currency,
+      conversions: event.conversions,
+      accessMode: "READ_ONLY",
+    },
+    status: "NORMALIZED",
+    fingerprint: buildSourceFingerprint({
+      organizationId,
+      source: "WEBHOOK",
+      externalId,
+      subject: `${event.impressions}:${event.clicks}:${event.spend}:${event.conversions}`,
+      occurredAt: event.updatedAt,
     }),
   };
 }

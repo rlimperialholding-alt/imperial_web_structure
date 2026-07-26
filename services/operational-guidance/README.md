@@ -252,7 +252,7 @@ A kapcsolati ellenőrző csak a kitöltött integrációkat hívja meg.
 
 ## Jelenlegi határ
 
-Hozzáférési adatok nélkül nem történt éles Google-, Gmail-, Directus-, Docker-host-, ingatlan.com- vagy weboldali hívás. A v0.8.1 offline regressziós és 99/99 artefaktumkapu sikeres; a tényleges online staging UAT kizárólag valódi szerver- és Google/Directus-hozzáférésekkel hajtható végre. A Meta, Google Ads, Billingo és bank adapterekhez a közös adapter-, naplózási-, ütemezési- és secret-kezelési architektúra készen áll, de maguk az adapterek még nincsenek ebben a csomagban.
+Hozzáférési adatok nélkül nem történt éles Google-, Gmail-, Directus-, Docker-host-, ingatlan.com- vagy weboldali hívás. A v0.8.1 offline regressziós és 99/99 artefaktumkapu sikeres; a tényleges online staging UAT kizárólag valódi szerver- és Google/Directus-hozzáférésekkel hajtható végre. Az ITEP Billingo-, Meta- és Google Ads-adaptere kizárólag olvasó módban elkészült, szintetikus contract- és adatbázisteszttel ellenőrzött; az éles contract teszthez szolgáltatói kulcsok és fiókazonosítók szükségesek. A bankkapcsolat szolgáltatóspecifikus PSD2-hitelesítése továbbra is production kapu.
 
 ## Online staging UAT v0.8.1
 
