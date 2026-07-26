@@ -76,8 +76,8 @@
     },
     {
       "path": "services/operational-guidance/README.md",
-      "size": 11712,
-      "sha256": "5b4d15cc3decae7a6f9b25e92e9954ef96cbc402f07f1c2bc28a05b4c0c94ac9"
+      "size": 11836,
+      "sha256": "75aabac18831348fd32a4f8162252ee26adb43822a2f41b739c8d54bc8788e7e"
     },
     {
       "path": "services/operational-guidance/RELEASE-MANIFEST-v0.8.1.json",
@@ -421,8 +421,8 @@
     },
     {
       "path": "services/operational-guidance/docs/ARCHITECTURE.md",
-      "size": 5741,
-      "sha256": "eba9b4503fb5921208c036736090de6ab2a89102ee104db3991a7e2dc8498683"
+      "size": 5739,
+      "sha256": "4ae75bf1afaf08a8074e01bcb7c14358c2a4a4aa706ff184b514c4dddbe2722c"
     },
     {
       "path": "services/operational-guidance/docs/AUTHORIZATION-MATRIX-v0.7.0.md",
@@ -776,8 +776,8 @@
     },
     {
       "path": "services/operational-guidance/test-env/mock-services/server.py",
-      "size": 2061,
-      "sha256": "12c93a26a4096298c9e7474270f55a914c83a9bd0dbfab8303b7ae453c269c2e"
+      "size": 3930,
+      "sha256": "3629ab985828f720beb95dde5067153471f5ab78c43725e1005eb03a9e64ae96"
     },
     {
       "path": "services/operational-guidance/tests/test_auth.py",
