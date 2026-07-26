@@ -12,6 +12,7 @@ required_repo = [
     "services/itep-core/src/connectors/connector-adapter-factory.ts",
     "services/itep-core/src/api/server.ts",
     "services/itep-core/prisma/seed.mjs",
+    "services/itep-core/prisma/migrations/20260724000000_initial_schema/migration.sql",
     "services/imperial-sales-crm/.openai/hosting.json",
     "services/imperial-sales-crm/drizzle/0005_itep_migration_contract.sql",
     "services/imperial-sales-crm/app/api/integrations/migration/import/route.ts",
