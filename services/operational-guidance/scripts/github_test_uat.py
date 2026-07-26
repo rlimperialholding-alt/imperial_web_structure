@@ -22,7 +22,13 @@ def get_json(url: str, headers: dict[str, str] | None = None):
 
 
 def post_json(url: str, headers: dict[str, str] | None = None):
-    request = urllib.request.Request(url, headers=headers or {}, method="POST", data=b"")
+    request_headers = {"Content-Type": "application/json", **(headers or {})}
+    request = urllib.request.Request(
+        url,
+        headers=request_headers,
+        method="POST",
+        data=b"{}",
+    )
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.status, json.loads(response.read().decode())
 
