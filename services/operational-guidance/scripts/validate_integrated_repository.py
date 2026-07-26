@@ -46,7 +46,7 @@ if manifest["dataPolicy"]["crm"] != "internal-test-durable-d1-r2":
     raise SystemExit("The internal CRM must use durable D1 and R2 test storage")
 if manifest["dataPolicy"]["itepCrmAccess"] != "read-only":
     raise SystemExit("ITEP CRM access must remain read-only")
-if manifest["requiredSecrets"] != ["ITEP_IDENTITY_SHARED_SECRET"]:
-    raise SystemExit("Only the ITEP identity secret may require manual configuration")
+if manifest["requiredSecrets"]:
+    raise SystemExit("The isolated test workflow must not require persistent secrets")
 
 print("Integrated repository validation passed.")

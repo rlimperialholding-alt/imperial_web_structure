@@ -44,7 +44,6 @@ jobs:
       CRM_AUTH_HEADER: X-ITEP-Token
       CRM_AUTH_SCHEME: ""
       CRM_WORKSPACE_QUERY_PARAMETER: workspace
-      ITEP_IDENTITY_SHARED_SECRET: ${{ secrets.ITEP_IDENTITY_SHARED_SECRET }}
       API_ADMIN_TOKEN: test-admin-token-not-for-production
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +51,7 @@ jobs:
       - name: Prepare isolated test credentials
         shell: bash
         run: |
-          test "${#ITEP_IDENTITY_SHARED_SECRET}" -ge 32
+          echo "ITEP_IDENTITY_SHARED_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "CRM_MIGRATION_TOKEN=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "ITEP_CRM_READ_TOKEN=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 

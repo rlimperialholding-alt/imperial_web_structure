@@ -14,10 +14,9 @@
     "databases": "ephemeral-test-only"
   },
   "githubEnvironment": "imperial-test",
-  "requiredSecrets": [
-    "ITEP_IDENTITY_SHARED_SECRET"
-  ],
+  "requiredSecrets": [],
   "ephemeralCredentials": [
+    "ITEP_IDENTITY_SHARED_SECRET",
     "CRM_MIGRATION_TOKEN",
     "ITEP_CRM_READ_TOKEN"
   ]

@@ -16,15 +16,11 @@ szolgáltatáskulcsot használ.
 
 ## Szükséges GitHub Environment
 
-Az Environment neve `imperial-test`.
+Az Environment neve `imperial-test`. Tartós GitHub Secret nem szükséges.
 
-Egyetlen tartós GitHub Secret szükséges:
-
-- `ITEP_IDENTITY_SHARED_SECRET` – legalább 32 véletlen karakter.
-
-A workflow futásonként új, ideiglenes `CRM_MIGRATION_TOKEN` és
-`ITEP_CRM_READ_TOKEN` értéket készít. Ezeket nem kell kézzel létrehozni, és
-nem kerülnek a repositoryba.
+A workflow futásonként új, ideiglenes `ITEP_IDENTITY_SHARED_SECRET`,
+`CRM_MIGRATION_TOKEN` és `ITEP_CRM_READ_TOKEN` értéket készít. Ezeket nem
+kell kézzel létrehozni, és nem kerülnek a repositoryba.
 
 ## Az öt dokumentumos próba
 
