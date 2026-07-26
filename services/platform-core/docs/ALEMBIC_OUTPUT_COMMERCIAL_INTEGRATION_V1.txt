@@ -1,0 +1,11 @@
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 20260719_0001, Control Center v1.0 initial consolidated schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_0001 -> 20260719_0002, Enterprise Import Center and web experience additive schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_0002 -> 20260719_0003, Imperial Intelligence Workspace v1 additive schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_0003 -> 20260719_0004, Operations Workspace additive schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_0004 -> 20260719_0005, Partner field portal additive schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_0005 -> 20260719_0006, Commercial integration and duplicate-development gate.
+table_count= 46
+has_cc_development_discovery= True
+release_gate_columns= ['discovery_request_id', 'reuse_gate_passed']

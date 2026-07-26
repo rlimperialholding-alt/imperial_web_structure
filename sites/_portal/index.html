@@ -4,35 +4,225 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
-    <title>Imperial Holding — Staging portál</title>
-    <link rel="stylesheet" href="/assets/site.css">
+    <meta name="color-scheme" content="dark">
+    <title>Imperial Intelligence — Vizuális tesztplatform</title>
+    <link rel="stylesheet" href="/assets/tokens.css">
+    <link rel="stylesheet" href="/assets/components.css">
+    <link rel="stylesheet" href="/assets/admin.css">
+    <link rel="stylesheet" href="/assets/platform.css">
+    <script src="/assets/admin.js" defer></script>
+    <script src="/assets/platform.js" defer></script>
   </head>
-  <body style="--accent: #d6b36a">
-    <main class="portal">
-      <p class="eyebrow">Belső tesztkörnyezet</p>
-      <h1>Imperial staging portál</h1>
-      <p class="lede">
-        Helyi belépési pont az Imperial Holding webhelyeinek elkülönített
-        fejlesztési és tesztkörnyezetéhez. Ez nem éles szolgáltatás.
-      </p>
-      <ul class="site-grid">
-        <li><a href="http://imperial.localhost:8080">Imperial</a></li>
-        <li><a href="http://danish-fabrik.localhost:8080">Danish Fabrik</a></li>
-        <li><a href="http://bautica.localhost:8080">Bautica</a></li>
-        <li><a href="http://prefab.localhost:8080">Prefab</a></li>
-        <li><a href="http://casa-moderna.localhost:8080">Casa Moderna</a></li>
-        <li><a href="http://family-homes.localhost:8080">Family Homes</a></li>
-        <li><a href="http://everyday-homes.localhost:8080">Everyday Homes</a></li>
-        <li><a href="http://property-360.localhost:8080">Property 360</a></li>
-        <li>
-          <a href="http://budapesti-magasepito-vallalat.localhost:8080">
-            Budapesti magasépítő vállalat
-          </a>
-        </li>
-        <li><a href="http://baufreund.localhost:8080">BauFreund</a></li>
-        <li><a href="http://red-property.localhost:8080">RED Property</a></li>
-        <li><a href="http://timberhaus.localhost:8080">Timberhaus</a></li>
-      </ul>
+  <body class="admin-shell">
+    <a class="skip-link" href="#preview-workspace">Ugrás az előnézethez</a>
+
+    <aside class="sidebar" aria-label="Központi navigáció">
+      <a class="brand-lockup" href="/" aria-label="Imperial Intelligence kezdőlap">
+        <span class="brand-mark" aria-hidden="true">II</span>
+        <span>
+          <strong>Imperial</strong>
+          <small>Intelligence</small>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="Admin modulok">
+        <p class="nav-label">Platform</p>
+        <a class="nav-item is-active" href="#overview" aria-current="page">
+          <span aria-hidden="true">⌂</span> Áttekintés
+        </a>
+        <a class="nav-item" href="#websites">
+          <span aria-hidden="true">◫</span> Weboldalak
+          <span class="nav-count" id="nav-brand-count">12</span>
+        </a>
+        <a class="nav-item" href="#review-panel">
+          <span aria-hidden="true">✎</span> Review
+          <span class="nav-count" id="nav-review-count">0</span>
+        </a>
+      </nav>
+
+      <section class="sidebar-status" aria-labelledby="environment-title">
+        <p class="nav-label" id="environment-title">Környezet</p>
+        <div class="environment-card">
+          <span class="status-dot" aria-hidden="true"></span>
+          <div>
+            <strong>Local prototype</strong>
+            <span>Nincs külső adatkapcsolat</span>
+          </div>
+        </div>
+      </section>
+
+      <footer class="sidebar-footer">
+        <span>Platform foundation</span>
+        <strong>v0.1 · teszt</strong>
+      </footer>
+    </aside>
+
+    <main class="admin-main">
+      <header class="admin-topbar">
+        <div>
+          <p class="breadcrumb">Imperial Intelligence / Weboldalak</p>
+          <h1>Vizuális vezérlőközpont</h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="prototype-badge"><span></span> Prototípus mód</span>
+          <button class="icon-button" type="button" id="toggle-review" aria-controls="review-panel" aria-expanded="true" title="Review panel">
+            <span aria-hidden="true">✎</span>
+            <span class="sr-only">Review panel megjelenítése</span>
+          </button>
+        </div>
+      </header>
+
+      <section class="dashboard-overview" id="overview" aria-labelledby="overview-title">
+        <div>
+          <p class="section-kicker">Központi admin dashboard</p>
+          <h2 id="overview-title">Márkaélmények, egyetlen felületen.</h2>
+          <p>Válassz márkát, ellenőrizd a reszponzív nézeteket, majd rögzíts pontos megjegyzést a stabil szekcióazonosítóhoz.</p>
+        </div>
+        <dl class="metric-row">
+          <div>
+            <dt>Márkák</dt>
+            <dd id="brand-metric">12</dd>
+          </div>
+          <div>
+            <dt>Tesztelhető oldal</dt>
+            <dd id="page-metric">50</dd>
+          </div>
+          <div>
+            <dt>Tartalmi szekció</dt>
+            <dd id="section-metric">08</dd>
+          </div>
+          <div>
+            <dt>Nyitott review</dt>
+            <dd id="review-metric">00</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="websites-module" id="websites" aria-labelledby="websites-title">
+        <header class="module-header">
+          <div>
+            <p class="section-kicker">Weboldalak modul</p>
+            <h2 id="websites-title">Portfólió</h2>
+          </div>
+          <div class="catalog-selectors">
+            <label class="brand-select-label" for="brand-select">
+              <span>Márkaválasztó</span>
+              <select id="brand-select" aria-describedby="brand-help"></select>
+              <small id="brand-help">A preview automatikusan frissül.</small>
+            </label>
+            <label class="brand-select-label" for="page-select">
+              <span>Oldal vagy részprototípus</span>
+              <select id="page-select" aria-describedby="page-help"></select>
+              <small id="page-help">Drive-import és helyi prototípusok.</small>
+            </label>
+          </div>
+        </header>
+        <div class="brand-strip" id="brand-strip" role="list" aria-label="A 12 Imperial márka"></div>
+      </section>
+
+      <section class="workspace-layout" id="preview-workspace" aria-label="Preview és review munkaterület">
+        <article class="preview-card">
+          <header class="preview-toolbar">
+            <div class="preview-identity">
+              <span class="brand-avatar" id="selected-brand-avatar" aria-hidden="true">IH</span>
+              <div>
+                <strong id="selected-brand-name">Imperial Holding</strong>
+                <span id="selected-brand-status">Aktív prototípus</span>
+              </div>
+            </div>
+
+            <div class="device-switcher" role="group" aria-label="Preview méret">
+              <button type="button" class="device-button is-active" data-device="desktop" aria-pressed="true">
+                <span aria-hidden="true">▰</span><span>Desktop</span>
+              </button>
+              <button type="button" class="device-button" data-device="tablet" aria-pressed="false">
+                <span aria-hidden="true">▯</span><span>Tablet</span>
+              </button>
+              <button type="button" class="device-button" data-device="mobile" aria-pressed="false">
+                <span aria-hidden="true">▯</span><span>Mobile</span>
+              </button>
+            </div>
+
+            <div class="preview-actions">
+              <span id="viewport-label">1440 × 900</span>
+              <button class="icon-button" type="button" id="refresh-preview" title="Preview újratöltése">
+                <span aria-hidden="true">↻</span><span class="sr-only">Újratöltés</span>
+              </button>
+              <a class="icon-button" id="open-preview" href="/site-preview/imperial/" target="_blank" rel="noopener" title="Megnyitás új lapon">
+                <span aria-hidden="true">↗</span><span class="sr-only">Megnyitás új lapon</span>
+              </a>
+            </div>
+          </header>
+
+          <div class="preview-stage" data-device="desktop">
+            <div class="browser-frame">
+              <div class="browser-chrome" aria-hidden="true">
+                <span></span><span></span><span></span>
+                <div id="preview-address">imperial.localhost / home</div>
+              </div>
+              <iframe
+                id="site-preview"
+                title="Kiválasztott márka reszponzív előnézete"
+                src="/site-preview/imperial/?review=1"
+                loading="eager"
+              ></iframe>
+            </div>
+          </div>
+        </article>
+
+        <aside class="review-panel" id="review-panel" aria-labelledby="review-title">
+          <header class="review-header">
+            <div>
+              <p class="section-kicker">Lokális munkamenet</p>
+              <h2 id="review-title">Review megjegyzések</h2>
+            </div>
+            <button class="icon-button review-close" type="button" id="close-review" title="Panel bezárása">
+              <span aria-hidden="true">×</span><span class="sr-only">Bezárás</span>
+            </button>
+          </header>
+
+          <div class="review-target">
+            <span>Kijelölt szekció</span>
+            <strong id="selected-section">hero</strong>
+            <small id="selected-section-label">Nyitó szekció</small>
+          </div>
+
+          <form id="review-form">
+            <label>
+              Megjegyzés címe
+              <input id="review-title-input" name="title" type="text" maxlength="80" placeholder="Pl. CTA szöveg pontosítása" required>
+            </label>
+            <label>
+              Részletek
+              <textarea id="review-comment" name="comment" rows="5" maxlength="500" placeholder="Írd le a kívánt módosítást…" required></textarea>
+            </label>
+            <label>
+              Prioritás
+              <select id="review-priority" name="priority">
+                <option value="normal">Normál</option>
+                <option value="high">Magas</option>
+                <option value="low">Alacsony</option>
+              </select>
+            </label>
+            <button class="button button-primary button-full" type="submit">
+              <span aria-hidden="true">＋</span> Megjegyzés rögzítése
+            </button>
+          </form>
+
+          <div class="review-list-header">
+            <strong>Rögzített elemek</strong>
+            <span id="review-list-count">0 elem</span>
+          </div>
+          <div class="review-list" id="review-list" aria-live="polite"></div>
+
+          <div class="review-footer-actions">
+            <button class="button button-secondary" id="export-reviews" type="button">JSON export</button>
+            <button class="text-button" id="clear-reviews" type="button">Lista törlése</button>
+          </div>
+        </aside>
+      </section>
     </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </body>
 </html>

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Központi kereső | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="search-hero"><span class="eyebrow">IMPERIAL KNOWLEDGE SEARCH</span><h1>Mit keres a rendszerben?</h1><form action="/search" method="get"><span>⌕</span><input name="q" value="{{ q }}" placeholder="Például: Pomáz, szállítólevél, T. János, 69,4 millió…" autofocus><button>Keresés</button></form><p>A találatok megmutatják, melyik projektből, modulból vagy dokumentumból származnak.</p></section>
+{% if q %}<section class="search-summary"><b>„{{ q }}”</b><span>{{ results.projects|length + results.tasks|length + results.events|length + results.documents|length + results.records|length }} találat</span></section>{% endif %}
+<div class="search-groups">
+{% for key,label in [('projects','Projektek'),('tasks','Feladatok'),('documents','Dokumentumok'),('events','Események'),('records','Importált vállalati rekordok')] %}
+<section class="workspace-card search-group"><div class="card-heading"><div><h2>{{ label }}</h2><small>{{ results[key]|length }} találat</small></div></div>{% for r in results[key] %}<a class="search-result" href="{{ r.url }}"><span class="result-type">{{ key[:2]|upper }}</span><div><b>{{ r.title }}</b><small>{{ r.subtitle }}</small></div><i>→</i></a>{% else %}<div class="empty-state compact"><span>Nincs találat ebben a kategóriában.</span></div>{% endfor %}</section>
+{% endfor %}
+</div>
+{% endblock %}

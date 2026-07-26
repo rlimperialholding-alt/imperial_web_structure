@@ -1,0 +1,35 @@
+{
+  "policy": "reuse_first_no_duplicate_development",
+  "governance_document": {
+    "title": "IIP System Administration and Access Management Specification v1",
+    "drive_file_id": "114hGnHqYAX7kGXE6DmGeymBE3Bxs58r8GAh1FolwjNE",
+    "change": "Duplicate-development prevention rule inserted into the canonical existing document"
+  },
+  "release_gate_registry": {
+    "title": "Imperial Control Center v1.0 – modul-, esemény-, kiadás- és pilotregiszter",
+    "drive_file_id": "1AZn8s8T0yLlL86cnx9-jxllW1vtkd20pd1gyBaxD8Xs",
+    "gate": "Kanonikus újrafelhasználási ellenőrzés",
+    "blocking_status": "discovery_blocked"
+  },
+  "decisions": [
+    {
+      "discovery_id": "DISC-COMMERCIAL-CONTRACT-INTEGRATION-V1",
+      "requested_capability": "Contract Generator Workspace- és CRM-integráció",
+      "canonical_module_key": "contract_generator",
+      "canonical_version": "0.4.0",
+      "drive_file_id": "1kL92i1Z8Zk5V_1W4wmTbJB0pRAVVhSHV",
+      "source_sha256": "3634378bbc90f885b54e787f6de06e57cabf4d6a594e1351463388814e191a42",
+      "decision": "integrate",
+      "implemented_gap": "Workspace, dokumentumtár, esemény- és aláírási adapter; új szerződésmotor nélkül"
+    },
+    {
+      "discovery_id": "DISC-COMMERCIAL-CHANGE-INTEGRATION-V1",
+      "requested_capability": "ChangeControl közös Workspace- és eseményintegráció",
+      "canonical_module_key": "change_control",
+      "canonical_version": "0.1.0",
+      "drive_file_id": "1h-_5X0-zHZmVSKYdg5t13rZQQktZRHlcXYWUZYyvXCo",
+      "decision": "integrate",
+      "implemented_gap": "Állapot- és eseményprojekció; új ár-, scope-, fedezet-, jóváhagyási vagy munkakezdési motor nélkül"
+    }
+  ]
+}

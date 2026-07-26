@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ job.name }} | Import Center{% endblock %}
+{% block content %}
+<section class="page-hero compact-hero">
+  <div><a class="backlink" href="/imports">← Import Center</a><span class="eyebrow">{{ job.source_key }}</span><h1>{{ job.name }}</h1><p>{{ job.job_id }} · {{ job.domain_hint or 'automatikus felismerés' }}</p></div>
+  <div class="hero-status"><span class="badge big {{ 'green' if job.status == 'committed' else 'yellow' }}">{{ job.status }}</span><b>{{ job.records_committed }}/{{ job.records_extracted }}</b><small>véglegesített rekord</small></div>
+</section>
+
+<section class="process-rail"><div class="done"><b>1</b><span>Forrás</span></div><i></i><div class="{{ 'done' if job.items_total else '' }}"><b>2</b><span>Fájl / adat</span></div><i></i><div class="{{ 'done' if job.records_extracted else '' }}"><b>3</b><span>Értő feldolgozás</span></div><i></i><div class="{{ 'done' if job.status in ['review','partially_committed','committed'] else '' }}"><b>4</b><span>Ellenőrzés</span></div><i></i><div class="{{ 'done' if job.status == 'committed' else '' }}"><b>5</b><span>Commit</span></div></section>
+
+<div class="workspace-grid">
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">ADATCSOMAG</span><h2>Fájl feltöltése</h2></div><span class="muted-chip">CSV · JSON · XLSX · TXT</span></div>
+  <form method="post" action="/imports/{{ job.job_id }}/upload" enctype="multipart/form-data" class="upload-box">
+    <input type="file" name="file" required accept=".csv,.json,.xlsx,.xlsm,.txt">
+    <select name="domain_hint"><option value="enterprise">Automatikus felismerés</option><option value="finance">Pénzügyi adat</option><option value="project">Projektadat</option><option value="partner">Partneradat</option><option value="customer">Ügyféladat</option><option value="procurement">Beszerzési adat</option><option value="contract">Szerződésadat</option><option value="product_data">Termék- és áradat</option></select>
+    <button>Feltöltés</button>
+  </form>
+  <div class="file-list">{% for item in items %}<div><span class="file-icon">▤</span><div><b>{{ item.file_name or item.external_id or item.item_id }}</b><small>{{ item.mime_type or 'connector-adat' }} · {{ item.status }}</small></div>{% if item.error_message %}<span class="badge red">hiba</span>{% else %}<span class="badge green">{{ item.status }}</span>{% endif %}</div>{% else %}<p class="empty">Még nincs adatcsomag feltöltve.</p>{% endfor %}</div>
+</section>
+<aside class="panel elevated action-panel">
+  <span class="eyebrow">KÖVETKEZŐ KAPU</span><h2>Feldolgozás és commit</h2>
+  <p>A rendszer mezőket normalizál, tartalmi domént és célmodult választ, ProjectID-t keres, duplikációt ellenőriz és minden következtetéshez forrást tárol.</p>
+  <form method="post" action="/imports/{{ job.job_id }}/process"><button class="primary full" {% if not items %}disabled{% endif %}>Értő feldolgozás indítása</button></form>
+  <form method="post" action="/imports/{{ job.job_id }}/commit" class="stacked-action"><label><input type="checkbox" name="auto_approve_high_confidence" value="true"> 93% feletti, validált rekordok automatikus jóváhagyása</label><button class="gold full" {% if not staged %}disabled{% endif %}>Jóváhagyott rekordok commitja</button></form>
+</aside>
+</div>
+
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">STAGING ZÓNA</span><h2>Kinyert és értelmezett rekordok</h2></div><span class="muted-chip">{{ staged|length }} rekord</span></div>
+  <div class="record-grid">
+  {% for row in staged %}
+    {% set normalized = loads(row.normalized_json, {}) %}
+    {% set validation = loads(row.validation_json, {}) %}
+    <article class="record-card {{ row.review_status }}">
+      <div class="record-top"><div><span class="domain-pill">{{ row.domain }}</span><span class="badge {{ 'green' if row.review_status in ['approved','ready','committed'] else 'red' if row.review_status == 'rejected' else 'yellow' }}">{{ row.review_status }}</span></div><strong>{{ (row.confidence * 100)|round(0)|int }}%</strong></div>
+      <h3>{{ row.canonical_name or row.external_key or 'Névtelen rekord' }}</h3>
+      <p>{{ row.entity_type }} → <b>{{ row.target_module }}</b>{% if row.project_id %}<br>ProjectID: <b>{{ row.project_id }}</b>{% endif %}</p>
+      <dl>{% for key, value in normalized.items() %}{% if loop.index <= 7 %}<div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>{% endif %}{% endfor %}</dl>
+      {% if validation.get('errors') %}<div class="validation error">{{ validation.get('errors')|join(', ') }}</div>{% elif validation.get('warnings') %}<div class="validation warn">{{ validation.get('warnings')|join(', ') }}</div>{% else %}<div class="validation ok">Validált rekord</div>{% endif %}
+      <form method="post" action="/imports/{{ job.job_id }}/review/{{ row.staged_id }}" class="review-form">
+        <input name="canonical_name" value="{{ row.canonical_name or '' }}" placeholder="Megnevezés">
+        <input name="project_id" value="{{ row.project_id or '' }}" placeholder="ProjectID">
+        <select name="target_module"><option selected>{{ row.target_module }}</option><option>finance</option><option>project_control</option><option>partner_connect</option><option>crm</option><option>procurement</option><option>contract_generator</option><option>buildconfig</option><option>control_center</option></select>
+        <div class="review-actions"><button name="review_status" value="approved" class="approve">Jóváhagyom</button><button name="review_status" value="rejected" class="reject">Elutasítom</button></div>
+      </form>
+    </article>
+  {% else %}<p class="empty span-all">A feldolgozás után itt jelennek meg az értelmezett rekordok.</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}

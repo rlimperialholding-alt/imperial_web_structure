@@ -1,0 +1,91 @@
+name: Digital Project Managers CI
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - "feature/**"
+    paths:
+      - "services/digital-project-managers/**"
+      - "sites/_portal/data/platform.json"
+      - "docker-compose.yml"
+      - ".github/workflows/digital-project-managers-ci.yml"
+  pull_request:
+    branches:
+      - main
+      - staging
+    paths:
+      - "services/digital-project-managers/**"
+      - "sites/_portal/data/platform.json"
+      - "docker-compose.yml"
+      - ".github/workflows/digital-project-managers-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: digital-pm-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  service:
+    name: PostgreSQL migration, lint, types, tests and smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Generate ephemeral CI secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p secrets
+          openssl rand -hex 32 > secrets/platform_db_password.txt
+          openssl rand -hex 32 > secrets/dpm_db_password.txt
+          openssl rand -hex 64 > secrets/dpm_auth_hs256_secret.txt
+          # Local Compose implements file-backed secrets as bind mounts. Make
+          # these ephemeral runner-only files owned and readable by the
+          # non-root app UID used in the runtime image.
+          chmod 0400 secrets/platform_db_password.txt secrets/dpm_db_password.txt secrets/dpm_auth_hs256_secret.txt
+          sudo chown 10001:10001 secrets/platform_db_password.txt secrets/dpm_db_password.txt secrets/dpm_auth_hs256_secret.txt
+
+      - name: Validate Compose configuration
+        run: docker compose --profile digital-pm --profile digital-pm-test config --quiet
+
+      - name: Build test and runtime images
+        run: docker compose --profile digital-pm --profile digital-pm-test build dpm-tests digital-project-managers dpm-worker
+
+      - name: Run migration, format check, lint, type check and tests
+        run: docker compose --profile digital-pm-test run --rm dpm-tests
+
+      - name: Start API and worker
+        run: docker compose --profile digital-pm up --detach --wait --wait-timeout 120 digital-project-managers dpm-worker
+
+      - name: Smoke test service readiness
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8090/health/live
+          curl --fail --silent --show-error http://127.0.0.1:8090/health/ready
+
+      - name: Verify migration head and seed count
+        shell: bash
+        run: |
+          set -euo pipefail
+          migration_head="$(docker compose --profile digital-pm exec -T dpm-postgres \
+            psql -U imperial_dpm -d imperial_dpm -tAc \
+            "SELECT version_num FROM alembic_version")"
+          grep --quiet '^20260724_0002$' <<<"$migration_head"
+          seed_count="$(docker compose --profile digital-pm exec -T dpm-postgres \
+            psql -U imperial_dpm -d imperial_dpm -tAc \
+            "SELECT count(*) FROM digital_project_managers")"
+          grep --quiet '^3$' <<<"$seed_count"
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose --profile digital-pm --profile digital-pm-test logs --no-color
+
+      - name: Stop service stack
+        if: always()
+        run: docker compose --profile digital-pm --profile digital-pm-test down --volumes --remove-orphans
