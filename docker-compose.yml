@@ -112,7 +112,7 @@ services:
       [
         "sh",
         "-c",
-        "ruff format --check app/copy_gate app/services/content_quality.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py && ruff check app/copy_gate app/services/content_quality.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py && mypy app/copy_gate app/services/content_quality.py && pytest -q",
+        "ruff format --check app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py tests/test_commercial_prevalidation.py scripts/build_prevalidated_commercial_registry.py alembic/versions/20260726_0008_commercial_source_prevalidation.py && ruff check app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py tests/test_commercial_prevalidation.py scripts/build_prevalidated_commercial_registry.py alembic/versions/20260726_0008_commercial_source_prevalidation.py && mypy app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py && pytest -q",
       ]
     environment:
       ENVIRONMENT: test

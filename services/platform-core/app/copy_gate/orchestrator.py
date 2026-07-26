@@ -17,6 +17,45 @@ GENERATION_STAGES = (
     "MESSAGE_MATCH",
 )
 
+VISUAL_VARIANT_TRACE_FIELDS = (
+    "variant_set_id",
+    "creative_variant_id",
+    "visual_direction_id",
+    "generation_run_id",
+)
+
+
+def validate_visual_variant_trace(
+    trace: dict[str, Any],
+    *,
+    sibling_traces: list[dict[str, Any]] | None = None,
+) -> None:
+    """Enforce independent runs and directions for A/B/C visual variants."""
+
+    sibling_traces = sibling_traces or []
+    variant_fields_present = any(trace.get(field) for field in VISUAL_VARIANT_TRACE_FIELDS[:-1])
+    if not variant_fields_present:
+        return
+
+    missing = [field for field in VISUAL_VARIANT_TRACE_FIELDS if not trace.get(field)]
+    if missing:
+        raise ValueError(
+            "A vizuális variánsfutás kötelező trace mezői hiányoznak: " + ", ".join(missing)
+        )
+
+    variant_set_id = trace["variant_set_id"]
+    for sibling in sibling_traces:
+        if sibling.get("variant_set_id") != variant_set_id:
+            continue
+        if sibling.get("generation_run_id") == trace["generation_run_id"]:
+            raise ValueError("Azonos brief A/B/C variánsaihoz külön generation_run_id szükséges.")
+        if sibling.get("creative_variant_id") == trace["creative_variant_id"]:
+            raise ValueError("A creative_variant_id a variánskészleten belül egyedi.")
+        if sibling.get("visual_direction_id") == trace["visual_direction_id"]:
+            raise ValueError(
+                "Azonos brief valódi A/B/C variánsaihoz külön visual_direction_id szükséges."
+            )
+
 
 class CopyStageAdapter(Protocol):
     """External model adapter; credentials stay in the platform secret manager."""

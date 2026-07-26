@@ -314,7 +314,8 @@ class ContentAssetRecord(Base):
         CheckConstraint(
             "state <> 'PUBLISHED' OR "
             "(gate_1_approved = true AND four_gate_approved = true "
-            "AND editorial_approved = true AND owner_approved = true "
+            "AND (source_prevalidated = true OR "
+            "(editorial_approved = true AND owner_approved = true)) "
             "AND publication_proof_id IS NOT NULL AND published_at IS NOT NULL)",
             name="ck_cq_published_requires_all_approvals",
         ),
@@ -335,6 +336,7 @@ class ContentAssetRecord(Base):
     four_gate_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     editorial_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     owner_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_prevalidated: Mapped[bool] = mapped_column(Boolean, default=False)
     latest_run_id: Mapped[str | None] = mapped_column(String(120), index=True)
     publication_proof_id: Mapped[str | None] = mapped_column(String(120), unique=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

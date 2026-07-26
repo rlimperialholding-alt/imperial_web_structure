@@ -27,7 +27,7 @@ from ..copy_gate.models import (
     PerformanceMetricIn,
     PublicationState,
 )
-from ..copy_gate.orchestrator import GENERATION_STAGES
+from ..copy_gate.orchestrator import GENERATION_STAGES, validate_visual_variant_trace
 from ..models import (
     ContentApprovalRecord,
     ContentAssetRecord,
@@ -39,6 +39,7 @@ from ..models import (
     OutboxMessage,
     TaskRecord,
 )
+from .commercial_prevalidation import evaluate_commercial_prevalidation
 
 REQUIRED_SOURCE_TYPES = {
     "brand_master",
@@ -345,6 +346,16 @@ def create_content_asset(
         raise ValueError("A kilenc kötelező generálási/szerkesztési szakasz sorrendje hiányos.")
     if not generation_trace.get("generation_run_id"):
         raise ValueError("A generation_run_id kötelező.")
+    sibling_traces: list[dict[str, Any]] = []
+    sibling_rows = db.scalars(
+        select(ContentAssetRecord).where(ContentAssetRecord.copy_brief_id == copy_brief_id)
+    ).all()
+    for sibling in sibling_rows:
+        try:
+            sibling_traces.append(json.loads(sibling.generation_trace_json or "{}"))
+        except json.JSONDecodeError as exc:
+            raise ValueError("Sérült korábbi generation_trace_json.") from exc
+    validate_visual_variant_trace(generation_trace, sibling_traces=sibling_traces)
     brief = CopyBrief.model_validate_json(brief_row.brief_json)
     if payload.detected_brand_ids != [brief.brand_id]:
         raise ValueError("Az asset márkaazonosítója nem egyezik a CopyBrieffel.")
@@ -548,6 +559,8 @@ def submit_four_gates(
     ):
         raise ValueError("A négykapus review csak sikeres COPY_QA után indítható.")
     run = db.get(CopyReviewRun, asset.latest_run_id)
+    content = ContentAsset.model_validate_json(asset.content_json)
+    prevalidation = evaluate_commercial_prevalidation(asset.brand_id, content)
     supplied = {result.gate_id: result for result in submission.specialist_results}
     results: list[GateResult] = []
     routing = {
@@ -565,6 +578,19 @@ def submit_four_gates(
                 decision=Decision.SKIPPED_NOT_RELEVANT,
                 relevance=False,
                 certainty="HIGH",
+            )
+        elif not submitted and prevalidation.eligible and prevalidation.gate_coverage[gate_id]:
+            result = GateResult(
+                gate_id=gate_id,
+                agent_id=expected_agent,
+                decision=Decision.APPROVED,
+                relevance=True,
+                certainty="HIGH",
+                source_versions={
+                    "commercial_prevalidation": (
+                        f"{prevalidation.registry_version}#{prevalidation.registry_sha256[:12]}"
+                    )
+                },
             )
         elif not submitted:
             result = GateResult(
@@ -613,6 +639,7 @@ def submit_four_gates(
         )
 
     decisions = {result.decision for result in results}
+    asset.source_prevalidated = False
     if Decision.RETURN_FOR_REVISION in decisions:
         final = Decision.RETURN_FOR_REVISION
         asset.state = PublicationState.BLOCKED
@@ -625,7 +652,12 @@ def submit_four_gates(
     else:
         final = Decision.APPROVED
         asset.four_gate_approved = True
-        asset.state = PublicationState.HUMAN_EDITORIAL
+        asset.source_prevalidated = prevalidation.eligible
+        asset.state = (
+            PublicationState.SOURCE_PREVALIDATED
+            if prevalidation.eligible
+            else PublicationState.HUMAN_EDITORIAL
+        )
     if run:
         run.final_decision = final
     audit(
@@ -638,6 +670,13 @@ def submit_four_gates(
             "decision": final,
             "state": asset.state,
             "gates": [result.model_dump(mode="json") for result in results],
+            "commercial_prevalidation": {
+                "eligible": prevalidation.eligible,
+                "registry_version": prevalidation.registry_version,
+                "registry_sha256": prevalidation.registry_sha256,
+                "verified_evidence_ids": prevalidation.verified_evidence_ids,
+                "findings": prevalidation.findings,
+            },
         },
     )
     db.commit()
@@ -647,6 +686,12 @@ def submit_four_gates(
         "decision": final,
         "state": asset.state,
         "gates": [result.model_dump(mode="json") for result in results],
+        "commercial_prevalidation": {
+            "eligible": prevalidation.eligible,
+            "registry_version": prevalidation.registry_version,
+            "verified_evidence_ids": prevalidation.verified_evidence_ids,
+            "findings": prevalidation.findings,
+        },
     }
 
 
@@ -717,40 +762,56 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
     asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
     if not asset:
         raise KeyError(asset_id)
-    if asset.state != PublicationState.OWNER_APPROVAL:
+    source_prevalidated = (
+        asset.state == PublicationState.SOURCE_PREVALIDATED and asset.source_prevalidated
+    )
+    if asset.state == PublicationState.SOURCE_PREVALIDATED and not asset.source_prevalidated:
+        raise ValueError(
+            "A SOURCE_PREVALIDATED állapothoz hiányzik az adatbázis-integritási jelző."
+        )
+    if asset.state not in {
+        PublicationState.OWNER_APPROVAL,
+        PublicationState.SOURCE_PREVALIDATED,
+    }:
         raise ValueError(f"Publikáció nem indítható ebből az állapotból: {asset.state}")
-    if not all(
-        [
-            asset.gate_1_approved,
-            asset.four_gate_approved,
-            asset.editorial_approved,
-            asset.owner_approved,
-            asset.latest_run_id,
-        ]
-    ):
+    required_flags = [
+        asset.gate_1_approved,
+        asset.four_gate_approved,
+        asset.latest_run_id,
+    ]
+    if not source_prevalidated:
+        required_flags.extend([asset.editorial_approved, asset.owner_approved])
+    if not all(required_flags):
         raise ValueError("Hiányzik legalább egy kötelező gépi vagy emberi jóváhagyás.")
     run = db.get(CopyReviewRun, asset.latest_run_id)
     if not run or run.final_decision != Decision.APPROVED or run.content_hash != asset.content_hash:
         raise ValueError("Nincs az aktuális tartalomhashhez tartozó APPROVED GateResult.")
-    approvals = db.scalars(
-        select(ContentApprovalRecord).where(
-            ContentApprovalRecord.asset_id == asset_id,
-            ContentApprovalRecord.content_version == asset.content_version,
-            ContentApprovalRecord.decision == "APPROVED",
-        )
-    ).all()
-    approval_by_type = {
-        row.approval_type: row for row in approvals if row.content_hash == asset.content_hash
-    }
-    if set(approval_by_type) != {"HUMAN_EDITORIAL", "OWNER"}:
-        raise ValueError(
-            "Az emberi szerkesztői vagy tulajdonosi approval hiányzik az aktuális hashhez."
-        )
+    approval_by_type: dict[str, ContentApprovalRecord] = {}
+    if not source_prevalidated:
+        approvals = db.scalars(
+            select(ContentApprovalRecord).where(
+                ContentApprovalRecord.asset_id == asset_id,
+                ContentApprovalRecord.content_version == asset.content_version,
+                ContentApprovalRecord.decision == "APPROVED",
+            )
+        ).all()
+        approval_by_type = {
+            row.approval_type: row for row in approvals if row.content_hash == asset.content_hash
+        }
+        if set(approval_by_type) != {"HUMAN_EDITORIAL", "OWNER"}:
+            raise ValueError(
+                "Az emberi szerkesztői vagy tulajdonosi approval hiányzik az aktuális hashhez."
+            )
     brief_row = db.get(CopyBriefRecord, asset.copy_brief_id)
     if not brief_row:
         raise ValueError("A CopyBrief rekord hiányzik.")
     brief = CopyBrief.model_validate_json(brief_row.brief_json)
     content = ContentAsset.model_validate_json(asset.content_json)
+    prevalidation = evaluate_commercial_prevalidation(asset.brand_id, content)
+    if source_prevalidated and not prevalidation.eligible:
+        raise ValueError(
+            "A forrás-elővalidáció a specialistakapu óta megváltozott vagy érvénytelen."
+        )
     sources, snapshot_hash = resolve_canonical_sources(
         db, brief, visual_asset_ids=content.visual_asset_ids
     )
@@ -767,8 +828,22 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
         "content_hash": asset.content_hash,
         "run_id": run.run_id,
         "source_snapshot_hash": snapshot_hash,
-        "human_editorial_actor": approval_by_type["HUMAN_EDITORIAL"].actor,
-        "owner_actor": approval_by_type["OWNER"].actor,
+        "approval_mode": (
+            "SOURCE_PREVALIDATED" if source_prevalidated else "HUMAN_EDITORIAL_AND_OWNER"
+        ),
+        "human_editorial_actor": (
+            None if source_prevalidated else approval_by_type["HUMAN_EDITORIAL"].actor
+        ),
+        "owner_actor": None if source_prevalidated else approval_by_type["OWNER"].actor,
+        "commercial_prevalidation": (
+            {
+                "registry_version": prevalidation.registry_version,
+                "registry_sha256": prevalidation.registry_sha256,
+                "verified_evidence_ids": prevalidation.verified_evidence_ids,
+            }
+            if source_prevalidated
+            else None
+        ),
         "published_at": asset.published_at.isoformat(),
         "external_delivery_enabled": settings.content_external_publishing_enabled,
     }
@@ -811,6 +886,7 @@ def rollback_content_asset(
     asset.four_gate_approved = False
     asset.editorial_approved = False
     asset.owner_approved = False
+    asset.source_prevalidated = False
     asset.latest_run_id = None
     asset.publication_proof_id = None
     asset.published_at = None

@@ -26,6 +26,7 @@ class PublicationState(StrEnum):
     FOUR_GATE_QA = "FOUR_GATE_QA"
     HUMAN_EDITORIAL = "HUMAN_EDITORIAL"
     OWNER_APPROVAL = "OWNER_APPROVAL"
+    SOURCE_PREVALIDATED = "SOURCE_PREVALIDATED"
     PUBLISHED = "PUBLISHED"
     BLOCKED = "BLOCKED"
 
@@ -86,6 +87,68 @@ class ContentBlock(BaseModel):
     layout_signature: str = Field(min_length=1, max_length=255)
 
 
+class ExternalActionType(StrEnum):
+    MARKETING_COMMUNICATION = "marketing_communication"
+    EXTERNAL_COMMITMENT = "external_commitment"
+    CONTRACT_MODIFICATION = "contract_modification"
+    LIABILITY_ADMISSION = "liability_admission"
+    PERFORMANCE_ACCEPTANCE = "performance_acceptance"
+
+
+class PrevalidatedSourceEvidence(BaseModel):
+    evidence_id: str = Field(min_length=3, max_length=160)
+    category: str = Field(pattern="^(commercial|price|technical|legal|typehouse|floorplan)$")
+    source_type: str = Field(pattern="^(website_fragment|website_visual|drive_price_calculator)$")
+    source_ref: str = Field(min_length=3, max_length=200)
+    source_url: str | None = Field(default=None, max_length=2000)
+    source_version: str = Field(min_length=3, max_length=200)
+    source_sha256: str | None = Field(default=None, pattern="^[0-9a-fA-F]{64}$")
+    source_fragment: str | None = None
+    source_fragment_sha256: str | None = Field(default=None, pattern="^[0-9a-fA-F]{64}$")
+    claim_text: str | None = None
+    visual_asset_id: str | None = Field(default=None, max_length=200)
+    visual_asset_url: str | None = Field(default=None, max_length=2000)
+    visual_reference_sha256: str | None = Field(default=None, pattern="^[0-9a-fA-F]{64}$")
+    price_input: dict[str, str] = Field(default_factory=dict)
+    price_output_field: str | None = Field(default=None, max_length=120)
+    price_value_huf: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_source_shape(self) -> PrevalidatedSourceEvidence:
+        if self.source_type == "website_fragment":
+            if not all(
+                [
+                    self.source_url,
+                    self.source_fragment,
+                    self.source_fragment_sha256,
+                    self.claim_text,
+                ]
+            ):
+                raise ValueError("A website_fragment bizonyíték forrása vagy fragmentuma hiányzik.")
+        elif self.source_type == "website_visual":
+            if not all(
+                [
+                    self.source_url,
+                    self.visual_asset_id,
+                    self.visual_asset_url,
+                    self.visual_reference_sha256,
+                ]
+            ):
+                raise ValueError(
+                    "A website_visual bizonyíték assetazonosítója vagy URL-je hiányzik."
+                )
+        elif not all(
+            [
+                self.source_sha256,
+                self.price_input,
+                self.price_output_field,
+                self.price_value_huf is not None,
+            ]
+        ):
+            raise ValueError("A drive_price_calculator bizonyíték számítási adatai hiányoznak.")
+        return self
+
+
 class ContentAsset(BaseModel):
     asset_id: str = Field(min_length=3, max_length=120)
     title: str = Field(min_length=8)
@@ -111,6 +174,9 @@ class ContentAsset(BaseModel):
     visual_asset_ids: list[str] = Field(default_factory=list)
     visual_quality_score: int | None = Field(default=None, ge=0, le=100)
     visual_findings: list[str] = Field(default_factory=list)
+    prevalidated_source_evidence: list[PrevalidatedSourceEvidence] = Field(default_factory=list)
+    action_risk_level: int = Field(default=0, ge=0, le=7)
+    external_action_type: ExternalActionType = ExternalActionType.MARKETING_COMMUNICATION
 
 
 class CanonicalSources(BaseModel):

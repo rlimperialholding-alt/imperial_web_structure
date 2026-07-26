@@ -1,0 +1,241 @@
+{
+  "schema_version": "1.0",
+  "policy": {
+    "source_priority": [
+      "approved_vector_brand_source",
+      "approved_drive_brand_source",
+      "live_brand_website_asset",
+      "manual_crop_or_ocr"
+    ],
+    "publication_rule": "Only approval_status=approved assets may be used for external publication.",
+    "test_rule": "Observed live-site assets may be used in TEST_ONLY creatives with provenance and hash verification."
+  },
+  "brands": {
+    "imperial": {
+      "display_name": "Imperial Holding",
+      "source_page": "https://imperialholding.hu/",
+      "observed_at": "2026-07-26",
+      "approval_status": "observed_pending_owner_approval",
+      "notes": [
+        "The primary PNG is used by the live site.",
+        "The files are unmodified copies of publicly served brand-site assets."
+      ],
+      "audit_issues": [
+        "The HTML references content/imperialholding-logo.webp, but that URL returned HTTP 404."
+      ],
+      "assets": {
+        "primary": {
+          "file": "imperial/logo-primary.png",
+          "role": "live_primary_logo",
+          "media_type": "image/png",
+          "dimensions": "131x60",
+          "source_url": "https://imperialholding.hu/content/imperialholding-logo.png",
+          "sha256": "1f0e7a4efd4b336136e9fe31d0b65f058d80dbfb3d81d927d076f4fe4c4f6ea8"
+        },
+        "monochrome_mark": {
+          "file": "imperial/mark-monochrome.svg",
+          "role": "pinned_tab_monochrome_mark",
+          "media_type": "image/svg+xml",
+          "dimensions": "249x249",
+          "source_url": "https://imperialholding.hu/safari-pinned-tab.svg",
+          "sha256": "b848da0ac8ee8db4ab635c58c2e540442c22d29cd62381cf416b6fa225ab121e"
+        }
+      }
+    },
+    "danish-fabrik": {
+      "display_name": "Danish Fabrik",
+      "source_page": "https://www.danishfabrik.hu/",
+      "observed_at": "2026-07-26",
+      "approval_status": "observed_pending_owner_approval",
+      "notes": [
+        "The live primary logo contains the Danish flag and full wordmark.",
+        "The site-icon SVG wraps an embedded official raster icon."
+      ],
+      "audit_issues": [
+        "The HTML references safari-pinned-tab.svg, but that URL returned HTTP 404."
+      ],
+      "assets": {
+        "primary": {
+          "file": "danish-fabrik/logo-primary.png",
+          "role": "live_primary_logo",
+          "media_type": "image/png",
+          "dimensions": "892x762",
+          "source_url": "https://www.danishfabrik.hu/content/danishfabrik-logo.png",
+          "sha256": "10573d5812f74df8a8a267c0e997ad7e2d1c244946bcb7c47e4cb0d6a3c0ed14"
+        },
+        "site_icon": {
+          "file": "danish-fabrik/site-icon.svg",
+          "role": "live_site_icon",
+          "media_type": "image/svg+xml",
+          "dimensions": "1000x1000",
+          "source_url": "https://www.danishfabrik.hu/favicon.svg",
+          "sha256": "d162ab19980be713a64b83f3951bf3b40967befe8ed0d9c76fd0ced602db7a02"
+        }
+      }
+    },
+    "bautica": {
+      "display_name": "Bautica",
+      "source_page": "https://bautica.hu/",
+      "observed_at": "2026-07-26",
+      "approval_status": "observed_pending_owner_approval",
+      "notes": [
+        "The live header uses logo-inverse-orange.png.",
+        "The dominant observed orange is #FF6600.",
+        "The files are unmodified copies of publicly served brand-site assets."
+      ],
+      "audit_issues": [],
+      "assets": {
+        "primary": {
+          "file": "bautica/logo-primary.webp",
+          "role": "primary_color_wordmark",
+          "media_type": "image/webp",
+          "dimensions": "262x64",
+          "source_url": "https://bautica.hu/content/bautica-logo.webp",
+          "sha256": "cc9add87b416ebed26327a2ac6f294ad9d5f7f6375ee0452012132a2fa53fae7"
+        },
+        "inverse_orange": {
+          "file": "bautica/logo-inverse-orange.png",
+          "role": "live_header_logo",
+          "media_type": "image/png",
+          "dimensions": "800x195",
+          "source_url": "https://bautica.hu/content/bautica-logo-800.png",
+          "sha256": "9e008104addd29a3b033b6518a191553351c5f8248c9179afaf5ac6da06ebc3c"
+        },
+        "monochrome_mark": {
+          "file": "bautica/mark-monochrome.svg",
+          "role": "pinned_tab_monochrome_mark",
+          "media_type": "image/svg+xml",
+          "dimensions": "260x260",
+          "source_url": "https://bautica.hu/safari-pinned-tab.svg",
+          "sha256": "f2504eaef9f920606b6d76cb72a81edbee04faffa248fae43b69ba3aa0d1cdab"
+        }
+      }
+    },
+    "prefab": {
+      "display_name": "Prefab",
+      "source_page": "https://prefab.hu/",
+      "observed_at": "2026-07-26",
+      "approval_status": "observed_pending_owner_approval",
+      "notes": [
+        "The live primary logo is the boxed PREFAB wordmark.",
+        "The site-icon SVG wraps an embedded official raster icon."
+      ],
+      "audit_issues": [
+        "The HTML references safari-pinned-tab.svg, but that URL returned HTTP 404."
+      ],
+      "assets": {
+        "primary": {
+          "file": "prefab/logo-primary.png",
+          "role": "live_primary_logo",
+          "media_type": "image/png",
+          "dimensions": "873x279",
+          "source_url": "https://prefab.hu/content/prefab-logo.png",
+          "sha256": "535e7012f2154973512ebbd7fd3cf112bfd153037fcdfba72f421c75d006e8fc"
+        },
+        "site_icon": {
+          "file": "prefab/site-icon.svg",
+          "role": "live_site_icon",
+          "media_type": "image/svg+xml",
+          "dimensions": "279x279",
+          "source_url": "https://prefab.hu/favicon.svg",
+          "sha256": "5fc770798ae1ad5c3404bade2a0bd773abc1a2e6009bde8c709d24b086c388fe"
+        }
+      }
+    },
+    "casa-moderna": {
+      "display_name": "Casa Moderna",
+      "source_page": "https://www.casa-moderna.hu/",
+      "observed_at": "2026-07-26",
+      "approval_status": "observed_pending_owner_approval",
+      "notes": [
+        "The live site provides a path-based white vector wordmark for dark backgrounds.",
+        "The SVG contains no scripts, foreign objects, or external references."
+      ],
+      "audit_issues": [
+        "The HTML references content/casamoderna-logo.webp, but that URL returned HTTP 404.",
+        "The HTML references favicon.svg, but that URL returned HTTP 404."
+      ],
+      "assets": {
+        "primary": {
+          "file": "casa-moderna/logo-primary.svg",
+          "role": "live_inverse_vector_wordmark",
+          "media_type": "image/svg+xml",
+          "dimensions": "159x62",
+          "source_url": "https://www.casa-moderna.hu/content/casamoderna-logo.svg",
+          "sha256": "0d46fbebdef4759c97734e1b6ee79a88de608df64f0d2a5fd386cf71ab1375a1"
+        }
+      }
+    },
+    "baufreund": {
+      "display_name": "BauFreund",
+      "source_page": "https://www.baufreund.hu/",
+      "observed_at": "2026-07-26",
+      "approval_status": "observed_pending_owner_approval",
+      "notes": [
+        "The live primary logo combines the wordmark and builder character.",
+        "The separate character file is registered as mascot, not as the primary logo.",
+        "The site-icon SVG wraps an embedded official raster icon."
+      ],
+      "audit_issues": [
+        "The HTML references content/baufreund-logo.webp, but that URL returned HTTP 404."
+      ],
+      "assets": {
+        "primary": {
+          "file": "baufreund/logo-primary.png",
+          "role": "live_primary_logo_with_character",
+          "media_type": "image/png",
+          "dimensions": "1479x501",
+          "source_url": "https://www.baufreund.hu/content/baufreund-logo.png",
+          "sha256": "f7159721ca06c089b50b578875d0f2c6bc4f7383f2c8891141b568d85f3ad48c"
+        },
+        "mascot": {
+          "file": "baufreund/mascot.png",
+          "role": "live_brand_character",
+          "media_type": "image/png",
+          "dimensions": "800x1280",
+          "source_url": "https://www.baufreund.hu/content/baufreund-logoember1.png",
+          "sha256": "cd9f9f53376c097456812cdb560d612a189db75bbad2a9dd0328b9921535218b"
+        },
+        "site_icon": {
+          "file": "baufreund/site-icon.svg",
+          "role": "live_site_icon",
+          "media_type": "image/svg+xml",
+          "dimensions": "1000x1000",
+          "source_url": "https://www.baufreund.hu/favicon.svg",
+          "sha256": "7ee31580000640ae8e58656522104665bdb69c9f8e1adaaf67a893a1d833c257"
+        }
+      }
+    },
+    "timberhaus": {
+      "display_name": "Timberhaus",
+      "source_page": "https://www.timberhaus.hu/",
+      "observed_at": "2026-07-26",
+      "approval_status": "observed_pending_owner_approval",
+      "notes": [
+        "The live primary logo is the circular mountain, forest, and timber-house emblem.",
+        "The site-icon SVG wraps an embedded official raster icon."
+      ],
+      "audit_issues": [
+        "The HTML references safari-pinned-tab.svg, but that URL returned HTTP 404."
+      ],
+      "assets": {
+        "primary": {
+          "file": "timberhaus/logo-primary.png",
+          "role": "live_primary_emblem",
+          "media_type": "image/png",
+          "dimensions": "448x453",
+          "source_url": "https://www.timberhaus.hu/content/timberhaus-logo.png",
+          "sha256": "b3472b21331e5be231405731aaea15c7e5f9c3979824668a8f3df79252eec470"
+        },
+        "site_icon": {
+          "file": "timberhaus/site-icon.svg",
+          "role": "live_site_icon",
+          "media_type": "image/svg+xml",
+          "dimensions": "448x453",
+          "source_url": "https://www.timberhaus.hu/favicon.svg",
+          "sha256": "3a5a1b9a4792945c97dae517547bdb3978296b2865448872b5ce9989ab76804d"
+        }
+      }
+    }
+  }
+}
