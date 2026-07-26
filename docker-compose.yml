@@ -1,6 +1,29 @@
 name: ${COMPOSE_PROJECT_NAME:-imperial-staging}
 
 services:
+  platform-postgres:
+    image: ${PLATFORM_POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PLATFORM_DATABASE_NAME:-imperial_platform}
+      POSTGRES_USER: ${PLATFORM_DATABASE_USER:-imperial_platform}
+      POSTGRES_PASSWORD_FILE: /run/secrets/platform_db_password
+    secrets:
+      - platform_db_password
+    volumes:
+      - platform_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${PLATFORM_DATABASE_USER:-imperial_platform} -d ${PLATFORM_DATABASE_NAME:-imperial_platform}",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+
   gateway:
     image: ${NGINX_IMAGE:-nginx:stable-alpine}
     pull_policy: missing
@@ -36,19 +59,26 @@ services:
   platform-core:
     build:
       context: ./services/platform-core
+      target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     restart: unless-stopped
     init: true
     environment:
       ENVIRONMENT: development
-      DATABASE_URL: sqlite:////app/runtime/platform_core.db
+      DATABASE_HOST: platform-postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${PLATFORM_DATABASE_NAME:-imperial_platform}
+      DATABASE_USER: ${PLATFORM_DATABASE_USER:-imperial_platform}
+      DATABASE_PASSWORD_FILE: /run/secrets/platform_db_password
       DEMO_RUNTIME_PATH: /app/runtime/platform_demo_runtime.json
       SESSION_SECRET: ${PLATFORM_SESSION_SECRET:-local-demo-session-key-not-for-production}
       ALLOWED_HOSTS: localhost,127.0.0.1,testserver,gateway,platform-core
       REQUIRE_HTTPS: "false"
     volumes:
       - platform_core_runtime:/app/runtime
+    secrets:
+      - platform_db_password
     ports:
       - "127.0.0.1:${PLATFORM_CORE_PORT:-8091}:8000"
     healthcheck:
@@ -67,20 +97,32 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
 
   platform-core-tests:
     build:
       context: ./services/platform-core
+      target: test
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     profiles: ["platform-test"]
-    command: ["pytest", "-q"]
+    command:
+      [
+        "sh",
+        "-c",
+        "ruff format --check app/copy_gate app/services/content_quality.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py && ruff check app/copy_gate app/services/content_quality.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py && mypy app/copy_gate app/services/content_quality.py && pytest -q",
+      ]
     environment:
       ENVIRONMENT: test
       DATABASE_URL: sqlite:////tmp/platform_core_test.db
       DEMO_RUNTIME_PATH: /tmp/platform_demo_runtime.json
       SESSION_SECRET: local-test-session-key-not-for-production
       ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+      RUFF_CACHE_DIR: /tmp/ruff-cache
+      MYPY_CACHE_DIR: /tmp/mypy-cache
+      PYTHONPYCACHEPREFIX: /tmp/pycache
     tmpfs:
       - /tmp:size=128m,mode=1777
     cap_drop:
@@ -281,9 +323,12 @@ services:
 
 volumes:
   dpm_postgres_data:
+  platform_postgres_data:
   platform_core_runtime:
 
 secrets:
+  platform_db_password:
+    file: ${PLATFORM_DB_PASSWORD_FILE:-./secrets/platform_db_password.txt}
   dpm_db_password:
     file: ${DPM_DB_PASSWORD_FILE:-./secrets/dpm_db_password.txt}
   dpm_auth_hs256_secret:

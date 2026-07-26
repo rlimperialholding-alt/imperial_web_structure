@@ -19,6 +19,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+services/platform-core/data/contract_packages/
 
 secrets/*
 !secrets/.gitkeep
