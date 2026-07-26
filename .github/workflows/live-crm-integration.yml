@@ -59,9 +59,11 @@ jobs:
           echo "::add-mask::$crm_migration_token"
           echo "::add-mask::$itep_crm_read_token"
 
-          echo "ITEP_IDENTITY_SHARED_SECRET=$itep_identity_secret" >> "$GITHUB_ENV"
-          echo "CRM_MIGRATION_TOKEN=$crm_migration_token" >> "$GITHUB_ENV"
-          echo "ITEP_CRM_READ_TOKEN=$itep_crm_read_token" >> "$GITHUB_ENV"
+          {
+            echo "ITEP_IDENTITY_SHARED_SECRET=$itep_identity_secret"
+            echo "CRM_MIGRATION_TOKEN=$crm_migration_token"
+            echo "ITEP_CRM_READ_TOKEN=$itep_crm_read_token"
+          } >> "$GITHUB_ENV"
 
       - name: Start integrated test stack
         run: docker compose -f docker-compose.github-test.yml up -d --build --wait --wait-timeout 300
@@ -75,7 +77,7 @@ jobs:
         shell: bash
         run: |
           docker compose -f docker-compose.github-test.yml restart crm
-          for attempt in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:8787/api/health >/dev/null; then
               exit 0
             fi

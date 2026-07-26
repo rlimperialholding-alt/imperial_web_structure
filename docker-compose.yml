@@ -176,6 +176,8 @@ services:
     build:
       context: ./services/digital-project-managers
       target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     profiles: ["digital-pm", "digital-pm-test"]
     command: ["alembic", "upgrade", "head"]
     environment: &dpm-environment
@@ -214,6 +216,8 @@ services:
     build:
       context: ./services/digital-project-managers
       target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     profiles: ["digital-pm"]
     restart: unless-stopped
     environment:
@@ -254,6 +258,8 @@ services:
     build:
       context: ./services/digital-project-managers
       target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     profiles: ["digital-pm"]
     command:
       [
@@ -289,6 +295,8 @@ services:
     build:
       context: ./services/digital-project-managers
       target: test
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
     profiles: ["digital-pm-test"]
     command:
       [

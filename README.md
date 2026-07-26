@@ -12,6 +12,10 @@ ellenőrzése és szekciószintű review-zása.
 > alapértelmezetten kizárólag a `127.0.0.1` címen figyel, minden oldal
 > `noindex,nofollow` jelölést kap.
 
+Az összevont, CRM-et, ITEP-et, Integration Hubot és Digital PM-et is elindító
+helyi rendszerjelölt leírása:
+[teljes tesztkörnyezet](docs/complete-test-environment.md).
+
 ## Mit tartalmaz?
 
 - központi Imperial Intelligence admin dashboard;
@@ -127,6 +131,19 @@ megvárja a Docker engine-t, felállítja az Imperial Intelligence és a
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\start-local-platform.ps1
 ```
+
+Az összes backenddel és egy külön jóváhagyott helyi CRM-állapottal:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\start-complete-test.ps1 `
+  -CrmStatePath 'C:\path\to\approved-crm-state' `
+  -CrmWorkspaceId 'imperial-live'
+```
+
+Ez a mód a CRM-et a `18787`, az ITEP-et a `13000`, az Integration Hubot a
+`18080` porton indítja, így nem ütközik a vizuális platform `8080`, `8090` és
+`8091` portjaival. A CRM-adatkönyvtárat nem másolja és nem commitolja.
 
 Bejelentkezéskori automatikus futtatáshoz a helyi gépen az
 `Imperial Intelligence Local Platform` ütemezett feladat használható. A

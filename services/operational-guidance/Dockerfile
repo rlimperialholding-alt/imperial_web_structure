@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+ARG PIP_TRUSTED_HOST
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -10,8 +12,8 @@ RUN groupadd --gid 10001 imperial \
 
 WORKDIR /app
 COPY . /app
-RUN pip install --upgrade pip \
-    && pip install . \
+RUN PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install --upgrade pip \
+    && PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install . \
     && mkdir -p /app/runtime \
     && chown -R imperial:imperial /app/runtime
 

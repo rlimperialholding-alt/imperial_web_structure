@@ -45,7 +45,6 @@ import { createConnectorAdapters } from "../connectors/connector-adapter-factory
 import { ConnectorSyncOrchestrator } from "../connectors/sync-orchestrator.js";
 import { registerConnectorRoutes } from "./connector-routes.js";
 import { OrchestratorOperationExecutor } from "../integration-control-room/adapters.js";
-import { registerDigitalProjectManagerRoutes } from "./digital-project-manager-routes.js";
 import { registerOrchestrationRoutes } from "./orchestration-routes.js";
 
 export interface ServerDependencies {
@@ -142,7 +141,6 @@ export async function buildServer(
   registerReportingRoutes(app, reportingService);
   registerIngestionRoutes(app, ingestionService);
   registerIntegrationControlRoomRoutes(app, controlRoom);
-  registerDigitalProjectManagerRoutes(app, prisma);
   registerOrchestrationRoutes(app, prisma, service, {
     issuerId: "smart-calendar",
     escalationPersonId: config.DEFAULT_ESCALATION_PERSON_ID,

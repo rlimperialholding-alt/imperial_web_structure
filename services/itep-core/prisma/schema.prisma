@@ -460,57 +460,6 @@ model ConnectorDeadLetterItem {
   @@index([connectorId, failedAt])
 }
 
-enum DigitalManagerStatus {
-  ACTIVE
-  PAUSED
-}
-
-model DigitalProjectManager {
-  id             String               @id
-  organizationId String
-  displayName    String
-  roleName       String
-  status         DigitalManagerStatus @default(ACTIVE)
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-
-  assignments DigitalProjectAssignment[]
-
-  @@unique([organizationId, displayName])
-  @@index([organizationId, status])
-}
-
-model DigitalProjectAssignment {
-  id             String   @id @default(uuid())
-  organizationId String
-  projectId      String
-  managerId      String
-  assignedBy     String
-  assignedAt     DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  manager DigitalProjectManager @relation(fields: [managerId], references: [id], onDelete: Restrict)
-
-  @@unique([organizationId, projectId])
-  @@index([managerId, updatedAt])
-}
-
-model DigitalPmAuditEvent {
-  id             String   @id @default(uuid())
-  organizationId String
-  actorId        String
-  eventType      String
-  projectId      String?
-  managerId      String?
-  actionRisk     String?
-  decision       String?
-  payload        Json
-  occurredAt     DateTime @default(now())
-
-  @@index([organizationId, occurredAt])
-  @@index([projectId, occurredAt])
-}
-
 model OrchestrationEvent {
   id              String   @id @default(uuid())
   organizationId  String
