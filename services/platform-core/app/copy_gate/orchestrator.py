@@ -58,9 +58,7 @@ def validate_visual_variant_trace(
     except (TypeError, ValueError) as exc:
         raise ValueError("A minimum_text_contrast_ratio szám kell legyen.") from exc
     if minimum_text_contrast_ratio < 4.5:
-        raise ValueError(
-            "A kreatív normál szövegének WCAG-kontrasztja legalább 4.5:1 legyen."
-        )
+        raise ValueError("A kreatív normál szövegének WCAG-kontrasztja legalább 4.5:1 legyen.")
 
     background_treatment = str(trace["background_treatment"]).casefold()
     uses_gradient = "gradient" in background_treatment or bool(
@@ -85,13 +83,9 @@ def validate_visual_variant_trace(
                 "Azonos brief valódi A/B/C variánsaihoz külön visual_direction_id szükséges."
             )
         if sibling.get("layout_archetype_id") == trace["layout_archetype_id"]:
-            raise ValueError(
-                "A variánskészletben a layout_archetype_id nem ismétlődhet."
-            )
+            raise ValueError("A variánskészletben a layout_archetype_id nem ismétlődhet.")
         if sibling.get("composition_signature") == trace["composition_signature"]:
-            raise ValueError(
-                "A variánskészletben a composition_signature nem ismétlődhet."
-            )
+            raise ValueError("A variánskészletben a composition_signature nem ismétlődhet.")
         sibling_structure = (
             sibling.get("primary_text_zone"),
             sibling.get("image_treatment"),

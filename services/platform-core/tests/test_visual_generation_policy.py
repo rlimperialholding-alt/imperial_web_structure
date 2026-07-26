@@ -108,9 +108,7 @@ def test_visual_variants_reject_reused_composition_structure(candidate, message)
 
 def test_visual_variant_rejects_low_text_contrast():
     with pytest.raises(ValueError, match="4.5:1"):
-        validate_visual_variant_trace(
-            trace("A", "documentary-site-control", "GEN-A", contrast=3.4)
-        )
+        validate_visual_variant_trace(trace("A", "documentary-site-control", "GEN-A", contrast=3.4))
 
 
 def test_visual_variant_rejects_gradient_without_human_exception():
