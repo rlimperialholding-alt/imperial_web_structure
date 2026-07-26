@@ -142,6 +142,68 @@ export const projects = sqliteTable("projects", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const financeInvoiceImports = sqliteTable("finance_invoice_imports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: text("workspace_id").notNull(),
+  sourceSystem: text("source_system").notNull(),
+  externalId: text("external_id").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  sourceFileName: text("source_file_name").notNull(),
+  sourceSha256: text("source_sha256").notNull(),
+  invoiceNumber: text("invoice_number").notNull(),
+  invoiceType: text("invoice_type", {
+    enum: ["invoice", "storno"],
+  }).notNull(),
+  sellerName: text("seller_name").notNull(),
+  buyerName: text("buyer_name").notNull(),
+  issueDate: text("issue_date").notNull(),
+  fulfillmentDate: text("fulfillment_date").notNull(),
+  dueDate: text("due_date").notNull(),
+  paymentMethod: text("payment_method").notNull(),
+  currency: text("currency").notNull(),
+  netAmount: integer("net_amount").notNull(),
+  taxAmount: integer("tax_amount").notNull(),
+  grossAmount: integer("gross_amount").notNull(),
+  description: text("description").notNull(),
+  referencedInvoiceNumber: text("referenced_invoice_number"),
+  customerImportId: integer("customer_import_id").references(
+    () => customerImports.id,
+    { onDelete: "set null" },
+  ),
+  leadId: integer("lead_id").references(() => leads.id, {
+    onDelete: "set null",
+  }),
+  projectId: text("project_id").references(() => projects.id, {
+    onDelete: "set null",
+  }),
+  customerMatchStatus: text("customer_match_status", {
+    enum: ["matched", "review", "unmatched"],
+  }).notNull(),
+  projectMatchStatus: text("project_match_status", {
+    enum: ["matched", "review", "unmatched"],
+  }).notNull(),
+  matchConfidence: integer("match_confidence").notNull(),
+  payloadSha256: text("payload_sha256").notNull(),
+  metadataJson: text("metadata_json").notNull(),
+  importedAt: text("imported_at").notNull(),
+}, (table) => [
+  uniqueIndex("finance_invoice_imports_source_idx").on(
+    table.workspaceId,
+    table.sourceSystem,
+    table.externalId,
+  ),
+  uniqueIndex("finance_invoice_imports_number_idx").on(
+    table.workspaceId,
+    table.sourceSystem,
+    table.invoiceNumber,
+  ),
+  index("finance_invoice_imports_customer_idx").on(
+    table.customerImportId,
+    table.leadId,
+  ),
+  index("finance_invoice_imports_project_idx").on(table.projectId),
+]);
+
 export const projectMembers = sqliteTable("project_members", {
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   email: text("email").notNull(),

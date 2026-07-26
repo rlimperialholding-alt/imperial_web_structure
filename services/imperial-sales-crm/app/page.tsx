@@ -9,6 +9,7 @@ type View =
   | "records"
   | "customers"
   | "reports"
+  | "finance"
   | "control"
   | "executive";
 type Stage =
@@ -61,6 +62,28 @@ type Identity = {
   email: string;
   name: string;
   role: "admin" | "sales_manager" | "sales";
+};
+type Invoice = {
+  id: number;
+  invoiceNumber: string;
+  invoiceType: "invoice" | "storno";
+  buyerName: string;
+  issueDate: string;
+  dueDate: string;
+  paymentMethod: string;
+  currency: string;
+  netAmount: number;
+  taxAmount: number;
+  grossAmount: number;
+  description: string;
+  referencedInvoiceNumber: string | null;
+  sourceUrl: string;
+  sourceFileName: string;
+  customerMatchStatus: "matched" | "review" | "unmatched";
+  projectMatchStatus: "matched" | "review" | "unmatched";
+  matchConfidence: number;
+  crmCustomerName: string | null;
+  projectTitle: string | null;
 };
 type DataState = "connecting" | "live" | "demo" | "error";
 
@@ -443,6 +466,7 @@ function viewTitle(view: View) {
     records: "Értékesítési adatlapok",
     customers: "Ügyfelek",
     reports: "Értékesítési riportok",
+    finance: "Pénzügy",
     control: "Sales Control Center",
     executive: "Executive Dashboard",
   }[view];
@@ -451,7 +475,8 @@ function viewTitle(view: View) {
 export default function Home() {
   const [view, setView] = useState<View>("today"),
     [leads, setLeads] = useState<Lead[]>([]),
-    [tasks, setTasksRaw] = useState<Task[]>([]);
+    [tasks, setTasksRaw] = useState<Task[]>([]),
+    [invoices, setInvoices] = useState<Invoice[]>([]);
   const [query, setQuery] = useState(""),
     [brand, setBrand] = useState("Mind"),
     [owner, setOwner] = useState("Mind");
@@ -475,6 +500,7 @@ export default function Home() {
           identity: Identity;
           leads: Lead[];
           tasks: Task[];
+          invoices: Invoice[];
         }>;
       })
       .then((data) => {
@@ -482,6 +508,7 @@ export default function Home() {
         setIdentity(data.identity);
         setLeads(data.leads);
         setTasksRaw(data.tasks);
+        setInvoices(data.invoices);
         setDataState("live");
       })
       .catch(() => {
@@ -731,7 +758,8 @@ export default function Home() {
             <span>Vezetői központ</span>
           </button>
           <button
-            onClick={() => notify("A Pénzügy modul még nincs összekapcsolva.")}
+            className={view === "finance" ? "active" : ""}
+            onClick={() => changeView("finance")}
           >
             <Icon name="finance" />
             <span>Pénzügy</span>
@@ -891,6 +919,8 @@ export default function Home() {
             <Customers leads={leads} onLead={setSelected} />
           ) : view === "reports" ? (
             <Reports leads={leads} />
+          ) : view === "finance" ? (
+            <Finance invoices={invoices} />
           ) : view === "executive" ? (
             <ExecutiveDashboard
               leads={leads}
@@ -1520,6 +1550,121 @@ function Reports({ leads }: { leads: Lead[] }) {
           </div>
         </section>
       </div>
+    </>
+  );
+}
+function Finance({ invoices }: { invoices: Invoice[] }) {
+  const signedGross = invoices.reduce(
+    (total, invoice) => total + invoice.grossAmount,
+    0,
+  );
+  const matchedCustomers = new Set(
+    invoices
+      .filter((invoice) => invoice.customerMatchStatus === "matched")
+      .map((invoice) => invoice.crmCustomerName),
+  ).size;
+  const projectReview = invoices.filter(
+    (invoice) => invoice.projectMatchStatus !== "matched",
+  ).length;
+  const huf = new Intl.NumberFormat("hu-HU", {
+    style: "currency",
+    currency: "HUF",
+    maximumFractionDigits: 0,
+  });
+  return (
+    <>
+      <section className="section-title">
+        <div>
+          <p className="eyebrow">TÉNYADATOK · KIMENŐ SZÁMLÁK</p>
+          <h2>Számlapilot</h2>
+          <p>
+            Drive-forrással igazolt, duplikációvédett számlaadatok és
+            CRM-kapcsolatok.
+          </p>
+        </div>
+      </section>
+      <section className="kpis finance-kpis">
+        <article>
+          <span>Importált bizonylat</span>
+          <strong>{invoices.length}</strong>
+          <small>A sztornók külön bizonylatként szerepelnek</small>
+        </article>
+        <article>
+          <span>Előjeles bruttó érték</span>
+          <strong>{huf.format(signedGross)}</strong>
+          <small>Az eredeti és sztornó összegek együtt</small>
+        </article>
+        <article>
+          <span>Biztos ügyfélkapcsolat</span>
+          <strong>{matchedCustomers}</strong>
+          <small>Forrásazonosító és névegyezés alapján</small>
+        </article>
+        <article className={projectReview ? "warning" : ""}>
+          <span>Projektkapcsolat ellenőrzendő</span>
+          <strong>{projectReview}</strong>
+          <small>Projekt csak valódi adatlaphoz kapcsolható</small>
+        </article>
+      </section>
+      <section className="table-panel finance-panel">
+        <div className="panel-head">
+          <div>
+            <p className="eyebrow">SZÁMLAJEGYZÉK</p>
+            <h3>Importált pénzügyi tételek</h3>
+          </div>
+          <span className="count">{invoices.length}</span>
+        </div>
+        {invoices.length ? (
+          <div className="invoice-table">
+            <div className="invoice-row invoice-head">
+              <span>Számla</span>
+              <span>Ügyfél és tétel</span>
+              <span>Dátum</span>
+              <span>Bruttó</span>
+              <span>Kapcsolatok</span>
+            </div>
+            {invoices.map((invoice) => (
+              <article className="invoice-row" key={invoice.id}>
+                <span>
+                  <strong>{invoice.invoiceNumber}</strong>
+                  <small>
+                    {invoice.invoiceType === "storno"
+                      ? `Sztornó · ${invoice.referencedInvoiceNumber}`
+                      : invoice.paymentMethod}
+                  </small>
+                </span>
+                <span>
+                  <strong>{invoice.buyerName}</strong>
+                  <small>{invoice.description}</small>
+                </span>
+                <span>
+                  <strong>{invoice.issueDate}</strong>
+                  <small>Határidő: {invoice.dueDate}</small>
+                </span>
+                <span className={invoice.grossAmount < 0 ? "negative" : ""}>
+                  <strong>{huf.format(invoice.grossAmount)}</strong>
+                  <small>Nettó: {huf.format(invoice.netAmount)}</small>
+                </span>
+                <span className="invoice-links">
+                  <b className="matched">Ügyfél kapcsolva</b>
+                  <b className={
+                    invoice.projectMatchStatus === "matched"
+                      ? "matched"
+                      : "review"
+                  }>
+                    {invoice.projectMatchStatus === "matched"
+                      ? invoice.projectTitle
+                      : "Projekt ellenőrzendő"}
+                  </b>
+                </span>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="finance-empty">
+            Még nincs importált számlaadat ebben a környezetben.
+          </div>
+        )}
+      </section>
     </>
   );
 }
