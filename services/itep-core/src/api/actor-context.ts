@@ -2,6 +2,10 @@ import type { FastifyRequest } from "fastify";
 import type { ActorContext } from "../application/ports.js";
 
 export function actorFromRequest(request: FastifyRequest): ActorContext {
+  if (request.verifiedActor) {
+    return request.verifiedActor;
+  }
+
   const actorId = header(request, "x-actor-id");
   const organizationId = header(request, "x-organization-id");
   const permissions = optionalHeader(request, "x-permissions")
