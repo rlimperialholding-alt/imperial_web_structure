@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import date as DateValue
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -261,6 +262,163 @@ class AuditLog(Base):
     entity_id: Mapped[str | None] = mapped_column(String(150))
     before_json: Mapped[str | None] = mapped_column(Text)
     after_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CopySourceRecord(Base):
+    __tablename__ = "cq_source_records"
+    __table_args__ = (
+        UniqueConstraint("source_key", "version", name="uq_cq_source_key_version"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_key: Mapped[str] = mapped_column(String(160), index=True)
+    source_type: Mapped[str] = mapped_column(String(80), index=True)
+    brand_id: Mapped[str] = mapped_column(String(100), index=True)
+    page_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    campaign_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    asset_type: Mapped[str | None] = mapped_column(String(80), index=True)
+    version: Mapped[str] = mapped_column(String(80))
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    status: Mapped[str] = mapped_column(String(30), default="approved", index=True)
+    approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_url: Mapped[str | None] = mapped_column(String(1000))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class CopyBriefRecord(Base):
+    __tablename__ = "cq_copy_briefs"
+    copy_brief_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    brand_id: Mapped[str] = mapped_column(String(100), index=True)
+    asset_type: Mapped[str] = mapped_column(String(80), index=True)
+    channel: Mapped[str] = mapped_column(String(80), index=True)
+    page_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    campaign_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="DRAFT", index=True)
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    brief_json: Mapped[str] = mapped_column(Text)
+    source_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ContentAssetRecord(Base):
+    __tablename__ = "cq_content_assets"
+    __table_args__ = (
+        CheckConstraint(
+            "state <> 'PUBLISHED' OR "
+            "(gate_1_approved = true AND four_gate_approved = true "
+            "AND editorial_approved = true AND owner_approved = true "
+            "AND publication_proof_id IS NOT NULL AND published_at IS NOT NULL)",
+            name="ck_cq_published_requires_all_approvals",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    copy_brief_id: Mapped[str] = mapped_column(ForeignKey("cq_copy_briefs.copy_brief_id"), index=True)
+    project_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    brand_id: Mapped[str] = mapped_column(String(100), index=True)
+    asset_type: Mapped[str] = mapped_column(String(80), index=True)
+    channel: Mapped[str] = mapped_column(String(80), index=True)
+    state: Mapped[str] = mapped_column(String(30), default="DRAFT", index=True)
+    content_version: Mapped[int] = mapped_column(Integer, default=1)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    content_json: Mapped[str] = mapped_column(Text)
+    generation_trace_json: Mapped[str] = mapped_column(Text, default="{}")
+    gate_1_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    four_gate_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    editorial_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    owner_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    latest_run_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    publication_proof_id: Mapped[str | None] = mapped_column(String(120), unique=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class CopyReviewRun(Base):
+    __tablename__ = "cq_review_runs"
+    run_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    copy_brief_id: Mapped[str] = mapped_column(String(120), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    source_snapshot_hash: Mapped[str] = mapped_column(String(64))
+    source_versions_json: Mapped[str] = mapped_column(Text, default="{}")
+    model_versions_json: Mapped[str] = mapped_column(Text, default="{}")
+    prompt_versions_json: Mapped[str] = mapped_column(Text, default="{}")
+    total_score: Mapped[int] = mapped_column(Integer, default=0)
+    final_decision: Mapped[str] = mapped_column(String(40), index=True)
+    scorecard_json: Mapped[str] = mapped_column(Text)
+    repair_brief_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ContentGateDecision(Base):
+    __tablename__ = "cq_gate_decisions"
+    __table_args__ = (
+        UniqueConstraint("run_id", "gate_id", name="uq_cq_run_gate"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("cq_review_runs.run_id", ondelete="CASCADE"), index=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    gate_id: Mapped[str] = mapped_column(String(80))
+    agent_id: Mapped[str] = mapped_column(String(80))
+    decision: Mapped[str] = mapped_column(String(40), index=True)
+    relevant: Mapped[bool] = mapped_column(Boolean, default=True)
+    certainty: Mapped[str] = mapped_column(String(20), default="MEDIUM")
+    findings_json: Mapped[str] = mapped_column(Text, default="[]")
+    source_versions_json: Mapped[str] = mapped_column(Text, default="{}")
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ContentApprovalRecord(Base):
+    __tablename__ = "cq_approvals"
+    __table_args__ = (
+        UniqueConstraint("asset_id", "content_version", "approval_type", name="uq_cq_asset_version_approval"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    content_version: Mapped[int] = mapped_column(Integer)
+    approval_type: Mapped[str] = mapped_column(String(40), index=True)
+    decision: Mapped[str] = mapped_column(String(30))
+    actor: Mapped[str] = mapped_column(String(255))
+    note: Mapped[str | None] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GoldenCopySample(Base):
+    __tablename__ = "cq_golden_copy_samples"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sample_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    brand_id: Mapped[str] = mapped_column(String(100), index=True)
+    asset_type: Mapped[str] = mapped_column(String(80), index=True)
+    content_json: Mapped[str] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    approved_by: Mapped[str] = mapped_column(String(255))
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ContentPerformanceMetric(Base):
+    __tablename__ = "cq_performance_metrics"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    metric_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    metric_type: Mapped[str] = mapped_column(String(50), index=True)
+    numeric_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    text_value: Mapped[str | None] = mapped_column(Text)
+    occurred_on: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    source_system: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -781,7 +939,7 @@ class PartnerAttendance(Base):
     worker_id: Mapped[str] = mapped_column(String(120), index=True)
     project_id: Mapped[str] = mapped_column(String(100), index=True)
     work_package_id: Mapped[str | None] = mapped_column(String(120), index=True)
-    work_date: Mapped[datetime.date] = mapped_column(Date, index=True)
+    work_date: Mapped[DateValue] = mapped_column(Date, index=True)
     check_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     check_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     check_in_latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
@@ -804,7 +962,7 @@ class PartnerProgressReport(Base):
     access_id: Mapped[str] = mapped_column(String(120), index=True)
     project_id: Mapped[str] = mapped_column(String(100), index=True)
     work_package_id: Mapped[str | None] = mapped_column(String(120), index=True)
-    report_date: Mapped[datetime.date] = mapped_column(Date, index=True)
+    report_date: Mapped[DateValue] = mapped_column(Date, index=True)
     reported_progress_pct: Mapped[int | None] = mapped_column(Integer)
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     unit: Mapped[str | None] = mapped_column(String(40))

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import hashlib
 import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import (CalculationSourceRegistry, DeliveryNoteProjection, DevelopmentDiscoveryRecord, EnvironmentRecord, EventRecord, ImportDataSource, MailSendingDomain, MaterialLot, MaterialMovement, MaterialUsageControl, ModuleRegistry, PMGateCheck, PMPhase, PMWorkPackage, ProcurementOrderProjection, ProjectFact, ProjectObjectState, ProjectRegistry, SiteDailyReport, SiteIssue, TaskRecord, User, WorkspaceDocument, PartnerFieldAccess, PartnerWorker)
+from .models import (CalculationSourceRegistry, CopySourceRecord, DeliveryNoteProjection, DevelopmentDiscoveryRecord, EnvironmentRecord, EventRecord, ImportDataSource, MailSendingDomain, MaterialLot, MaterialMovement, MaterialUsageControl, ModuleRegistry, PMGateCheck, PMPhase, PMWorkPackage, ProcurementOrderProjection, ProjectFact, ProjectObjectState, ProjectRegistry, SiteDailyReport, SiteIssue, TaskRecord, User, WorkspaceDocument, PartnerFieldAccess, PartnerWorker)
 from .security import hash_password
 from .services.development_governance import seed_canonical_discoveries
 
@@ -240,6 +241,114 @@ def seed_commercial_integration(db: Session) -> None:
         ))
 
 
+def seed_content_quality_sources(db: Session) -> None:
+    source_url = "https://drive.google.com/drive/folders/0AGVzuRnGAaYZUk9PVA"
+    valid_from = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    valid_until = datetime(2027, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    sources = [
+        ("imperial-brand-master", "brand_master", "1.0", {}, 10),
+        (
+            "imperial-brand-voice",
+            "brand_voice_profile",
+            "1.0",
+            {
+                "addressing": "formal",
+                "required_concepts": [
+                    "fix ár",
+                    "fix határidő",
+                    "rögzített műszaki tartalom",
+                ],
+                "forbidden_phrases": [
+                    "brutális akció",
+                    "őrületes kedvezmény",
+                    "olcsó csoda",
+                ],
+            },
+            10,
+        ),
+        ("imperial-conversion-architecture", "conversion_guide", "1.5", {}, 10),
+        ("imperial-full-design-system", "design_system", "1.1", {}, 10),
+        ("imperial-channel-rules", "channel_rules", "1.0", {}, 10),
+        (
+            "OFF-IMP-V1",
+            "offer_version",
+            "1.0",
+            {"record_id": "OFF-IMP-V1", "scope": "approved-pilot"},
+            10,
+        ),
+        (
+            "PS-IMP-2026-07",
+            "price_snapshot",
+            "2026-07",
+            {"record_id": "PS-IMP-2026-07", "vat_scope": "validated"},
+            10,
+        ),
+        (
+            "TV-IMP-V1",
+            "terms_version",
+            "1.0",
+            {"record_id": "TV-IMP-V1", "status": "approved"},
+            10,
+        ),
+        (
+            "HP-IMP-126",
+            "house_plan",
+            "3",
+            {"record_id": "HP-IMP-126", "gross_area_m2": 126},
+            10,
+        ),
+        (
+            "CLM-IMP-FIXED-SCOPE",
+            "claim",
+            "1.0",
+            {"record_id": "CLM-IMP-FIXED-SCOPE"},
+            10,
+        ),
+        (
+            "PRF-IMP-CONTRACT",
+            "proof",
+            "1.0",
+            {"record_id": "PRF-IMP-CONTRACT"},
+            10,
+        ),
+        (
+            "VIS-IMP-126-HERO",
+            "visual_rights",
+            "1.0",
+            {"record_id": "VIS-IMP-126-HERO", "rights_status": "approved"},
+            10,
+        ),
+    ]
+    for source_key, source_type, version, payload, priority in sources:
+        exists = db.scalar(
+            select(CopySourceRecord).where(
+                CopySourceRecord.source_key == source_key,
+                CopySourceRecord.version == version,
+            )
+        )
+        if exists:
+            continue
+        payload_json = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        db.add(
+            CopySourceRecord(
+                source_key=source_key,
+                source_type=source_type,
+                brand_id="imperial",
+                version=version,
+                priority=priority,
+                status="approved",
+                approved=True,
+                valid_from=valid_from,
+                valid_until=valid_until,
+                source_url=source_url,
+                content_hash=hashlib.sha256(payload_json.encode("utf-8")).hexdigest(),
+                payload_json=payload_json,
+            )
+        )
+
+
 def seed_database(db: Session) -> None:
     if not db.scalar(select(User).where(User.email == "owner@imperial.local")):
         db.add(User(email="owner@imperial.local", password_hash=hash_password(DEMO_PASSWORD), name="Imperial Owner", role="owner"))
@@ -282,6 +391,7 @@ def seed_database(db: Session) -> None:
         ))
     seed_canonical_discoveries(db, MODULES)
     seed_commercial_integration(db)
+    seed_content_quality_sources(db)
     seed_workspace_demo(db)
     seed_operations_demo(db)
     db.commit()

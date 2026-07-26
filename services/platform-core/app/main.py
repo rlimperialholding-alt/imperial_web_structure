@@ -28,6 +28,10 @@ from .models import (
     ImportJob, StagedEnterpriseRecord, MailSendingDomain, MailSuppression, TenderMailCampaign,
     TenderMailEvent, TenderMailRecipient, WorkspaceDocument, PartnerEvidence, PartnerFieldAccess,
 )
+from .copy_gate.models import (
+    ApprovalSubmission, ContentAssetCreateRequest, CopyQualityRequest, CopySourceIn,
+    FourGateSubmission, PerformanceSubmission,
+)
 from .schemas import (
     ArtifactIn, CalculationRequest, EnvironmentIn, EventIn, FactIn, HeartbeatIn, HouseMatchIn,
     DomainVerificationIn, ImportCommitIn, ImportItemIn, ImportJobIn, ImportPushIn, ImportReviewIn, ImportSourceIn,
@@ -74,6 +78,12 @@ from .services.tender_mail import (
 )
 from .services.pilots import run_all_pilots, run_pilot_scenario
 from .services.releases import add_artifact, create_release, release_gate
+from .services.content_quality import (
+    create_content_asset, create_copy_brief, publish_content_asset,
+    record_approval, record_performance_metric, register_copy_source,
+    rollback_content_asset, run_copy_quality, submit_four_gates,
+    validate_copy_brief,
+)
 from .demo_runtime import DemoRuntimeError, demo_runtime
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -142,6 +152,222 @@ def partner_auth_or_redirect(request: Request, db: Session):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "imperial-intelligence-control-center", "version": __version__, "platform_version": "5.0.0"}
+
+
+@app.post(
+    "/api/content-quality/sources",
+    dependencies=[Depends(require_api_token)],
+)
+def api_content_quality_source(
+    payload: CopySourceIn,
+    db: Session = Depends(get_db),
+):
+    try:
+        row = register_copy_source(db, payload, actor="api")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "source_key": row.source_key,
+        "version": row.version,
+        "content_hash": row.content_hash,
+        "approved": row.approved,
+    }
+
+
+@app.post(
+    "/api/content-quality/briefs/validate",
+    dependencies=[Depends(require_api_token)],
+)
+def api_content_quality_brief_validate(payload: dict):
+    return validate_copy_brief(payload)
+
+
+@app.post(
+    "/api/content-quality/briefs",
+    dependencies=[Depends(require_api_token)],
+)
+def api_content_quality_brief_create(
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    try:
+        row = create_copy_brief(db, payload, actor="api")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "copy_brief_id": row.copy_brief_id,
+        "status": row.status,
+        "source_snapshot_hash": row.source_snapshot_hash,
+    }
+
+
+@app.post(
+    "/api/content-quality/assets",
+    dependencies=[Depends(require_api_token)],
+)
+def api_content_quality_asset_create(
+    payload: ContentAssetCreateRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        row = create_content_asset(
+            db,
+            payload.asset,
+            copy_brief_id=payload.copy_brief_id,
+            project_id=payload.project_id,
+            generation_trace=payload.generation_trace,
+            actor="api",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "asset_id": row.asset_id,
+        "state": row.state,
+        "content_hash": row.content_hash,
+    }
+
+
+@app.post(
+    "/api/content-quality/assets/{asset_id}/copy-qa",
+    dependencies=[Depends(require_internal_job_token)],
+)
+def api_content_quality_copy_qa(
+    asset_id: str,
+    payload: CopyQualityRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        run = run_copy_quality(
+            db,
+            asset_id,
+            payload.editorial_review,
+            actor="quality-worker",
+            evaluated_on=payload.evaluated_on,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return json.loads(run.scorecard_json) | {
+        "run_id": run.run_id,
+        "source_snapshot_hash": run.source_snapshot_hash,
+    }
+
+
+@app.post(
+    "/api/content-quality/assets/{asset_id}/four-gates",
+    dependencies=[Depends(require_internal_job_token)],
+)
+def api_content_quality_four_gates(
+    asset_id: str,
+    payload: FourGateSubmission,
+    db: Session = Depends(get_db),
+):
+    try:
+        return submit_four_gates(db, asset_id, payload, actor="gate-orchestrator")
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/content-quality/assets/{asset_id}/editorial-approval")
+def api_content_quality_editorial_approval(
+    asset_id: str,
+    payload: ApprovalSubmission,
+    user: User = Depends(require_role("owner", "admin", "marketing_editor")),
+    db: Session = Depends(get_db),
+):
+    try:
+        row = record_approval(
+            db,
+            asset_id,
+            "HUMAN_EDITORIAL",
+            payload,
+            actor=user.email,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"asset_id": row.asset_id, "state": row.state}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/owner-approval")
+def api_content_quality_owner_approval(
+    asset_id: str,
+    payload: ApprovalSubmission,
+    user: User = Depends(require_role("owner")),
+    db: Session = Depends(get_db),
+):
+    try:
+        row = record_approval(db, asset_id, "OWNER", payload, actor=user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"asset_id": row.asset_id, "state": row.state}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/publish")
+def api_content_quality_publish(
+    asset_id: str,
+    user: User = Depends(require_role("owner")),
+    db: Session = Depends(get_db),
+):
+    try:
+        return publish_content_asset(db, asset_id, actor=user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/content-quality/assets/{asset_id}/rollback")
+def api_content_quality_rollback(
+    asset_id: str,
+    reason: str,
+    user: User = Depends(require_role("owner")),
+    db: Session = Depends(get_db),
+):
+    try:
+        row = rollback_content_asset(
+            db,
+            asset_id,
+            actor=user.email,
+            reason=reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    return {
+        "asset_id": row.asset_id,
+        "state": row.state,
+        "content_version": row.content_version,
+    }
+
+
+@app.post(
+    "/api/content-quality/assets/{asset_id}/performance",
+    dependencies=[Depends(require_api_token)],
+)
+def api_content_quality_performance(
+    asset_id: str,
+    payload: PerformanceSubmission,
+    db: Session = Depends(get_db),
+):
+    try:
+        row = record_performance_metric(
+            db,
+            asset_id,
+            payload.metric,
+            source_system=payload.source_system,
+            actor="api",
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"metric_id": row.metric_id, "asset_id": row.asset_id}
 
 
 @app.get("/health/live")
