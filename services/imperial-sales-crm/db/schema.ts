@@ -101,6 +101,32 @@ export const migrationDocuments = sqliteTable("crm_migration_documents", {
   index("crm_migration_documents_batch_idx").on(table.batchId),
 ]);
 
+export const customerImports = sqliteTable("crm_customer_imports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: text("workspace_id").notNull(),
+  sourceSystem: text("source_system").notNull(),
+  externalId: text("external_id").notNull(),
+  sourceKind: text("source_kind", {
+    enum: ["contract_customer", "web_form_lead"],
+  }).notNull(),
+  leadId: integer("lead_id").notNull().references(() => leads.id, {
+    onDelete: "cascade",
+  }),
+  sourceUrl: text("source_url").notNull(),
+  sourceDate: text("source_date").notNull(),
+  payloadSha256: text("payload_sha256").notNull(),
+  metadataJson: text("metadata_json").notNull(),
+  importedAt: text("imported_at").notNull(),
+}, (table) => [
+  uniqueIndex("crm_customer_imports_source_idx").on(
+    table.workspaceId,
+    table.sourceSystem,
+    table.externalId,
+  ),
+  index("crm_customer_imports_workspace_idx").on(table.workspaceId, table.id),
+  index("crm_customer_imports_lead_idx").on(table.leadId),
+]);
+
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
   portalCode: text("portal_code").notNull().unique(),
