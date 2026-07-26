@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("invoice pilot is capped, source-idempotent and amount-safe", async () => {
+test("invoice import is bounded at 250, source-idempotent and amount-safe", async () => {
   const source = await readFile("lib/invoice-import.ts", "utf8");
-  assert.match(source, /MAX_INVOICES_PER_PILOT = 10/);
+  assert.match(source, /MAX_INVOICES_PER_BATCH = 250/);
   assert.match(source, /payloadSha256/);
   assert.match(source, /sourceSha256/);
   assert.match(source, /netAmount \+ taxAmount !== grossAmount/);
   assert.match(source, /already exists with different data/);
+  assert.match(source, /optionalText\(item\.description, 1000\)/);
+  assert.match(source, /Számladokumentum/);
 });
 
 test("invoice storage links only verified customers and optional projects", async () => {
@@ -25,12 +27,13 @@ test("invoice storage links only verified customers and optional projects", asyn
   assert.match(migration, /FOREIGN KEY \(`project_id`\) REFERENCES `projects`/);
 });
 
-test("invoice import checks the customer source id and normalized buyer name", async () => {
+test("invoice import links only an unambiguous normalized buyer match", async () => {
   const source = await readFile("lib/invoice-import.ts", "utf8");
   assert.match(source, /invoice\.customerSourceSystem/);
   assert.match(source, /invoice\.customerExternalId/);
   assert.match(source, /normalizedCustomerName/);
-  assert.match(source, /buyer does not match the CRM customer/);
+  assert.match(source, /uniqueCandidates\.length === 1/);
+  assert.match(source, /customerMatchStatus/);
 });
 
 test("storno invoices require a reference and negative amount", async () => {

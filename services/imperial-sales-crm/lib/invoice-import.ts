@@ -7,7 +7,7 @@ import {
   projects,
 } from "@/db/schema";
 
-const MAX_INVOICES_PER_PILOT = 10;
+const MAX_INVOICES_PER_BATCH = 250;
 const identifierPattern = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const sha256Pattern = /^[a-f0-9]{64}$/;
 
@@ -29,8 +29,8 @@ type InvoiceInput = {
   grossAmount: number;
   description: string;
   referencedInvoiceNumber: string | null;
-  customerSourceSystem: string;
-  customerExternalId: string;
+  customerSourceSystem: string | null;
+  customerExternalId: string | null;
   sourceUrl: string;
   sourceFileName: string;
   sourceSha256: string;
@@ -134,8 +134,8 @@ export function parseInvoiceImportPayload(value: unknown): InvoiceImportPayload 
     ? value as Record<string, unknown>
     : {};
   const rawInvoices = Array.isArray(payload.invoices) ? payload.invoices : [];
-  if (!rawInvoices.length || rawInvoices.length > MAX_INVOICES_PER_PILOT) {
-    throw new Response("An invoice pilot must contain 1-10 records.", {
+  if (!rawInvoices.length || rawInvoices.length > MAX_INVOICES_PER_BATCH) {
+    throw new Response("An invoice import batch must contain 1-250 records.", {
       status: 400,
     });
   }
@@ -209,16 +209,14 @@ export function parseInvoiceImportPayload(value: unknown): InvoiceImportPayload 
       netAmount,
       taxAmount,
       grossAmount,
-      description: requiredText(item.description, "description", 1000),
+      description: optionalText(item.description, 1000) ?? "Számladokumentum",
       referencedInvoiceNumber,
-      customerSourceSystem: requiredIdentifier(
-        item.customerSourceSystem,
-        "customerSourceSystem",
-      ),
-      customerExternalId: requiredIdentifier(
-        item.customerExternalId,
-        "customerExternalId",
-      ),
+      customerSourceSystem: item.customerSourceSystem
+        ? requiredIdentifier(item.customerSourceSystem, "customerSourceSystem")
+        : null,
+      customerExternalId: item.customerExternalId
+        ? requiredIdentifier(item.customerExternalId, "customerExternalId")
+        : null,
       sourceUrl: driveSourceUrl(item.sourceUrl),
       sourceFileName,
       sourceSha256,
@@ -288,37 +286,72 @@ export async function importInvoices(request: Request) {
       );
     }
 
-    const [customer] = await db.select({
+    if (
+      Boolean(invoice.customerSourceSystem) !==
+      Boolean(invoice.customerExternalId)
+    ) {
+      throw new Response(
+        `${invoice.invoiceNumber} needs both customer source identifiers.`,
+        { status: 400 },
+      );
+    }
+    const exactCustomers = invoice.customerSourceSystem &&
+        invoice.customerExternalId
+      ? await db.select({
+        customerImportId: customerImports.id,
+        leadId: customerImports.leadId,
+        customerName: leads.name,
+      }).from(customerImports).innerJoin(
+        leads,
+        eq(customerImports.leadId, leads.id),
+      ).where(and(
+        eq(customerImports.workspaceId, payload.workspaceId),
+        eq(customerImports.sourceSystem, invoice.customerSourceSystem),
+        eq(customerImports.externalId, invoice.customerExternalId),
+      )).limit(2)
+      : [];
+    const exactNameMatches = exactCustomers.filter((candidate) =>
+      normalizedCustomerName(candidate.customerName) ===
+        normalizedCustomerName(invoice.buyerName)
+    );
+    const nameCandidates = exactCustomers.length
+      ? exactNameMatches
+      : (await db.select({
       customerImportId: customerImports.id,
       leadId: customerImports.leadId,
       customerName: leads.name,
     }).from(customerImports).innerJoin(
       leads,
       eq(customerImports.leadId, leads.id),
-    ).where(and(
-      eq(customerImports.workspaceId, payload.workspaceId),
-      eq(customerImports.sourceSystem, invoice.customerSourceSystem),
-      eq(customerImports.externalId, invoice.customerExternalId),
-    )).limit(1);
-    if (!customer) {
-      throw new Response(
-        `${invoice.invoiceNumber} has no verified imported CRM customer.`,
-        { status: 422 },
-      );
-    }
-    if (normalizedCustomerName(customer.customerName) !==
-        normalizedCustomerName(invoice.buyerName)) {
-      throw new Response(
-        `${invoice.invoiceNumber} buyer does not match the CRM customer.`,
-        { status: 409 },
-      );
-    }
+    ).where(eq(
+      customerImports.workspaceId,
+      payload.workspaceId,
+    ))).filter((candidate) =>
+      normalizedCustomerName(candidate.customerName) ===
+        normalizedCustomerName(invoice.buyerName)
+    );
+    const uniqueCandidates = [
+      ...new Map(nameCandidates.map((candidate) => [
+        candidate.leadId,
+        candidate,
+      ])).values(),
+    ];
+    const customer = uniqueCandidates.length === 1
+      ? uniqueCandidates[0]
+      : null;
+    const customerMatchStatus = customer
+      ? "matched"
+      : uniqueCandidates.length > 1 || exactCustomers.length
+        ? "review"
+        : "unmatched";
 
-    const projectCandidates = await db.select({
+    const projectCandidates = customer
+      ? await db.select({
       id: projects.id,
     }).from(projects).where(
       eq(projects.customerName, customer.customerName),
-    ).limit(2);
+    ).limit(2)
+      : [];
     const matchedProject = projectCandidates.length === 1
       ? projectCandidates[0]
       : null;
@@ -349,12 +382,12 @@ export async function importInvoices(request: Request) {
       grossAmount: invoice.grossAmount,
       description: invoice.description,
       referencedInvoiceNumber: invoice.referencedInvoiceNumber,
-      customerImportId: customer.customerImportId,
-      leadId: customer.leadId,
+      customerImportId: customer?.customerImportId ?? null,
+      leadId: customer?.leadId ?? null,
       projectId: matchedProject?.id ?? null,
-      customerMatchStatus: "matched",
+      customerMatchStatus,
       projectMatchStatus,
-      matchConfidence: 100,
+      matchConfidence: customer ? 100 : customerMatchStatus === "review" ? 50 : 0,
       payloadSha256: digest,
       metadataJson: canonicalJson(invoice),
       importedAt: now,

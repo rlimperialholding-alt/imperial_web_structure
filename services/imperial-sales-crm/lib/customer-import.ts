@@ -1,8 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { customerImports, leads } from "@/db/schema";
 
-const MAX_CUSTOMERS_PER_PILOT = 10;
+const MAX_CUSTOMERS_PER_BATCH = 250;
 const identifierPattern = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const allowedSourceHosts = new Set([
   "drive.google.com",
@@ -104,8 +104,8 @@ export function parseCustomerImportPayload(value: unknown): CustomerImportPayloa
     ? value as Record<string, unknown>
     : {};
   const rawCustomers = Array.isArray(payload.customers) ? payload.customers : [];
-  if (!rawCustomers.length || rawCustomers.length > MAX_CUSTOMERS_PER_PILOT) {
-    throw new Response("A customer pilot must contain 1-10 records.", {
+  if (!rawCustomers.length || rawCustomers.length > MAX_CUSTOMERS_PER_BATCH) {
+    throw new Response("A customer import batch must contain 1-250 records.", {
       status: 400,
     });
   }
@@ -191,7 +191,22 @@ export async function importCustomers(request: Request) {
 
     const now = new Date().toISOString();
     const isContract = customer.sourceKind === "contract_customer";
-    const [lead] = await db.insert(leads).values({
+    const contactMatches = [];
+    if (customer.email !== "â€”") {
+      contactMatches.push(eq(leads.email, customer.email));
+    }
+    if (customer.phone !== "â€”") {
+      contactMatches.push(eq(leads.phone, customer.phone));
+    }
+    const [matchedLead] = contactMatches.length
+      ? await db.select({ id: leads.id }).from(leads)
+        .where(or(...contactMatches))
+        .orderBy(asc(leads.id))
+        .limit(1)
+      : [];
+    const [createdLead] = matchedLead
+      ? []
+      : await db.insert(leads).values({
       name: customer.name,
       title: customer.title,
       brand: "Imperial",
@@ -222,7 +237,8 @@ export async function importCustomers(request: Request) {
       notes: `Forrás: ${customer.sourceUrl}`,
       createdAt: now,
       updatedAt: now,
-    }).returning({ id: leads.id });
+      }).returning({ id: leads.id });
+    const lead = matchedLead ?? createdLead;
 
     const [source] = await db.insert(customerImports).values({
       workspaceId: payload.workspaceId,

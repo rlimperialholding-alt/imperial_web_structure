@@ -85,6 +85,33 @@ type Invoice = {
   crmCustomerName: string | null;
   projectTitle: string | null;
 };
+type ImportStatus = {
+  workspaceId: string;
+  recordCounts: {
+    recordType: string;
+    reviewStatus: string;
+    count: number;
+  }[];
+  partnerCounts: {
+    partnerType: string;
+    recordStatus: string;
+    count: number;
+  }[];
+  projectCounts: {
+    projectStatus: string;
+    customerMatchStatus: string;
+    count: number;
+  }[];
+  openReviews: { entityType: string; count: number }[];
+  recentRecords: {
+    externalId: string;
+    recordType: string;
+    title: string;
+    sourceUrl: string;
+    reviewStatus: string;
+    updatedAt: string;
+  }[];
+};
 type DataState = "connecting" | "live" | "demo" | "error";
 
 const stages: { id: Stage; label: string; color: string }[] = [
@@ -476,7 +503,8 @@ export default function Home() {
   const [view, setView] = useState<View>("today"),
     [leads, setLeads] = useState<Lead[]>([]),
     [tasks, setTasksRaw] = useState<Task[]>([]),
-    [invoices, setInvoices] = useState<Invoice[]>([]);
+    [invoices, setInvoices] = useState<Invoice[]>([]),
+    [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const [query, setQuery] = useState(""),
     [brand, setBrand] = useState("Mind"),
     [owner, setOwner] = useState("Mind");
@@ -501,6 +529,7 @@ export default function Home() {
           leads: Lead[];
           tasks: Task[];
           invoices: Invoice[];
+          importStatus: ImportStatus;
         }>;
       })
       .then((data) => {
@@ -509,6 +538,7 @@ export default function Home() {
         setLeads(data.leads);
         setTasksRaw(data.tasks);
         setInvoices(data.invoices);
+        setImportStatus(data.importStatus);
         setDataState("live");
       })
       .catch(() => {
@@ -920,7 +950,7 @@ export default function Home() {
           ) : view === "reports" ? (
             <Reports leads={leads} />
           ) : view === "finance" ? (
-            <Finance invoices={invoices} />
+            <Finance invoices={invoices} importStatus={importStatus} />
           ) : view === "executive" ? (
             <ExecutiveDashboard
               leads={leads}
@@ -1553,7 +1583,13 @@ function Reports({ leads }: { leads: Lead[] }) {
     </>
   );
 }
-function Finance({ invoices }: { invoices: Invoice[] }) {
+function Finance({
+  invoices,
+  importStatus,
+}: {
+  invoices: Invoice[];
+  importStatus: ImportStatus | null;
+}) {
   const signedGross = invoices.reduce(
     (total, invoice) => total + invoice.grossAmount,
     0,
@@ -1566,6 +1602,22 @@ function Finance({ invoices }: { invoices: Invoice[] }) {
   const projectReview = invoices.filter(
     (invoice) => invoice.projectMatchStatus !== "matched",
   ).length;
+  const sourceCount = importStatus?.recordCounts.reduce(
+    (total, row) => total + row.count,
+    0,
+  ) ?? 0;
+  const partnerCount = importStatus?.partnerCounts.reduce(
+    (total, row) => total + row.count,
+    0,
+  ) ?? 0;
+  const projectCount = importStatus?.projectCounts.reduce(
+    (total, row) => total + row.count,
+    0,
+  ) ?? 0;
+  const openReviewCount = importStatus?.openReviews.reduce(
+    (total, row) => total + row.count,
+    0,
+  ) ?? 0;
   const huf = new Intl.NumberFormat("hu-HU", {
     style: "currency",
     currency: "HUF",
@@ -1605,6 +1657,66 @@ function Finance({ invoices }: { invoices: Invoice[] }) {
           <small>Projekt csak valódi adatlaphoz kapcsolható</small>
         </article>
       </section>
+      <section className="section-title datahub-title">
+        <div>
+          <p className="eyebrow">ÉLŐ FORRÁSREGISZTER</p>
+          <h2>Importált üzleti adatok</h2>
+          <p>
+            Ügyfél-, projekt-, szerződés- és partnerforrások. A nagy Drive-fájlok
+            hivatkozásként szerepelnek, így nem foglalnak kétszer tárhelyet.
+          </p>
+        </div>
+      </section>
+      <section className="kpis datahub-kpis">
+        <article>
+          <span>Nyilvántartott forrás</span>
+          <strong>{sourceCount}</strong>
+          <small>Drive-, Gmail- és táblázatrekord</small>
+        </article>
+        <article>
+          <span>Üzleti partner</span>
+          <strong>{partnerCount}</strong>
+          <small>Alvállalkozó, tervező, beszállító és B2B partner</small>
+        </article>
+        <article>
+          <span>Projekt</span>
+          <strong>{projectCount}</strong>
+          <small>Forrásmappához kapcsolt projektadat</small>
+        </article>
+        <article className={openReviewCount ? "warning" : ""}>
+          <span>Emberi ellenőrzésre vár</span>
+          <strong>{openReviewCount}</strong>
+          <small>Bizonytalan kapcsolat vagy hiányos forrásadat</small>
+        </article>
+      </section>
+      {importStatus?.recentRecords.length ? (
+        <section className="table-panel source-panel">
+          <div className="panel-head">
+            <div>
+              <p className="eyebrow">FORRÁSHIVATKOZÁSOK</p>
+              <h3>Legutóbb nyilvántartott dokumentumok</h3>
+            </div>
+            <span className="count">{importStatus.recentRecords.length}</span>
+          </div>
+          <div className="source-list">
+            {importStatus.recentRecords.slice(0, 25).map((record) => (
+              <a
+                href={record.sourceUrl}
+                key={`${record.recordType}:${record.externalId}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span>
+                  <strong>{record.title}</strong>
+                  <small>{record.recordType.replaceAll("_", " ")}</small>
+                </span>
+                <b className={record.reviewStatus}>{record.reviewStatus}</b>
+                <Icon name="arrow" />
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <section className="table-panel finance-panel">
         <div className="panel-head">
           <div>
