@@ -3,8 +3,11 @@
   "version": "0.9.0-test",
   "baseIntegrationHub": "0.8.1",
   "embeddedItepCore": "1.4.0",
+  "embeddedSalesCrm": "1.0.0",
   "dataPolicy": {
-    "crm": "live-read-only",
+    "crm": "internal-test-durable-d1-r2",
+    "crmMigration": "synthetic-write-with-separate-token",
+    "itepCrmAccess": "read-only",
     "billingo": "synthetic",
     "bank": "synthetic",
     "google": "disabled-unless-explicitly-configured",
@@ -12,9 +15,10 @@
   },
   "githubEnvironment": "imperial-test",
   "requiredSecrets": [
-    "CRM_API_BASE_URL",
-    "CRM_ACCESS_TOKEN",
-    "CRM_WORKSPACE_ID",
     "ITEP_IDENTITY_SHARED_SECRET"
+  ],
+  "ephemeralCredentials": [
+    "CRM_MIGRATION_TOKEN",
+    "ITEP_CRM_READ_TOKEN"
   ]
 }

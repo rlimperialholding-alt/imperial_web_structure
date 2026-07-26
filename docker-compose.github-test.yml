@@ -1,6 +1,26 @@
 name: imperial-intelligence-test
 
 services:
+  crm:
+    build:
+      context: ./services/imperial-sales-crm
+      dockerfile: Dockerfile.github-test
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+    environment:
+      NODE_ENV: test
+      CRM_MIGRATION_TOKEN: ${CRM_MIGRATION_TOKEN:?required}
+      ITEP_CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:?required}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - crm-local-state:/app/.wrangler
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
   hub-postgres:
     image: postgres:16-alpine
     environment:
@@ -99,20 +119,22 @@ services:
       IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
       BILLINGO_API_BASE_URL: http://mock-external:9010
       BANK_API_BASE_URL: http://mock-external:9010
-      CRM_API_BASE_URL: ${CRM_API_BASE_URL:?live CRM URL required}
-      CRM_ACTIVITIES_PATH: ${CRM_ACTIVITIES_PATH:-/api/v1/activities}
-      CRM_AUTH_HEADER: ${CRM_AUTH_HEADER:-Authorization}
-      CRM_AUTH_SCHEME: ${CRM_AUTH_SCHEME:-Bearer}
-      CRM_WORKSPACE_QUERY_PARAMETER: ${CRM_WORKSPACE_QUERY_PARAMETER:-workspace}
-      CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:?live CRM workspace required}
+      CRM_API_BASE_URL: http://crm:8787
+      CRM_ACTIVITIES_PATH: /api/integrations/itep/activities
+      CRM_AUTH_HEADER: X-ITEP-Token
+      CRM_AUTH_SCHEME: ""
+      CRM_WORKSPACE_QUERY_PARAMETER: workspace
+      CRM_WORKSPACE_ID: imperial-test
       ITEP_CRM_CONNECTOR_ID: crm-live
-      CONNECTOR_ACCESS_TOKENS_JSON: '{"crm-live":"${CRM_ACCESS_TOKEN:?live CRM token required}"}'
+      CONNECTOR_ACCESS_TOKENS_JSON: '{"crm-live":"${ITEP_CRM_READ_TOKEN:?required}"}'
       CONNECTOR_SYNC_INTERVAL_MS: "3600000"
       INTEGRATION_RETRY_INTERVAL_MS: "30000"
     depends_on:
       itep-postgres:
         condition: service_healthy
       mock-external:
+        condition: service_healthy
+      crm:
         condition: service_healthy
 
   itep-api:
@@ -140,3 +162,6 @@ services:
     depends_on:
       itep-migrate:
         condition: service_completed_successfully
+
+volumes:
+  crm-local-state:

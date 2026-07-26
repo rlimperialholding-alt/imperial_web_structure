@@ -1,60 +1,55 @@
-# Imperial Intelligence – GitHub test environment
+# Imperial Intelligence – GitHub tesztkörnyezet
 
-## Architecture
+## Felépítés
 
-- **Integration Hub**: the existing Python/FastAPI control plane.
-- **ITEP Core**: internal Node/TypeScript task enforcement service.
-- **Hub PostgreSQL + Redis**: isolated synthetic test state.
-- **ITEP PostgreSQL**: isolated task, evidence, connector and audit state.
-- **Mock External**: Billingo and bank-compatible synthetic endpoints.
-- **Imperial Sales CRM**: the only live external system; read-only access.
+- **Integration Hub**: a meglévő Python/FastAPI vezérlési réteg.
+- **ITEP Core**: a belső Node/TypeScript feladat- és szabálykikényszerítő szolgáltatás.
+- **Imperial Sales CRM + MyImperial**: a repositoryba integrált saját CRM.
+- **CRM D1 + R2**: tartós strukturált nyilvántartás és tényleges fájltárolás a
+  lokális Cloudflare/Miniflare tesztkörnyezetben.
+- **Hub PostgreSQL + Redis** és **ITEP PostgreSQL**: elkülönített tesztállapot.
+- **Mock External**: szintetikus Billingo- és bank-kompatibilis végpontok.
 
-The CRM is intentionally not mocked. The workflow fails before the stack starts
-when the real CRM URL, token or workspace identifier is missing.
+A teszt nem vár egy még nem létező külső CRM URL-re. A saját CRM a Compose
+stack részeként indul. A migrációs írás és az ITEP olvasás két külön
+szolgáltatáskulcsot használ.
 
-## Required GitHub environment
+## Szükséges GitHub Environment
 
-Create a protected GitHub environment named `imperial-test`.
+Az Environment neve `imperial-test`.
 
-Secrets:
+Egyetlen tartós GitHub Secret szükséges:
 
-- `CRM_API_BASE_URL`
-- `CRM_ACCESS_TOKEN` — read-only token
-- `CRM_WORKSPACE_ID`
-- `ITEP_IDENTITY_SHARED_SECRET` — at least 32 random characters
+- `ITEP_IDENTITY_SHARED_SECRET` – legalább 32 véletlen karakter.
 
-Optional environment variables:
+A workflow futásonként új, ideiglenes `CRM_MIGRATION_TOKEN` és
+`ITEP_CRM_READ_TOKEN` értéket készít. Ezeket nem kell kézzel létrehozni, és
+nem kerülnek a repositoryba.
 
-- `CRM_ACTIVITIES_PATH`
-- `CRM_AUTH_HEADER`
-- `CRM_AUTH_SCHEME`
-- `CRM_WORKSPACE_QUERY_PARAMETER`
+## Az öt dokumentumos próba
 
-## Workflow behavior
+Az `Internal CRM Migration Integration Test`:
 
-`Quality` runs the Python and TypeScript unit/static checks without live data.
+1. elkészíti az elkülönített tesztkulcsokat;
+2. felépíti és elindítja a teljes Compose stacket;
+3. öt szintetikus PDF-et ír be a CRM migrációs API-ján;
+4. ellenőrzi a D1-metaadatokat, az R2-ben tárolt bájtokat és a SHA-256
+   ellenőrzőösszegeket;
+5. ugyanazzal az idempotenciakulccsal megismétli a kérést, és igazolja, hogy
+   nem keletkezik duplikáció;
+6. újraindítja a CRM-et, majd mind az öt fájlt ismét visszaolvassa;
+7. read-only ITEP contract tesztet és teljes Hub–ITEP CRM-szinkront futtat;
+8. feltölti a diagnosztikát, végül törli a futás elkülönített tesztvolume-jait.
 
-`Live CRM Integration Test`:
+A `run-live-crm` PR-címke neve kompatibilitási okból változatlan; a mögötte
+futó teszt már a repositoryban lévő saját CRM-et használja.
 
-1. validates required secrets;
-2. performs a read-only contract request against the real CRM;
-3. starts the integrated Docker stack;
-4. migrates and seeds both databases;
-5. creates only the `crm-live` connector account;
-6. triggers one real CRM read sync;
-7. verifies ITEP and Integration Control Room through the Hub;
-8. uploads logs and diagnostics;
-9. destroys all test databases and volumes.
+## Biztonsági korlátok
 
-Before the workflow exists on the default branch, add the `run-live-crm` label
-to the pull request to trigger the protected pre-merge run. Removing and
-re-adding the label starts a new run after secret or adapter changes.
-
-## Safety
-
-- no production database is mounted;
-- no write request is sent to CRM;
-- CRM token must be read-only;
-- all non-CRM business data is synthetic;
-- all test volumes are deleted after each run;
-- secrets are never committed or printed.
+- Az ITEP kizárólag a read-only activities végpontot és olvasási tokent kapja.
+- Írás csak a migrációs végponton, külön tokennel történhet.
+- A GitHub-próba kizárólag generált, szintetikus fájlokat használ.
+- Valódi ügyféladat-migráció az öt dokumentumos próba sikere után is csak
+  külön emberi jóváhagyással indítható.
+- A teszt nem csatlakozik production CRM-hez vagy production adatbázishoz.
+- Secret nem kerül commitba vagy naplóba.

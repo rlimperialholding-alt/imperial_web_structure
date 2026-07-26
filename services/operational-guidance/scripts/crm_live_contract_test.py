@@ -14,7 +14,7 @@ def require(name: str) -> str:
 
 
 base_url = require("CRM_API_BASE_URL").rstrip("/")
-token = require("CRM_ACCESS_TOKEN")
+token = os.environ.get("CRM_ACCESS_TOKEN", "").strip() or require("ITEP_CRM_READ_TOKEN")
 workspace = require("CRM_WORKSPACE_ID")
 path = os.environ.get("CRM_ACTIVITIES_PATH", "/api/v1/activities")
 header = os.environ.get("CRM_AUTH_HEADER", "Authorization")

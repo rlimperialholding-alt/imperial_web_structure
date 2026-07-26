@@ -12,6 +12,11 @@ required_repo = [
     "services/itep-core/src/connectors/connector-adapter-factory.ts",
     "services/itep-core/src/api/server.ts",
     "services/itep-core/prisma/seed.mjs",
+    "services/imperial-sales-crm/.openai/hosting.json",
+    "services/imperial-sales-crm/drizzle/0005_itep_migration_contract.sql",
+    "services/imperial-sales-crm/app/api/integrations/migration/import/route.ts",
+    "services/imperial-sales-crm/app/api/integrations/itep/activities/route.ts",
+    "services/operational-guidance/scripts/crm_five_document_pilot.py",
 ]
 required_hub = [
     "app/connectors/itep.py",
@@ -25,7 +30,8 @@ if missing:
 compose = (repo_root / "docker-compose.github-test.yml").read_text(encoding="utf-8")
 for token in [
     "CRM_API_BASE_URL",
-    "CRM_ACCESS_TOKEN",
+    "CRM_MIGRATION_TOKEN",
+    "ITEP_CRM_READ_TOKEN",
     "CRM_WORKSPACE_ID",
     "ITEP_IDENTITY_SHARED_SECRET",
 ]:
@@ -35,7 +41,11 @@ for token in [
 manifest = json.loads(
     (hub_root / "RELEASE-MANIFEST-v0.9.0-test.json").read_text(encoding="utf-8")
 )
-if manifest["dataPolicy"]["crm"] != "live-read-only":
-    raise SystemExit("CRM must remain live-read-only")
+if manifest["dataPolicy"]["crm"] != "internal-test-durable-d1-r2":
+    raise SystemExit("The internal CRM must use durable D1 and R2 test storage")
+if manifest["dataPolicy"]["itepCrmAccess"] != "read-only":
+    raise SystemExit("ITEP CRM access must remain read-only")
+if manifest["requiredSecrets"] != ["ITEP_IDENTITY_SHARED_SECRET"]:
+    raise SystemExit("Only the ITEP identity secret may require manual configuration")
 
 print("Integrated repository validation passed.")

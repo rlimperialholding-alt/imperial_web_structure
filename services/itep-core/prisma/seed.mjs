@@ -19,16 +19,16 @@ await prisma.connectorAccount.upsert({
     organizationId: process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding",
     kind: "CRM",
     externalAccountId: workspaceId,
-    displayName: "Imperial Sales CRM – live read-only",
+    displayName: "Imperial Sales CRM – internal read-only",
     status: "ACTIVE",
     scopes: ["activities.read", "leads.read", "deals.read"],
   },
   update: {
     status: "ACTIVE",
-    displayName: "Imperial Sales CRM – live read-only",
+    displayName: "Imperial Sales CRM – internal read-only",
     scopes: ["activities.read", "leads.read", "deals.read"],
   },
 });
 
-console.log("Live CRM connector seeded.");
+console.log("Internal read-only CRM connector seeded.");
 await prisma.$disconnect();

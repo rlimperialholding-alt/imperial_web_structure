@@ -49,14 +49,31 @@ jobs:
       - run: npm test
       - run: npm audit --omit=dev --audit-level=high
 
+  imperial-sales-crm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/imperial-sales-crm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: services/imperial-sales-crm/package-lock.json
+      - run: npm run install:ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+
   compose-config:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate integrated Compose model
         env:
-          CRM_API_BASE_URL: https://crm.invalid
-          CRM_ACCESS_TOKEN: validation-only-token
-          CRM_WORKSPACE_ID: validation-workspace
+          CRM_MIGRATION_TOKEN: validation-only-migration-token-000000000000
+          ITEP_CRM_READ_TOKEN: validation-only-read-token-0000000000000000
           ITEP_IDENTITY_SHARED_SECRET: validation-only-shared-secret-00000000
         run: docker compose -f docker-compose.github-test.yml config --quiet
