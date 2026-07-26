@@ -1,0 +1,70 @@
+{
+  "status": "PASS",
+  "check_count": 8,
+  "failed_count": 0,
+  "checks": [
+    {
+      "name": "production_configuration",
+      "ok": true,
+      "detail": "Production configuration is valid"
+    },
+    {
+      "name": "five_role_authorization",
+      "ok": true,
+      "detail": "Exactly five unique human role tokens are configured",
+      "configured_roles": [
+        "Marketinges",
+        "Projektmenedzser",
+        "Pénzügyes",
+        "Értékesítő",
+        "Ügyvezető"
+      ]
+    },
+    {
+      "name": "pinned_container_images",
+      "ok": true,
+      "detail": "All production images are pinned"
+    },
+    {
+      "name": "operational_catalog",
+      "ok": true,
+      "detail": "99/99 Process Card and checklist mapping is consistent",
+      "path": "/mnt/data/imperial-intelligence-integration-hub-v0.7.0/config/operational-process-catalog-v1.0.json",
+      "processes": 99,
+      "templates": 99,
+      "roles": [
+        "Marketinges",
+        "Projektmenedzser",
+        "Pénzügyes",
+        "Értékesítő",
+        "Ügyvezető"
+      ]
+    },
+    {
+      "name": "runtime_storage",
+      "ok": true,
+      "detail": "Runtime storage is writable",
+      "paths": [
+        "/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/process_cards",
+        "/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/published_process_cards",
+        "/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/checklists"
+      ]
+    },
+    {
+      "name": "google_service_account",
+      "ok": true,
+      "detail": "Google publication features are disabled"
+    },
+    {
+      "name": "operations_scripts",
+      "ok": true,
+      "detail": "Backup and restore-drill scripts pass shell syntax validation"
+    },
+    {
+      "name": "production_compose",
+      "ok": true,
+      "detail": "Compose YAML structure is valid; Docker CLI unavailable for interpolation",
+      "mode": "yaml_fallback"
+    }
+  ]
+}

@@ -1,0 +1,167 @@
+name: imperial-intelligence-test
+
+services:
+  crm:
+    build:
+      context: ./services/imperial-sales-crm
+      dockerfile: Dockerfile.github-test
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+    environment:
+      NODE_ENV: test
+      CRM_MIGRATION_TOKEN: ${CRM_MIGRATION_TOKEN:?required}
+      ITEP_CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:?required}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - crm-local-state:/app/.wrangler
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+  hub-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: imperial
+      POSTGRES_PASSWORD: imperial-test-password
+      POSTGRES_DB: imperial
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imperial -d imperial"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  hub-migrate:
+    build: ./services/operational-guidance
+    command: alembic upgrade head
+    environment: &hub-env
+      APP_ENV: test
+      APP_VERSION: 0.9.0-test
+      DATABASE_URL: postgresql+psycopg://imperial:imperial-test-password@hub-postgres:5432/imperial
+      REDIS_URL: redis://redis:6379/0
+      API_ADMIN_TOKEN: test-admin-token-not-for-production
+      AUTO_CREATE_DB_SCHEMA: "false"
+      STARTUP_VALIDATE_CONFIG: "true"
+      OPERATIONAL_GUIDANCE_ENABLED: "false"
+      READINESS_CHECK_REDIS: "true"
+      ITEP_ENABLED: "true"
+      ITEP_BASE_URL: http://itep-api:3000
+      ITEP_IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
+      ITEP_CRM_CONNECTOR_ID: crm-live
+    depends_on:
+      hub-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  hub-api:
+    build: ./services/operational-guidance
+    environment: *hub-env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      hub-migrate:
+        condition: service_completed_successfully
+      itep-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  itep-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: itep
+      POSTGRES_PASSWORD: itep-test-password
+      POSTGRES_DB: itep
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itep -d itep"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  mock-external:
+    build: ./services/operational-guidance/test-env/mock-services
+    ports:
+      - "127.0.0.1:9010:9010"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9010/health', timeout=3)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  itep-migrate:
+    build:
+      context: ./services/itep-core
+      target: build
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             node prisma/seed.mjs"
+    environment: &itep-env
+      NODE_ENV: test
+      DATABASE_URL: postgresql://itep:itep-test-password@itep-postgres:5432/itep?schema=public
+      DEFAULT_ORGANIZATION_ID: imperial-holding
+      DEFAULT_ASSIGNEE_ID: human-anne
+      DEFAULT_ESCALATION_PERSON_ID: director
+      DEFAULT_CONTACT_EMAIL: test@imperial.local
+      IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
+      BILLINGO_API_BASE_URL: http://mock-external:9010
+      BANK_API_BASE_URL: http://mock-external:9010
+      CRM_API_BASE_URL: http://crm:8787
+      CRM_ACTIVITIES_PATH: /api/integrations/itep/activities
+      CRM_AUTH_HEADER: X-ITEP-Token
+      CRM_AUTH_SCHEME: ""
+      CRM_WORKSPACE_QUERY_PARAMETER: workspace
+      CRM_WORKSPACE_ID: imperial-test
+      ITEP_CRM_CONNECTOR_ID: crm-live
+      CONNECTOR_ACCESS_TOKENS_JSON: '{"crm-live":"${ITEP_CRM_READ_TOKEN:?required}"}'
+      CONNECTOR_SYNC_INTERVAL_MS: "3600000"
+      INTEGRATION_RETRY_INTERVAL_MS: "30000"
+    depends_on:
+      itep-postgres:
+        condition: service_healthy
+      mock-external:
+        condition: service_healthy
+      crm:
+        condition: service_healthy
+
+  itep-api:
+    build:
+      context: ./services/itep-core
+      target: runtime
+    environment: *itep-env
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      itep-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  itep-worker:
+    build:
+      context: ./services/itep-core
+      target: runtime
+    command: ["node", "dist/src/workers/main.js"]
+    environment: *itep-env
+    depends_on:
+      itep-migrate:
+        condition: service_completed_successfully
+
+volumes:
+  crm-local-state:

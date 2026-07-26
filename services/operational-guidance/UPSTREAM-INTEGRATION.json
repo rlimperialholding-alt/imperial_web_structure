@@ -1,0 +1,30 @@
+{
+  "target_repository": "rlimperialholding-alt/imperial_web_structure",
+  "target_base_branch": "staging",
+  "integration_branch": "agent/operational-guidance-v0.8.1",
+  "component": "Operational Guidance Engine",
+  "upstream_version": "0.8.1",
+  "source_package": "imperial-intelligence-integration-hub-v0.8.1-staging-handoff.zip",
+  "integration_mode": "additive-isolated-service",
+  "owned_paths": [
+    "services/operational-guidance/**",
+    "docs/integrations/operational-guidance-v0.8.1.md",
+    ".github/workflows/operational-guidance-ci.yml"
+  ],
+  "excluded_paths": [
+    "root docker-compose files",
+    "existing nginx configuration",
+    "site folders",
+    "platform UI",
+    "migration engine",
+    "feature/platform-foundation branch",
+    "agent/migration-engine-v1 branch"
+  ],
+  "human_roles": [
+    "Ügyvezető",
+    "Marketinges",
+    "Értékesítő",
+    "Pénzügyes",
+    "Projektmenedzser"
+  ]
+}

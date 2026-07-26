@@ -1,0 +1,114 @@
+name: Internal CRM Migration Integration Test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+    paths:
+      - "services/operational-guidance/app/connectors/itep.py"
+      - "services/operational-guidance/app/api/routes/itep.py"
+      - "services/itep-core/**"
+      - "services/imperial-sales-crm/**"
+      - "docker-compose.github-test.yml"
+      - "services/operational-guidance/scripts/crm_live_contract_test.py"
+      - "services/operational-guidance/scripts/crm_five_document_pilot.py"
+      - "services/operational-guidance/scripts/github_test_uat.py"
+  push:
+    branches: [main]
+    paths:
+      - "services/operational-guidance/app/connectors/itep.py"
+      - "services/operational-guidance/app/api/routes/itep.py"
+      - "services/itep-core/**"
+      - "services/imperial-sales-crm/**"
+      - "docker-compose.github-test.yml"
+      - "services/operational-guidance/scripts/crm_live_contract_test.py"
+      - "services/operational-guidance/scripts/crm_five_document_pilot.py"
+      - "services/operational-guidance/scripts/github_test_uat.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: imperial-internal-crm-migration-test
+  cancel-in-progress: false
+
+jobs:
+  internal-crm:
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-live-crm'
+    runs-on: ubuntu-latest
+    environment: imperial-test
+    env:
+      CRM_API_BASE_URL: http://127.0.0.1:8787
+      CRM_WORKSPACE_ID: imperial-test
+      CRM_ACTIVITIES_PATH: /api/integrations/itep/activities
+      CRM_AUTH_HEADER: X-ITEP-Token
+      CRM_AUTH_SCHEME: ""
+      CRM_WORKSPACE_QUERY_PARAMETER: workspace
+      API_ADMIN_TOKEN: test-admin-token-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare isolated test credentials
+        shell: bash
+        run: |
+          itep_identity_secret="$(openssl rand -hex 32)"
+          crm_migration_token="$(openssl rand -hex 32)"
+          itep_crm_read_token="$(openssl rand -hex 32)"
+
+          echo "::add-mask::$itep_identity_secret"
+          echo "::add-mask::$crm_migration_token"
+          echo "::add-mask::$itep_crm_read_token"
+
+          echo "ITEP_IDENTITY_SHARED_SECRET=$itep_identity_secret" >> "$GITHUB_ENV"
+          echo "CRM_MIGRATION_TOKEN=$crm_migration_token" >> "$GITHUB_ENV"
+          echo "ITEP_CRM_READ_TOKEN=$itep_crm_read_token" >> "$GITHUB_ENV"
+
+      - name: Start integrated test stack
+        run: docker compose -f docker-compose.github-test.yml up -d --build --wait --wait-timeout 300
+
+      - name: Store the five-document synthetic pilot in CRM
+        env:
+          EXPECT_NEW: "5"
+        run: python services/operational-guidance/scripts/crm_five_document_pilot.py
+
+      - name: Restart CRM and prove D1 and R2 persistence
+        shell: bash
+        run: |
+          docker compose -f docker-compose.github-test.yml restart crm
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8787/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "CRM did not become healthy after restart" >&2
+          exit 1
+
+      - name: Re-read stored bytes and prove idempotency
+        env:
+          EXPECT_NEW: "0"
+        run: python services/operational-guidance/scripts/crm_five_document_pilot.py
+
+      - name: Read-only CRM contract test
+        run: python services/operational-guidance/scripts/crm_live_contract_test.py
+
+      - name: Run end-to-end UAT
+        run: python services/operational-guidance/scripts/github_test_uat.py
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          mkdir -p uat-results
+          docker compose -f docker-compose.github-test.yml ps > uat-results/compose-ps.txt
+          docker compose -f docker-compose.github-test.yml logs --no-color > uat-results/compose.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: imperial-integration-uat
+          path: uat-results/
+          retention-days: 14
+
+      - name: Stop stack
+        if: always()
+        run: docker compose -f docker-compose.github-test.yml down -v

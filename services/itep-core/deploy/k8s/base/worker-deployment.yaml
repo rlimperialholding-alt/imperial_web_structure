@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imperial-itep-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: imperial-itep-worker
+  template:
+    metadata:
+      labels:
+        app: imperial-itep-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/imperial-holding/itep-core:1.1.0
+          command: ["node", "dist/src/workers/main.js"]
+          envFrom:
+            - secretRef:
+                name: imperial-itep-secrets
+            - configMapRef:
+                name: imperial-itep-config
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"

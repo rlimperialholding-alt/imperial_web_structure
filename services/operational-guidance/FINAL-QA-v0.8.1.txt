@@ -1,0 +1,25 @@
+IMPERIAL INTELLIGENCE INTEGRATION HUB v0.8.1 - STAGING HANDOFF HOTFIX
+Date: 2026-07-23
+
+STATUS: OFFLINE RELEASE GATE PASS - REAL ONLINE STAGING UAT PENDING
+
+Validated in this package:
+- automated tests: 58 passed, 0 failed;
+- static Python inspection: 83 files, 0 failures;
+- shell syntax: deploy-staging-remote.sh PASS;
+- shell syntax: rollback-staging-remote.sh PASS;
+- operational catalog: 99 Process Cards and 99 checklist templates;
+- generated artifact QA: 396 PDF/PNG files, 0 issues;
+- DOCX/PDF developer handoff package: 9 pages, rendered and visually inspected.
+
+Deployment hotfixes:
+- removed production-only preflight from staging deployment;
+- internal Directus/PostgreSQL/Redis checks run inside the API container;
+- stable COMPOSE_PROJECT_NAME=imperial-guidance across releases;
+- release-specific Imperial application image tag enables real rollback;
+- infrastructure images are parameterized and must be pinned;
+- infrastructure pull and Imperial image build are separated;
+- rollback runs live preflight and canary before switching current release.
+
+Online UAT remains pending because real staging SSH, HTTPS URL, Directus token,
+Google service-account/domain-wide delegation and production-like secrets were not supplied.

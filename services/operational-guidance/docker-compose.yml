@@ -1,0 +1,174 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-imperial}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-imperial}
+      POSTGRES_DB: ${POSTGRES_DB:-imperial}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: ${IMPERIAL_HUB_IMAGE:-imperial-intelligence-integration-hub:dev}
+    build: .
+    command: alembic upgrade head
+    env_file: .env
+    volumes:
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ${IMPERIAL_HUB_IMAGE:-imperial-intelligence-integration-hub:dev}
+    build: .
+    env_file: .env
+    volumes:
+      - ./secrets:/run/secrets:ro
+      - operational_runtime:/app/runtime
+    ports:
+      - "${OGE_API_BIND:-127.0.0.1}:${OGE_API_PORT:-18080}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: ${IMPERIAL_HUB_IMAGE:-imperial-intelligence-integration-hub:dev}
+    build: .
+    command: celery -A app.tasks.celery_app:celery worker --loglevel=INFO
+    env_file: .env
+    volumes:
+      - ./secrets:/run/secrets:ro
+      - operational_runtime:/app/runtime
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  beat:
+    image: ${IMPERIAL_HUB_IMAGE:-imperial-intelligence-integration-hub:dev}
+    build: .
+    command: celery -A app.tasks.celery_app:celery beat --loglevel=INFO
+    env_file: .env
+    volumes:
+      - ./secrets:/run/secrets:ro
+      - operational_runtime:/app/runtime
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret}
+    ports:
+      - "${OGE_MINIO_BIND:-127.0.0.1}:${OGE_MINIO_PORT:-19000}:9000"
+      - "${OGE_MINIO_BIND:-127.0.0.1}:${OGE_MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes:
+      - minio_data:/data
+
+  create-bucket:
+    image: ${MINIO_MC_IMAGE:-minio/mc:latest}
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minio} $${MINIO_ROOT_PASSWORD:-miniosecret}; do sleep 2; done;
+      mc mb --ignore-existing local/imperial-content;
+      exit 0;"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret}
+
+  directus:
+    image: ${DIRECTUS_IMAGE:-directus/directus:11}
+    ports:
+      - "${OGE_DIRECTUS_BIND:-127.0.0.1}:${OGE_DIRECTUS_PORT:-18055}:8055"
+    environment:
+      KEY: ${DIRECTUS_KEY:-replace-this-directus-key}
+      SECRET: ${DIRECTUS_SECRET:-replace-this-directus-secret}
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:-admin@imperial.local}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:-change-this-password}
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: directus
+      DB_USER: ${POSTGRES_USER:-imperial}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-imperial}
+      WEBSOCKETS_ENABLED: "true"
+      STORAGE_LOCATIONS: s3
+      STORAGE_S3_DRIVER: s3
+      STORAGE_S3_KEY: ${MINIO_ROOT_USER:-minio}
+      STORAGE_S3_SECRET: ${MINIO_ROOT_PASSWORD:-miniosecret}
+      STORAGE_S3_BUCKET: imperial-content
+      STORAGE_S3_ENDPOINT: http://minio:9000
+      STORAGE_S3_REGION: us-east-1
+      STORAGE_S3_FORCE_PATH_STYLE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      create-bucket:
+        condition: service_completed_successfully
+
+  n8n:
+    image: ${N8N_IMAGE:-n8nio/n8n:latest}
+    ports:
+      - "${OGE_N8N_BIND:-127.0.0.1}:${OGE_N8N_PORT:-15678}:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-imperial}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-imperial}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-replace-this-n8n-encryption-key}
+      GENERIC_TIMEZONE: Europe/Budapest
+      IMPERIAL_HUB_URL: http://api:8000
+      IMPERIAL_HUB_SERVICE_TOKEN: ${N8N_SERVICE_TOKEN:-change-this-long-random-token}
+      DIRECTUS_WEBHOOK_SECRET: ${DIRECTUS_WEBHOOK_SECRET:-change-directus-webhook-secret}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+volumes:
+  operational_runtime:
+  postgres_data:
+  redis_data:
+  n8n_data:
+  minio_data:
