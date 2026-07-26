@@ -5,6 +5,7 @@ const workspaceId = process.env.CRM_WORKSPACE_ID;
 if (!workspaceId) {
   throw new Error("CRM_WORKSPACE_ID is required for the GitHub test environment");
 }
+const organizationId = process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding";
 
 await prisma.connectorAccount.upsert({
   where: {
@@ -30,5 +31,26 @@ await prisma.connectorAccount.upsert({
   },
 });
 
-console.log("Internal read-only CRM connector seeded.");
+for (const manager of [
+  { id: "digital-kalman", displayName: "Digitális Kálmán" },
+  { id: "digital-mate", displayName: "Digitális Máté" },
+  { id: "digital-misi", displayName: "Digitális Misi" },
+]) {
+  await prisma.digitalProjectManager.upsert({
+    where: { id: manager.id },
+    create: {
+      ...manager,
+      organizationId,
+      roleName: "Digitális projektmenedzser",
+      status: "ACTIVE",
+    },
+    update: {
+      displayName: manager.displayName,
+      roleName: "Digitális projektmenedzser",
+      status: "ACTIVE",
+    },
+  });
+}
+
+console.log("Internal CRM connector and digital project managers seeded.");
 await prisma.$disconnect();

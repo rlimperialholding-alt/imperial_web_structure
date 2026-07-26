@@ -4,6 +4,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const now = new Date();
+  const organizationId = process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding";
 
   await prisma.connectorAccount.upsert({
     where: {
@@ -26,6 +27,27 @@ async function main() {
     },
     update: {},
   });
+
+  for (const manager of [
+    { id: "digital-kalman", displayName: "Digitális Kálmán" },
+    { id: "digital-mate", displayName: "Digitális Máté" },
+    { id: "digital-misi", displayName: "Digitális Misi" },
+  ]) {
+    await prisma.digitalProjectManager.upsert({
+      where: { id: manager.id },
+      create: {
+        ...manager,
+        organizationId,
+        roleName: "Digitális projektmenedzser",
+        status: "ACTIVE",
+      },
+      update: {
+        displayName: manager.displayName,
+        roleName: "Digitális projektmenedzser",
+        status: "ACTIVE",
+      },
+    });
+  }
 
   console.log("Seed completed.");
 }

@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import accessStyles from "./access.module.css";
+import {
+  AgentsWorkspace,
+  AuditWorkspace,
+  CalendarWorkspace,
+  KnowledgeWorkspace,
+  ModulesWorkspace,
+  ProjectsWorkspace,
+  type IntelligenceWorkspace,
+} from "./intelligence-workspace";
 
 type View =
   | "today"
@@ -11,7 +20,13 @@ type View =
   | "reports"
   | "finance"
   | "control"
-  | "executive";
+  | "executive"
+  | "modules"
+  | "projects"
+  | "calendar"
+  | "knowledge"
+  | "agents"
+  | "audit";
 type Stage =
   | "new"
   | "contact"
@@ -496,6 +511,12 @@ function viewTitle(view: View) {
     finance: "Pénzügy",
     control: "Sales Control Center",
     executive: "Executive Dashboard",
+    modules: "Teljes rendszerleltár",
+    projects: "Projekt 360°",
+    calendar: "Okosnaptár",
+    knowledge: "Tudásbázis és dokumentumtár",
+    agents: "AI-ügynökök",
+    audit: "Auditnapló",
   }[view];
 }
 
@@ -504,7 +525,8 @@ export default function Home() {
     [leads, setLeads] = useState<Lead[]>([]),
     [tasks, setTasksRaw] = useState<Task[]>([]),
     [invoices, setInvoices] = useState<Invoice[]>([]),
-    [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
+    [importStatus, setImportStatus] = useState<ImportStatus | null>(null),
+    [intelligence, setIntelligence] = useState<IntelligenceWorkspace | null>(null);
   const [query, setQuery] = useState(""),
     [brand, setBrand] = useState("Mind"),
     [owner, setOwner] = useState("Mind");
@@ -553,6 +575,28 @@ export default function Home() {
       active = false;
     };
   }, []);
+  const refreshIntelligence = async () => {
+    const response = await fetch("/api/intelligence", { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    setIntelligence(await response.json() as IntelligenceWorkspace);
+  };
+  useEffect(() => {
+    let active = true;
+    fetch("/api/intelligence", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        return response.json() as Promise<IntelligenceWorkspace>;
+      })
+      .then((data) => {
+        if (active) setIntelligence(data);
+      })
+      .catch(() => {
+        if (active) setIntelligence(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const filtered = useMemo(
     () =>
       leads.filter(
@@ -573,6 +617,23 @@ export default function Home() {
       setView(v);
       setMobileOpen(false);
     };
+  const resolveImportReview = async (
+    id: number,
+    status: "resolved" | "dismissed",
+  ) => {
+    try {
+      const response = await fetch(`/api/intelligence/reviews/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error();
+      await refreshIntelligence();
+      notify(status === "resolved" ? "Az ellenőrzést lezártuk." : "A forrást kizártuk ebből a feldolgozásból.");
+    } catch {
+      notify("Az ellenőrzési tétel mentése nem sikerült.");
+    }
+  };
   const setTasks = (update: React.SetStateAction<Task[]>) =>
     setTasksRaw((current) => {
       const next = typeof update === "function" ? update(current) : update;
@@ -758,19 +819,15 @@ export default function Home() {
             <span>Értékesítés</span>
           </button>
           <button
-            onClick={() =>
-              notify(
-                "A Projektek modul a következő fejlesztési ütemben kapcsolódik ide.",
-              )
-            }
+            className={view === "projects" ? "active" : ""}
+            onClick={() => changeView("projects")}
           >
             <Icon name="project" />
             <span>Projektek</span>
           </button>
           <button
-            onClick={() =>
-              notify("Az Okosnaptár a v1.3 pilotból később kerül bekötésre.")
-            }
+            className={view === "calendar" ? "active" : ""}
+            onClick={() => changeView("calendar")}
           >
             <Icon name="calendar" />
             <span>Okosnaptár</span>
@@ -780,6 +837,13 @@ export default function Home() {
             <span>MyImperial</span>
           </button>
           <span className="nav-label intelligence-label">INTELLIGENCE</span>
+          <button
+            className={view === "modules" ? "active" : ""}
+            onClick={() => changeView("modules")}
+          >
+            <Icon name="grid" />
+            <span>Rendszerleltár</span>
+          </button>
           <button
             className={view === "executive" ? "active" : ""}
             onClick={() => changeView("executive")}
@@ -795,25 +859,22 @@ export default function Home() {
             <span>Pénzügy</span>
           </button>
           <button
-            onClick={() =>
-              notify("A tudásbázis csatlakoztatása előkészítés alatt.")
-            }
+            className={view === "knowledge" ? "active" : ""}
+            onClick={() => changeView("knowledge")}
           >
             <Icon name="search" />
             <span>Tudásbázis</span>
           </button>
           <button
-            onClick={() =>
-              notify("Az AI ügynökök vezérlőfelülete külön modulban készül.")
-            }
+            className={view === "agents" ? "active" : ""}
+            onClick={() => changeView("agents")}
           >
             <Icon name="bot" />
             <span>AI ügynökök</span>
           </button>
           <button
-            onClick={() =>
-              notify("Az auditnapló csak tulajdonosi jogosultsággal érhető el.")
-            }
+            className={view === "audit" ? "active" : ""}
+            onClick={() => changeView("audit")}
           >
             <Icon name="audit" />
             <span>Audit</span>
@@ -959,6 +1020,30 @@ export default function Home() {
               onNavigate={changeView}
               notify={notify}
             />
+          ) : view === "modules" ? (
+            intelligence
+              ? <ModulesWorkspace data={intelligence} />
+              : <IntelligenceLoading />
+          ) : view === "projects" ? (
+            intelligence
+              ? <ProjectsWorkspace data={intelligence} />
+              : <IntelligenceLoading />
+          ) : view === "calendar" ? (
+            intelligence
+              ? <CalendarWorkspace data={intelligence} />
+              : <IntelligenceLoading />
+          ) : view === "knowledge" ? (
+            intelligence
+              ? <KnowledgeWorkspace data={intelligence} onReview={resolveImportReview} />
+              : <IntelligenceLoading />
+          ) : view === "agents" ? (
+            intelligence
+              ? <AgentsWorkspace data={intelligence} />
+              : <IntelligenceLoading />
+          ) : view === "audit" ? (
+            intelligence
+              ? <AuditWorkspace data={intelligence} />
+              : <IntelligenceLoading />
           ) : (
             <Control leads={leads} onLead={setSelected} />
           )}
@@ -994,6 +1079,15 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+}
+
+function IntelligenceLoading() {
+  return (
+    <section className="empty">
+      <h2>A közös rendszeradatok betöltése folyamatban van</h2>
+      <p>Ha ez tartósan így marad, ellenőrizni kell a helyi adatbázis-kapcsolatot.</p>
+    </section>
   );
 }
 
