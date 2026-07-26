@@ -8,7 +8,7 @@ ellenőrzése és szekciószintű review-zása.
 > [!IMPORTANT]
 > Ez **nem production rendszer**. Nem használ valódi ügyféladatot, külső API-t,
 > production secretet, production adatbázist vagy automatikus élesítést. A helyi
-> demoállapot egy elkülönített SQLite-fájlban és JSON runtime-ban marad. A Compose stack
+> demoállapot elkülönített PostgreSQL-adatbázisban és JSON runtime-ban marad. A Compose stack
 > alapértelmezetten kizárólag a `127.0.0.1` címen figyel, minden oldal
 > `noindex,nofollow` jelölést kap.
 
@@ -62,6 +62,12 @@ Két teljes E2E tesztút futtatható egyetlen kattintással:
 
 A Drive-ról beemelt kiadások és az integrációs döntések tételes jegyzéke:
 [modulforrás-provenance](docs/imported-module-releases.md).
+
+A Content Factory, Campaign Factory és webes publikáció kötelező Copy Gate-je a
+Marketing Quality Gate része. A 92/100 alatti vagy kritikus hibás tartalom blokkolt;
+publikáció csak a négy gépi kapu, emberi szerkesztő és tulajdonosi approval után
+lehetséges. A külső publikációs adapter alapértelmezetten tiltott. Részletek:
+[Copy Gate v1.0](services/platform-core/docs/COPY_GATE_V1_AS_BUILT.md).
 
 A Digitális Kálmán, Máté és Misi kezelőfelület mögötti opcionális FastAPI,
 PostgreSQL és Redis/RQ szolgáltatás a `digital-pm` Compose profilban fut. Az
