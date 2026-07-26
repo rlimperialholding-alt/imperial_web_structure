@@ -27,7 +27,12 @@ from ..copy_gate.models import (
     PerformanceMetricIn,
     PublicationState,
 )
-from ..copy_gate.orchestrator import GENERATION_STAGES, validate_visual_variant_trace
+from ..copy_gate.orchestrator import (
+    GENERATION_STAGES,
+    copy_mode_allows_source_prevalidation,
+    validate_copy_variation_trace,
+    validate_visual_variant_trace,
+)
 from ..models import (
     ContentApprovalRecord,
     ContentAssetRecord,
@@ -355,6 +360,7 @@ def create_content_asset(
             sibling_traces.append(json.loads(sibling.generation_trace_json or "{}"))
         except json.JSONDecodeError as exc:
             raise ValueError("Sérült korábbi generation_trace_json.") from exc
+    validate_copy_variation_trace(generation_trace, sibling_traces=sibling_traces)
     validate_visual_variant_trace(generation_trace, sibling_traces=sibling_traces)
     brief = CopyBrief.model_validate_json(brief_row.brief_json)
     if payload.detected_brand_ids != [brief.brand_id]:
@@ -561,6 +567,8 @@ def submit_four_gates(
     run = db.get(CopyReviewRun, asset.latest_run_id)
     content = ContentAsset.model_validate_json(asset.content_json)
     prevalidation = evaluate_commercial_prevalidation(asset.brand_id, content)
+    generation_trace = json.loads(asset.generation_trace_json or "{}")
+    copy_fast_lane_allowed = copy_mode_allows_source_prevalidation(generation_trace)
     supplied = {result.gate_id: result for result in submission.specialist_results}
     results: list[GateResult] = []
     routing = {
@@ -579,7 +587,12 @@ def submit_four_gates(
                 relevance=False,
                 certainty="HIGH",
             )
-        elif not submitted and prevalidation.eligible and prevalidation.gate_coverage[gate_id]:
+        elif (
+            not submitted
+            and prevalidation.eligible
+            and copy_fast_lane_allowed
+            and prevalidation.gate_coverage[gate_id]
+        ):
             result = GateResult(
                 gate_id=gate_id,
                 agent_id=expected_agent,
@@ -652,10 +665,10 @@ def submit_four_gates(
     else:
         final = Decision.APPROVED
         asset.four_gate_approved = True
-        asset.source_prevalidated = prevalidation.eligible
+        asset.source_prevalidated = prevalidation.eligible and copy_fast_lane_allowed
         asset.state = (
             PublicationState.SOURCE_PREVALIDATED
-            if prevalidation.eligible
+            if asset.source_prevalidated
             else PublicationState.HUMAN_EDITORIAL
         )
     if run:
@@ -672,6 +685,7 @@ def submit_four_gates(
             "gates": [result.model_dump(mode="json") for result in results],
             "commercial_prevalidation": {
                 "eligible": prevalidation.eligible,
+                "copy_fast_lane_allowed": copy_fast_lane_allowed,
                 "registry_version": prevalidation.registry_version,
                 "registry_sha256": prevalidation.registry_sha256,
                 "verified_evidence_ids": prevalidation.verified_evidence_ids,
@@ -808,7 +822,9 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
     brief = CopyBrief.model_validate_json(brief_row.brief_json)
     content = ContentAsset.model_validate_json(asset.content_json)
     prevalidation = evaluate_commercial_prevalidation(asset.brand_id, content)
-    if source_prevalidated and not prevalidation.eligible:
+    generation_trace = json.loads(asset.generation_trace_json or "{}")
+    copy_fast_lane_allowed = copy_mode_allows_source_prevalidation(generation_trace)
+    if source_prevalidated and (not prevalidation.eligible or not copy_fast_lane_allowed):
         raise ValueError(
             "A forrás-elővalidáció a specialistakapu óta megváltozott vagy érvénytelen."
         )
