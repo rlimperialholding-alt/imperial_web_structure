@@ -24,6 +24,15 @@ VISUAL_VARIANT_TRACE_FIELDS = (
     "generation_run_id",
 )
 
+VISUAL_LAYOUT_TRACE_FIELDS = (
+    "layout_archetype_id",
+    "composition_signature",
+    "primary_text_zone",
+    "image_treatment",
+    "background_treatment",
+    "minimum_text_contrast_ratio",
+)
+
 
 def validate_visual_variant_trace(
     trace: dict[str, Any],
@@ -37,10 +46,30 @@ def validate_visual_variant_trace(
     if not variant_fields_present:
         return
 
-    missing = [field for field in VISUAL_VARIANT_TRACE_FIELDS if not trace.get(field)]
+    required_fields = VISUAL_VARIANT_TRACE_FIELDS + VISUAL_LAYOUT_TRACE_FIELDS
+    missing = [field for field in required_fields if trace.get(field) in (None, "")]
     if missing:
         raise ValueError(
             "A vizuális variánsfutás kötelező trace mezői hiányoznak: " + ", ".join(missing)
+        )
+
+    try:
+        minimum_text_contrast_ratio = float(trace["minimum_text_contrast_ratio"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("A minimum_text_contrast_ratio szám kell legyen.") from exc
+    if minimum_text_contrast_ratio < 4.5:
+        raise ValueError(
+            "A kreatív normál szövegének WCAG-kontrasztja legalább 4.5:1 legyen."
+        )
+
+    background_treatment = str(trace["background_treatment"]).casefold()
+    uses_gradient = "gradient" in background_treatment or bool(
+        trace.get("uses_background_gradient")
+    )
+    if uses_gradient and not trace.get("background_gradient_exception_approved_by"):
+        raise ValueError(
+            "A színátmenetes kreatívháttér alapértelmezetten tiltott; "
+            "csak dokumentált emberi kivétellel használható."
         )
 
     variant_set_id = trace["variant_set_id"]
@@ -54,6 +83,29 @@ def validate_visual_variant_trace(
         if sibling.get("visual_direction_id") == trace["visual_direction_id"]:
             raise ValueError(
                 "Azonos brief valódi A/B/C variánsaihoz külön visual_direction_id szükséges."
+            )
+        if sibling.get("layout_archetype_id") == trace["layout_archetype_id"]:
+            raise ValueError(
+                "A variánskészletben a layout_archetype_id nem ismétlődhet."
+            )
+        if sibling.get("composition_signature") == trace["composition_signature"]:
+            raise ValueError(
+                "A variánskészletben a composition_signature nem ismétlődhet."
+            )
+        sibling_structure = (
+            sibling.get("primary_text_zone"),
+            sibling.get("image_treatment"),
+            sibling.get("background_treatment"),
+        )
+        candidate_structure = (
+            trace["primary_text_zone"],
+            trace["image_treatment"],
+            trace["background_treatment"],
+        )
+        if sibling_structure == candidate_structure:
+            raise ValueError(
+                "A szövegpozíció, képhasználat és háttérkezelés együttes "
+                "szerkezete nem ismétlődhet."
             )
 
 

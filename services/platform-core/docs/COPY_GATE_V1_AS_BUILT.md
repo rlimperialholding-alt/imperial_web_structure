@@ -35,6 +35,15 @@ variánskészlet minden tagja önálló `generation_run_id`, `creative_variant_i
 nem lehet pusztán szín-, cím- vagy logócsere: a kompozíció, a képi bizonyíték és
 az elsődleges vizuális hipotézis is eltér.
 
+A trace-ben a futásazonosítókon túl kötelező a `layout_archetype_id`,
+`composition_signature`, `primary_text_zone`, `image_treatment`,
+`background_treatment` és a mért `minimum_text_contrast_ratio`. Egy
+variánskészleten belül nem ismétlődhet a layout-archetípus, a kompozíciós
+aláírás, illetve a szövegpozíció–képhasználat–háttérkezelés hármas.
+Normál szövegnél legalább 4,5:1 kontraszt kötelező. Színátmenetes
+kreatívháttér alapértelmezetten blokkolt, és csak dokumentált emberi
+art-direction kivétellel használható.
+
 ### Márkalogók
 
 A rendszer először jóváhagyott vektoros/Drive-forrást keres, majd az élő
