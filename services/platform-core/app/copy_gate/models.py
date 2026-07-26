@@ -67,6 +67,8 @@ class CopyBrief(BaseModel):
     forbidden_phrases: list[str] = Field(default_factory=list)
     required_keywords: list[str] = Field(default_factory=list)
     landing_message_match_id: str = Field(min_length=2, max_length=120)
+    monthly_promotion_id: str | None = Field(default=None, max_length=160)
+    monthly_promotion_copy_required: bool = False
     valid_from: date
     valid_until: date
 
@@ -78,6 +80,10 @@ class CopyBrief(BaseModel):
             raise ValueError("Pontosan az egyik kötelező: product_id vagy house_plan_id.")
         if self.valid_until < self.valid_from:
             raise ValueError("A valid_until nem lehet korábbi a valid_from dátumnál.")
+        if self.monthly_promotion_copy_required and not self.monthly_promotion_id:
+            raise ValueError(
+                "Kötelező havi akciós szöveghez monthly_promotion_id szükséges."
+            )
         return self
 
 
@@ -167,6 +173,10 @@ class ContentAsset(BaseModel):
     price_snapshot_id_used: str = Field(min_length=2, max_length=120)
     terms_version_id_used: str = Field(min_length=2, max_length=120)
     landing_message_match_id_used: str = Field(min_length=2, max_length=120)
+    monthly_promotion_id_used: str | None = Field(default=None, max_length=160)
+    monthly_promotion_copy_text: str | None = None
+    monthly_promotion_copy_position: int | None = Field(default=None, ge=0)
+    monthly_promotion_on_creative: bool = False
     factual_claims: list[str] = Field(default_factory=list)
     price_mentions: list[str] = Field(default_factory=list)
     deadline_mentions: list[str] = Field(default_factory=list)
@@ -193,6 +203,9 @@ class CanonicalSources(BaseModel):
     brand_addressing: str
     required_brand_concepts: list[str] = Field(default_factory=list)
     forbidden_brand_phrases: list[str] = Field(default_factory=list)
+    monthly_promotion_id: str | None = Field(default=None, max_length=160)
+    monthly_promotion_copy_required: bool = False
+    monthly_promotion_publication_allowed: bool = False
 
 
 class EditorialReview(BaseModel):

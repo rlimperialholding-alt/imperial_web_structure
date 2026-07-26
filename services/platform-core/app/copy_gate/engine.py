@@ -342,6 +342,75 @@ def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
                 Severity.CRITICAL,
             )
         )
+    promotion_required = (
+        brief.monthly_promotion_copy_required
+        or sources.monthly_promotion_copy_required
+    )
+    if brief.monthly_promotion_copy_required != sources.monthly_promotion_copy_required:
+        integrity.append(
+            _finding(
+                "PROMOTION_SOURCE_MISMATCH",
+                "A brief és a kanonikus forrás eltérően jelöli a havi akció kötelezőségét.",
+                Severity.CRITICAL,
+            )
+        )
+    if promotion_required:
+        expected_promotion_id = (
+            sources.monthly_promotion_id or brief.monthly_promotion_id
+        )
+        if (
+            not expected_promotion_id
+            or brief.monthly_promotion_id != expected_promotion_id
+            or asset.monthly_promotion_id_used != expected_promotion_id
+        ):
+            integrity.append(
+                _finding(
+                    "MONTHLY_PROMOTION_ID_MISMATCH",
+                    "A hirdetés nem az aktív havi akció azonosítóját használja.",
+                    Severity.CRITICAL,
+                )
+            )
+        promotion_copy = (asset.monthly_promotion_copy_text or "").strip()
+        if not promotion_copy:
+            integrity.append(
+                _finding(
+                    "MONTHLY_PROMOTION_COPY_MISSING",
+                    "Az aktív havi akció nem szerepel a hirdetésszövegben.",
+                    Severity.CRITICAL,
+                )
+            )
+        elif (
+            asset.monthly_promotion_copy_position != 0
+            or not normalize(asset.body).startswith(normalize(promotion_copy))
+        ):
+            integrity.append(
+                _finding(
+                    "MONTHLY_PROMOTION_NOT_FIRST",
+                    "A havi akciónak a hirdetésszöveg legelső blokkjában kell szerepelnie.",
+                    Severity.CRITICAL,
+                )
+            )
+        if not sources.monthly_promotion_publication_allowed:
+            integrity.append(
+                _finding(
+                    "MONTHLY_PROMOTION_APPROVAL_PENDING",
+                    "A havi akció előkészíthető, de a szükséges pénzügyi és vezetői "
+                    "jóváhagyások nélkül nem publikálható.",
+                    Severity.CRITICAL,
+                )
+            )
+    elif (
+        asset.monthly_promotion_id_used
+        or asset.monthly_promotion_copy_text
+        or asset.monthly_promotion_copy_position is not None
+    ):
+        integrity.append(
+            _finding(
+                "UNVALIDATED_MONTHLY_PROMOTION",
+                "A hirdetés olyan havi akciót használ, amelyhez nincs aktív forrás.",
+                Severity.CRITICAL,
+            )
+        )
     if not (brief.valid_from <= request.evaluated_on <= brief.valid_until):
         integrity.append(
             _finding(
