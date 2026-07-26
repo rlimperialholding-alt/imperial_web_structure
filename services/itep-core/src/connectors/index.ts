@@ -15,3 +15,5 @@ export * from "./bank-sync-adapter.js";
 export * from "./crm-sync-adapter.js";
 export * from "./business-api-gateways.js";
 export * from "./connector-adapter-factory.js";
+export * from "./marketing-api-gateways.js";
+export * from "./marketing-sync-adapters.js";

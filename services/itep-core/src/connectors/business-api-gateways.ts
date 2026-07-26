@@ -8,8 +8,10 @@ export class BillingoApiGateway implements BillingoGateway {
   constructor(private readonly baseUrl:string,
     private readonly fetcher:FetchLike=fetch){}
   async listInvoiceChanges(input:{accessToken:string;externalAccountId:string;cursor?:string}){
-    const url=new URL("/v3/invoices",this.baseUrl);
-    url.searchParams.set("partner_id",input.externalAccountId);
+    const url=new URL("/v3/documents",this.baseUrl);
+    if (!["all", "account"].includes(input.externalAccountId.toLowerCase())) {
+      url.searchParams.set("partner_id",input.externalAccountId);
+    }
     if(input.cursor)url.searchParams.set("page",input.cursor);
     const response=await this.fetcher(url.toString(),{
       headers:{"X-API-KEY":input.accessToken,Accept:"application/json"}});
@@ -17,10 +19,11 @@ export class BillingoApiGateway implements BillingoGateway {
     const invoices=(p.data??p.invoices??[]).map((x:any)=>({
       invoiceId:String(x.id),invoiceNumber:String(x.invoice_number??x.id),
       projectId:str(x.project_id),customerName:String(x.partner?.name??"Ismeretlen ügyfél"),
-      customerEmail:str(x.partner?.emails?.[0]),status:String(x.status??"UNKNOWN"),
+      customerEmail:str(x.partner?.emails?.[0]),
+      status:String(x.cancelled ? "CANCELLED" : x.payment_status??x.status??"UNKNOWN"),
       grossAmount:Number(x.gross_total??0),currency:String(x.currency??"HUF"),
-      dueAt:date(x.due_date),paidAt:date(x.paid_at),
-      updatedAt:date(x.updated_at)??new Date()}));
+      dueAt:date(x.due_date),paidAt:date(x.paid_date??x.paid_at),
+      updatedAt:date(x.updated_at??x.invoice_date??x.due_date)??new Date()}));
     const current=Number(p.current_page??input.cursor??1),last=Number(p.last_page??current);
     return {invoices,...(current<last?{nextCursor:String(current+1)}:{})};
   }

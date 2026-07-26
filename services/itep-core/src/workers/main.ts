@@ -68,6 +68,11 @@ const orchestrator = new ConnectorSyncOrchestrator(
   accounts, checkpoints, secrets,
   createConnectorAdapters(ingestion, {
     billingoBaseUrl: config.BILLINGO_API_BASE_URL,
+    metaGraphBaseUrl: config.META_GRAPH_API_BASE_URL,
+    metaGraphApiVersion: config.META_GRAPH_API_VERSION,
+    googleAdsBaseUrl: config.GOOGLE_ADS_API_BASE_URL,
+    googleAdsApiVersion: config.GOOGLE_ADS_API_VERSION,
+    googleOauthTokenUrl: config.GOOGLE_OAUTH_TOKEN_URL,
     bankBaseUrl: config.BANK_API_BASE_URL,
     crmBaseUrl: config.CRM_API_BASE_URL,
     crmActivitiesPath: config.CRM_ACTIVITIES_PATH,

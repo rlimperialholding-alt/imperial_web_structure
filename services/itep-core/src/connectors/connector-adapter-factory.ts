@@ -10,9 +10,19 @@ import { GoogleGmailHistoryGateway,GoogleCalendarChangesGateway,
   GoogleDriveChangesGateway } from "./google-api-gateways.js";
 import { BillingoApiGateway,Psd2BankApiGateway,
   GenericCrmApiGateway } from "./business-api-gateways.js";
+import { GoogleAdsApiGateway, MetaAdsApiGateway } from "./marketing-api-gateways.js";
+import {
+  GoogleAdsSyncAdapter,
+  MetaAdsSyncAdapter,
+} from "./marketing-sync-adapters.js";
 export function createConnectorAdapters(ingestion:SourceIngestionService,
   config:{
     billingoBaseUrl:string;
+    metaGraphBaseUrl:string;
+    metaGraphApiVersion:string;
+    googleAdsBaseUrl:string;
+    googleAdsApiVersion:string;
+    googleOauthTokenUrl:string;
     bankBaseUrl:string;
     crmBaseUrl:string;
     crmActivitiesPath?:string;
@@ -26,6 +36,20 @@ export function createConnectorAdapters(ingestion:SourceIngestionService,
     CALENDAR:new CalendarSyncAdapter(new GoogleCalendarChangesGateway(),ingestion,now),
     DRIVE:new DriveSyncAdapter(new GoogleDriveChangesGateway(),ingestion,now),
     BILLINGO:new BillingoSyncAdapter(new BillingoApiGateway(config.billingoBaseUrl),ingestion,now),
+    META_ADS:new MetaAdsSyncAdapter(
+      new MetaAdsApiGateway(config.metaGraphBaseUrl, config.metaGraphApiVersion),
+      ingestion,
+      now,
+    ),
+    GOOGLE_ADS:new GoogleAdsSyncAdapter(
+      new GoogleAdsApiGateway(
+        config.googleAdsBaseUrl,
+        config.googleAdsApiVersion,
+        config.googleOauthTokenUrl,
+      ),
+      ingestion,
+      now,
+    ),
     BANK:new BankSyncAdapter(new Psd2BankApiGateway(config.bankBaseUrl),ingestion,now),
     CRM:new CrmSyncAdapter(new GenericCrmApiGateway(config.crmBaseUrl, fetch, {
         ...(config.crmActivitiesPath

@@ -3,11 +3,16 @@ import {BillingoApiGateway,Psd2BankApiGateway,
  GenericCrmApiGateway} from "../src/connectors/business-api-gateways.js";
 const response=(v:unknown)=>new Response(JSON.stringify(v),{status:200});
 describe("business gateways",()=>{
- it("maps Billingo",async()=>{const g=new BillingoApiGateway("https://x.test",
-  async()=>response({data:[{id:1,invoice_number:"I1",status:"PAID",
-   gross_total:100,currency:"HUF",partner:{name:"C"},updated_at:"2026-07-24"}]}));
+ it("maps Billingo documents without an account-wide partner filter",async()=>{
+  let requestedUrl="";
+  const g=new BillingoApiGateway("https://x.test",
+  async(input)=>{requestedUrl=input;return response({data:[{id:1,invoice_number:"I1",payment_status:"PAID",
+   gross_total:100,currency:"HUF",partner:{name:"C"},invoice_date:"2026-07-24"}]})});
   expect((await g.listInvoiceChanges({accessToken:"x",externalAccountId:"p"}))
-   .invoices[0]?.invoiceNumber).toBe("I1");});
+   .invoices[0]?.invoiceNumber).toBe("I1");
+  expect(requestedUrl).toContain("/v3/documents");
+  await g.listInvoiceChanges({accessToken:"x",externalAccountId:"all"});
+  expect(requestedUrl).not.toContain("partner_id");});
  it("maps bank",async()=>{const g=new Psd2BankApiGateway("https://x.test",
   async()=>response({transactions:{booked:[{transactionId:"t",
    bookingDate:"2026-07-24",transactionAmount:{amount:"12.5",currency:"HUF"}}]}}));

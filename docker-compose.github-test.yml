@@ -11,7 +11,10 @@ services:
         NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
     environment:
       NODE_ENV: test
+      # Local corporate-proxy escape hatch. Keep empty in normal environments.
+      NODE_TLS_REJECT_UNAUTHORIZED: ${CRM_NODE_TLS_REJECT_UNAUTHORIZED:-}
       CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-test}
+      CRM_ADMIN_EMAIL: ${CRM_ADMIN_EMAIL:-developer@terminal.local}
       CRM_MIGRATION_TOKEN: ${CRM_MIGRATION_TOKEN:?required}
       ITEP_CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:?required}
     ports:
@@ -136,6 +139,11 @@ services:
       DEFAULT_CONTACT_EMAIL: test@imperial.local
       IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
       BILLINGO_API_BASE_URL: http://mock-external:9010
+      META_GRAPH_API_BASE_URL: http://mock-external:9010
+      META_GRAPH_API_VERSION: v25.0
+      GOOGLE_ADS_API_BASE_URL: http://mock-external:9010
+      GOOGLE_ADS_API_VERSION: v25
+      GOOGLE_OAUTH_TOKEN_URL: http://mock-external:9010/oauth2/token
       BANK_API_BASE_URL: http://mock-external:9010
       CRM_API_BASE_URL: http://crm:8787
       CRM_ACTIVITIES_PATH: /api/integrations/itep/activities
@@ -144,7 +152,17 @@ services:
       CRM_WORKSPACE_QUERY_PARAMETER: workspace
       CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-test}
       ITEP_CRM_CONNECTOR_ID: crm-live
+      BUSINESS_CONNECTORS_MODE: read-only
+      BILLINGO_CONNECTOR_ID: billingo-live
+      BILLINGO_EXTERNAL_ACCOUNT_ID: all
+      META_ADS_CONNECTOR_ID: meta-ads-live
+      META_ADS_AD_ACCOUNT_ID: act_mock
+      GOOGLE_ADS_CONNECTOR_ID: google-ads-live
+      GOOGLE_ADS_CUSTOMER_ID: "1234567890"
       CONNECTOR_ACCESS_TOKENS_JSON: '{"crm-live":"${ITEP_CRM_READ_TOKEN:?required}"}'
+      CONNECTOR_ACCESS_TOKEN_BILLINGO_LIVE: synthetic-billingo-read-token
+      CONNECTOR_ACCESS_TOKEN_META_ADS_LIVE: synthetic-meta-read-token
+      CONNECTOR_ACCESS_TOKEN_GOOGLE_ADS_LIVE: '{"developerToken":"synthetic-developer-token","accessToken":"synthetic-google-oauth-token"}'
       CONNECTOR_SYNC_INTERVAL_MS: "3600000"
       INTEGRATION_RETRY_INTERVAL_MS: "30000"
     depends_on:

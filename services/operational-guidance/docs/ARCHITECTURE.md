@@ -10,8 +10,8 @@ flowchart LR
   GSC[Search Console API] --> HUB
   GBP[Google Business Profile] <--> HUB
   ING[ingatlan.com API] <--> HUB
-  META[Meta / Google Ads következő adapterek] --> HUB
-  BILL[Billingo / bank következő adapterek] <--> HUB
+  META[Meta / Google Ads read-only adapterek] --> ITEP
+  BILL[Billingo read-only / bank adapterek] <--> ITEP
 
   HUB <--> DB[(PostgreSQL)]
   HUB <--> REDIS[(Redis / Celery)]

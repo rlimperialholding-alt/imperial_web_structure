@@ -10,7 +10,10 @@ export async function getDb() {
 
 export async function getRuntimeValue(key: string) {
   const { env } = await import("cloudflare:workers");
-  return (env as unknown as Record<string, string | undefined>)[key];
+  const workerValue =
+    (env as unknown as Record<string, string | undefined>)[key];
+  if (workerValue !== undefined) return workerValue;
+  return typeof process !== "undefined" ? process.env[key] : undefined;
 }
 
 type DocumentObject = {

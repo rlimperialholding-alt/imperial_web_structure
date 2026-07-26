@@ -4,7 +4,16 @@ import type { ConnectorSyncOrchestrator } from "../connectors/sync-orchestrator.
 import { actorFromRequest } from "./actor-context.js";
 
 const kindSchema = z.object({
-  kind: z.enum(["GMAIL", "CALENDAR", "DRIVE", "BILLINGO", "BANK", "CRM"]).optional(),
+  kind: z.enum([
+    "GMAIL",
+    "CALENDAR",
+    "DRIVE",
+    "BILLINGO",
+    "BANK",
+    "CRM",
+    "META_ADS",
+    "GOOGLE_ADS",
+  ]).optional(),
 });
 
 export function registerConnectorRoutes(
