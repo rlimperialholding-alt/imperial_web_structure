@@ -23,6 +23,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  manifest-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify committed integration manifest
+        run: >-
+          python services/operational-guidance/tools/verify_integration_manifest.py
+          --source head
+
   ownership-boundary:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -53,7 +62,7 @@ jobs:
       - name: Unit and integration tests
         run: pytest -q tests -k 'not wordpress_fleet'
       - name: Static analysis
-        run: ruff check app scripts tests
+        run: ruff check app scripts tests tools
       - name: Validate exactly five human roles
         run: python tools/validate_human_roles.py
 

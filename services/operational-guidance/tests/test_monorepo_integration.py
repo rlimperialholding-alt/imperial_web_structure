@@ -39,6 +39,7 @@ def test_ci_is_path_scoped_and_has_no_deploy_job() -> None:
     assert 'services/operational-guidance/**' in workflow
     assert "agent/operational-guidance-v0.8.1" in workflow
     assert "check_changed_paths.py" in workflow
+    assert "verify_integration_manifest.py" in workflow
     assert "permissions:\n  contents: read" in workflow
     lowered = workflow.casefold()
     assert "ssh" not in lowered

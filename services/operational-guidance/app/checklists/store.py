@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.checklists.domain import ChecklistInstance, ChecklistTemplate
+from app.file_lock import exclusive_file_lock
 
 
 def _version_key(value: str) -> tuple[int, ...]:
@@ -52,15 +53,9 @@ class JsonChecklistStore:
 
     @contextmanager
     def instance_lock(self, instance_id: str):
-        import fcntl
-
         lock_path = self.locks_dir / f"{instance_id}.lock"
-        with lock_path.open("a+", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        with exclusive_file_lock(lock_path):
+            yield
 
 
     @staticmethod
@@ -69,16 +64,10 @@ class JsonChecklistStore:
 
     @contextmanager
     def idempotency_lock(self, scope: str, key: str):
-        import fcntl
-
         name = self._idempotency_name(scope, key)
         lock_path = self.locks_dir / f"idempotency-{name}.lock"
-        with lock_path.open("a+", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        with exclusive_file_lock(lock_path):
+            yield
 
     def load_idempotency(self, scope: str, key: str) -> dict[str, Any] | None:
         path = self.idempotency_dir / f"{self._idempotency_name(scope, key)}.json"
