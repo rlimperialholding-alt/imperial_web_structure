@@ -26,14 +26,22 @@ abstract class MarketingSyncAdapter {
     protected readonly now: () => Date,
   ) {}
 
-  protected async ingest(metrics: MarketingMetricEvent[]) {
+  protected async ingest(
+    metrics: MarketingMetricEvent[],
+    connectorAccountId: string,
+  ) {
     let ingested = 0;
     let ignored = 0;
     let failed = 0;
     for (const metric of metrics) {
       try {
         const result = await this.ingestion.ingest(
-          normalizeMarketingMetric(metric.organizationId, metric, this.now()),
+          normalizeMarketingMetric(
+            metric.organizationId,
+            metric,
+            this.now(),
+            { connectorAccountId },
+          ),
         );
         result.status === "TASK_CREATED" ? ingested++ : ignored++;
       } catch {
@@ -67,7 +75,7 @@ export class MetaAdsSyncAdapter
     }));
     return {
       received: metrics.length,
-      ...(await this.ingest(metrics)),
+      ...(await this.ingest(metrics, input.account.id)),
       nextCheckpoint: batch.nextCursor ? { cursor: batch.nextCursor } : {},
     };
   }
@@ -95,7 +103,7 @@ export class GoogleAdsSyncAdapter
     }));
     return {
       received: metrics.length,
-      ...(await this.ingest(metrics)),
+      ...(await this.ingest(metrics, input.account.id)),
       nextCheckpoint: {},
     };
   }

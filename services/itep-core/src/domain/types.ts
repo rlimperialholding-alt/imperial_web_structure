@@ -64,6 +64,7 @@ export interface EvidenceSubmission {
 export interface Task {
   id: string;
   organizationId: string;
+  legalEntityId?: string;
   source: string;
   sourceExternalId?: string;
   semanticFingerprint?: string;

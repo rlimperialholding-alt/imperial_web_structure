@@ -13,6 +13,7 @@ on:
           - billingo
           - meta
           - google-ads
+          - google-ads-discovery
 
 permissions:
   contents: read
@@ -32,6 +33,7 @@ jobs:
       META_ADS_ACCESS_TOKEN: ${{ secrets.META_ADS_ACCESS_TOKEN }}
       META_ADS_AD_ACCOUNT_ID: ${{ vars.META_ADS_AD_ACCOUNT_ID }}
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT_JSON }}
       GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
       GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
       GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
@@ -48,4 +50,8 @@ jobs:
       - run: npm run prisma:generate
       - run: npm run build
       - name: Run provider read-only contract
+        if: inputs.provider != 'google-ads-discovery'
         run: node scripts/business-connectors-contract.mjs
+      - name: Discover accessible Google Ads accounts
+        if: inputs.provider == 'google-ads-discovery'
+        run: node scripts/google-ads-discovery.mjs

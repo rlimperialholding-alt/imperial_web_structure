@@ -4,7 +4,7 @@ import { ConnectorSyncOrchestrator } from "../src/connectors/sync-orchestrator.j
 describe("ConnectorSyncOrchestrator", () => {
   it("persists checkpoint after successful sync", async () => {
     const saved:any[]=[];
-    const account:any={id:"c1",organizationId:"o",kind:"GMAIL",externalAccountId:"mail",displayName:"mail",status:"ACTIVE",scopes:[],createdAt:new Date(),updatedAt:new Date()};
+    const account:any={id:"c1",organizationId:"o",kind:"GMAIL",scope:"GROUP",scopeKey:"GROUP",externalAccountId:"mail",displayName:"mail",status:"ACTIVE",scopes:[],createdAt:new Date(),updatedAt:new Date()};
     const orchestrator=new ConnectorSyncOrchestrator(
       {async getById(){return account},async save(v){saved.push(v)},async listActive(){return[account]}},
       {async get(){return null},async save(v){saved.push(v)}},
@@ -21,7 +21,7 @@ describe("ConnectorSyncOrchestrator", () => {
 
   it("marks reauth requirement on invalid token", async () => {
     let status="";
-    const account:any={id:"c1",organizationId:"o",kind:"GMAIL",externalAccountId:"mail",displayName:"mail",status:"ACTIVE",scopes:[],createdAt:new Date(),updatedAt:new Date()};
+    const account:any={id:"c1",organizationId:"o",kind:"GMAIL",scope:"GROUP",scopeKey:"GROUP",externalAccountId:"mail",displayName:"mail",status:"ACTIVE",scopes:[],createdAt:new Date(),updatedAt:new Date()};
     const orchestrator=new ConnectorSyncOrchestrator(
       {async getById(){return account},async save(v){status=v.status},async listActive(){return[]}},
       {async get(){return null},async save(){}},

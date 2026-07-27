@@ -17,7 +17,17 @@ export class BankSyncAdapter implements ConnectorSyncAdapter {
     let ingested=0,ignored=0,failed=0;
     for(const item of batch.transactions){try{
       const result=await this.ingestion.ingest(
-        normalizeBankTransaction(input.account.organizationId,item,this.now()));
+        normalizeBankTransaction(
+          input.account.organizationId,
+          item,
+          this.now(),
+          {
+            connectorAccountId: input.account.id,
+            ...(input.account.legalEntityId
+              ? { legalEntityId: input.account.legalEntityId }
+              : {}),
+          },
+        ));
       result.status==="TASK_CREATED"?ingested++:ignored++;
     }catch{failed++;}}
     return {received:batch.transactions.length,ingested,ignored,failed,

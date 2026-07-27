@@ -20,7 +20,17 @@ export class BillingoSyncAdapter implements ConnectorSyncAdapter {
     for (const item of batch.invoices) {
       try {
         const result = await this.ingestion.ingest(
-          normalizeBillingoInvoice(input.account.organizationId,item,this.now()));
+          normalizeBillingoInvoice(
+            input.account.organizationId,
+            item,
+            this.now(),
+            {
+              connectorAccountId: input.account.id,
+              ...(input.account.legalEntityId
+                ? { legalEntityId: input.account.legalEntityId }
+                : {}),
+            },
+          ));
         result.status === "TASK_CREATED" ? ingested++ : ignored++;
       } catch { failed++; }
     }

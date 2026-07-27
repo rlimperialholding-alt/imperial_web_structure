@@ -40,6 +40,9 @@ npm run typecheck
 A Billingo-, Meta- és Google Ads-kapcsolatok biztonságos beállítása:
 [read-only üzleti connector útmutató](docs/BUSINESS_CONNECTORS_READ_ONLY.md).
 
+A több jogi személyhez tartozó Billingo-, bank- és Cégkapu-kapcsolatok
+elkülönítése: [többcégű connector-kezelés](docs/MULTI_COMPANY_CONNECTORS.md).
+
 ## Következő modulok
 
 1. Prisma repository implementáció és tranzakciókezelés

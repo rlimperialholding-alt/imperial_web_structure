@@ -1,10 +1,11 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
   ConnectorAccountRepository,
   SyncCheckpointRepository,
 } from "../connectors/ports.js";
 import type {
   ConnectorAccount,
+  LegalEntity,
   SyncCheckpoint,
 } from "../connectors/types.js";
 
@@ -26,10 +27,15 @@ export class PrismaConnectorAccountRepository
         id: account.id,
         organizationId: account.organizationId,
         kind: account.kind,
+        scope: account.scope,
+        scopeKey: account.scopeKey,
+        legalEntityId: account.legalEntityId ?? null,
         externalAccountId: account.externalAccountId,
         displayName: account.displayName,
         status: account.status,
         scopes: account.scopes,
+        configuration:
+          account.configuration as Prisma.InputJsonValue | undefined,
         createdAt: account.createdAt,
         updatedAt: account.updatedAt,
         lastSuccessfulSyncAt: account.lastSuccessfulSyncAt ?? null,
@@ -39,6 +45,11 @@ export class PrismaConnectorAccountRepository
         displayName: account.displayName,
         status: account.status,
         scopes: account.scopes,
+        scope: account.scope,
+        scopeKey: account.scopeKey,
+        legalEntityId: account.legalEntityId ?? null,
+        configuration:
+          account.configuration as Prisma.InputJsonValue | undefined,
         updatedAt: account.updatedAt,
         lastSuccessfulSyncAt: account.lastSuccessfulSyncAt ?? null,
         lastError: account.lastError ?? null,
@@ -55,6 +66,38 @@ export class PrismaConnectorAccountRepository
       orderBy: { updatedAt: "asc" },
     });
     return rows.map(mapAccount);
+  }
+
+  async listByOrganization(organizationId: string): Promise<ConnectorAccount[]> {
+    const rows = await this.prisma.connectorAccount.findMany({
+      where: { organizationId },
+      orderBy: [{ kind: "asc" }, { displayName: "asc" }],
+    });
+    return rows.map(mapAccount);
+  }
+}
+
+export class PrismaLegalEntityRepository {
+  constructor(private readonly prisma: PrismaClient) {}
+
+  async listByOrganization(organizationId: string): Promise<LegalEntity[]> {
+    const rows = await this.prisma.legalEntity.findMany({
+      where: { organizationId },
+      orderBy: { legalName: "asc" },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      organizationId: row.organizationId,
+      slug: row.slug,
+      legalName: row.legalName,
+      ...(row.taxNumber ? { taxNumber: row.taxNumber } : {}),
+      status: row.status,
+      ...(row.metadata && typeof row.metadata === "object"
+        ? { metadata: row.metadata as Record<string, unknown> }
+        : {}),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
   }
 }
 
@@ -105,10 +148,16 @@ function mapAccount(row: any): ConnectorAccount {
     id: row.id,
     organizationId: row.organizationId,
     kind: row.kind,
+    scope: row.scope,
+    scopeKey: row.scopeKey,
+    ...(row.legalEntityId ? { legalEntityId: row.legalEntityId } : {}),
     externalAccountId: row.externalAccountId,
     displayName: row.displayName,
     status: row.status,
     scopes: row.scopes,
+    ...(row.configuration && typeof row.configuration === "object"
+      ? { configuration: row.configuration }
+      : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     ...(row.lastSuccessfulSyncAt

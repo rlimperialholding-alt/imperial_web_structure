@@ -10,6 +10,7 @@ export type SourceEventStatus =
 export interface SourceEvent {
   id: string;
   organizationId: string;
+  legalEntityId?: string;
   source: SourceKind;
   externalId: string;
   occurredAt: Date;
@@ -27,6 +28,7 @@ export interface SourceEvent {
 export interface TaskCandidate {
   sourceEventId: string;
   organizationId: string;
+  legalEntityId?: string;
   source: SourceKind;
   sourceExternalId: string;
   title: string;

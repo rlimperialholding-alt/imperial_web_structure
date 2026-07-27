@@ -36,13 +36,34 @@ export interface MarketingMetricEvent {
   updatedAt: Date;
 }
 
+export interface ConnectorEventContext {
+  connectorAccountId: string;
+  legalEntityId?: string;
+}
+
 export function normalizeBillingoInvoice(
-  organizationId: string, event: BillingoInvoiceEvent, receivedAt: Date,
+  organizationId: string,
+  event: BillingoInvoiceEvent,
+  receivedAt: Date,
+  context?: ConnectorEventContext,
 ): SourceEvent {
-  const externalId = `billingo:${event.invoiceId}:${event.updatedAt.toISOString()}`;
+  const namespace = context?.connectorAccountId
+    ? `${context.connectorAccountId}:`
+    : "";
+  const externalId =
+    `billingo:${namespace}${event.invoiceId}:${event.updatedAt.toISOString()}`;
   return {
-    id: `SRC-BILLINGO-${event.invoiceId}-${event.updatedAt.getTime()}`,
-    organizationId, source: "WEBHOOK", externalId,
+    id: sourceId(
+      "BILLINGO",
+      context?.connectorAccountId,
+      event.invoiceId,
+      event.updatedAt.getTime(),
+    ),
+    organizationId,
+    ...(context?.legalEntityId
+      ? { legalEntityId: context.legalEntityId }
+      : {}),
+    source: "WEBHOOK", externalId,
     occurredAt: event.updatedAt, receivedAt, actorId: "digital-anne",
     subject: `Számla ${event.invoiceNumber}: ${event.status}`,
     body: `${event.customerName}; ${event.grossAmount} ${event.currency}; ` +
@@ -52,6 +73,8 @@ export function normalizeBillingoInvoice(
     metadata: {
       provider: "BILLINGO", eventType: invoiceEventType(event.status),
       accessMode: "READ_ONLY",
+      connectorAccountId: context?.connectorAccountId,
+      legalEntityId: context?.legalEntityId,
       invoiceId: event.invoiceId, invoiceNumber: event.invoiceNumber,
       projectId: event.projectId, status: event.status,
       grossAmount: event.grossAmount, currency: event.currency,
@@ -67,11 +90,22 @@ export function normalizeBillingoInvoice(
 }
 
 export function normalizeBankTransaction(
-  organizationId: string, event: BankTransactionEvent, receivedAt: Date,
+  organizationId: string,
+  event: BankTransactionEvent,
+  receivedAt: Date,
+  context?: ConnectorEventContext,
 ): SourceEvent {
-  const externalId = `bank:${event.accountId}:${event.transactionId}`;
+  const namespace = context?.connectorAccountId
+    ? `${context.connectorAccountId}:`
+    : "";
+  const externalId =
+    `bank:${namespace}${event.accountId}:${event.transactionId}`;
   return {
-    id: `SRC-BANK-${event.transactionId}`, organizationId,
+    id: sourceId("BANK", context?.connectorAccountId, event.transactionId),
+    organizationId,
+    ...(context?.legalEntityId
+      ? { legalEntityId: context.legalEntityId }
+      : {}),
     source: "WEBHOOK", externalId, occurredAt: event.bookingDate,
     receivedAt, actorId: "digital-anne",
     subject: `Banki tranzakció: ${event.amount} ${event.currency}`,
@@ -81,6 +115,8 @@ export function normalizeBankTransaction(
     metadata: {
       provider: "BANK",
       eventType: event.amount >= 0 ? "PAYMENT_RECEIVED" : "PAYMENT_SENT",
+      connectorAccountId: context?.connectorAccountId,
+      legalEntityId: context?.legalEntityId,
       transactionId: event.transactionId, accountId: event.accountId,
       projectId: event.projectId, amount: event.amount,
       currency: event.currency, status: event.status,
@@ -99,11 +135,21 @@ export function normalizeBankTransaction(
 }
 
 export function normalizeCrmActivity(
-  organizationId: string, event: CrmActivityEvent, receivedAt: Date,
+  organizationId: string,
+  event: CrmActivityEvent,
+  receivedAt: Date,
+  context?: ConnectorEventContext,
 ): SourceEvent {
-  const externalId = `crm:${event.activityId}`;
+  const namespace = context?.connectorAccountId
+    ? `${context.connectorAccountId}:`
+    : "";
+  const externalId = `crm:${namespace}${event.activityId}`;
   return {
-    id: `SRC-CRM-${event.activityId}`, organizationId,
+    id: sourceId("CRM", context?.connectorAccountId, event.activityId),
+    organizationId,
+    ...(context?.legalEntityId
+      ? { legalEntityId: context.legalEntityId }
+      : {}),
     source: "WEBHOOK", externalId, occurredAt: event.occurredAt,
     receivedAt, actorId: "digital-anne", subject: event.title,
     body: event.description ?? `${event.type} CRM-aktivitás.`,
@@ -112,6 +158,8 @@ export function normalizeCrmActivity(
     labels: ["CRM", event.type.toUpperCase(), event.status.toUpperCase()],
     metadata: {
       provider: "CRM", eventType: crmEventType(event.type, event.status),
+      connectorAccountId: context?.connectorAccountId,
+      legalEntityId: context?.legalEntityId,
       activityId: event.activityId, projectId: event.projectId,
       leadId: event.leadId, dealId: event.dealId,
       ownerId: event.ownerId, ownerEmail: event.ownerEmail,
@@ -130,15 +178,23 @@ export function normalizeMarketingMetric(
   organizationId: string,
   event: MarketingMetricEvent,
   receivedAt: Date,
+  context?: ConnectorEventContext,
 ): SourceEvent {
   const externalId = [
     event.provider.toLowerCase(),
+    ...(context?.connectorAccountId ? [context.connectorAccountId] : []),
     event.accountId,
     event.campaignId,
     event.dateStart,
   ].join(":");
   return {
-    id: `SRC-${event.provider}-${event.accountId}-${event.campaignId}-${event.dateStart}`,
+    id: sourceId(
+      event.provider,
+      context?.connectorAccountId,
+      event.accountId,
+      event.campaignId,
+      event.dateStart,
+    ),
     organizationId,
     source: "WEBHOOK",
     externalId,
@@ -154,6 +210,7 @@ export function normalizeMarketingMetric(
     metadata: {
       provider: event.provider,
       eventType: "CAMPAIGN_METRICS_SNAPSHOT",
+      connectorAccountId: context?.connectorAccountId,
       accountId: event.accountId,
       campaignId: event.campaignId,
       campaignName: event.campaignName,
@@ -176,6 +233,22 @@ export function normalizeMarketingMetric(
       occurredAt: event.updatedAt,
     }),
   };
+}
+
+function sourceId(
+  provider: string,
+  connectorAccountId: string | undefined,
+  ...parts: Array<string | number>
+) {
+  const values = [
+    "SRC",
+    provider,
+    ...(connectorAccountId ? [connectorAccountId] : []),
+    ...parts,
+  ];
+  return values
+    .map((value) => String(value).replace(/[^A-Za-z0-9._:-]+/g, "_"))
+    .join("-");
 }
 
 function invoiceEventType(status: string): string {

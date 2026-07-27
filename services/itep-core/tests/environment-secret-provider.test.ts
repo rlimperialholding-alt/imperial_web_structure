@@ -15,4 +15,20 @@ describe("EnvironmentConnectorSecretProvider", () => {
     await expect(provider.getAccessToken("meta-ads-live"))
       .resolves.toBe("meta-secret");
   });
+  it("serializes a provider credential envelope from the central secret map", async () => {
+    const provider = new EnvironmentConnectorSecretProvider(JSON.stringify({
+      "google-ads-live": {
+        developerToken: "developer-secret",
+        serviceAccount: {
+          client_email: "reporting@example.test",
+          private_key: "private-secret",
+        },
+      },
+    }));
+    const value = await provider.getAccessToken("google-ads-live");
+    expect(JSON.parse(value)).toMatchObject({
+      developerToken: "developer-secret",
+      serviceAccount: { client_email: "reporting@example.test" },
+    });
+  });
 });

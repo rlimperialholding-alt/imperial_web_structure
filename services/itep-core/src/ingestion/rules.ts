@@ -176,6 +176,7 @@ function baseCandidate(
   return {
     sourceEventId: event.id,
     organizationId: event.organizationId,
+    legalEntityId: event.legalEntityId,
     source: event.source,
     sourceExternalId: event.externalId,
     title: event.subject?.trim() || "Forráseseményből létrehozott feladat",

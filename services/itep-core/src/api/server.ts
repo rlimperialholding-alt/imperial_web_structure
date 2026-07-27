@@ -38,11 +38,13 @@ import type { ConnectorOperationExecutor } from "../integration-control-room/por
 import { HumanAnnePublisherAdapter } from "../integration-control-room/adapters.js";
 import {
   PrismaConnectorAccountRepository,
+  PrismaLegalEntityRepository,
   PrismaSyncCheckpointRepository,
 } from "../infrastructure/prisma-connector-repositories.js";
 import { EnvironmentConnectorSecretProvider } from "../connectors/environment-secret-provider.js";
 import { createConnectorAdapters } from "../connectors/connector-adapter-factory.js";
 import { ConnectorSyncOrchestrator } from "../connectors/sync-orchestrator.js";
+import { CompanyConnectorInventoryService } from "../connectors/company-connector-inventory.js";
 import { registerConnectorRoutes } from "./connector-routes.js";
 import { OrchestratorOperationExecutor } from "../integration-control-room/adapters.js";
 import { registerOrchestrationRoutes } from "./orchestration-routes.js";
@@ -141,7 +143,14 @@ export async function buildServer(
     () => new Date(),
   );
 
-  registerConnectorRoutes(app, connectorOrchestrator);
+  registerConnectorRoutes(
+    app,
+    connectorOrchestrator,
+    new CompanyConnectorInventoryService(
+      new PrismaLegalEntityRepository(prisma),
+      connectorAccounts,
+    ),
+  );
   registerHumanAnneRoutes(app, humanAnneService);
   registerReportingRoutes(app, reportingService);
   registerIngestionRoutes(app, ingestionService);
