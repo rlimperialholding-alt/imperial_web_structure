@@ -290,6 +290,7 @@ enum ConnectorKind {
   CRM
   META_ADS
   GOOGLE_ADS
+  WHATSAPP_BUSINESS
 }
 
 enum ConnectorStatus {
@@ -481,4 +482,250 @@ model OrchestrationEvent {
   @@unique([organizationId, source, externalEventId])
   @@index([organizationId, status, occurredAt])
   @@index([projectId, occurredAt])
+}
+
+enum AuthUserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum AuthJobRole {
+  SYSTEM_ADMIN
+  EXECUTIVE
+  FINANCE
+  HR
+  SALES
+  MARKETING
+  PROJECT_MANAGER
+  ENGINEERING
+  LEGAL
+  PROCUREMENT
+  WAREHOUSE
+  SUBCONTRACTOR
+  CUSTOMER
+}
+
+model AuthOrganization {
+  id          String   @id
+  displayName String
+  taxNumber   String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships AuthMembership[]
+}
+
+model AuthUser {
+  id                    String         @id @default(uuid())
+  email                 String         @unique
+  displayName           String
+  passwordHash          String?
+  status                AuthUserStatus @default(INVITED)
+  isSystemAdmin         Boolean        @default(false)
+  isExecutive           Boolean        @default(false)
+  mfaEnabled            Boolean        @default(false)
+  mfaSecretCiphertext   String?
+  failedLoginAttempts   Int            @default(0)
+  lockedUntil           DateTime?
+  lastLoginAt           DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  memberships           AuthMembership[]
+  sessions              AuthSession[]
+  challenges            AuthChallenge[]
+  recoveryCodes         AuthRecoveryCode[]
+  invitations           AuthInvitation[]
+
+  @@index([status, email])
+}
+
+model AuthMembership {
+  id                String       @id @default(uuid())
+  userId            String
+  organizationId    String
+  jobRole           AuthJobRole
+  projectIds        String[]
+  permissionGrants  String[]
+  permissionDenials String[]
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  user         AuthUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization AuthOrganization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, jobRole])
+}
+
+model AuthSession {
+  id            String   @id @default(uuid())
+  userId        String
+  organizationId String
+  tokenHash     String   @unique
+  csrfTokenHash String
+  createdAt     DateTime @default(now())
+  lastSeenAt    DateTime @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  ipHash        String?
+  userAgent     String?
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([organizationId, expiresAt])
+}
+
+model AuthChallenge {
+  id        String   @id @default(uuid())
+  userId    String
+  purpose   String
+  tokenHash String   @unique
+  metadata  Json?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  consumedAt DateTime?
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+}
+
+model AuthRecoveryCode {
+  id        String   @id @default(uuid())
+  userId    String
+  codeHash  String   @unique
+  createdAt DateTime @default(now())
+  usedAt    DateTime?
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+}
+
+model AuthInvitation {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  createdBy String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  acceptedAt DateTime?
+  revokedAt DateTime?
+
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model SecurityAuditEvent {
+  id             String   @id @default(uuid())
+  organizationId String?
+  actorId        String?
+  eventType      String
+  targetType     String?
+  targetId       String?
+  occurredAt     DateTime @default(now())
+  requestId      String?
+  ipHash         String?
+  metadata       Json
+
+  @@index([organizationId, occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([eventType, occurredAt])
+}
+
+enum WhatsAppConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+  BLOCKED
+}
+
+enum WhatsAppDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum WhatsAppMessageStatus {
+  RECEIVED
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  REJECTED
+}
+
+model WhatsAppConversation {
+  id                 String                     @id @default(uuid())
+  organizationId     String
+  connectorAccountId String
+  waContactHash      String
+  waContactCiphertext String
+  displayName        String?
+  phoneMasked        String
+  crmCustomerId      String?
+  projectId          String?
+  assignedUserId     String?
+  status             WhatsAppConversationStatus @default(OPEN)
+  lastMessageAt      DateTime
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  messages WhatsAppMessage[]
+
+  @@unique([organizationId, connectorAccountId, waContactHash])
+  @@index([organizationId, status, lastMessageAt])
+  @@index([crmCustomerId, lastMessageAt])
+  @@index([projectId, lastMessageAt])
+}
+
+model WhatsAppMessage {
+  id                String                @id @default(uuid())
+  conversationId    String
+  providerMessageId String?               @unique
+  direction         WhatsAppDirection
+  status            WhatsAppMessageStatus
+  messageType       String
+  bodyCiphertext    String?
+  mediaId           String?
+  replyToProviderId String?
+  requestedBy       String?
+  approvedBy        String?
+  approvedAt        DateTime?
+  rejectedBy        String?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  errorCode         String?
+  errorMessage      String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  conversation WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+
+  @@index([conversationId, createdAt])
+  @@index([status, createdAt])
+}
+
+model WhatsAppWebhookEvent {
+  id              String   @id @default(uuid())
+  eventFingerprint String  @unique
+  providerEventId String?
+  eventType       String
+  receivedAt      DateTime @default(now())
+  processedAt     DateTime?
+  lastError       String?
+  payload         Json
+
+  @@index([processedAt, receivedAt])
 }

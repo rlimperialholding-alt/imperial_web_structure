@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import accessStyles from "./access.module.css";
+import { authenticatedFetch, clearBrowserSession } from "@/lib/browser-auth";
 import {
   AgentsWorkspace,
   AuditWorkspace,
@@ -138,6 +139,9 @@ const stages: { id: Stage; label: string; color: string }[] = [
   { id: "contract", label: "Szerződés", color: "#2c8a68" },
 ];
 
+// Retained as a visual fixture for component development; never used as an
+// authorization or runtime fallback.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const initialLeads: Lead[] = [
   {
     id: 1,
@@ -358,6 +362,7 @@ const initialLeads: Lead[] = [
     notes: "Modern pajtaház, nagy üvegfelületekkel.",
   },
 ];
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const initialTasks: Task[] = [
   {
     id: 1,
@@ -538,12 +543,12 @@ export default function Home() {
   const [identity, setIdentity] = useState<Identity>({
       email: "",
       name: "Bodó Csaba",
-      role: "admin",
+      role: "sales",
     }),
     [dataState, setDataState] = useState<DataState>("connecting");
   useEffect(() => {
     let active = true;
-    fetch("/api/crm", { cache: "no-store" })
+    authenticatedFetch("/api/crm", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error(String(response.status));
         return response.json() as Promise<{
@@ -565,24 +570,20 @@ export default function Home() {
       })
       .catch(() => {
         if (!active) return;
-        if (location.hostname === "localhost") {
-          setLeads(initialLeads);
-          setTasksRaw(initialTasks);
-          setDataState("demo");
-        } else setDataState("error");
+        setDataState("error");
       });
     return () => {
       active = false;
     };
   }, []);
   const refreshIntelligence = async () => {
-    const response = await fetch("/api/intelligence", { cache: "no-store" });
+    const response = await authenticatedFetch("/api/intelligence", { cache: "no-store" });
     if (!response.ok) throw new Error(String(response.status));
     setIntelligence(await response.json() as IntelligenceWorkspace);
   };
   useEffect(() => {
     let active = true;
-    fetch("/api/intelligence", { cache: "no-store" })
+    authenticatedFetch("/api/intelligence", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error(String(response.status));
         return response.json() as Promise<IntelligenceWorkspace>;
@@ -617,12 +618,20 @@ export default function Home() {
       setView(v);
       setMobileOpen(false);
     };
+  const logout = async () => {
+    try {
+      await authenticatedFetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      clearBrowserSession();
+      window.location.assign("/login");
+    }
+  };
   const resolveImportReview = async (
     id: number,
     status: "resolved" | "dismissed",
   ) => {
     try {
-      const response = await fetch(`/api/intelligence/reviews/${id}`, {
+      const response = await authenticatedFetch(`/api/intelligence/reviews/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ status }),
@@ -641,7 +650,7 @@ export default function Home() {
         (task) => task.done && !current.find((old) => old.id === task.id)?.done,
       );
       if (completed && dataState === "live")
-        fetch(`/api/crm/tasks/${completed.id}`, {
+        authenticatedFetch(`/api/crm/tasks/${completed.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ done: true }),
@@ -664,7 +673,7 @@ export default function Home() {
     setLeads((c) => c.map((l) => (l.id === id ? { ...l, stage } : l)));
     try {
       if (dataState === "live") {
-        const response = await fetch(`/api/crm/leads/${id}`, {
+        const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ stage }),
@@ -685,7 +694,7 @@ export default function Home() {
   const addLead = async (lead: Omit<Lead, "id">) => {
     try {
       if (dataState === "live") {
-        const response = await fetch("/api/crm/leads", {
+        const response = await authenticatedFetch("/api/crm/leads", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(lead),
@@ -714,7 +723,7 @@ export default function Home() {
     setSelected(optimistic);
     try {
       if (dataState === "live") {
-        const response = await fetch(`/api/crm/leads/${id}`, {
+        const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(changes),
@@ -736,7 +745,7 @@ export default function Home() {
   const addTask = async (leadId: number, task: NewTask) => {
     try {
       if (dataState === "live") {
-        const response = await fetch("/api/crm/tasks", {
+        const response = await authenticatedFetch("/api/crm/tasks", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ ...task, leadId }),
@@ -880,6 +889,12 @@ export default function Home() {
             <span>Audit</span>
           </button>
         </nav>
+        <button
+          className="secondary"
+          onClick={() => window.location.assign("/communications/whatsapp")}
+        >
+          WhatsApp
+        </button>
         <div className="sidebar-footer">
           <span>Imperial Sales CRM</span>
           <small>Executive UI · v1.5</small>
@@ -923,11 +938,23 @@ export default function Home() {
             <button className="quick-add" onClick={() => setNewOpen(true)}>
               <Icon name="plus" /> Új adatlap
             </button>
+            {identity.role === "admin" && (
+              <button
+                className="bell"
+                title="Felhasználók és jogosultságok"
+                onClick={() => window.location.assign("/admin/access")}
+              >
+                <Icon name="shield" />
+              </button>
+            )}
             <span className="avatar">{initials || "CRM"}</span>
             <span className="user-name">
               <strong>{identity.name}</strong>
               <small>{roleLabel}</small>
             </span>
+            <button className="bell" title="Kilépés" onClick={logout}>
+              <Icon name="close" />
+            </button>
           </div>
         </header>
         {crmViews.includes(view) && (

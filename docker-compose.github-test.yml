@@ -17,6 +17,7 @@ services:
       CRM_ADMIN_EMAIL: ${CRM_ADMIN_EMAIL:-developer@terminal.local}
       CRM_MIGRATION_TOKEN: ${CRM_MIGRATION_TOKEN:?required}
       ITEP_CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:?required}
+      ITEP_BASE_URL: http://itep-api:3000
     ports:
       - "127.0.0.1:${CRM_TEST_PORT:-8787}:8787"
     volumes:
@@ -138,9 +139,20 @@ services:
       DEFAULT_ESCALATION_PERSON_ID: director
       DEFAULT_CONTACT_EMAIL: test@imperial.local
       IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
+      AUTH_TOKEN_PEPPER: test-auth-token-pepper-not-for-production-0001
+      AUTH_DATA_ENCRYPTION_KEY: test-auth-encryption-key-not-for-production-0001
+      AUTH_BOOTSTRAP_TOKEN: test-bootstrap-token-not-for-production-0001
+      AUTH_COOKIE_SECURE: "false"
       BILLINGO_API_BASE_URL: http://mock-external:9010
       META_GRAPH_API_BASE_URL: http://mock-external:9010
       META_GRAPH_API_VERSION: v25.0
+      WHATSAPP_APP_SECRET: test-whatsapp-app-secret-not-for-production-0001
+      WHATSAPP_VERIFY_TOKEN: test-whatsapp-verify-token
+      WHATSAPP_GRAPH_API_BASE_URL: http://mock-external:9010
+      WHATSAPP_GRAPH_API_VERSION: v25.0
+      WHATSAPP_DATA_ENCRYPTION_KEY: test-whatsapp-data-key-not-for-production-0001
+      WHATSAPP_CONNECTOR_ID: whatsapp-live
+      WHATSAPP_PHONE_NUMBER_ID: "100000000001"
       GOOGLE_ADS_API_BASE_URL: http://mock-external:9010
       GOOGLE_ADS_API_VERSION: v25
       GOOGLE_OAUTH_TOKEN_URL: http://mock-external:9010/oauth2/token
@@ -163,6 +175,7 @@ services:
       CONNECTOR_ACCESS_TOKEN_BILLINGO_LIVE: synthetic-billingo-read-token
       CONNECTOR_ACCESS_TOKEN_META_ADS_LIVE: synthetic-meta-read-token
       CONNECTOR_ACCESS_TOKEN_GOOGLE_ADS_LIVE: '{"developerToken":"synthetic-developer-token","accessToken":"synthetic-google-oauth-token"}'
+      CONNECTOR_ACCESS_TOKEN_WHATSAPP_LIVE: synthetic-whatsapp-system-user-token
       CONNECTOR_SYNC_INTERVAL_MS: "3600000"
       INTEGRATION_RETRY_INTERVAL_MS: "30000"
     depends_on:

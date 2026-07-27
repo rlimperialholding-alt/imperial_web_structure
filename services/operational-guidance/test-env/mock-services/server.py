@@ -96,6 +96,13 @@ class Handler(BaseHTTPRequestHandler):
                 }],
             }])
             return
+        if path == "/v25.0/100000000001/messages":
+            self._json(200, {
+                "messaging_product": "whatsapp",
+                "contacts": [{"input": "36301234567", "wa_id": "36301234567"}],
+                "messages": [{"id": "wamid.mock-outbound-1"}],
+            })
+            return
         self._json(404, {"error": "not_found"})
 
     def log_message(self, *_: object) -> None:

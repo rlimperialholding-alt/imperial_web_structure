@@ -5,6 +5,16 @@ const workspaceId = process.env.CRM_WORKSPACE_ID;
 if (!workspaceId) {
   throw new Error("CRM_WORKSPACE_ID is required for the GitHub test environment");
 }
+const defaultOrganizationId =
+  process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding";
+await prisma.authOrganization.upsert({
+  where: { id: defaultOrganizationId },
+  create: {
+    id: defaultOrganizationId,
+    displayName: "Imperial Holding",
+  },
+  update: {},
+});
 await prisma.connectorAccount.upsert({
   where: {
     organizationId_kind_externalAccountId: {
@@ -87,6 +97,34 @@ if (mode === "read-only") {
       },
     });
   }
+}
+
+if (process.env.WHATSAPP_PHONE_NUMBER_ID) {
+  await prisma.connectorAccount.upsert({
+    where: {
+      organizationId_kind_externalAccountId: {
+        organizationId: defaultOrganizationId,
+        kind: "WHATSAPP_BUSINESS",
+        externalAccountId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+      },
+    },
+    create: {
+      id: process.env.WHATSAPP_CONNECTOR_ID ?? "whatsapp-live",
+      organizationId: defaultOrganizationId,
+      kind: "WHATSAPP_BUSINESS",
+      externalAccountId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+      displayName: "WhatsApp Business – CRM customer service",
+      status: "ACTIVE",
+      scopes: [
+        "whatsapp_business_management",
+        "whatsapp_business_messaging",
+      ],
+    },
+    update: {
+      status: "ACTIVE",
+      displayName: "WhatsApp Business – CRM customer service",
+    },
+  });
 }
 
 console.log(`Connector seed completed (business mode: ${mode}).`);
