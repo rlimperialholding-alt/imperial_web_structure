@@ -1,6 +1,7 @@
 import type {
   ConnectorAccount,
   ConnectorSyncResult,
+  LegalEntity,
   SyncCheckpoint,
 } from "./types.js";
 
@@ -8,6 +9,10 @@ export interface ConnectorAccountRepository {
   getById(id: string): Promise<ConnectorAccount | null>;
   save(account: ConnectorAccount): Promise<void>;
   listActive(kind?: string): Promise<ConnectorAccount[]>;
+}
+
+export interface LegalEntityRepository {
+  listByOrganization(organizationId: string): Promise<LegalEntity[]>;
 }
 
 export interface SyncCheckpointRepository {

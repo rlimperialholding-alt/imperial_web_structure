@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const createTaskSchema = z.object({
   organizationId: z.string().min(1),
+  legalEntityId: z.string().min(1).optional(),
   source: z.string().min(1),
   issuerId: z.string().min(1),
   assigneeId: z.string().min(1),

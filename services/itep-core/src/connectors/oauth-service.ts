@@ -125,6 +125,8 @@ export class ConnectorOAuthService {
       id: accountId,
       organizationId: pending.organizationId,
       kind: pending.kind,
+      scope: "GROUP",
+      scopeKey: "GROUP",
       externalAccountId: token.externalAccountId,
       displayName: token.displayName,
       status: "ACTIVE",

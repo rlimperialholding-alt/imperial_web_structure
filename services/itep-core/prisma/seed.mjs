@@ -1,93 +1,120 @@
+// Plain-Node compatibility seed used by the integrated repository validator.
+// The canonical seed command is `npm run seed` (prisma/seed.ts).
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const workspaceId = process.env.CRM_WORKSPACE_ID;
-if (!workspaceId) {
-  throw new Error("CRM_WORKSPACE_ID is required for the GitHub test environment");
-}
-await prisma.connectorAccount.upsert({
-  where: {
-    organizationId_kind_externalAccountId: {
-      organizationId: process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding",
-      kind: "CRM",
-      externalAccountId: workspaceId,
-    },
-  },
-  create: {
-    id: process.env.ITEP_CRM_CONNECTOR_ID ?? "crm-live",
-    organizationId: process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding",
-    kind: "CRM",
-    externalAccountId: workspaceId,
-    displayName: "Imperial Sales CRM – internal read-only",
-    status: "ACTIVE",
-    scopes: ["activities.read", "leads.read", "deals.read"],
-  },
-  update: {
-    status: "ACTIVE",
-    displayName: "Imperial Sales CRM – internal read-only",
-    scopes: ["activities.read", "leads.read", "deals.read"],
-  },
-});
+const organizationId =
+  process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding";
+const companies = [
+  ["prefab-keszhazepito", "Prefab Készházépítő Kft."],
+  ["bautica-work", "Bautica Work Kft."],
+  ["baufreund-ingatlanfejleszto", "Baufreund Ingatlanfejlesztő Kft."],
+  ["imperial-holding-keszhazepito", "Imperial Holding Készházépítő Kft."],
+  [
+    "imperial-holding-csaladi-haz-epito-es-generalkivitelezo",
+    "Imperial Holding Családi Ház Építő és Generálkivitelező Kft.",
+  ],
+  [
+    "imperial-holding-mernoki-es-tanacsado",
+    "Imperial Holding Mérnöki és Tanácsadó Kft.",
+  ],
+  ["danish-fabrik", "Danish Fabrik Kft."],
+  ["casa-moderna", "Casa Moderna Kft."],
+  ["feszek-tuzep", "Fészek Tüzép Bt."],
+  ["vitruvius", "Vitruvius Kft."],
+  ["property-360", "Property 360 Kft."],
+  ["everyday-homes", "Everyday Homes Kft."],
+];
 
-const mode = process.env.BUSINESS_CONNECTORS_MODE ?? "disabled";
-if (mode === "read-only") {
-  const organizationId =
-    process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding";
-  const connectors = [
-    {
-      id: process.env.BILLINGO_CONNECTOR_ID ?? "billingo-live",
-      kind: "BILLINGO",
-      externalAccountId:
-        process.env.BILLINGO_EXTERNAL_ACCOUNT_ID ?? "all",
-      displayName: "Billingo – read-only invoice data",
-      scopes: ["invoices.read"],
+for (const [slug, legalName] of companies) {
+  const id = `${organizationId}:${slug}`;
+  await prisma.legalEntity.upsert({
+    where: { id },
+    create: {
+      id,
+      organizationId,
+      slug,
+      legalName,
+      status: "ACTIVE",
+      metadata: {
+        source: "initial-user-supplied-company-list",
+        legalIdentifiersVerified: false,
+      },
     },
-    {
-      id: process.env.META_ADS_CONNECTOR_ID ?? "meta-ads-live",
-      kind: "META_ADS",
-      externalAccountId: process.env.META_ADS_AD_ACCOUNT_ID,
-      displayName: "Meta Ads – read-only campaign insights",
-      scopes: ["ads_read", "read_insights"],
-    },
-    {
-      id: process.env.GOOGLE_ADS_CONNECTOR_ID ?? "google-ads-live",
-      kind: "GOOGLE_ADS",
-      externalAccountId: process.env.GOOGLE_ADS_CUSTOMER_ID,
-      displayName: "Google Ads – read-only campaign metrics",
-      scopes: ["https://www.googleapis.com/auth/adwords", "account.read-only"],
-    },
-  ];
+    update: { legalName, status: "ACTIVE" },
+  });
 
-  for (const connector of connectors) {
-    if (!connector.externalAccountId) {
-      console.log(`${connector.kind} connector skipped: external account ID missing.`);
-      continue;
-    }
+  for (const [kind, label, scopes] of [
+    ["BILLINGO", "Billingo", ["invoices.read"]],
+    ["BANK", "Bank", ["accounts.read", "transactions.read"]],
+    [
+      "GOVERNMENT_PORTAL",
+      "Cégkapu / hatósági tárhely",
+      ["messages.read", "notifications.read"],
+    ],
+  ]) {
+    const connectorId = `${kind.toLowerCase().replaceAll("_", "-")}-${slug}`;
     await prisma.connectorAccount.upsert({
-      where: {
-        organizationId_kind_externalAccountId: {
-          organizationId,
-          kind: connector.kind,
-          externalAccountId: connector.externalAccountId,
+      where: { id: connectorId },
+      create: {
+        id: connectorId,
+        organizationId,
+        kind,
+        scope: "LEGAL_ENTITY",
+        scopeKey: id,
+        legalEntityId: id,
+        externalAccountId: "unconfigured",
+        displayName: `${label} – ${legalName}`,
+        status: "DISCONNECTED",
+        scopes,
+        configuration: {
+          credentialReference: connectorId,
+          provisioningState: "AWAITING_CREDENTIALS",
         },
       },
-      create: {
-        id: connector.id,
-        organizationId,
-        kind: connector.kind,
-        externalAccountId: connector.externalAccountId,
-        displayName: connector.displayName,
-        status: "ACTIVE",
-        scopes: connector.scopes,
-      },
-      update: {
-        displayName: connector.displayName,
-        status: "ACTIVE",
-        scopes: connector.scopes,
-      },
+      update: { displayName: `${label} – ${legalName}` },
     });
   }
 }
 
-console.log(`Connector seed completed (business mode: ${mode}).`);
+await prisma.connectorAccount.upsert({
+  where: { id: "connector-demo-gmail" },
+  create: {
+    id: "connector-demo-gmail",
+    organizationId,
+    kind: "GMAIL",
+    scope: "GROUP",
+    scopeKey: "GROUP",
+    externalAccountId: "office@example.invalid",
+    displayName: "Demo Gmail connector",
+    status: "DISCONNECTED",
+    scopes: ["gmail.readonly"],
+  },
+  update: {},
+});
+
+const workspaceId = process.env.CRM_WORKSPACE_ID;
+if (workspaceId) {
+  await prisma.connectorAccount.upsert({
+    where: { id: process.env.ITEP_CRM_CONNECTOR_ID ?? "crm-live" },
+    create: {
+      id: process.env.ITEP_CRM_CONNECTOR_ID ?? "crm-live",
+      organizationId,
+      kind: "CRM",
+      scope: "GROUP",
+      scopeKey: "GROUP",
+      externalAccountId: workspaceId,
+      displayName: "Imperial Sales CRM – internal read-only",
+      status: "ACTIVE",
+      scopes: ["activities.read", "leads.read", "deals.read"],
+    },
+    update: {
+      status: "ACTIVE",
+      displayName: "Imperial Sales CRM – internal read-only",
+      scopes: ["activities.read", "leads.read", "deals.read"],
+    },
+  });
+}
+
+console.log(`Connector seed completed for ${companies.length} legal entities.`);
 await prisma.$disconnect();

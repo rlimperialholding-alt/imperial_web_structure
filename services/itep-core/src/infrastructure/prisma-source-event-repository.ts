@@ -21,6 +21,9 @@ export class PrismaSourceEventRepository
       data: {
         id: event.id,
         organizationId: event.organizationId,
+        ...(event.legalEntityId
+          ? { legalEntity: { connect: { id: event.legalEntityId } } }
+          : {}),
         source: event.source,
         externalId: event.externalId,
         occurredAt: event.occurredAt,
@@ -56,6 +59,7 @@ export class PrismaSourceEventRepository
     return {
       id: row.id,
       organizationId: row.organizationId,
+      ...(row.legalEntityId ? { legalEntityId: row.legalEntityId } : {}),
       source: row.source,
       externalId: row.externalId,
       occurredAt: row.occurredAt,

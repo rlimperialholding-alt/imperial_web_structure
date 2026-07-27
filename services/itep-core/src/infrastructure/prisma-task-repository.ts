@@ -121,6 +121,9 @@ export class PrismaTaskRepository implements TaskRepository {
     return {
       id: task.id,
       organizationId: task.organizationId,
+      ...(task.legalEntityId
+        ? { legalEntity: { connect: { id: task.legalEntityId } } }
+        : {}),
       source: task.source,
       sourceExternalId: task.sourceExternalId ?? null,
       semanticFingerprint: task.semanticFingerprint ?? null,
@@ -167,6 +170,7 @@ export class PrismaTaskRepository implements TaskRepository {
     return {
       id: row.id,
       organizationId: row.organizationId,
+      ...(row.legalEntityId ? { legalEntityId: row.legalEntityId } : {}),
       source: row.source,
       ...(row.sourceExternalId ? { sourceExternalId: row.sourceExternalId } : {}),
       ...(row.semanticFingerprint ? { semanticFingerprint: row.semanticFingerprint } : {}),

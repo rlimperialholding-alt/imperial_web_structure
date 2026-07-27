@@ -29,6 +29,7 @@ export class TaskApplicationCandidateCreator
 
     const task = await this.service.create(this.actor, {
       organizationId: candidate.organizationId,
+      legalEntityId: candidate.legalEntityId,
       source: candidate.source,
       sourceExternalId: candidate.sourceExternalId,
       issuerId: candidate.issuerId,

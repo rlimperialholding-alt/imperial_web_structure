@@ -16,7 +16,17 @@ export class CrmSyncAdapter implements ConnectorSyncAdapter {
     let ingested=0,ignored=0,failed=0;
     for(const item of batch.activities){try{
       const result=await this.ingestion.ingest(
-        normalizeCrmActivity(input.account.organizationId,item,this.now()));
+        normalizeCrmActivity(
+          input.account.organizationId,
+          item,
+          this.now(),
+          {
+            connectorAccountId: input.account.id,
+            ...(input.account.legalEntityId
+              ? { legalEntityId: input.account.legalEntityId }
+              : {}),
+          },
+        ));
       result.status==="TASK_CREATED"?ingested++:ignored++;
     }catch{failed++;}}
     return {received:batch.activities.length,ingested,ignored,failed,

@@ -6,6 +6,7 @@ import type {
   SyncCheckpointRepository,
 } from "./ports.js";
 import type { ConnectorAccount } from "./types.js";
+import { assertConnectorOwnership } from "./account-policy.js";
 
 export interface ConnectorIncidentWriter {
   open(input: {
@@ -39,6 +40,7 @@ export class ConnectorSyncOrchestrator {
   async syncAccount(accountId: string) {
     const account = await this.accounts.getById(accountId);
     if (!account) throw new Error(`Connector account not found: ${accountId}`);
+    assertConnectorOwnership(account);
 
     const adapter = this.adapters[account.kind];
     if (!adapter) throw new Error(`No adapter registered for ${account.kind}`);
