@@ -6,7 +6,8 @@ export type ConnectorKind =
   | "BANK"
   | "CRM"
   | "META_ADS"
-  | "GOOGLE_ADS";
+  | "GOOGLE_ADS"
+  | "WHATSAPP_BUSINESS";
 export type ConnectorStatus =
   | "DISCONNECTED"
   | "CONNECTING"

@@ -46,6 +46,15 @@ import { ConnectorSyncOrchestrator } from "../connectors/sync-orchestrator.js";
 import { registerConnectorRoutes } from "./connector-routes.js";
 import { OrchestratorOperationExecutor } from "../integration-control-room/adapters.js";
 import { registerOrchestrationRoutes } from "./orchestration-routes.js";
+import { AuthService } from "../auth/service.js";
+import { registerAuthRoutes, securityContext } from "./auth-routes.js";
+import { registerAdminAuthRoutes } from "./admin-auth-routes.js";
+import {
+  installRawJsonBodyCapture,
+  registerWhatsAppRoutes,
+} from "./whatsapp-routes.js";
+import { WhatsAppCloudApiGateway } from "../whatsapp/gateway.js";
+import { WhatsAppService } from "../whatsapp/service.js";
 
 export interface ServerDependencies {
   integrationExecutor?: ConnectorOperationExecutor;
@@ -56,10 +65,32 @@ export async function buildServer(
 ) {
   const config = loadConfig();
   const app = Fastify({ logger: true });
+  installRawJsonBodyCapture(app);
   await registerOpenApi(app);
   await registerRateLimit(app, { max: config.API_RATE_LIMIT_MAX, timeWindow: config.API_RATE_LIMIT_WINDOW_MS });
-  registerIdentityHook(app, new IdentityVerifier(config.IDENTITY_SHARED_SECRET, () => new Date()));
+  const authService = new AuthService(prisma, config, () => new Date());
+  registerIdentityHook(
+    app,
+    new IdentityVerifier(config.IDENTITY_SHARED_SECRET, () => new Date()),
+    authService,
+  );
+  app.addHook("onResponse", async (request, reply) => {
+    if (!request.verifiedActor) return;
+    try {
+      await authService.recordRequestAudit({
+        actor: request.verifiedActor,
+        method: request.method,
+        route: request.routeOptions.url ?? request.url.split("?")[0] ?? request.url,
+        statusCode: reply.statusCode,
+        context: securityContext(request),
+      });
+    } catch (error) {
+      request.log.error({ err: error }, "Security access audit failed");
+    }
+  });
   registerHealthRoutes(app, prisma);
+  registerAuthRoutes(app, authService, config);
+  registerAdminAuthRoutes(app, authService);
 
   const tasks = new PrismaTaskRepository(prisma);
   const audit = new PrismaAuditRepository(prisma);
@@ -96,6 +127,16 @@ export async function buildServer(
   const connectorAccounts = new PrismaConnectorAccountRepository(prisma);
   const connectorCheckpoints = new PrismaSyncCheckpointRepository(prisma);
   const connectorSecrets = new EnvironmentConnectorSecretProvider();
+  const whatsAppService = new WhatsAppService(
+    prisma,
+    connectorSecrets,
+    new WhatsAppCloudApiGateway(
+      config.WHATSAPP_GRAPH_API_BASE_URL,
+      config.WHATSAPP_GRAPH_API_VERSION,
+    ),
+    config,
+    () => new Date(),
+  );
   let controlRoom: IntegrationControlRoomService;
   const syncObserver = {
     async success(input: {
@@ -142,6 +183,7 @@ export async function buildServer(
   );
 
   registerConnectorRoutes(app, connectorOrchestrator);
+  registerWhatsAppRoutes(app, whatsAppService);
   registerHumanAnneRoutes(app, humanAnneService);
   registerReportingRoutes(app, reportingService);
   registerIngestionRoutes(app, ingestionService);
@@ -183,7 +225,15 @@ export async function buildServer(
     if (error instanceof ZodError) return reply.code(400).send({ error: "VALIDATION_ERROR", details: error.issues });
     if (error instanceof DomainValidationError) return reply.code(422).send({ error: "DOMAIN_VALIDATION_ERROR", message: error.message });
     if (error instanceof InvalidTransitionError) return reply.code(409).send({ error: "INVALID_TRANSITION", message: error.message });
-    if (/identity|actor|required|signature|expired/i.test(message)) return reply.code(401).send({ error: "IDENTITY_REQUIRED", message });
+    if (/permission required|access denied|administrator access|executive access|company access/i.test(message)) {
+      return reply.code(403).send({ error: "ACCESS_DENIED", message });
+    }
+    if (/invalid email|authentication|session|identity|actor|required|signature|expired|locked|csrf/i.test(message)) {
+      return reply.code(401).send({ error: "IDENTITY_REQUIRED", message });
+    }
+    if (/password|invitation|bootstrap|job role|membership/i.test(message)) {
+      return reply.code(400).send({ error: "AUTH_REQUEST_INVALID", message });
+    }
     app.log.error({ err: error }, "Unhandled API error");
     return reply.code(500).send({ error: "INTERNAL_ERROR" });
   });

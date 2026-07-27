@@ -15,3 +15,7 @@ export * from "./rate-limit.js";
 export * from "./identity-hook.js";
 export * from "./integration-control-room-routes.js";
 export * from "./orchestration-routes.js";
+export * from "./auth-routes.js";
+export * from "./admin-auth-routes.js";
+export * from "./whatsapp-routes.js";
+export * from "../whatsapp/access.js";

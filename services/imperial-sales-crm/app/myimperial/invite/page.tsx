@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { authenticatedFetch } from "@/lib/browser-auth";
 import styles from "./invite.module.css";
 
 export default function MyImperialInvitePage() {
@@ -18,7 +19,7 @@ export default function MyImperialInvitePage() {
 
   const accept = async () => {
     setState("working");
-    const response = await fetch("/api/myimperial/invitations/accept", {
+    const response = await authenticatedFetch("/api/myimperial/invitations/accept", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ token }),

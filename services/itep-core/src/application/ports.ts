@@ -49,6 +49,10 @@ export interface ActorContext {
   organizationId: string;
   roles: string[];
   permissions: string[];
+  projectIds?: string[];
+  sessionId?: string;
+  isSystemAdmin?: boolean;
+  isExecutive?: boolean;
 }
 
 export interface AuthorizationService {
