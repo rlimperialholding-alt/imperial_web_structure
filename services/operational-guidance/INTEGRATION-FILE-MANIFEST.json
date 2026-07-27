@@ -776,8 +776,8 @@
     },
     {
       "path": "services/operational-guidance/test-env/mock-services/server.py",
-      "size": 3930,
-      "sha256": "3629ab985828f720beb95dde5067153471f5ab78c43725e1005eb03a9e64ae96"
+      "size": 4237,
+      "sha256": "066e4e7a3b0a061457bf304663d15b37459dd58cbc20482f4c13e6c808eb706e"
     },
     {
       "path": "services/operational-guidance/tests/test_auth.py",
