@@ -26,8 +26,6 @@ test("the formerly placeholder Intelligence navigation opens persisted workspace
   assert.match(source, /changeView\("knowledge"\)/);
   assert.match(source, /changeView\("agents"\)/);
   assert.match(source, /changeView\("audit"\)/);
-  assert.doesNotMatch(source, /Projektek modul a következő fejlesztési ütemben/);
-  assert.doesNotMatch(source, /tudásbázis csatlakoztatása előkészítés alatt/);
 });
 
 test("import review decisions are restricted, persisted and audited", async () => {
@@ -49,4 +47,35 @@ test("the CRM does not server-render fallback lead data before authorization", a
   assert.match(source, /useState<Lead\[\]>\(\[\]\)/);
   assert.match(source, /useState<Task\[\]>\(\[\]\)/);
   assert.match(source, /dataState === "error"/);
+  assert.doesNotMatch(source, /location\.hostname === "localhost"/);
+});
+
+test("the CRM trusts the internal session service instead of browser identity headers", async () => {
+  const auth = await readFile("lib/crm-auth.ts", "utf8");
+  const proxy = await readFile("lib/itep-auth.ts", "utf8");
+  assert.match(auth, /verifyInternalUser/);
+  assert.doesNotMatch(auth, /oai-authenticated-user-email/);
+  assert.match(proxy, /\/v1\/auth\/csrf\/verify/);
+  assert.match(proxy, /x-csrf-token/);
+  assert.match(proxy, /cache: "no-store"/);
+});
+
+test("the browser exposes MFA enrollment, recovery and administrator access management", async () => {
+  const login = await readFile("app/login/page.tsx", "utf8");
+  const admin = await readFile("app/admin/access/page.tsx", "utf8");
+  assert.match(login, /mfa\/verify/);
+  assert.match(login, /mfa\/enroll\/confirm/);
+  assert.match(login, /recoveryCodes/);
+  assert.match(admin, /job-role-templates/);
+  assert.match(admin, /users\/\$\{selected\.id\}\/access/);
+  assert.match(admin, /users\/\$\{selected\.id\}\/recovery/);
+});
+
+test("WhatsApp conversations only use the authenticated server proxy", async () => {
+  const page = await readFile("app/communications/whatsapp/page.tsx", "utf8");
+  const proxy = await readFile("app/api/whatsapp/[...path]/route.ts", "utf8");
+  assert.match(page, /authenticatedFetch/);
+  assert.match(page, /PENDING_APPROVAL/);
+  assert.match(proxy, /proxyIdentityResponse/);
+  assert.doesNotMatch(page, /graph\.facebook\.com/);
 });

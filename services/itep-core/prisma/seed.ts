@@ -4,6 +4,16 @@ const prisma = new PrismaClient();
 
 async function main() {
   const now = new Date();
+  const defaultOrganizationId =
+    process.env.DEFAULT_ORGANIZATION_ID ?? "imperial-holding";
+  await prisma.authOrganization.upsert({
+    where: { id: defaultOrganizationId },
+    create: {
+      id: defaultOrganizationId,
+      displayName: "Imperial Holding",
+    },
+    update: {},
+  });
   await prisma.connectorAccount.upsert({
     where: {
       organizationId_kind_externalAccountId: {
@@ -82,6 +92,34 @@ async function main() {
         },
       });
     }
+  }
+
+  if (process.env.WHATSAPP_PHONE_NUMBER_ID) {
+    await prisma.connectorAccount.upsert({
+      where: {
+        organizationId_kind_externalAccountId: {
+          organizationId: defaultOrganizationId,
+          kind: "WHATSAPP_BUSINESS",
+          externalAccountId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+        },
+      },
+      create: {
+        id: process.env.WHATSAPP_CONNECTOR_ID ?? "whatsapp-live",
+        organizationId: defaultOrganizationId,
+        kind: "WHATSAPP_BUSINESS",
+        externalAccountId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+        displayName: "WhatsApp Business – CRM customer service",
+        status: "ACTIVE",
+        scopes: [
+          "whatsapp_business_management",
+          "whatsapp_business_messaging",
+        ],
+      },
+      update: {
+        status: "ACTIVE",
+        displayName: "WhatsApp Business – CRM customer service",
+      },
+    });
   }
 
   console.log("Seed completed.");

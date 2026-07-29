@@ -17,6 +17,7 @@ const localBindingConfig = {
   vars: {
     CRM_MIGRATION_TOKEN: process.env.CRM_MIGRATION_TOKEN ?? "",
     ITEP_CRM_READ_TOKEN: process.env.ITEP_CRM_READ_TOKEN ?? "",
+    ITEP_BASE_URL: process.env.ITEP_BASE_URL ?? "http://127.0.0.1:3000",
   },
   d1_databases: d1
     ? [
