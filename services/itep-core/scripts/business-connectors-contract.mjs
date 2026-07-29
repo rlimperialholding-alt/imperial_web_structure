@@ -48,10 +48,18 @@ if (provider === "all" || provider === "google-ads") {
     process.env.GOOGLE_ADS_API_VERSION ?? "v25",
     process.env.GOOGLE_OAUTH_TOKEN_URL ?? "https://oauth2.googleapis.com/token",
   );
+  const serviceAccount = process.env.GOOGLE_ADS_SERVICE_ACCOUNT_JSON
+    ? parseJsonObject(
+        "GOOGLE_ADS_SERVICE_ACCOUNT_JSON",
+        process.env.GOOGLE_ADS_SERVICE_ACCOUNT_JSON,
+      )
+    : undefined;
   const credentialEnvelope = {
     developerToken: required("GOOGLE_ADS_DEVELOPER_TOKEN"),
     ...(process.env.GOOGLE_ADS_ACCESS_TOKEN
       ? { accessToken: process.env.GOOGLE_ADS_ACCESS_TOKEN }
+      : serviceAccount
+        ? { serviceAccount }
       : {
           clientId: required("GOOGLE_ADS_CLIENT_ID"),
           clientSecret: required("GOOGLE_ADS_CLIENT_SECRET"),
@@ -78,4 +86,17 @@ function required(name) {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+function parseJsonObject(name, value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error(`${name} must contain valid JSON`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${name} must contain a JSON object`);
+  }
+  return parsed;
 }

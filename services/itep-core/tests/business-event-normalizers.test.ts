@@ -20,6 +20,17 @@ describe("business event normalizers",()=>{
   campaignName:"Lead",dateStart:"2026-07-24",dateStop:"2026-07-24",
   impressions:100,clicks:10,spend:1200,currency:"HUF",conversions:2,
   updatedAt:now},now);
-  expect(e.metadata.accessMode).toBe("READ_ONLY");
+ expect(e.metadata.accessMode).toBe("READ_ONLY");
   expect(e.labels).toContain("MARKETING");});
+ it("keeps identical invoice IDs isolated by company connector",()=>{
+  const invoice={invoiceId:"1",invoiceNumber:"INV-1",customerName:"Client",
+   status:"PAID",grossAmount:1000,currency:"HUF",updatedAt:now};
+  const first=normalizeBillingoInvoice("org",invoice,now,{
+   connectorAccountId:"billingo-company-a",legalEntityId:"org:company-a"});
+  const second=normalizeBillingoInvoice("org",invoice,now,{
+   connectorAccountId:"billingo-company-b",legalEntityId:"org:company-b"});
+  expect(first.id).not.toBe(second.id);
+  expect(first.externalId).not.toBe(second.externalId);
+  expect(first.metadata.legalEntityId).toBe("org:company-a");
+  expect(second.metadata.legalEntityId).toBe("org:company-b");});
 });

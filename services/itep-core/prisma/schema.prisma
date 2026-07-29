@@ -59,64 +59,67 @@ enum SensitivityLevel {
 }
 
 model ItepTask {
-  id                    String           @id
-  organizationId        String
-  source                String
-  sourceExternalId      String?
-  semanticFingerprint   String?
-  issuerId              String
-  assigneeId            String
-  assigneeType          AssigneeType
-  title                 String
-  description           String
-  priority              TaskPriority
-  status                TaskStatus       @default(DRAFT)
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
-  dueAt                 DateTime
-  acceptanceCriteria    String
-  evidenceType          EvidenceType
-  evidenceDescription   String
-  machineVerifiable     Boolean          @default(false)
-  escalationPersonId    String
-  contactEmail          String
-  contactPhone          String?
-  lastCheckedAt         DateTime?
-  nextCheckAt           DateTime
-  reminderLevel         Int              @default(0)
-  acceptedBy            String?
-  acceptedAt            DateTime?
-  rejectionReason       String?
-  blockedReason         String?
-  cancelledReason       String?
-  sensitivity           SensitivityLevel @default(INTERNAL)
-  version               Int              @default(1)
+  id                  String           @id
+  organizationId      String
+  legalEntityId       String?
+  source              String
+  sourceExternalId    String?
+  semanticFingerprint String?
+  issuerId            String
+  assigneeId          String
+  assigneeType        AssigneeType
+  title               String
+  description         String
+  priority            TaskPriority
+  status              TaskStatus       @default(DRAFT)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  dueAt               DateTime
+  acceptanceCriteria  String
+  evidenceType        EvidenceType
+  evidenceDescription String
+  machineVerifiable   Boolean          @default(false)
+  escalationPersonId  String
+  contactEmail        String
+  contactPhone        String?
+  lastCheckedAt       DateTime?
+  nextCheckAt         DateTime
+  reminderLevel       Int              @default(0)
+  acceptedBy          String?
+  acceptedAt          DateTime?
+  rejectionReason     String?
+  blockedReason       String?
+  cancelledReason     String?
+  sensitivity         SensitivityLevel @default(INTERNAL)
+  version             Int              @default(1)
 
-  evidence              TaskEvidence[]
-  auditEvents           TaskAuditEvent[]
-  notificationOutbox    NotificationOutbox[]
-  dependenciesFrom      TaskDependency[] @relation("DependencyFrom")
-  dependenciesTo        TaskDependency[] @relation("DependencyTo")
+  evidence           TaskEvidence[]
+  auditEvents        TaskAuditEvent[]
+  notificationOutbox NotificationOutbox[]
+  dependenciesFrom   TaskDependency[]     @relation("DependencyFrom")
+  dependenciesTo     TaskDependency[]     @relation("DependencyTo")
+  legalEntity        LegalEntity?         @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
 
+  @@unique([organizationId, source, sourceExternalId])
   @@index([organizationId, status])
+  @@index([legalEntityId, status])
   @@index([assigneeId, status])
   @@index([priority, nextCheckAt])
   @@index([dueAt, status])
   @@index([semanticFingerprint, status])
-  @@unique([organizationId, source, sourceExternalId])
 }
 
 model TaskEvidence {
-  id           String       @id @default(uuid())
-  taskId       String
-  type         EvidenceType
-  uri          String
-  checksum     String?
-  metadata     Json?
-  submittedAt  DateTime     @default(now())
-  submittedBy  String
-  verifiedAt   DateTime?
-  verifiedBy   String?
+  id                 String       @id @default(uuid())
+  taskId             String
+  type               EvidenceType
+  uri                String
+  checksum           String?
+  metadata           Json?
+  submittedAt        DateTime     @default(now())
+  submittedBy        String
+  verifiedAt         DateTime?
+  verifiedBy         String?
   verificationResult String?
 
   task ItepTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
@@ -125,13 +128,13 @@ model TaskEvidence {
 }
 
 model TaskAuditEvent {
-  id          String   @id @default(uuid())
-  taskId      String
-  eventType   String
-  actorId     String
-  occurredAt  DateTime @default(now())
-  payload     Json
-  sequence    BigInt
+  id           String   @id @default(uuid())
+  taskId       String
+  eventType    String
+  actorId      String
+  occurredAt   DateTime @default(now())
+  payload      Json
+  sequence     BigInt
   previousHash String?
   hash         String?
 
@@ -142,23 +145,23 @@ model TaskAuditEvent {
 }
 
 model NotificationOutbox {
-  id             String   @id @default(uuid())
-  taskId         String
-  eventKey       String
-  channel        String
-  recipient      String
-  cc             String[]
-  subject        String
-  body           String
-  scheduledFor   DateTime
-  sentAt         DateTime?
-  attempts       Int      @default(0)
-  lastError      String?
-  lockedAt       DateTime?
-  deadLetteredAt DateTime?
+  id                String    @id @default(uuid())
+  taskId            String
+  eventKey          String
+  channel           String
+  recipient         String
+  cc                String[]
+  subject           String
+  body              String
+  scheduledFor      DateTime
+  sentAt            DateTime?
+  attempts          Int       @default(0)
+  lastError         String?
+  lockedAt          DateTime?
+  deadLetteredAt    DateTime?
   providerMessageId String?
-  idempotencyKey String   @unique
-  createdAt      DateTime @default(now())
+  idempotencyKey    String    @unique
+  createdAt         DateTime  @default(now())
 
   task ItepTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
 
@@ -175,7 +178,6 @@ model TaskDependency {
 
   @@unique([taskId, dependsOnId])
 }
-
 
 enum IncidentSeverity {
   LOW
@@ -213,7 +215,6 @@ model HumanAnneIncident {
   @@index([taskId])
 }
 
-
 enum SourceKind {
   GMAIL
   CALENDAR
@@ -241,6 +242,7 @@ enum IngestionReviewStatus {
 model SourceEvent {
   id             String            @id
   organizationId String
+  legalEntityId  String?
   source         SourceKind
   externalId     String
   occurredAt     DateTime
@@ -257,9 +259,11 @@ model SourceEvent {
   lastError      String?
 
   reviewItems IngestionReviewItem[]
+  legalEntity LegalEntity?          @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
 
   @@unique([organizationId, source, externalId])
   @@index([organizationId, status, occurredAt])
+  @@index([legalEntityId, status, occurredAt])
 }
 
 model IngestionReviewItem {
@@ -280,7 +284,6 @@ model IngestionReviewItem {
   @@index([organizationId, status, createdAt])
 }
 
-
 enum ConnectorKind {
   GMAIL
   CALENDAR
@@ -288,9 +291,15 @@ enum ConnectorKind {
   BILLINGO
   BANK
   CRM
+  GOVERNMENT_PORTAL
   META_ADS
   GOOGLE_ADS
   WHATSAPP_BUSINESS
+}
+
+enum ConnectorScope {
+  GROUP
+  LEGAL_ENTITY
 }
 
 enum ConnectorStatus {
@@ -302,49 +311,78 @@ enum ConnectorStatus {
   REAUTH_REQUIRED
 }
 
+enum LegalEntityStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model LegalEntity {
+  id             String            @id
+  organizationId String
+  slug           String
+  legalName      String
+  taxNumber      String?
+  status         LegalEntityStatus @default(ACTIVE)
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  connectorAccounts ConnectorAccount[]
+  sourceEvents      SourceEvent[]
+  tasks             ItepTask[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+}
+
 model ConnectorAccount {
   id                   String          @id
   organizationId       String
   kind                 ConnectorKind
+  scope                ConnectorScope  @default(GROUP)
+  scopeKey             String          @default("GROUP")
+  legalEntityId        String?
   externalAccountId    String
   displayName          String
   status               ConnectorStatus @default(DISCONNECTED)
   scopes               String[]
+  configuration        Json?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   lastSuccessfulSyncAt DateTime?
-  lastError             String?
+  lastError            String?
 
-  checkpoint SyncCheckpoint?
+  legalEntity          LegalEntity?          @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  checkpoint           SyncCheckpoint?
   webhookSubscriptions WebhookSubscription[]
 
-  @@unique([organizationId, kind, externalAccountId])
+  @@unique([organizationId, kind, scopeKey, externalAccountId])
   @@index([organizationId, status])
+  @@index([legalEntityId, kind, status])
 }
 
 model SyncCheckpoint {
-  id                 String   @id
-  connectorAccountId String   @unique
+  id                 String    @id
+  connectorAccountId String    @unique
   cursor             String?
   historyId          String?
   syncToken          String?
   expiresAt          DateTime?
-  updatedAt          DateTime @updatedAt
+  updatedAt          DateTime  @updatedAt
 
   connectorAccount ConnectorAccount @relation(fields: [connectorAccountId], references: [id], onDelete: Cascade)
 }
 
-
 model OAuthState {
-  state            String        @id
-  organizationId   String
-  kind             ConnectorKind
-  redirectUri      String
-  requestedScopes  String[]
-  createdBy        String
-  expiresAt        DateTime
-  consumedAt       DateTime?
-  createdAt        DateTime      @default(now())
+  state           String        @id
+  organizationId  String
+  kind            ConnectorKind
+  redirectUri     String
+  requestedScopes String[]
+  createdBy       String
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime      @default(now())
 
   @@index([expiresAt, consumedAt])
 }
@@ -370,15 +408,14 @@ model WebhookSubscription {
   @@index([connectorAccountId, status])
 }
 
-
 model IdempotencyRecord {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   scope          String
   key            String
   requestHash    String
   responseStatus Int?
   responseBody   Json?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
   expiresAt      DateTime
   completedAt    DateTime?
 
@@ -386,43 +423,42 @@ model IdempotencyRecord {
   @@index([expiresAt])
 }
 
-
 model ConnectorOperationalSnapshot {
-  id                   String   @id @default(uuid())
+  id                   String    @id @default(uuid())
   connectorId          String
   organizationId       String
   kind                 String
   status               String
   lastSuccessfulSyncAt DateTime?
   lastAttemptAt        DateTime?
-  consecutiveFailures  Int      @default(0)
-  pendingRetries       Int      @default(0)
-  deadLetterCount      Int      @default(0)
-  reauthRequired       Boolean  @default(false)
+  consecutiveFailures  Int       @default(0)
+  pendingRetries       Int       @default(0)
+  deadLetterCount      Int       @default(0)
+  reauthRequired       Boolean   @default(false)
   rateLimitedUntil     DateTime?
   lastErrorCode        String?
   lastErrorMessage     String?
-  updatedAt            DateTime @updatedAt
+  updatedAt            DateTime  @updatedAt
 
   @@unique([organizationId, connectorId])
   @@index([organizationId, status])
 }
 
 model IntegrationIncident {
-  id               String   @id @default(uuid())
-  organizationId   String
-  connectorId      String?
-  severity         String
-  type             String
-  status           String
-  title            String
-  description      String
-  firstObservedAt  DateTime
-  lastObservedAt   DateTime
-  occurrenceCount  Int      @default(1)
-  assignedTo       String?
-  resolutionNote   String?
-  resolvedAt       DateTime?
+  id              String    @id @default(uuid())
+  organizationId  String
+  connectorId     String?
+  severity        String
+  type            String
+  status          String
+  title           String
+  description     String
+  firstObservedAt DateTime
+  lastObservedAt  DateTime
+  occurrenceCount Int       @default(1)
+  assignedTo      String?
+  resolutionNote  String?
+  resolvedAt      DateTime?
 
   @@index([organizationId, status, severity])
   @@index([connectorId, status])
@@ -447,37 +483,37 @@ model ConnectorRetryCommand {
 }
 
 model ConnectorDeadLetterItem {
-  id               String   @id @default(uuid())
-  organizationId   String
-  connectorId      String
-  operation        String
-  payload          Json
-  totalAttempts    Int
-  lastError        String
-  failedAt         DateTime
-  acknowledgedAt   DateTime?
-  acknowledgedBy   String?
-  resolution       String?
+  id             String    @id @default(uuid())
+  organizationId String
+  connectorId    String
+  operation      String
+  payload        Json
+  totalAttempts  Int
+  lastError      String
+  failedAt       DateTime
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  resolution     String?
 
   @@index([organizationId, acknowledgedAt])
   @@index([connectorId, failedAt])
 }
 
 model OrchestrationEvent {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   organizationId  String
-  source           String
-  externalEventId  String
-  eventType        String
-  projectId        String
-  ownerId          String
-  status           String
-  payload          Json
-  taskIds          String[]
-  occurredAt       DateTime
-  receivedAt       DateTime @default(now())
-  processedAt      DateTime?
-  lastError        String?
+  source          String
+  externalEventId String
+  eventType       String
+  projectId       String
+  ownerId         String
+  status          String
+  payload         Json
+  taskIds         String[]
+  occurredAt      DateTime
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  lastError       String?
 
   @@unique([organizationId, source, externalEventId])
   @@index([organizationId, status, occurredAt])
