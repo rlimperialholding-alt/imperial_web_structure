@@ -17,12 +17,24 @@ COPY app ./app
 COPY migrations ./migrations
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" python -m pip install .
+    --mount=type=secret,id=build_ca,required=false \
+    if grep -q "BEGIN CERTIFICATE" /run/secrets/build_ca 2>/dev/null; then \
+      cat /etc/ssl/certs/ca-certificates.crt /run/secrets/build_ca > /tmp/build-ca.pem; \
+      export PIP_CERT=/tmp/build-ca.pem; \
+    fi; \
+    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" python -m pip install .; \
+    status=$?; rm -f /tmp/build-ca.pem; exit $status
 
 FROM base AS test
 COPY tests ./tests
 RUN --mount=type=cache,target=/root/.cache/pip \
-    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" python -m pip install ".[dev]"
+    --mount=type=secret,id=build_ca,required=false \
+    if grep -q "BEGIN CERTIFICATE" /run/secrets/build_ca 2>/dev/null; then \
+      cat /etc/ssl/certs/ca-certificates.crt /run/secrets/build_ca > /tmp/build-ca.pem; \
+      export PIP_CERT=/tmp/build-ca.pem; \
+    fi; \
+    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" python -m pip install ".[dev]"; \
+    status=$?; rm -f /tmp/build-ca.pem; exit $status
 USER 10001:10001
 
 FROM base AS runtime

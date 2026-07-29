@@ -18,7 +18,9 @@ token = os.environ.get("CRM_ACCESS_TOKEN", "").strip() or require("ITEP_CRM_READ
 workspace = require("CRM_WORKSPACE_ID")
 path = os.environ.get("CRM_ACTIVITIES_PATH", "/api/v1/activities")
 header = os.environ.get("CRM_AUTH_HEADER", "Authorization")
-scheme = os.environ.get("CRM_AUTH_SCHEME", "Bearer")
+scheme = os.environ.get("CRM_AUTH_SCHEME", "Bearer").strip()
+if scheme.lower() in {"none", "raw"}:
+    scheme = ""
 workspace_param = os.environ.get("CRM_WORKSPACE_QUERY_PARAMETER", "workspace")
 
 query = urllib.parse.urlencode({workspace_param: workspace, "limit": "1"})

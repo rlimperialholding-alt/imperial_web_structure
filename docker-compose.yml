@@ -56,12 +56,35 @@ services:
       platform-core:
         condition: service_healthy
 
-  platform-core:
+  platform-runtime-init:
+    image: ${PLATFORM_CORE_IMAGE:-imperial-platform-core:local}
     build:
       context: ./services/platform-core
       target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    command: ["chown", "-R", "10001:10001", "/app/runtime"]
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - platform_core_runtime:/app/runtime
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+
+  platform-core:
+    image: ${PLATFORM_CORE_IMAGE:-imperial-platform-core:local}
+    build:
+      context: ./services/platform-core
+      target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     restart: unless-stopped
     init: true
     environment:
@@ -100,6 +123,8 @@ services:
     depends_on:
       platform-postgres:
         condition: service_healthy
+      platform-runtime-init:
+        condition: service_completed_successfully
 
   platform-core-tests:
     build:
@@ -107,6 +132,7 @@ services:
       target: test
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["platform-test"]
     command:
       [
@@ -173,11 +199,13 @@ services:
       - no-new-privileges:true
 
   dpm-migrate:
+    image: ${DPM_RUNTIME_IMAGE:-imperial-digital-project-managers:local}
     build:
       context: ./services/digital-project-managers
       target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["digital-pm", "digital-pm-test"]
     command: ["alembic", "upgrade", "head"]
     environment: &dpm-environment
@@ -213,11 +241,13 @@ services:
       - no-new-privileges:true
 
   digital-project-managers:
+    image: ${DPM_RUNTIME_IMAGE:-imperial-digital-project-managers:local}
     build:
       context: ./services/digital-project-managers
       target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["digital-pm"]
     restart: unless-stopped
     environment:
@@ -255,11 +285,13 @@ services:
       - no-new-privileges:true
 
   dpm-worker:
+    image: ${DPM_RUNTIME_IMAGE:-imperial-digital-project-managers:local}
     build:
       context: ./services/digital-project-managers
       target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["digital-pm"]
     command:
       [
@@ -297,6 +329,7 @@ services:
       target: test
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["digital-pm-test"]
     command:
       [
@@ -335,6 +368,8 @@ volumes:
   platform_core_runtime:
 
 secrets:
+  build_ca:
+    file: ${BUILD_CA_CERT_FILE:-./docker/no-extra-ca.pem}
   platform_db_password:
     file: ${PLATFORM_DB_PASSWORD_FILE:-./secrets/platform_db_password.txt}
   dpm_db_password:

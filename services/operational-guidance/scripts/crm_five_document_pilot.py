@@ -12,7 +12,10 @@ MIGRATION_TOKEN = os.environ["CRM_MIGRATION_TOKEN"]
 READ_TOKEN = os.environ["ITEP_CRM_READ_TOKEN"]
 EXPECT_NEW = int(os.environ.get("EXPECT_NEW", "5"))
 WORKSPACE = "imperial-test"
-BATCH_ID = "synthetic-five-document-pilot-v1"
+BATCH_ID = os.environ.get(
+    "MIGRATION_PILOT_BATCH_ID",
+    "synthetic-five-document-pilot-v1",
+)
 
 
 def synthetic_pdf(number: int) -> bytes:

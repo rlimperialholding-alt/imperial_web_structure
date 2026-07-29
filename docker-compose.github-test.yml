@@ -1,6 +1,22 @@
 name: imperial-intelligence-test
 
 services:
+  crm-state-init:
+    image: ${CRM_TEST_IMAGE:-imperial-complete-test-crm:local}
+    pull_policy: never
+    command: ["chown", "-R", "1000:1000", "/app/.wrangler/state"]
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - ${CRM_TEST_STATE_PATH:-crm-local-state}:/app/.wrangler/state
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+
   crm:
     image: ${CRM_TEST_IMAGE:-imperial-complete-test-crm:local}
     build:
@@ -9,6 +25,7 @@ services:
       args:
         NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
         NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+      secrets: [build_ca]
     environment:
       NODE_ENV: test
       # Local corporate-proxy escape hatch. Keep empty in normal environments.
@@ -18,12 +35,20 @@ services:
       CRM_MIGRATION_TOKEN: ${CRM_MIGRATION_TOKEN:?required}
       ITEP_CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:?required}
       ITEP_BASE_URL: http://itep-api:3000
+    restart: unless-stopped
     ports:
       - "127.0.0.1:${CRM_TEST_PORT:-8787}:8787"
     volumes:
       # Set CRM_TEST_STATE_PATH to an existing Miniflare state directory to
       # exercise the stack against an approved local dataset without copying it.
       - ${CRM_TEST_STATE_PATH:-crm-local-state}:/app/.wrangler/state
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      crm-state-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
@@ -32,10 +57,13 @@ services:
 
   hub-postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: imperial
-      POSTGRES_PASSWORD: imperial-test-password
+      POSTGRES_PASSWORD: ${HUB_POSTGRES_PASSWORD:-imperial-test-password}
       POSTGRES_DB: imperial
+    volumes:
+      - hub-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U imperial -d imperial"]
       interval: 3s
@@ -44,6 +72,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -56,13 +85,14 @@ services:
       context: ./services/operational-guidance
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     command: alembic upgrade head
     environment: &hub-env
       APP_ENV: test
       APP_VERSION: 0.9.0-test
-      DATABASE_URL: postgresql+psycopg://imperial:imperial-test-password@hub-postgres:5432/imperial
+      DATABASE_URL: postgresql+psycopg://imperial:${HUB_POSTGRES_PASSWORD:-imperial-test-password}@hub-postgres:5432/imperial
       REDIS_URL: redis://redis:6379/0
-      API_ADMIN_TOKEN: test-admin-token-not-for-production
+      API_ADMIN_TOKEN: ${HUB_API_ADMIN_TOKEN:-test-admin-token-not-for-production}
       AUTO_CREATE_DB_SCHEMA: "false"
       STARTUP_VALIDATE_CONFIG: "true"
       OPERATIONAL_GUIDANCE_ENABLED: "false"
@@ -83,7 +113,17 @@ services:
       context: ./services/operational-guidance
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     environment: *hub-env
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /app/runtime:size=64m,uid=10001,gid=10001,mode=0700
+      - /tmp:size=32m,uid=10001,gid=10001,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "127.0.0.1:${HUB_TEST_PORT:-8000}:8000"
     depends_on:
@@ -99,10 +139,13 @@ services:
 
   itep-postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: itep
-      POSTGRES_PASSWORD: itep-test-password
+      POSTGRES_PASSWORD: ${ITEP_POSTGRES_PASSWORD:-itep-test-password}
       POSTGRES_DB: itep
+    volumes:
+      - itep-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U itep -d itep"]
       interval: 3s
@@ -128,29 +171,30 @@ services:
       args:
         NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
         NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+      secrets: [build_ca]
     command: >
       sh -c "npx prisma migrate deploy &&
              node prisma/seed.mjs"
     environment: &itep-env
       NODE_ENV: test
-      DATABASE_URL: postgresql://itep:itep-test-password@itep-postgres:5432/itep?schema=public
+      DATABASE_URL: postgresql://itep:${ITEP_POSTGRES_PASSWORD:-itep-test-password}@itep-postgres:5432/itep?schema=public
       DEFAULT_ORGANIZATION_ID: imperial-holding
       DEFAULT_ASSIGNEE_ID: human-anne
       DEFAULT_ESCALATION_PERSON_ID: director
       DEFAULT_CONTACT_EMAIL: test@imperial.local
       IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
-      AUTH_TOKEN_PEPPER: test-auth-token-pepper-not-for-production-0001
-      AUTH_DATA_ENCRYPTION_KEY: test-auth-encryption-key-not-for-production-0001
-      AUTH_BOOTSTRAP_TOKEN: test-bootstrap-token-not-for-production-0001
+      AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER:-test-auth-token-pepper-not-for-production-0001}
+      AUTH_DATA_ENCRYPTION_KEY: ${AUTH_DATA_ENCRYPTION_KEY:-test-auth-encryption-key-not-for-production-0001}
+      AUTH_BOOTSTRAP_TOKEN: ${AUTH_BOOTSTRAP_TOKEN:-test-bootstrap-token-not-for-production-0001}
       AUTH_COOKIE_SECURE: "false"
       BILLINGO_API_BASE_URL: http://mock-external:9010
       META_GRAPH_API_BASE_URL: http://mock-external:9010
       META_GRAPH_API_VERSION: v25.0
-      WHATSAPP_APP_SECRET: test-whatsapp-app-secret-not-for-production-0001
-      WHATSAPP_VERIFY_TOKEN: test-whatsapp-verify-token
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-test-whatsapp-app-secret-not-for-production-0001}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-test-whatsapp-verify-token}
       WHATSAPP_GRAPH_API_BASE_URL: http://mock-external:9010
       WHATSAPP_GRAPH_API_VERSION: v25.0
-      WHATSAPP_DATA_ENCRYPTION_KEY: test-whatsapp-data-key-not-for-production-0001
+      WHATSAPP_DATA_ENCRYPTION_KEY: ${WHATSAPP_DATA_ENCRYPTION_KEY:-test-whatsapp-data-key-not-for-production-0001}
       WHATSAPP_CONNECTOR_ID: whatsapp-live
       WHATSAPP_PHONE_NUMBER_ID: "100000000001"
       GOOGLE_ADS_API_BASE_URL: http://mock-external:9010
@@ -187,15 +231,24 @@ services:
         condition: service_healthy
 
   itep-api:
-    image: ${ITEP_BUILD_TEST_IMAGE:-imperial-complete-test-itep-build:local}
+    image: ${ITEP_RUNTIME_TEST_IMAGE:-imperial-complete-test-itep-runtime:local}
     build:
       context: ./services/itep-core
-      target: build
+      target: runtime
       args:
         NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
         NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+      secrets: [build_ca]
     command: ["node", "dist/src/api/main.js"]
     user: node
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,uid=1000,gid=1000,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment: *itep-env
     ports:
       - "127.0.0.1:${ITEP_TEST_PORT:-3000}:3000"
@@ -209,15 +262,24 @@ services:
       retries: 30
 
   itep-worker:
-    image: ${ITEP_BUILD_TEST_IMAGE:-imperial-complete-test-itep-build:local}
+    image: ${ITEP_RUNTIME_TEST_IMAGE:-imperial-complete-test-itep-runtime:local}
     build:
       context: ./services/itep-core
-      target: build
+      target: runtime
       args:
         NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
         NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+      secrets: [build_ca]
     command: ["node", "dist/src/workers/main.js"]
     user: node
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,uid=1000,gid=1000,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment: *itep-env
     depends_on:
       itep-migrate:
@@ -225,3 +287,9 @@ services:
 
 volumes:
   crm-local-state:
+  hub-postgres-data:
+  itep-postgres-data:
+
+secrets:
+  build_ca:
+    file: ${BUILD_CA_CERT_FILE:-./docker/no-extra-ca.pem}

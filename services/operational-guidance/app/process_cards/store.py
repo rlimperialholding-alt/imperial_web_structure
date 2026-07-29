@@ -35,7 +35,9 @@ class JsonProcessCardStore:
     @staticmethod
     def _write_json(path: Path, payload: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        # Keep the same-directory atomic write without repeating a potentially
+        # long destination name in the temporary filename.
+        temporary = path.with_name(f".{uuid.uuid4().hex}.tmp")
         temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",

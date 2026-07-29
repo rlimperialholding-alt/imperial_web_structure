@@ -106,7 +106,7 @@ $env:DPM_AUTH_HS256_SECRET_FILE = Resolve-OrCreateLocalSecret `
 Push-Location $repositoryRoot
 try {
   & $dockerCommand compose --profile digital-pm up `
-    --detach --force-recreate --wait --wait-timeout 180
+    --detach --build --force-recreate --wait --wait-timeout 180
   if ($LASTEXITCODE -ne 0) {
     throw 'The visual platform and Digital PM stack could not be started.'
   }
@@ -114,7 +114,7 @@ try {
   & $dockerCommand compose `
     --project-name imperial-complete-test `
     --file docker-compose.github-test.yml `
-    up --detach --wait --wait-timeout 240
+    up --detach --build --wait --wait-timeout 240
   if ($LASTEXITCODE -ne 0) {
     throw 'The live CRM, ITEP and Integration Hub stack could not be started.'
   }

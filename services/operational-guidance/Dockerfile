@@ -12,10 +12,16 @@ RUN groupadd --gid 10001 imperial \
 
 WORKDIR /app
 COPY . /app
-RUN PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install --upgrade pip \
+RUN --mount=type=secret,id=build_ca,required=false \
+    if grep -q "BEGIN CERTIFICATE" /run/secrets/build_ca 2>/dev/null; then \
+      cat /etc/ssl/certs/ca-certificates.crt /run/secrets/build_ca > /tmp/build-ca.pem; \
+      export PIP_CERT=/tmp/build-ca.pem; \
+    fi; \
+    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install --upgrade pip \
     && PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install . \
     && mkdir -p /app/runtime \
-    && chown -R imperial:imperial /app/runtime
+    && chown -R imperial:imperial /app/runtime; \
+    status=$?; rm -f /tmp/build-ca.pem; exit $status
 
 USER imperial
 
