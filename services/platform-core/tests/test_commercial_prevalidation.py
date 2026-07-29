@@ -8,6 +8,7 @@ from copy_gate_fixtures import (
 )
 
 from app.copy_gate.models import (
+    Decision,
     ExternalActionType,
     FourGateSubmission,
     PrevalidatedSourceEvidence,
@@ -381,3 +382,57 @@ def test_prevalidated_asset_skips_human_editorial_and_owner_approval(db):
     assert proof["approval_mode"] == "SOURCE_PREVALIDATED"
     assert proof["human_editorial_actor"] is None
     assert proof["owner_actor"] is None
+
+
+def test_adapted_copy_cannot_use_source_prevalidated_fast_lane(db):
+    evidence, claim = _fragment_evidence(
+        "imperial",
+        "FIX MINŐSÉG, FIX ÁR, FIX HATÁRIDŐ.",
+        category="commercial",
+    )
+    brief = imperial_brief(copy_brief_id="CB-IMP-ADAPTED")
+    source_asset = imperial_asset(asset_id="ASSET-IMP-ADAPTED")
+    asset_payload = source_asset.model_copy(
+        update={
+            "body": source_asset.body + " " + claim,
+            "factual_claims": [claim],
+            "price_mentions": [],
+            "visual_asset_ids": [],
+            "prevalidated_source_evidence": [evidence],
+        }
+    )
+    adapted_trace = generation_trace()
+    adapted_trace.update(
+        {
+            "copy_mode": "source_adaptation",
+            "copy_fingerprint": "sha256:test-imperial-adapted-copy-v1",
+            "copy_concept_id": "imperial-adapted-proof-v1",
+            "source_text_usage_ratio": 0.6,
+            "meaning_preservation_checked": True,
+            "source_prevalidation_requested": False,
+        }
+    )
+    brief_row = create_copy_brief(db, brief.model_dump(mode="json"), actor="test")
+    asset = create_content_asset(
+        db,
+        asset_payload,
+        copy_brief_id=brief_row.copy_brief_id,
+        project_id="PRJ-DEMO-001",
+        generation_trace=adapted_trace,
+        actor="test",
+    )
+    run_copy_quality(db, asset.asset_id, editorial_review(), actor="quality-worker")
+
+    aggregate = submit_four_gates(
+        db,
+        asset.asset_id,
+        FourGateSubmission(
+            legal_relevant=False,
+            financial_relevant=True,
+            technical_relevant=False,
+        ),
+        actor="gate-orchestrator",
+    )
+
+    assert aggregate["decision"] == Decision.HUMAN_APPROVAL_REQUIRED
+    assert aggregate["state"] == PublicationState.FOUR_GATE_QA

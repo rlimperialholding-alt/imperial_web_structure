@@ -33,6 +33,114 @@ VISUAL_LAYOUT_TRACE_FIELDS = (
     "minimum_text_contrast_ratio",
 )
 
+COPY_VARIATION_MODES = {
+    "verbatim_source",
+    "source_adaptation",
+    "original_concept",
+}
+
+COPY_VARIATION_TRACE_FIELDS = (
+    "copy_mode",
+    "copy_fingerprint",
+    "copy_concept_id",
+    "source_text_usage_ratio",
+    "professional_copy_quality_score",
+    "creative_quality_benchmark_id",
+    "creative_rationale",
+    "introduces_new_factual_claims",
+    "human_fact_review_required",
+)
+
+CREATIVE_QUALITY_BENCHMARKS = {
+    "prefab-facebook-etalon-v1",
+}
+
+
+def validate_copy_variation_trace(
+    trace: dict[str, Any],
+    *,
+    sibling_traces: list[dict[str, Any]] | None = None,
+) -> None:
+    """Require original, professional copy without inventing unvalidated facts."""
+
+    sibling_traces = sibling_traces or []
+    missing = [field for field in COPY_VARIATION_TRACE_FIELDS if trace.get(field) in (None, "")]
+    if missing:
+        raise ValueError("A kreatív szöveg kötelező trace mezői hiányoznak: " + ", ".join(missing))
+
+    copy_mode = str(trace["copy_mode"])
+    if copy_mode not in COPY_VARIATION_MODES:
+        raise ValueError("Ismeretlen copy_mode.")
+
+    try:
+        source_text_usage_ratio = float(trace["source_text_usage_ratio"])
+        professional_score = float(trace["professional_copy_quality_score"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "A szöveghasználati arány és a copy quality score szám kell legyen."
+        ) from exc
+    if not 0 <= source_text_usage_ratio <= 1:
+        raise ValueError("A source_text_usage_ratio 0 és 1 közötti érték.")
+    if not 0 <= professional_score <= 10:
+        raise ValueError("A professional_copy_quality_score 0 és 10 közötti érték.")
+    if professional_score < 8.5:
+        raise ValueError("A professzionális copywriting előminősítés minimuma 8.5/10.")
+
+    benchmark_id = str(trace["creative_quality_benchmark_id"])
+    if benchmark_id not in CREATIVE_QUALITY_BENCHMARKS:
+        raise ValueError("Ismeretlen creative_quality_benchmark_id.")
+    if len(str(trace["creative_rationale"]).strip()) < 20:
+        raise ValueError("A kreatív koncepció indoklása legalább 20 karakter.")
+
+    introduces_new_facts = trace["introduces_new_factual_claims"] is True
+    human_fact_review_required = trace["human_fact_review_required"] is True
+    requests_source_prevalidation = trace.get("source_prevalidation_requested") is True
+
+    if copy_mode == "verbatim_source":
+        if source_text_usage_ratio < 0.9:
+            raise ValueError("A verbatim_source mód legalább 90% forrásszöveg-használatot jelent.")
+        if introduces_new_facts:
+            raise ValueError("A verbatim_source mód nem tartalmazhat új tényállítást.")
+    elif copy_mode == "source_adaptation":
+        if source_text_usage_ratio >= 0.9:
+            raise ValueError("A source_adaptation mód nem lehet szinte teljesen betű szerinti.")
+        if trace.get("meaning_preservation_checked") is not True:
+            raise ValueError("Átfogalmazásnál kötelező a jelentésmegőrzési ellenőrzés.")
+    elif source_text_usage_ratio > 0.5:
+        raise ValueError("Az original_concept mód legfeljebb 50% forrásszöveget használhat.")
+
+    if introduces_new_facts and not human_fact_review_required:
+        raise ValueError("Új tény, ár, garancia vagy vállalás emberi tényellenőrzést igényel.")
+    if requests_source_prevalidation and copy_mode != "verbatim_source":
+        raise ValueError(
+            "Csak betű szerinti forrás használhat SOURCE_PREVALIDATED gyorsított utat."
+        )
+
+    copy_fingerprint = str(trace["copy_fingerprint"])
+    for sibling in sibling_traces:
+        if sibling.get("copy_fingerprint") == copy_fingerprint:
+            raise ValueError("A copy_fingerprint nem ismétlődhet ugyanazon brief assetjei között.")
+
+    copy_traces = [item for item in sibling_traces if item.get("copy_mode")] + [trace]
+    if len(copy_traces) >= 2:
+        verbatim_share = sum(
+            item.get("copy_mode") == "verbatim_source" for item in copy_traces
+        ) / len(copy_traces)
+        if verbatim_share > 0.5:
+            raise ValueError(
+                "Egy kreatív készlet legfeljebb fele lehet betű szerinti forrásmásolat; "
+                "kreatív átfogalmazás vagy új koncepció szükséges."
+            )
+
+
+def copy_mode_allows_source_prevalidation(trace: dict[str, Any]) -> bool:
+    """Only unchanged source copy can use the shortened publication path."""
+
+    return (
+        trace.get("copy_mode") == "verbatim_source"
+        and trace.get("introduces_new_factual_claims") is False
+    )
+
 
 def validate_visual_variant_trace(
     trace: dict[str, Any],

@@ -44,6 +44,30 @@ Normál szövegnél legalább 4,5:1 kontraszt kötelező. Színátmenetes
 kreatívháttér alapértelmezetten blokkolt, és csak dokumentált emberi
 art-direction kivétellel használható.
 
+### Kreatív szövegváltozatok
+
+A kanonikus forrás tény-, ár-, garancia-, műszaki és jogi korlát, nem
+kötelező szó szerinti szövegsablon. A generátor három dokumentált módban
+dolgozhat:
+
+- `verbatim_source`: időnként használható betű szerinti forrásközlés;
+- `source_adaptation`: jelentésmegőrző átfogalmazás, szinonima vagy új hook;
+- `original_concept`: új headline, képfelirat és direct-response koncepció,
+  a jóváhagyott ténykorlátokon belül.
+
+Egy többtagú kreatív készlet legfeljebb fele lehet betű szerinti
+forrásmásolat. A `copy_fingerprint` nem ismétlődhet, a professzionális
+copywriting előminősítés minimuma 8,5/10, amit a teljes 92/100 Copy Gate
+értékelés követ. Az első Prefab Facebook-próba
+`prefab-facebook-etalon-v1` minőségi benchmarkként szolgál a kép–szín–szöveg
+összhangjára, de a layoutja nem másolható más márkákra.
+
+Új ellenőrizhető tény, ár, garancia vagy vállalás csak
+`human_fact_review_required=true` jelöléssel készülhet. A
+`SOURCE_PREVALIDATED` gyorsított publikációs út kizárólag változatlan
+`verbatim_source` tartalomhoz használható; kreatív átfogalmazás és új
+koncepció a normál négykapus és emberi jóváhagyási úton marad.
+
 ### Márkalogók
 
 A rendszer először jóváhagyott vektoros/Drive-forrást keres, majd az élő
