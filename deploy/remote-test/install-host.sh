@@ -29,7 +29,8 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y \
-  ca-certificates curl git gnupg jq openssl python3 python-is-python3 tar unzip
+  ca-certificates curl git gnupg jq openssh-server openssl python3 \
+  python-is-python3 tar unzip
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
@@ -56,6 +57,7 @@ apt-get install -y \
   docker-compose-plugin cloudflared
 
 systemctl enable --now docker
+systemctl enable --now ssh
 usermod -aG docker "$operator"
 
 install -d -m 0750 -o "$operator" -g "$operator" \

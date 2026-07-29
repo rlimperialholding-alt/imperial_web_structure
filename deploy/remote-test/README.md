@@ -15,6 +15,19 @@ A tesztgép ne tartalmazzon napi munkához használt személyes fájlokat. A ren
 webes portjai csak a gép saját `127.0.0.1` címén nyílnak meg. A távoli böngészős
 elérést Cloudflare Tunnel és Cloudflare Access védi.
 
+## A csomag átvitele
+
+A ZIP letölthető a megosztott Drive Archívum
+`Imperial Intelligence és Venture Studio – 2026-07-29` mappájából, vagy
+átvihető pendrive-on. Letöltés után először ellenőrizzük a beszállításkor megadott
+SHA-256 értéket:
+
+```bash
+sha256sum imperial-intelligence-remote-test-*.zip
+unzip imperial-intelligence-remote-test-*.zip -d imperial-intelligence
+cd imperial-intelligence
+```
+
 ## Szükséges emberi lépések
 
 Két rövid, egyszeri művelethez kell adminisztrátori hozzáférés:
@@ -59,6 +72,7 @@ Public Hostname beállításainál például ezek a belső célok használhatók
 | `crm-test.sajatdomain.hu` | `http://localhost:18787` | CRM |
 | `itep-test.sajatdomain.hu` | `http://localhost:13000` | ITEP API |
 | `hub-test.sajatdomain.hu` | `http://localhost:18080` | Integration Hub |
+| `ssh-ii-test.sajatdomain.hu` | `ssh://localhost:22` | védett karbantartás |
 
 Ezután:
 
@@ -68,6 +82,34 @@ sudo bash deploy/remote-test/configure-cloudflare.sh
 
 A tunnel token titok: aki megszerzi, el tudja indítani a tunnelt, ezért csak a
 rejtett terminálkérdésbe szabad beilleszteni.
+
+## Távoli karbantartási kapcsolat
+
+A szerverre csak kulcsos SSH-belépés engedélyezett. A jelszavas és a root
+belépést a konfiguráló szkript kikapcsolja, az SSH pedig kizárólag a gép saját
+`localhost` címén figyel. Emiatt az internet és a helyi hálózat felől sem érhető
+el közvetlenül; csak a Cloudflare Tunnel útvonalán.
+
+Először a jelenlegi Windows gépen készítsünk egy külön SSH-kulcsot. Az
+`ssh-keygen` kérjen erős jelszót, a `.pub` fájl tartalma nyilvános és
+beilleszthető a szerveren:
+
+```powershell
+ssh-keygen -t ed25519 -a 100 -f "$env:USERPROFILE\.ssh\imperial-test-admin"
+Get-Content "$env:USERPROFILE\.ssh\imperial-test-admin.pub"
+```
+
+Ezután a tesztgép fizikai konzolján:
+
+```bash
+sudo bash deploy/remote-test/configure-admin-ssh.sh
+```
+
+A Cloudflare-ben az SSH hostname-hoz Self-hosted Access alkalmazás kell, csak az
+adminisztrátorok e-mail-címeivel és kötelező MFA-val. A Windows SSH-kliens
+`ProxyCommand cloudflared access ssh --hostname %h` beállítással csatlakozhat.
+A fizikai konzolt csak egy külön ablakban sikeres Cloudflare SSH-próba után
+szabad bezárni.
 
 ## GitHub runner
 
