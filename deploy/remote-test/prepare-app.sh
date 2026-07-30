@@ -33,13 +33,38 @@ write_secret_file() {
 }
 
 write_secret_file "$secret_dir/platform_db_password.txt"
+write_secret_file "$secret_dir/platform_expert_review_secret.txt"
+write_secret_file "$secret_dir/platform_marketing_review_secret.txt"
+write_secret_file "$secret_dir/platform_copywriter_review_secret.txt"
+write_secret_file "$secret_dir/platform_visual_review_secret.txt"
 write_secret_file "$secret_dir/dpm_db_password.txt"
 write_secret_file "$secret_dir/dpm_auth_hs256_secret.txt"
 
+append_env_if_missing() {
+  local key="$1"
+  local value="$2"
+  if ! grep -q "^${key}=" "$env_file"; then
+    printf '%s=%s\n' "$key" "$value" >>"$env_file"
+  fi
+}
+
 if [[ -s "$env_file" ]]; then
+  append_env_if_missing \
+    "PLATFORM_EXPERT_REVIEW_SECRET_FILE" \
+    "$secret_dir/platform_expert_review_secret.txt"
+  append_env_if_missing \
+    "PLATFORM_MARKETING_REVIEW_SECRET_FILE" \
+    "$secret_dir/platform_marketing_review_secret.txt"
+  append_env_if_missing \
+    "PLATFORM_COPYWRITER_REVIEW_SECRET_FILE" \
+    "$secret_dir/platform_copywriter_review_secret.txt"
+  append_env_if_missing \
+    "PLATFORM_VISUAL_REVIEW_SECRET_FILE" \
+    "$secret_dir/platform_visual_review_secret.txt"
+  append_env_if_missing "PLATFORM_CONTENT_EXTERNAL_PUBLISHING_ENABLED" "false"
   chmod 600 "$env_file"
-  echo "Existing environment file preserved: $env_file"
-  echo "No passwords or tokens were rotated."
+  echo "Existing environment file preserved and missing gate settings added: $env_file"
+  echo "Existing passwords and tokens were not rotated."
   exit 0
 fi
 
@@ -54,6 +79,11 @@ HUB_TEST_PORT=18080
 MOCK_TEST_PORT=19010
 BUILD_CA_CERT_FILE=./docker/no-extra-ca.pem
 PLATFORM_DB_PASSWORD_FILE=$secret_dir/platform_db_password.txt
+PLATFORM_EXPERT_REVIEW_SECRET_FILE=$secret_dir/platform_expert_review_secret.txt
+PLATFORM_MARKETING_REVIEW_SECRET_FILE=$secret_dir/platform_marketing_review_secret.txt
+PLATFORM_COPYWRITER_REVIEW_SECRET_FILE=$secret_dir/platform_copywriter_review_secret.txt
+PLATFORM_VISUAL_REVIEW_SECRET_FILE=$secret_dir/platform_visual_review_secret.txt
+PLATFORM_CONTENT_EXTERNAL_PUBLISHING_ENABLED=false
 DPM_DB_PASSWORD_FILE=$secret_dir/dpm_db_password.txt
 DPM_AUTH_HS256_SECRET_FILE=$secret_dir/dpm_auth_hs256_secret.txt
 PLATFORM_SESSION_SECRET=$(random_hex)
