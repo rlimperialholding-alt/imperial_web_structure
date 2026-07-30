@@ -38,8 +38,21 @@ jobs:
           set -euo pipefail
           mkdir -p secrets
           openssl rand -hex 32 > secrets/platform_db_password.txt
+          openssl rand -hex 32 > secrets/platform_expert_review_secret.txt
+          openssl rand -hex 32 > secrets/platform_marketing_review_secret.txt
+          openssl rand -hex 32 > secrets/platform_copywriter_review_secret.txt
+          openssl rand -hex 32 > secrets/platform_visual_review_secret.txt
           chmod 0400 secrets/platform_db_password.txt
-          sudo chown 10001:10001 secrets/platform_db_password.txt
+          chmod 0400 secrets/platform_expert_review_secret.txt
+          chmod 0400 secrets/platform_marketing_review_secret.txt
+          chmod 0400 secrets/platform_copywriter_review_secret.txt
+          chmod 0400 secrets/platform_visual_review_secret.txt
+          sudo chown 10001:10001 \
+            secrets/platform_db_password.txt \
+            secrets/platform_expert_review_secret.txt \
+            secrets/platform_marketing_review_secret.txt \
+            secrets/platform_copywriter_review_secret.txt \
+            secrets/platform_visual_review_secret.txt
 
       - name: Validate platform model and cross-module links
         run: python3 scripts/validate-platform.py
