@@ -22,68 +22,95 @@ from .audit import audit
 from .config import settings
 from .database import Base, SessionLocal, engine, get_db
 from .models import (
-    ArtifactRecord, ConsistencyIssue, DeploymentRecord, EnvironmentRecord, EventRecord, ModuleRegistry,
-    OutboxMessage, PilotRun, ProjectObjectState, ProjectRegistry, ReleaseRecord, TaskRecord, User,
-    CalculationSourceRegistry, EnterpriseCanonicalRecord, ImportCommitBatch, ImportDataSource, ImportItem,
-    ImportJob, StagedEnterpriseRecord, MailSendingDomain, MailSuppression, TenderMailCampaign,
-    TenderMailEvent, TenderMailRecipient, WorkspaceDocument, PartnerEvidence, PartnerFieldAccess,
+    ArtifactRecord,
+    ConsistencyIssue,
+    DeploymentRecord,
+    EnvironmentRecord,
+    EventRecord,
+    ModuleRegistry,
+    OutboxMessage,
+    PilotRun,
+    ProjectObjectState,
+    ProjectRegistry,
+    ReleaseRecord,
+    TaskRecord,
+    User,
+    CalculationSourceRegistry,
+    EnterpriseCanonicalRecord,
+    ImportCommitBatch,
+    ImportDataSource,
+    ImportItem,
+    ImportJob,
+    StagedEnterpriseRecord,
+    MailSendingDomain,
+    MailSuppression,
+    TenderMailCampaign,
+    TenderMailEvent,
+    TenderMailRecipient,
+    WorkspaceDocument,
+    PartnerEvidence,
+    PartnerFieldAccess,
 )
-from .copy_gate.models import (
-    ApprovalSubmission, ContentAssetCreateRequest, CopyQualityRequest, CopySourceIn,
-    FourGateSubmission, PerformanceSubmission,
-)
+from .copy_gate.models import ApprovalSubmission, AssemblySubmission, ContentAssetCreateRequest, CopyQualityRequest, CopySourceIn, CreativeDirectorReviewSubmission, FourGateSubmission, LiveReviewSubmission, PerformanceSubmission, MandatoryCopyGateReviewSubmission, ReleaseReviewSubmission, StrategyReviewSubmission, VisualProductionSubmission
 from .schemas import (
-    ArtifactIn, CalculationRequest, EnvironmentIn, EventIn, FactIn, HeartbeatIn, HouseMatchIn,
-    DomainVerificationIn, ImportCommitIn, ImportItemIn, ImportJobIn, ImportPushIn, ImportReviewIn, ImportSourceIn,
-    MailEventIn, ReleaseIn, RenovationCalculationIn, SendingDomainIn, TenderCampaignIn,
-    TenderRecipientBatchIn, TenderRecipientIn, TaskUpdateIn, WorkspaceDocumentIn, WorkPackageUpdateIn,
-    GateCheckIn, DailyReportIn, SiteIssueIn, DeliveryNoteIn, MaterialMovementIn, MaterialUsageIn, OperationsCommandIn,
-    PartnerAccessCreateIn, PartnerAttendanceActionIn, PartnerChangeIn, PartnerProgressIn,
-    DevelopmentDiscoveryIn, DevelopmentDiscoveryReviewIn, ContractGenerateIn, ChangeControlEventIn,
+    ArtifactIn,
+    CalculationRequest,
+    EnvironmentIn,
+    EventIn,
+    FactIn,
+    HeartbeatIn,
+    HouseMatchIn,
+    DomainVerificationIn,
+    ImportCommitIn,
+    ImportItemIn,
+    ImportJobIn,
+    ImportPushIn,
+    ImportReviewIn,
+    ImportSourceIn,
+    MailEventIn,
+    ReleaseIn,
+    RenovationCalculationIn,
+    SendingDomainIn,
+    TenderCampaignIn,
+    TenderRecipientBatchIn,
+    TenderRecipientIn,
+    TaskUpdateIn,
+    WorkspaceDocumentIn,
+    WorkPackageUpdateIn,
+    GateCheckIn,
+    DailyReportIn,
+    SiteIssueIn,
+    DeliveryNoteIn,
+    MaterialMovementIn,
+    MaterialUsageIn,
+    OperationsCommandIn,
+    PartnerAccessCreateIn,
+    PartnerAttendanceActionIn,
+    PartnerChangeIn,
+    PartnerProgressIn,
+    DevelopmentDiscoveryIn,
+    DevelopmentDiscoveryReviewIn,
+    ContractGenerateIn,
+    ChangeControlEventIn,
 )
 from .security import current_partner_access, current_user, require_api_token, require_internal_job_token, require_role, verify_password
 from .seed import DEMO_PASSWORD, seed_database
 from .services.consistency import scan_consistency, upsert_fact
-from .services.commercial_integration import (
-    commercial_workspace, contract_source_status, generate_contract_package, ingest_change_control_event,
-    ingest_contract_signed, validate_contract_payload,
-)
+from .services.commercial_integration import commercial_workspace, contract_source_status, generate_contract_package, ingest_change_control_event, ingest_contract_signed, validate_contract_payload
 from .services.development_governance import create_discovery, list_discoveries, review_discovery
 from .services.dashboard import dashboard_metrics
 from .services.integration import ingest_event, process_outbox, register_heartbeat
 from .services.file_ingestion import parse_upload
 from .services.housematch import HouseProfile, housematch_repository
-from .services.import_center import (
-    add_item, commit_records, create_job, create_source, import_metrics, process_job, review_record, rollback_batch,
-)
+from .services.import_center import add_item, commit_records, create_job, create_source, import_metrics, process_job, review_record, rollback_batch
 from .services.pricing import pricing_repository
-from .services.workspace import (
-    create_document, document_metrics, global_search, list_documents, list_tasks, project_360,
-    task_metrics, update_document_status, update_task, workspace_summary,
-)
-from .services.operations import (
-    create_daily_report, create_delivery_note, create_issue, create_material_movement, create_operations_command,
-    create_usage_control, field_projects, operations_portfolio, operations_summary, procurement_summary,
-    project_operations, update_gate, update_work_package,
-)
-from .services.partner_field import (
-    access_is_valid, attendance_action, authenticate_access, create_access, create_change,
-    create_partner_issue, create_progress, deactivate_access, internal_partner_projection,
-    partner_dashboard, review_progress, save_evidence,
-)
-from .services.tender_mail import (
-    add_canonical_partner_recipients, add_recipient, approve_campaign, campaign_readiness, create_campaign,
-    dispatch_batch, queue_campaign, record_event, suppress_email, tender_mail_metrics, unsubscribe_by_token,
-    upsert_domain, verify_domain,
-)
+from .services.workspace import create_document, document_metrics, global_search, list_documents, list_tasks, project_360, task_metrics, update_document_status, update_task, workspace_summary
+from .services.operations import create_daily_report, create_delivery_note, create_issue, create_material_movement, create_operations_command, create_usage_control, field_projects, operations_portfolio, operations_summary, procurement_summary, project_operations, update_gate, update_work_package
+from .services.partner_field import access_is_valid, attendance_action, authenticate_access, create_access, create_change, create_partner_issue, create_progress, deactivate_access, internal_partner_projection, partner_dashboard, review_progress, save_evidence
+from .services.tender_mail import add_canonical_partner_recipients, add_recipient, approve_campaign, campaign_readiness, create_campaign, dispatch_batch, queue_campaign, record_event, suppress_email, tender_mail_metrics, unsubscribe_by_token, upsert_domain, verify_domain
 from .services.pilots import run_all_pilots, run_pilot_scenario
 from .services.releases import add_artifact, create_release, release_gate
-from .services.content_quality import (
-    create_content_asset, create_copy_brief, publish_content_asset,
-    record_approval, record_performance_metric, register_copy_source,
-    rollback_content_asset, run_copy_quality, submit_four_gates,
-    validate_copy_brief,
-)
+from .services.content_quality import assemble_publication_bundle, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
 from .demo_runtime import DemoRuntimeError, demo_runtime
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -102,12 +129,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Imperial Intelligence Control Center", version=__version__, lifespan=lifespan)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=settings.session_secret,
-    same_site="lax",
-    https_only=settings.is_production,
-)
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax", https_only=settings.is_production)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts))
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
@@ -140,6 +162,7 @@ def auth_or_redirect(request: Request, db: Session):
         return None, RedirectResponse("/login", status_code=303)
     return user, None
 
+
 def partner_auth_or_redirect(request: Request, db: Session):
     access = current_partner_access(request, db)
     if not access_is_valid(access):
@@ -148,121 +171,89 @@ def partner_auth_or_redirect(request: Request, db: Session):
     return access, None
 
 
-
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "imperial-intelligence-control-center", "version": __version__, "platform_version": "5.0.0"}
 
 
-@app.post(
-    "/api/content-quality/sources",
-    dependencies=[Depends(require_api_token)],
-)
-def api_content_quality_source(
-    payload: CopySourceIn,
-    db: Session = Depends(get_db),
-):
+@app.post("/api/content-quality/sources", dependencies=[Depends(require_api_token)])
+def api_content_quality_source(payload: CopySourceIn, db: Session = Depends(get_db)):
     try:
         row = register_copy_source(db, payload, actor="api")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {
-        "source_key": row.source_key,
-        "version": row.version,
-        "content_hash": row.content_hash,
-        "approved": row.approved,
-    }
+    return {"source_key": row.source_key, "version": row.version, "content_hash": row.content_hash, "approved": row.approved}
 
 
-@app.post(
-    "/api/content-quality/briefs/validate",
-    dependencies=[Depends(require_api_token)],
-)
+@app.post("/api/content-quality/briefs/validate", dependencies=[Depends(require_api_token)])
 def api_content_quality_brief_validate(payload: dict):
     return validate_copy_brief(payload)
 
 
-@app.post(
-    "/api/content-quality/briefs",
-    dependencies=[Depends(require_api_token)],
-)
-def api_content_quality_brief_create(
-    payload: dict,
-    db: Session = Depends(get_db),
-):
+@app.post("/api/content-quality/briefs", dependencies=[Depends(require_api_token)])
+def api_content_quality_brief_create(payload: dict, db: Session = Depends(get_db)):
     try:
         row = create_copy_brief(db, payload, actor="api")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {
-        "copy_brief_id": row.copy_brief_id,
-        "status": row.status,
-        "source_snapshot_hash": row.source_snapshot_hash,
-    }
+    return {"copy_brief_id": row.copy_brief_id, "status": row.status, "source_snapshot_hash": row.source_snapshot_hash}
 
 
-@app.post(
-    "/api/content-quality/assets",
-    dependencies=[Depends(require_api_token)],
-)
-def api_content_quality_asset_create(
-    payload: ContentAssetCreateRequest,
-    db: Session = Depends(get_db),
-):
+@app.post("/api/content-quality/briefs/{copy_brief_id}/strategy-review")
+def api_content_quality_strategy_review(copy_brief_id: str, payload: StrategyReviewSubmission, user: User = Depends(require_role("owner", "admin", "marketing_editor")), db: Session = Depends(get_db)):
     try:
-        row = create_content_asset(
-            db,
-            payload.asset,
-            copy_brief_id=payload.copy_brief_id,
-            project_id=payload.project_id,
-            generation_trace=payload.generation_trace,
-            actor="api",
-        )
+        row = record_strategy_review(db, copy_brief_id, payload, actor=user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "CopyBrief nem található.") from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {
-        "asset_id": row.asset_id,
-        "state": row.state,
-        "content_hash": row.content_hash,
-    }
+    return {"copy_brief_id": row.copy_brief_id, "review_id": row.review_id, "decision": row.decision}
 
 
-@app.post(
-    "/api/content-quality/assets/{asset_id}/copy-qa",
-    dependencies=[Depends(require_internal_job_token)],
-)
-def api_content_quality_copy_qa(
-    asset_id: str,
-    payload: CopyQualityRequest,
-    db: Session = Depends(get_db),
-):
+@app.post("/api/content-quality/assets", dependencies=[Depends(require_api_token)])
+def api_content_quality_asset_create(payload: ContentAssetCreateRequest, db: Session = Depends(get_db)):
     try:
-        run = run_copy_quality(
-            db,
-            asset_id,
-            payload.editorial_review,
-            actor="quality-worker",
-            evaluated_on=payload.evaluated_on,
-        )
+        row = create_content_asset(db, payload.asset, copy_brief_id=payload.copy_brief_id, project_id=payload.project_id, generation_trace=payload.generation_trace, actor="api")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"asset_id": row.asset_id, "state": row.state, "content_hash": row.content_hash}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/copy-qa", dependencies=[Depends(require_internal_job_token)])
+def api_content_quality_copy_qa(asset_id: str, payload: CopyQualityRequest, db: Session = Depends(get_db)):
+    try:
+        run = run_copy_quality(db, asset_id, payload.editorial_review, actor="quality-worker", evaluated_on=payload.evaluated_on)
     except KeyError as exc:
         raise HTTPException(404, "Asset nem található.") from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return json.loads(run.scorecard_json) | {
-        "run_id": run.run_id,
-        "source_snapshot_hash": run.source_snapshot_hash,
-    }
+    return json.loads(run.scorecard_json) | {"run_id": run.run_id, "source_snapshot_hash": run.source_snapshot_hash}
 
 
-@app.post(
-    "/api/content-quality/assets/{asset_id}/four-gates",
-    dependencies=[Depends(require_internal_job_token)],
-)
-def api_content_quality_four_gates(
-    asset_id: str,
-    payload: FourGateSubmission,
-    db: Session = Depends(get_db),
-):
+def _record_mandatory_copy_gate(asset_id: str, payload: MandatoryCopyGateReviewSubmission, expected_gate_id: str, db: Session):
+    if payload.gate_id != expected_gate_id:
+        raise HTTPException(400, f"Ehhez az endpointhoz gate_id={expected_gate_id} kötelező.")
+    try:
+        row = record_mandatory_copy_gate_review(db, asset_id, payload, actor=f"{expected_gate_id.lower()}-gate-verifier")
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"asset_id": row.asset_id, "review_id": row.review_id, "gate_id": expected_gate_id, "decision": row.decision}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/marketing-gate", dependencies=[Depends(require_internal_job_token)])
+def api_content_quality_marketing_gate(asset_id: str, payload: MandatoryCopyGateReviewSubmission, db: Session = Depends(get_db)):
+    return _record_mandatory_copy_gate(asset_id, payload, "MARKETING", db)
+
+
+@app.post("/api/content-quality/assets/{asset_id}/copywriter-gate", dependencies=[Depends(require_internal_job_token)])
+def api_content_quality_copywriter_gate(asset_id: str, payload: MandatoryCopyGateReviewSubmission, db: Session = Depends(get_db)):
+    return _record_mandatory_copy_gate(asset_id, payload, "DIRECT_RESPONSE", db)
+
+
+@app.post("/api/content-quality/assets/{asset_id}/four-gates", dependencies=[Depends(require_internal_job_token)])
+def api_content_quality_four_gates(asset_id: str, payload: FourGateSubmission, db: Session = Depends(get_db)):
     try:
         return submit_four_gates(db, asset_id, payload, actor="gate-orchestrator")
     except KeyError as exc:
@@ -272,20 +263,9 @@ def api_content_quality_four_gates(
 
 
 @app.post("/api/content-quality/assets/{asset_id}/editorial-approval")
-def api_content_quality_editorial_approval(
-    asset_id: str,
-    payload: ApprovalSubmission,
-    user: User = Depends(require_role("owner", "admin", "marketing_editor")),
-    db: Session = Depends(get_db),
-):
+def api_content_quality_editorial_approval(asset_id: str, payload: ApprovalSubmission, user: User = Depends(require_role("owner", "admin", "marketing_editor")), db: Session = Depends(get_db)):
     try:
-        row = record_approval(
-            db,
-            asset_id,
-            "HUMAN_EDITORIAL",
-            payload,
-            actor=user.email,
-        )
+        row = record_approval(db, asset_id, "HUMAN_EDITORIAL", payload, actor=user.email)
     except KeyError as exc:
         raise HTTPException(404, "Asset nem található.") from exc
     except ValueError as exc:
@@ -294,12 +274,7 @@ def api_content_quality_editorial_approval(
 
 
 @app.post("/api/content-quality/assets/{asset_id}/owner-approval")
-def api_content_quality_owner_approval(
-    asset_id: str,
-    payload: ApprovalSubmission,
-    user: User = Depends(require_role("owner")),
-    db: Session = Depends(get_db),
-):
+def api_content_quality_owner_approval(asset_id: str, payload: ApprovalSubmission, user: User = Depends(require_role("owner")), db: Session = Depends(get_db)):
     try:
         row = record_approval(db, asset_id, "OWNER", payload, actor=user.email)
     except KeyError as exc:
@@ -309,12 +284,52 @@ def api_content_quality_owner_approval(
     return {"asset_id": row.asset_id, "state": row.state}
 
 
+@app.post("/api/content-quality/assets/{asset_id}/visual-production", dependencies=[Depends(require_internal_job_token)])
+def api_content_quality_visual_production(asset_id: str, payload: VisualProductionSubmission, db: Session = Depends(get_db)):
+    try:
+        row = submit_visual_production(db, asset_id, payload, actor="creative-producer")
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"asset_id": row.asset_id, "generation_run_id": row.generation_run_id, "sequence_number": row.sequence_number, "status": row.status}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/creative-director-review", dependencies=[Depends(require_internal_job_token)])
+def api_content_quality_creative_director_review(asset_id: str, payload: CreativeDirectorReviewSubmission, db: Session = Depends(get_db)):
+    try:
+        row = record_creative_director_review(db, asset_id, payload, actor=payload.reviewer_identity)
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"asset_id": row.asset_id, "review_id": row.review_id, "decision": row.decision}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/assembly", dependencies=[Depends(require_internal_job_token)])
+def api_content_quality_assembly(asset_id: str, payload: AssemblySubmission, db: Session = Depends(get_db)):
+    try:
+        row = assemble_publication_bundle(db, asset_id, payload, actor="production-designer")
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"asset_id": row.asset_id, "bundle_id": row.bundle_id, "bundle_hash": row.bundle_hash, "status": row.status}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/release-review")
+def api_content_quality_release_review(asset_id: str, payload: ReleaseReviewSubmission, user: User = Depends(require_role("owner", "admin", "marketing_editor")), db: Session = Depends(get_db)):
+    try:
+        row = record_release_review(db, asset_id, payload, actor=user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"asset_id": row.asset_id, "review_id": row.review_id, "decision": row.decision}
+
+
 @app.post("/api/content-quality/assets/{asset_id}/publish")
-def api_content_quality_publish(
-    asset_id: str,
-    user: User = Depends(require_role("owner")),
-    db: Session = Depends(get_db),
-):
+def api_content_quality_publish(asset_id: str, user: User = Depends(require_role("owner")), db: Session = Depends(get_db)):
     try:
         return publish_content_asset(db, asset_id, actor=user.email)
     except KeyError as exc:
@@ -323,46 +338,29 @@ def api_content_quality_publish(
         raise HTTPException(409, str(exc)) from exc
 
 
-@app.post("/api/content-quality/assets/{asset_id}/rollback")
-def api_content_quality_rollback(
-    asset_id: str,
-    reason: str,
-    user: User = Depends(require_role("owner")),
-    db: Session = Depends(get_db),
-):
+@app.post("/api/content-quality/assets/{asset_id}/live-review")
+def api_content_quality_live_review(asset_id: str, payload: LiveReviewSubmission, user: User = Depends(require_role("owner", "admin", "marketing_editor")), db: Session = Depends(get_db)):
     try:
-        row = rollback_content_asset(
-            db,
-            asset_id,
-            actor=user.email,
-            reason=reason,
-        )
+        return record_live_publication_review(db, asset_id, payload, actor=user.email)
     except KeyError as exc:
         raise HTTPException(404, "Asset nem található.") from exc
-    return {
-        "asset_id": row.asset_id,
-        "state": row.state,
-        "content_version": row.content_version,
-    }
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
-@app.post(
-    "/api/content-quality/assets/{asset_id}/performance",
-    dependencies=[Depends(require_api_token)],
-)
-def api_content_quality_performance(
-    asset_id: str,
-    payload: PerformanceSubmission,
-    db: Session = Depends(get_db),
-):
+@app.post("/api/content-quality/assets/{asset_id}/rollback")
+def api_content_quality_rollback(asset_id: str, reason: str, user: User = Depends(require_role("owner")), db: Session = Depends(get_db)):
     try:
-        row = record_performance_metric(
-            db,
-            asset_id,
-            payload.metric,
-            source_system=payload.source_system,
-            actor="api",
-        )
+        row = rollback_content_asset(db, asset_id, actor=user.email, reason=reason)
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    return {"asset_id": row.asset_id, "state": row.state, "content_version": row.content_version}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/performance", dependencies=[Depends(require_api_token)])
+def api_content_quality_performance(asset_id: str, payload: PerformanceSubmission, db: Session = Depends(get_db)):
+    try:
+        row = record_performance_metric(db, asset_id, payload.metric, source_system=payload.source_system, actor="api")
     except KeyError as exc:
         raise HTTPException(404, "Asset nem található.") from exc
     except ValueError as exc:
@@ -406,15 +404,7 @@ def api_demo_module(module_id: str):
 @app.post("/api/demo/actions")
 def api_demo_action(data: DemoActionIn):
     try:
-        return demo_runtime.execute_action(
-            module_id=data.module_id,
-            action_id=data.action_id,
-            project_id=data.project_id,
-            actor=data.actor,
-            correlation_id=data.correlation_id,
-            idempotency_key=data.idempotency_key,
-            payload=data.payload,
-        )
+        return demo_runtime.execute_action(module_id=data.module_id, action_id=data.action_id, project_id=data.project_id, actor=data.actor, correlation_id=data.correlation_id, idempotency_key=data.idempotency_key, payload=data.payload)
     except DemoRuntimeError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -488,36 +478,22 @@ def workspace_home(request: Request, db: Session = Depends(get_db)):
     if redirect:
         return redirect
     summary = workspace_summary(db, user)
-    return templates.TemplateResponse(
-        request=request, name="workspace.html",
-        context={"user": user, "summary": summary, "active": "workspace"},
-    )
+    return templates.TemplateResponse(request=request, name="workspace.html", context={"user": user, "summary": summary, "active": "workspace"})
 
 
 @app.get("/tasks", response_class=HTMLResponse)
-def action_center(
-    request: Request, status: str | None = None, priority: str | None = None,
-    project_id: str | None = None, q: str | None = None, db: Session = Depends(get_db),
-):
+def action_center(request: Request, status: str | None = None, priority: str | None = None, project_id: str | None = None, q: str | None = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
     rows = list_tasks(db, status=status, priority=priority, project_id=project_id, assignee=user.email, query_text=q)
     metrics = task_metrics(db, assignee=user.email)
     projects = db.scalars(select(ProjectRegistry).order_by(ProjectRegistry.name)).all()
-    return templates.TemplateResponse(
-        request=request, name="action_center.html",
-        context={"user": user, "tasks": rows, "metrics": metrics, "projects": projects,
-                 "filters": {"status": status, "priority": priority, "project_id": project_id, "q": q}, "active": "tasks"},
-    )
+    return templates.TemplateResponse(request=request, name="action_center.html", context={"user": user, "tasks": rows, "metrics": metrics, "projects": projects, "filters": {"status": status, "priority": priority, "project_id": project_id, "q": q}, "active": "tasks"})
 
 
 @app.post("/tasks/{task_id}/update")
-def action_center_update(
-    request: Request, task_id: str, status: Annotated[str | None, Form()] = None,
-    assignee: Annotated[str | None, Form()] = None, project_id: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def action_center_update(request: Request, task_id: str, status: Annotated[str | None, Form()] = None, assignee: Annotated[str | None, Form()] = None, project_id: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
@@ -530,10 +506,7 @@ def action_center_update(
 
 
 @app.get("/documents", response_class=HTMLResponse)
-def documents_page(
-    request: Request, project_id: str | None = None, category: str | None = None,
-    approval_status: str | None = None, q: str | None = None, db: Session = Depends(get_db),
-):
+def documents_page(request: Request, project_id: str | None = None, category: str | None = None, approval_status: str | None = None, q: str | None = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
@@ -541,36 +514,20 @@ def documents_page(
     metrics = document_metrics(db)
     projects = db.scalars(select(ProjectRegistry).order_by(ProjectRegistry.name)).all()
     categories = sorted({r.category for r in db.scalars(select(WorkspaceDocument)).all()} | {"contract", "plan", "invoice", "delivery_note", "photo", "certificate", "report", "other"})
-    return templates.TemplateResponse(
-        request=request, name="documents.html",
-        context={"user": user, "documents": rows, "metrics": metrics, "projects": projects, "categories": categories,
-                 "filters": {"project_id": project_id, "category": category, "approval_status": approval_status, "q": q},
-                 "active": "documents"},
-    )
+    return templates.TemplateResponse(request=request, name="documents.html", context={"user": user, "documents": rows, "metrics": metrics, "projects": projects, "categories": categories, "filters": {"project_id": project_id, "category": category, "approval_status": approval_status, "q": q}, "active": "documents"})
 
 
 @app.post("/documents")
-def documents_create(
-    request: Request, title: Annotated[str, Form()], category: Annotated[str, Form()],
-    project_id: Annotated[str | None, Form()] = None, source_url: Annotated[str | None, Form()] = None,
-    owner: Annotated[str | None, Form()] = None, extracted_summary: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def documents_create(request: Request, title: Annotated[str, Form()], category: Annotated[str, Form()], project_id: Annotated[str | None, Form()] = None, source_url: Annotated[str | None, Form()] = None, owner: Annotated[str | None, Form()] = None, extracted_summary: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
-    create_document(db, WorkspaceDocumentIn(
-        title=title, category=category, project_id=project_id or None, source_url=source_url or None,
-        owner=owner or user.name, extracted_summary=extracted_summary or None,
-    ), actor=user.email)
+    create_document(db, WorkspaceDocumentIn(title=title, category=category, project_id=project_id or None, source_url=source_url or None, owner=owner or user.name, extracted_summary=extracted_summary or None), actor=user.email)
     return RedirectResponse("/documents", status_code=303)
 
 
 @app.post("/documents/{document_id}/status")
-def documents_status(
-    request: Request, document_id: str, approval_status: Annotated[str | None, Form()] = None,
-    verification_status: Annotated[str | None, Form()] = None, db: Session = Depends(get_db),
-):
+def documents_status(request: Request, document_id: str, approval_status: Annotated[str | None, Form()] = None, verification_status: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
@@ -587,10 +544,7 @@ def search_page(request: Request, q: str = "", db: Session = Depends(get_db)):
     if redirect:
         return redirect
     results = global_search(db, q)
-    return templates.TemplateResponse(
-        request=request, name="search.html",
-        context={"user": user, "q": q, "results": results, "active": "search"},
-    )
+    return templates.TemplateResponse(request=request, name="search.html", context={"user": user, "q": q, "results": results, "active": "search"})
 
 
 @app.get("/api/workspace/summary", dependencies=[Depends(require_api_token)])
@@ -630,7 +584,6 @@ def api_document_create(payload: WorkspaceDocumentIn, db: Session = Depends(get_
     return create_document(db, payload, actor="api")
 
 
-
 @app.get("/commercial", response_class=HTMLResponse)
 def commercial_page(request: Request, project_id: str | None = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
@@ -655,7 +608,8 @@ def commercial_contract_generate(request: Request, payload_json: Annotated[str, 
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
-    result = None; error = None
+    result = None
+    error = None
     try:
         payload = json.loads(payload_json)
         result = generate_contract_package(db, payload, actor=user.email)
@@ -690,24 +644,28 @@ def development_governance_page(request: Request, db: Session = Depends(get_db))
 @app.post("/development-governance")
 def development_governance_create(
     request: Request,
-    discovery_id: Annotated[str, Form()], requested_capability: Annotated[str, Form()],
-    requested_module_key: Annotated[str | None, Form()] = None, canonical_module_key: Annotated[str | None, Form()] = None,
-    decision: Annotated[str, Form()] = "integrate", source_version: Annotated[str | None, Form()] = None,
-    searched_terms: Annotated[str, Form()] = "", implementation_gap: Annotated[str, Form()] = "",
-    exception_reason: Annotated[str | None, Form()] = None, db: Session = Depends(get_db),
+    discovery_id: Annotated[str, Form()],
+    requested_capability: Annotated[str, Form()],
+    requested_module_key: Annotated[str | None, Form()] = None,
+    canonical_module_key: Annotated[str | None, Form()] = None,
+    decision: Annotated[str, Form()] = "integrate",
+    source_version: Annotated[str | None, Form()] = None,
+    searched_terms: Annotated[str, Form()] = "",
+    implementation_gap: Annotated[str, Form()] = "",
+    exception_reason: Annotated[str | None, Form()] = None,
+    db: Session = Depends(get_db),
 ):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
     try:
-        create_discovery(db, DevelopmentDiscoveryIn(
-            discovery_id=discovery_id, requested_capability=requested_capability,
-            requested_module_key=requested_module_key or None,
-            searched_terms=[x.strip() for x in searched_terms.split(",") if x.strip()],
-            candidate_artifacts=[], canonical_module_key=canonical_module_key or None,
-            canonical_object_owner=None, source_version=source_version or None, decision=decision,
-            implementation_gap=implementation_gap, exception_reason=exception_reason or None, requested_by=user.email,
-        ), actor=user.email)
+        create_discovery(
+            db,
+            DevelopmentDiscoveryIn(
+                discovery_id=discovery_id, requested_capability=requested_capability, requested_module_key=requested_module_key or None, searched_terms=[x.strip() for x in searched_terms.split(",") if x.strip()], candidate_artifacts=[], canonical_module_key=canonical_module_key or None, canonical_object_owner=None, source_version=source_version or None, decision=decision, implementation_gap=implementation_gap, exception_reason=exception_reason or None, requested_by=user.email
+            ),
+            actor=user.email,
+        )
     except Exception as exc:
         raise HTTPException(400, str(exc))
     return RedirectResponse("/development-governance", status_code=303)
@@ -936,14 +894,7 @@ def imports_page(request: Request, db: Session = Depends(get_db)):
     jobs = db.scalars(select(ImportJob).order_by(desc(ImportJob.created_at)).limit(30)).all()
     batches = db.scalars(select(ImportCommitBatch).order_by(desc(ImportCommitBatch.created_at)).limit(15)).all()
     canonical = db.scalars(select(EnterpriseCanonicalRecord).order_by(desc(EnterpriseCanonicalRecord.updated_at)).limit(20)).all()
-    return templates.TemplateResponse(
-        request=request,
-        name="imports.html",
-        context={
-            "user": user, "active": "imports", "metrics": metrics, "sources": sources, "jobs": jobs,
-            "batches": batches, "canonical": canonical,
-        },
-    )
+    return templates.TemplateResponse(request=request, name="imports.html", context={"user": user, "active": "imports", "metrics": metrics, "sources": sources, "jobs": jobs, "batches": batches, "canonical": canonical})
 
 
 @app.get("/imports/{job_id}", response_class=HTMLResponse)
@@ -956,21 +907,11 @@ def import_job_page(request: Request, job_id: str, db: Session = Depends(get_db)
         raise HTTPException(404, "Importfutás nem található.")
     items = db.scalars(select(ImportItem).where(ImportItem.job_id == job_id).order_by(ImportItem.received_at)).all()
     staged = db.scalars(select(StagedEnterpriseRecord).where(StagedEnterpriseRecord.job_id == job_id).order_by(StagedEnterpriseRecord.domain, StagedEnterpriseRecord.canonical_name)).all()
-    return templates.TemplateResponse(
-        request=request,
-        name="import_job.html",
-        context={"user": user, "active": "imports", "job": job, "items": items, "staged": staged, "loads": _json_value},
-    )
+    return templates.TemplateResponse(request=request, name="import_job.html", context={"user": user, "active": "imports", "job": job, "items": items, "staged": staged, "loads": _json_value})
 
 
 @app.post("/imports/jobs")
-def create_import_job_ui(
-    request: Request,
-    source_key: Annotated[str, Form()],
-    name: Annotated[str, Form()],
-    domain_hint: Annotated[str, Form()] = "enterprise",
-    db: Session = Depends(get_db),
-):
+def create_import_job_ui(request: Request, source_key: Annotated[str, Form()], name: Annotated[str, Form()], domain_hint: Annotated[str, Form()] = "enterprise", db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
@@ -984,23 +925,14 @@ def create_import_job_ui(
 
 
 @app.post("/imports/{job_id}/upload")
-async def upload_import_file_ui(
-    request: Request,
-    job_id: str,
-    file: UploadFile = File(...),
-    domain_hint: Annotated[str, Form()] = "enterprise",
-    db: Session = Depends(get_db),
-):
+async def upload_import_file_ui(request: Request, job_id: str, file: UploadFile = File(...), domain_hint: Annotated[str, Form()] = "enterprise", db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
     raw = await file.read()
     try:
         content = parse_upload(file.filename or "feltoltes", raw)
-        item = add_item(db, job_id, ImportItemIn(
-            file_name=file.filename, mime_type=file.content_type, domain_hint=domain_hint,
-            sha256=(content.get("metadata") or {}).get("sha256"), content=content,
-        ))
+        item = add_item(db, job_id, ImportItemIn(file_name=file.filename, mime_type=file.content_type, domain_hint=domain_hint, sha256=(content.get("metadata") or {}).get("sha256"), content=content))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     audit(db, actor=user.email, action="import_file_uploaded", entity_type="import_item", entity_id=item.item_id)
@@ -1023,24 +955,12 @@ def process_import_job_ui(request: Request, job_id: str, db: Session = Depends(g
 
 
 @app.post("/imports/{job_id}/review/{staged_id}")
-def review_import_record_ui(
-    request: Request,
-    job_id: str,
-    staged_id: str,
-    review_status: Annotated[str, Form()],
-    canonical_name: Annotated[str | None, Form()] = None,
-    project_id: Annotated[str | None, Form()] = None,
-    target_module: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def review_import_record_ui(request: Request, job_id: str, staged_id: str, review_status: Annotated[str, Form()], canonical_name: Annotated[str | None, Form()] = None, project_id: Annotated[str | None, Form()] = None, target_module: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
     try:
-        review_record(db, staged_id, ImportReviewIn(
-            review_status=review_status, canonical_name=canonical_name or None,
-            project_id=project_id or None, target_module=target_module or None,
-        ))
+        review_record(db, staged_id, ImportReviewIn(review_status=review_status, canonical_name=canonical_name or None, project_id=project_id or None, target_module=target_module or None))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     audit(db, actor=user.email, action="import_record_reviewed", entity_type="staged_record", entity_id=staged_id)
@@ -1049,12 +969,7 @@ def review_import_record_ui(
 
 
 @app.post("/imports/{job_id}/commit")
-def commit_import_job_ui(
-    request: Request,
-    job_id: str,
-    auto_approve_high_confidence: Annotated[bool, Form()] = False,
-    db: Session = Depends(get_db),
-):
+def commit_import_job_ui(request: Request, job_id: str, auto_approve_high_confidence: Annotated[bool, Form()] = False, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user or user.role not in {"owner", "admin", "managing_director"}:
         raise HTTPException(403)
@@ -1087,14 +1002,7 @@ def experience_page(request: Request, db: Session = Depends(get_db)):
     if redirect:
         return redirect
     sources = db.scalars(select(CalculationSourceRegistry).order_by(CalculationSourceRegistry.priority)).all()
-    return templates.TemplateResponse(
-        request=request,
-        name="experience.html",
-        context={
-            "user": user, "active": "experience", "catalog": pricing_repository.brand_catalog(),
-            "house_count": len(housematch_repository.catalog()), "sources": sources,
-        },
-    )
+    return templates.TemplateResponse(request=request, name="experience.html", context={"user": user, "active": "experience", "catalog": pricing_repository.brand_catalog(), "house_count": len(housematch_repository.catalog()), "sources": sources})
 
 
 @app.get("/api/imports/metrics", dependencies=[Depends(require_api_token)])
@@ -1128,15 +1036,8 @@ def api_import_item(job_id: str, data: ImportItemIn, db: Session = Depends(get_d
 @app.post("/api/imports/push", dependencies=[Depends(require_api_token)])
 def api_import_push(data: ImportPushIn, db: Session = Depends(get_db)):
     try:
-        job = create_job(db, ImportJobIn(
-            source_key=data.source_key, name=f"Connector push – {data.file_name or data.external_id or 'adatcsomag'}",
-            domain_hint=data.domain_hint or "enterprise", requested_by="connector",
-        ))
-        item = add_item(db, job.job_id, ImportItemIn(
-            external_id=data.external_id, file_name=data.file_name, mime_type=data.mime_type,
-            source_url=data.source_url, domain_hint=data.domain_hint,
-            content={"records": data.records, "text": data.text, "metadata": data.metadata},
-        ))
+        job = create_job(db, ImportJobIn(source_key=data.source_key, name=f"Connector push – {data.file_name or data.external_id or 'adatcsomag'}", domain_hint=data.domain_hint or "enterprise", requested_by="connector"))
+        item = add_item(db, job.job_id, ImportItemIn(external_id=data.external_id, file_name=data.file_name, mime_type=data.mime_type, source_url=data.source_url, domain_hint=data.domain_hint, content={"records": data.records, "text": data.text, "metadata": data.metadata}))
         process_job(db, job.job_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -1187,11 +1088,7 @@ def api_calculator_catalog():
 @app.post("/api/calculators/new-build")
 def api_new_build_calculation(data: CalculationRequest):
     try:
-        return pricing_repository.calculate_new_build(
-            brand=data.brand, technology=data.technology, completion_level=data.completion_level,
-            package=data.package, gross_area_m2=data.gross_area_m2, vat_rate=data.vat_rate,
-            include_internal=False,
-        )
+        return pricing_repository.calculate_new_build(brand=data.brand, technology=data.technology, completion_level=data.completion_level, package=data.package, gross_area_m2=data.gross_area_m2, vat_rate=data.vat_rate, include_internal=False)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -1199,11 +1096,7 @@ def api_new_build_calculation(data: CalculationRequest):
 @app.post("/api/internal/calculators/new-build", dependencies=[Depends(require_api_token)])
 def api_internal_new_build_calculation(data: CalculationRequest):
     try:
-        return pricing_repository.calculate_new_build(
-            brand=data.brand, technology=data.technology, completion_level=data.completion_level,
-            package=data.package, gross_area_m2=data.gross_area_m2, vat_rate=data.vat_rate,
-            include_internal=True,
-        )
+        return pricing_repository.calculate_new_build(brand=data.brand, technology=data.technology, completion_level=data.completion_level, package=data.package, gross_area_m2=data.gross_area_m2, vat_rate=data.vat_rate, include_internal=True)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -1216,9 +1109,7 @@ def api_renovation_catalog(q: str = "", limit: int = 50):
 @app.post("/api/calculators/renovation")
 def api_renovation_calculation(data: RenovationCalculationIn):
     try:
-        return pricing_repository.calculate_renovation(
-            lines=[line.model_dump() for line in data.lines], vat_rate=data.vat_rate,
-        )
+        return pricing_repository.calculate_renovation(lines=[line.model_dump() for line in data.lines], vat_rate=data.vat_rate)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -1231,15 +1122,9 @@ def api_housematch_catalog(brand: str | None = None):
 @app.post("/api/housematch/match")
 def api_housematch(data: HouseMatchIn):
     try:
-        return housematch_repository.match(HouseProfile(
-            budget_huf=data.budget_huf, target_area_m2=data.target_area_m2,
-            lifestyle=data.lifestyle, allowed_brands=tuple(data.allowed_brands),
-            score_profile=data.score_profile,
-        ), limit=data.limit)
+        return housematch_repository.match(HouseProfile(budget_huf=data.budget_huf, target_area_m2=data.target_area_m2, lifestyle=data.lifestyle, allowed_brands=tuple(data.allowed_brands), score_profile=data.score_profile), limit=data.limit)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-
-
 
 
 def _form_datetime(value: str | None, *, end_of_day: bool = False) -> datetime | None:
@@ -1261,10 +1146,7 @@ def operations_page(request: Request, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
-    return templates.TemplateResponse(
-        request=request, name="operations.html",
-        context={"user": user, "summary": operations_summary(db), "portfolio": operations_portfolio(db), "active": "operations"},
-    )
+    return templates.TemplateResponse(request=request, name="operations.html", context={"user": user, "summary": operations_summary(db), "portfolio": operations_portfolio(db), "active": "operations"})
 
 
 @app.get("/operations/projects/{project_id}", response_class=HTMLResponse)
@@ -1280,37 +1162,19 @@ def operations_project_page(request: Request, project_id: str, db: Session = Dep
 
 
 @app.post("/operations/work-packages/{work_package_id}")
-def operations_work_package_update(
-    request: Request, work_package_id: str,
-    status: Annotated[str | None, Form()] = None,
-    progress_pct: Annotated[int | None, Form()] = None,
-    assignee: Annotated[str | None, Form()] = None,
-    blocked: Annotated[str | None, Form()] = None,
-    block_reason: Annotated[str | None, Form()] = None,
-    next_action: Annotated[str | None, Form()] = None,
-    project_id: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def operations_work_package_update(request: Request, work_package_id: str, status: Annotated[str | None, Form()] = None, progress_pct: Annotated[int | None, Form()] = None, assignee: Annotated[str | None, Form()] = None, blocked: Annotated[str | None, Form()] = None, block_reason: Annotated[str | None, Form()] = None, next_action: Annotated[str | None, Form()] = None, project_id: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
     try:
-        update_work_package(db, work_package_id, WorkPackageUpdateIn(
-            status=status, progress_pct=progress_pct, assignee=assignee or None,
-            blocked=blocked == "true" if blocked is not None else None,
-            block_reason=block_reason or None, next_action=next_action or None,
-        ), actor=user.email)
+        update_work_package(db, work_package_id, WorkPackageUpdateIn(status=status, progress_pct=progress_pct, assignee=assignee or None, blocked=blocked == "true" if blocked is not None else None, block_reason=block_reason or None, next_action=next_action or None), actor=user.email)
     except KeyError:
         raise HTTPException(404, "Munkacsomag nem található.")
     return RedirectResponse(f"/operations/projects/{project_id}" if project_id else "/operations", status_code=303)
 
 
 @app.post("/operations/gates/{gate_id}")
-def operations_gate_update(
-    request: Request, gate_id: str, status: Annotated[str, Form()],
-    evidence_url: Annotated[str | None, Form()] = None, notes: Annotated[str | None, Form()] = None,
-    project_id: Annotated[str | None, Form()] = None, db: Session = Depends(get_db),
-):
+def operations_gate_update(request: Request, gate_id: str, status: Annotated[str, Form()], evidence_url: Annotated[str | None, Form()] = None, notes: Annotated[str | None, Form()] = None, project_id: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
@@ -1343,48 +1207,50 @@ def field_project(request: Request, project_id: str, db: Session = Depends(get_d
 
 @app.post("/field/{project_id}/daily-report")
 def field_daily_report(
-    request: Request, project_id: str, report_date: Annotated[str | None, Form()] = None,
-    reporter: Annotated[str, Form()] = "", weather: Annotated[str | None, Form()] = None,
-    workers_total: Annotated[int, Form()] = 0, summary: Annotated[str, Form()] = "",
-    blockers: Annotated[str | None, Form()] = None, safety_status: Annotated[str, Form()] = "ok",
-    quality_status: Annotated[str, Form()] = "ok", evidence_url: Annotated[str | None, Form()] = None,
-    voice_note_text: Annotated[str | None, Form()] = None, source_device_id: Annotated[str | None, Form()] = None,
+    request: Request,
+    project_id: str,
+    report_date: Annotated[str | None, Form()] = None,
+    reporter: Annotated[str, Form()] = "",
+    weather: Annotated[str | None, Form()] = None,
+    workers_total: Annotated[int, Form()] = 0,
+    summary: Annotated[str, Form()] = "",
+    blockers: Annotated[str | None, Form()] = None,
+    safety_status: Annotated[str, Form()] = "ok",
+    quality_status: Annotated[str, Form()] = "ok",
+    evidence_url: Annotated[str | None, Form()] = None,
+    voice_note_text: Annotated[str | None, Form()] = None,
+    source_device_id: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
-    create_daily_report(db, DailyReportIn(
-        project_id=project_id, report_date=_form_datetime(report_date), reporter=reporter or user.name,
-        weather=weather or None, workers_total=workers_total, summary=summary, blockers=blockers or None,
-        safety_status=safety_status, quality_status=quality_status, evidence_url=evidence_url or None,
-        voice_note_text=voice_note_text or None, source_device_id=source_device_id or None,
-    ), actor=user.email)
+    create_daily_report(db, DailyReportIn(project_id=project_id, report_date=_form_datetime(report_date), reporter=reporter or user.name, weather=weather or None, workers_total=workers_total, summary=summary, blockers=blockers or None, safety_status=safety_status, quality_status=quality_status, evidence_url=evidence_url or None, voice_note_text=voice_note_text or None, source_device_id=source_device_id or None), actor=user.email)
     return RedirectResponse(f"/field/{project_id}", status_code=303)
 
 
 @app.post("/field/{project_id}/issues")
 def field_issue_create(
-    request: Request, project_id: str, issue_type: Annotated[str, Form()] = "other",
-    severity: Annotated[str, Form()] = "medium", title: Annotated[str, Form()] = "",
-    description: Annotated[str | None, Form()] = None, location: Annotated[str | None, Form()] = None,
-    responsible: Annotated[str | None, Form()] = None, due_at: Annotated[str | None, Form()] = None,
-    evidence_url: Annotated[str | None, Form()] = None, work_package_id: Annotated[str | None, Form()] = None,
-    financial_impact_huf: Annotated[Decimal, Form()] = Decimal("0"), deadline_impact_days: Annotated[int, Form()] = 0,
+    request: Request,
+    project_id: str,
+    issue_type: Annotated[str, Form()] = "other",
+    severity: Annotated[str, Form()] = "medium",
+    title: Annotated[str, Form()] = "",
+    description: Annotated[str | None, Form()] = None,
+    location: Annotated[str | None, Form()] = None,
+    responsible: Annotated[str | None, Form()] = None,
+    due_at: Annotated[str | None, Form()] = None,
+    evidence_url: Annotated[str | None, Form()] = None,
+    work_package_id: Annotated[str | None, Form()] = None,
+    financial_impact_huf: Annotated[Decimal, Form()] = Decimal("0"),
+    deadline_impact_days: Annotated[int, Form()] = 0,
     db: Session = Depends(get_db),
 ):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
-    create_issue(db, SiteIssueIn(
-        project_id=project_id, work_package_id=work_package_id or None, issue_type=issue_type,
-        severity=severity, title=title, description=description or None, location=location or None,
-        responsible=responsible or "Projektvezetés", due_at=_form_datetime(due_at, end_of_day=True),
-        evidence_url=evidence_url or None, financial_impact_huf=financial_impact_huf,
-        deadline_impact_days=deadline_impact_days,
-    ), actor=user.email)
+    create_issue(db, SiteIssueIn(project_id=project_id, work_package_id=work_package_id or None, issue_type=issue_type, severity=severity, title=title, description=description or None, location=location or None, responsible=responsible or "Projektvezetés", due_at=_form_datetime(due_at, end_of_day=True), evidence_url=evidence_url or None, financial_impact_huf=financial_impact_huf, deadline_impact_days=deadline_impact_days), actor=user.email)
     return RedirectResponse(f"/field/{project_id}", status_code=303)
-
 
 
 @app.get("/partner-field-sw.js")
@@ -1424,22 +1290,12 @@ def partner_field_home(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/partner-field/attendance")
-def partner_field_attendance(
-    request: Request, action: Annotated[str, Form()], worker_ids: Annotated[list[str], Form()],
-    declaration_accepted: Annotated[bool, Form()] = False, latitude: Annotated[Decimal | None, Form()] = None,
-    longitude: Annotated[Decimal | None, Form()] = None, accuracy_m: Annotated[Decimal | None, Form()] = None,
-    source_device_id: Annotated[str | None, Form()] = None, note: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def partner_field_attendance(request: Request, action: Annotated[str, Form()], worker_ids: Annotated[list[str], Form()], declaration_accepted: Annotated[bool, Form()] = False, latitude: Annotated[Decimal | None, Form()] = None, longitude: Annotated[Decimal | None, Form()] = None, accuracy_m: Annotated[Decimal | None, Form()] = None, source_device_id: Annotated[str | None, Form()] = None, note: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     access, redirect = partner_auth_or_redirect(request, db)
     if redirect:
         return redirect
     try:
-        attendance_action(db, access, PartnerAttendanceActionIn(
-            worker_ids=worker_ids, action=action, declaration_accepted=declaration_accepted,
-            latitude=latitude, longitude=longitude, accuracy_m=accuracy_m,
-            source_device_id=source_device_id, note=note or None,
-        ))
+        attendance_action(db, access, PartnerAttendanceActionIn(worker_ids=worker_ids, action=action, declaration_accepted=declaration_accepted, latitude=latitude, longitude=longitude, accuracy_m=accuracy_m, source_device_id=source_device_id, note=note or None))
     except (ValueError, PermissionError) as exc:
         return RedirectResponse(f"/partner-field?error={str(exc)}", status_code=303)
     label = "Érkezés" if action == "check_in" else "Távozás"
@@ -1447,67 +1303,37 @@ def partner_field_attendance(
 
 
 @app.post("/partner-field/progress")
-def partner_field_progress(
-    request: Request, summary: Annotated[str, Form()], reported_progress_pct: Annotated[int | None, Form()] = None,
-    quantity: Annotated[Decimal | None, Form()] = None, unit: Annotated[str | None, Form()] = None,
-    problem_text: Annotated[str | None, Form()] = None, safety_note: Annotated[str | None, Form()] = None,
-    quality_note: Annotated[str | None, Form()] = None, source_device_id: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def partner_field_progress(request: Request, summary: Annotated[str, Form()], reported_progress_pct: Annotated[int | None, Form()] = None, quantity: Annotated[Decimal | None, Form()] = None, unit: Annotated[str | None, Form()] = None, problem_text: Annotated[str | None, Form()] = None, safety_note: Annotated[str | None, Form()] = None, quality_note: Annotated[str | None, Form()] = None, source_device_id: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     access, redirect = partner_auth_or_redirect(request, db)
     if redirect:
         return redirect
-    create_progress(db, access, PartnerProgressIn(
-        reported_progress_pct=reported_progress_pct, quantity=quantity, unit=unit or None, summary=summary,
-        problem_text=problem_text or None, safety_note=safety_note or None, quality_note=quality_note or None,
-        source_device_id=source_device_id,
-    ))
+    create_progress(db, access, PartnerProgressIn(reported_progress_pct=reported_progress_pct, quantity=quantity, unit=unit or None, summary=summary, problem_text=problem_text or None, safety_note=safety_note or None, quality_note=quality_note or None, source_device_id=source_device_id))
     return RedirectResponse("/partner-field?message=Haladási jelentés beküldve ellenőrzésre.", status_code=303)
 
 
 @app.post("/partner-field/issues")
-def partner_field_issue(
-    request: Request, issue_type: Annotated[str, Form()], severity: Annotated[str, Form()],
-    title: Annotated[str, Form()], description: Annotated[str | None, Form()] = None,
-    location: Annotated[str | None, Form()] = None, source_device_id: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def partner_field_issue(request: Request, issue_type: Annotated[str, Form()], severity: Annotated[str, Form()], title: Annotated[str, Form()], description: Annotated[str | None, Form()] = None, location: Annotated[str | None, Form()] = None, source_device_id: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     access, redirect = partner_auth_or_redirect(request, db)
     if redirect:
         return redirect
-    create_partner_issue(db, access, issue_type=issue_type, severity=severity, title=title,
-                         description=description or None, location=location or None, source_device_id=source_device_id)
+    create_partner_issue(db, access, issue_type=issue_type, severity=severity, title=title, description=description or None, location=location or None, source_device_id=source_device_id)
     return RedirectResponse("/partner-field?message=Probléma rögzítve és továbbítva a projektvezetésnek.", status_code=303)
 
 
 @app.post("/partner-field/changes")
-def partner_field_change(
-    request: Request, change_type: Annotated[str, Form()], title: Annotated[str, Form()],
-    description: Annotated[str, Form()], requested_by: Annotated[str | None, Form()] = None,
-    deadline_impact_days: Annotated[int, Form()] = 0, source_device_id: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def partner_field_change(request: Request, change_type: Annotated[str, Form()], title: Annotated[str, Form()], description: Annotated[str, Form()], requested_by: Annotated[str | None, Form()] = None, deadline_impact_days: Annotated[int, Form()] = 0, source_device_id: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     access, redirect = partner_auth_or_redirect(request, db)
     if redirect:
         return redirect
     try:
-        create_change(db, access, PartnerChangeIn(
-            change_type=change_type, title=title, description=description, requested_by=requested_by or None,
-            deadline_impact_days=deadline_impact_days, source_device_id=source_device_id,
-        ))
+        create_change(db, access, PartnerChangeIn(change_type=change_type, title=title, description=description, requested_by=requested_by or None, deadline_impact_days=deadline_impact_days, source_device_id=source_device_id))
     except PermissionError as exc:
         return RedirectResponse(f"/partner-field?error={str(exc)}", status_code=303)
     return RedirectResponse("/partner-field?message=Változásbejelentés rögzítve. Jóváhagyásig nem módosítja a scope-ot vagy az árat.", status_code=303)
 
 
 @app.post("/partner-field/photos")
-async def partner_field_photos(
-    request: Request, photos: list[UploadFile] = File(...), category: Annotated[str, Form()] = "progress",
-    caption: Annotated[str | None, Form()] = None, progress_report_id: Annotated[str | None, Form()] = None,
-    change_notice_id: Annotated[str | None, Form()] = None, latitude: Annotated[Decimal | None, Form()] = None,
-    longitude: Annotated[Decimal | None, Form()] = None, source_device_id: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+async def partner_field_photos(request: Request, photos: list[UploadFile] = File(...), category: Annotated[str, Form()] = "progress", caption: Annotated[str | None, Form()] = None, progress_report_id: Annotated[str | None, Form()] = None, change_notice_id: Annotated[str | None, Form()] = None, latitude: Annotated[Decimal | None, Form()] = None, longitude: Annotated[Decimal | None, Form()] = None, source_device_id: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     access, redirect = partner_auth_or_redirect(request, db)
     if redirect:
         return redirect
@@ -1515,11 +1341,7 @@ async def partner_field_photos(
     try:
         for photo in photos[:10]:
             raw = await photo.read()
-            save_evidence(db, access, file_name=photo.filename or "helyszini-foto", mime_type=photo.content_type or "",
-                          raw=raw, category=category, caption=caption or None,
-                          progress_report_id=progress_report_id or None, issue_id=None,
-                          change_notice_id=change_notice_id or None, latitude=latitude, longitude=longitude,
-                          source_device_id=source_device_id, storage_root=PARTNER_EVIDENCE_DIR)
+            save_evidence(db, access, file_name=photo.filename or "helyszini-foto", mime_type=photo.content_type or "", raw=raw, category=category, caption=caption or None, progress_report_id=progress_report_id or None, issue_id=None, change_notice_id=change_notice_id or None, latitude=latitude, longitude=longitude, source_device_id=source_device_id, storage_root=PARTNER_EVIDENCE_DIR)
             saved += 1
     except (ValueError, PermissionError) as exc:
         return RedirectResponse(f"/partner-field?error={str(exc)}", status_code=303)
@@ -1542,24 +1364,12 @@ def partner_field_evidence(request: Request, evidence_id: str, db: Session = Dep
 
 
 @app.post("/operations/projects/{project_id}/partner-accesses")
-def operations_partner_access_create(
-    request: Request, project_id: str, company_name: Annotated[str, Form()], access_code: Annotated[str, Form()],
-    work_package_id: Annotated[str | None, Form()] = None, contact_name: Annotated[str | None, Form()] = None,
-    contact_phone: Annotated[str | None, Form()] = None, company_tax_number: Annotated[str | None, Form()] = None,
-    worker_names: Annotated[str | None, Form()] = None, valid_until: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def operations_partner_access_create(request: Request, project_id: str, company_name: Annotated[str, Form()], access_code: Annotated[str, Form()], work_package_id: Annotated[str | None, Form()] = None, contact_name: Annotated[str | None, Form()] = None, contact_phone: Annotated[str | None, Form()] = None, company_tax_number: Annotated[str | None, Form()] = None, worker_names: Annotated[str | None, Form()] = None, valid_until: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
     try:
-        create_access(db, PartnerAccessCreateIn(
-            company_name=company_name, project_id=project_id, work_package_id=work_package_id or None,
-            contact_name=contact_name or None, contact_phone=contact_phone or None,
-            company_tax_number=company_tax_number or None, access_code=access_code,
-            worker_names=[x.strip() for x in (worker_names or "").splitlines() if x.strip()],
-            valid_until=_form_datetime(valid_until, end_of_day=True),
-        ), actor=user.email)
+        create_access(db, PartnerAccessCreateIn(company_name=company_name, project_id=project_id, work_package_id=work_package_id or None, contact_name=contact_name or None, contact_phone=contact_phone or None, company_tax_number=company_tax_number or None, access_code=access_code, worker_names=[x.strip() for x in (worker_names or "").splitlines() if x.strip()], valid_until=_form_datetime(valid_until, end_of_day=True)), actor=user.email)
     except (KeyError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse(f"/operations/projects/{project_id}?tab=partners", status_code=303)
@@ -1578,10 +1388,7 @@ def operations_partner_access_deactivate(request: Request, access_id: str, proje
 
 
 @app.post("/operations/partner-progress/{progress_report_id}/review")
-def operations_partner_progress_review(
-    request: Request, progress_report_id: str, project_id: Annotated[str, Form()], decision: Annotated[str, Form()],
-    db: Session = Depends(get_db),
-):
+def operations_partner_progress_review(request: Request, progress_report_id: str, project_id: Annotated[str, Form()], decision: Annotated[str, Form()], db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
@@ -1614,54 +1421,73 @@ def procurement_project(request: Request, project_id: str, db: Session = Depends
 
 @app.post("/procurement/projects/{project_id}/delivery-notes")
 def procurement_delivery_create(
-    request: Request, project_id: str, order_id: Annotated[str, Form()], receiver: Annotated[str, Form()],
-    item_summary: Annotated[str, Form()], ordered_quantity: Annotated[Decimal, Form()],
-    received_quantity: Annotated[Decimal, Form()], unit: Annotated[str, Form()] = "db",
-    note_number: Annotated[str | None, Form()] = None, source_url: Annotated[str | None, Form()] = None,
-    received_at: Annotated[str | None, Form()] = None, actual_specification: Annotated[str | None, Form()] = None,
-    quality_status: Annotated[str, Form()] = "accepted", damage_or_shortage: Annotated[str | None, Form()] = None,
-    plan_match: Annotated[str, Form()] = "matched", document_status: Annotated[str, Form()] = "complete",
-    performance_declaration_status: Annotated[str, Form()] = "pending", elog_evidence_status: Annotated[str, Form()] = "pending",
-    storage_location: Annotated[str | None, Form()] = None, custodian: Annotated[str | None, Form()] = None,
-    weather_protection: Annotated[str, Form()] = "not_checked", evidence_url: Annotated[str | None, Form()] = None,
+    request: Request,
+    project_id: str,
+    order_id: Annotated[str, Form()],
+    receiver: Annotated[str, Form()],
+    item_summary: Annotated[str, Form()],
+    ordered_quantity: Annotated[Decimal, Form()],
+    received_quantity: Annotated[Decimal, Form()],
+    unit: Annotated[str, Form()] = "db",
+    note_number: Annotated[str | None, Form()] = None,
+    source_url: Annotated[str | None, Form()] = None,
+    received_at: Annotated[str | None, Form()] = None,
+    actual_specification: Annotated[str | None, Form()] = None,
+    quality_status: Annotated[str, Form()] = "accepted",
+    damage_or_shortage: Annotated[str | None, Form()] = None,
+    plan_match: Annotated[str, Form()] = "matched",
+    document_status: Annotated[str, Form()] = "complete",
+    performance_declaration_status: Annotated[str, Form()] = "pending",
+    elog_evidence_status: Annotated[str, Form()] = "pending",
+    storage_location: Annotated[str | None, Form()] = None,
+    custodian: Annotated[str | None, Form()] = None,
+    weather_protection: Annotated[str, Form()] = "not_checked",
+    evidence_url: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
     try:
-        create_delivery_note(db, DeliveryNoteIn(
-            order_id=order_id, project_id=project_id, note_number=note_number or None,
-            source_url=source_url or None, received_at=_form_datetime(received_at), receiver=receiver,
-            item_summary=item_summary, ordered_quantity=ordered_quantity, received_quantity=received_quantity,
-            unit=unit, actual_specification=actual_specification or None, quality_status=quality_status,
-            damage_or_shortage=damage_or_shortage or None, plan_match=plan_match,
-            document_status=document_status, performance_declaration_status=performance_declaration_status,
-            elog_evidence_status=elog_evidence_status, storage_location=storage_location or None,
-            custodian=custodian or None, weather_protection=weather_protection, evidence_url=evidence_url or None,
-        ), actor=user.email)
+        create_delivery_note(
+            db,
+            DeliveryNoteIn(
+                order_id=order_id,
+                project_id=project_id,
+                note_number=note_number or None,
+                source_url=source_url or None,
+                received_at=_form_datetime(received_at),
+                receiver=receiver,
+                item_summary=item_summary,
+                ordered_quantity=ordered_quantity,
+                received_quantity=received_quantity,
+                unit=unit,
+                actual_specification=actual_specification or None,
+                quality_status=quality_status,
+                damage_or_shortage=damage_or_shortage or None,
+                plan_match=plan_match,
+                document_status=document_status,
+                performance_declaration_status=performance_declaration_status,
+                elog_evidence_status=elog_evidence_status,
+                storage_location=storage_location or None,
+                custodian=custodian or None,
+                weather_protection=weather_protection,
+                evidence_url=evidence_url or None,
+            ),
+            actor=user.email,
+        )
     except KeyError:
         raise HTTPException(404, "Rendelés nem található.")
     return RedirectResponse(f"/procurement/projects/{project_id}", status_code=303)
 
 
 @app.post("/procurement/projects/{project_id}/movements")
-def procurement_movement_create(
-    request: Request, project_id: str, lot_id: Annotated[str, Form()], movement_type: Annotated[str, Form()],
-    quantity: Annotated[Decimal, Form()], from_location: Annotated[str | None, Form()] = None,
-    to_location: Annotated[str | None, Form()] = None, responsible: Annotated[str | None, Form()] = None,
-    note: Annotated[str | None, Form()] = None, occurred_at: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def procurement_movement_create(request: Request, project_id: str, lot_id: Annotated[str, Form()], movement_type: Annotated[str, Form()], quantity: Annotated[Decimal, Form()], from_location: Annotated[str | None, Form()] = None, to_location: Annotated[str | None, Form()] = None, responsible: Annotated[str | None, Form()] = None, note: Annotated[str | None, Form()] = None, occurred_at: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
     try:
-        create_material_movement(db, MaterialMovementIn(
-            lot_id=lot_id, movement_type=movement_type, quantity=quantity,
-            from_location=from_location or None, to_location=to_location or None,
-            responsible=responsible or user.name, note=note or None, occurred_at=_form_datetime(occurred_at),
-        ), actor=user.email)
+        create_material_movement(db, MaterialMovementIn(lot_id=lot_id, movement_type=movement_type, quantity=quantity, from_location=from_location or None, to_location=to_location or None, responsible=responsible or user.name, note=note or None, occurred_at=_form_datetime(occurred_at)), actor=user.email)
     except KeyError:
         raise HTTPException(404, "Anyaglot nem található.")
     except ValueError as exc:
@@ -1671,22 +1497,24 @@ def procurement_movement_create(
 
 @app.post("/procurement/projects/{project_id}/usage-controls")
 def procurement_usage_create(
-    request: Request, project_id: str, planned_quantity: Annotated[Decimal, Form()],
-    actual_quantity: Annotated[Decimal, Form()], waste_pct: Annotated[Decimal, Form()] = Decimal("0"),
-    unit: Annotated[str, Form()] = "db", unit_cost_huf: Annotated[Decimal, Form()] = Decimal("0"),
-    damage_huf: Annotated[Decimal, Form()] = Decimal("0"), work_package_id: Annotated[str | None, Form()] = None,
-    lot_id: Annotated[str | None, Form()] = None, subcontractor: Annotated[str | None, Form()] = None,
-    contractual_basis: Annotated[str | None, Form()] = None, db: Session = Depends(get_db),
+    request: Request,
+    project_id: str,
+    planned_quantity: Annotated[Decimal, Form()],
+    actual_quantity: Annotated[Decimal, Form()],
+    waste_pct: Annotated[Decimal, Form()] = Decimal("0"),
+    unit: Annotated[str, Form()] = "db",
+    unit_cost_huf: Annotated[Decimal, Form()] = Decimal("0"),
+    damage_huf: Annotated[Decimal, Form()] = Decimal("0"),
+    work_package_id: Annotated[str | None, Form()] = None,
+    lot_id: Annotated[str | None, Form()] = None,
+    subcontractor: Annotated[str | None, Form()] = None,
+    contractual_basis: Annotated[str | None, Form()] = None,
+    db: Session = Depends(get_db),
 ):
     user, redirect = auth_or_redirect(request, db)
     if redirect:
         return redirect
-    create_usage_control(db, MaterialUsageIn(
-        project_id=project_id, work_package_id=work_package_id or None, lot_id=lot_id or None,
-        subcontractor=subcontractor or None, planned_quantity=planned_quantity, waste_pct=waste_pct,
-        actual_quantity=actual_quantity, unit=unit, unit_cost_huf=unit_cost_huf,
-        damage_huf=damage_huf, contractual_basis=contractual_basis or None,
-    ), actor=user.email)
+    create_usage_control(db, MaterialUsageIn(project_id=project_id, work_package_id=work_package_id or None, lot_id=lot_id or None, subcontractor=subcontractor or None, planned_quantity=planned_quantity, waste_pct=waste_pct, actual_quantity=actual_quantity, unit=unit, unit_cost_huf=unit_cost_huf, damage_huf=damage_huf, contractual_basis=contractual_basis or None), actor=user.email)
     return RedirectResponse(f"/procurement/projects/{project_id}", status_code=303)
 
 
@@ -1766,10 +1594,7 @@ def tendermail_page(request: Request, db: Session = Depends(get_db)):
     domains = db.scalars(select(MailSendingDomain).order_by(MailSendingDomain.domain_name)).all()
     campaigns = db.scalars(select(TenderMailCampaign).order_by(desc(TenderMailCampaign.created_at)).limit(30)).all()
     suppressions = db.scalars(select(MailSuppression).where(MailSuppression.active.is_(True)).order_by(desc(MailSuppression.created_at)).limit(20)).all()
-    return templates.TemplateResponse(
-        request=request, name="tendermail.html",
-        context={"user": user, "active": "tendermail", "metrics": metrics, "domains": domains, "campaigns": campaigns, "suppressions": suppressions},
-    )
+    return templates.TemplateResponse(request=request, name="tendermail.html", context={"user": user, "active": "tendermail", "metrics": metrics, "domains": domains, "campaigns": campaigns, "suppressions": suppressions})
 
 
 @app.get("/tendermail/{campaign_id}", response_class=HTMLResponse)
@@ -1784,32 +1609,16 @@ def tendermail_campaign_page(request: Request, campaign_id: str, db: Session = D
     recipients = db.scalars(select(TenderMailRecipient).where(TenderMailRecipient.campaign_id == campaign_id).order_by(TenderMailRecipient.status, TenderMailRecipient.company_name)).all()
     events = db.scalars(select(TenderMailEvent).where(TenderMailEvent.campaign_id == campaign_id).order_by(desc(TenderMailEvent.occurred_at)).limit(50)).all()
     readiness = campaign_readiness(db, campaign_id)
-    return templates.TemplateResponse(
-        request=request, name="tendermail_campaign.html",
-        context={"user": user, "active": "tendermail", "campaign": campaign, "domain": domain, "recipients": recipients, "events": events, "readiness": readiness},
-    )
+    return templates.TemplateResponse(request=request, name="tendermail_campaign.html", context={"user": user, "active": "tendermail", "campaign": campaign, "domain": domain, "recipients": recipients, "events": events, "readiness": readiness})
 
 
 @app.post("/tendermail/campaigns")
-def create_tender_campaign_ui(
-    request: Request,
-    name: Annotated[str, Form()],
-    domain_key: Annotated[str, Form()],
-    subject_template: Annotated[str, Form()],
-    text_template: Annotated[str, Form()],
-    tender_id: Annotated[str | None, Form()] = None,
-    project_id: Annotated[str | None, Form()] = None,
-    hourly_rate: Annotated[int, Form()] = 100,
-    db: Session = Depends(get_db),
-):
+def create_tender_campaign_ui(request: Request, name: Annotated[str, Form()], domain_key: Annotated[str, Form()], subject_template: Annotated[str, Form()], text_template: Annotated[str, Form()], tender_id: Annotated[str | None, Form()] = None, project_id: Annotated[str | None, Form()] = None, hourly_rate: Annotated[int, Form()] = 100, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
     try:
-        campaign = create_campaign(db, TenderCampaignIn(
-            name=name, domain_key=domain_key, subject_template=subject_template, text_template=text_template,
-            tender_id=tender_id or None, project_id=project_id or None, hourly_rate=hourly_rate, created_by=user.email,
-        ))
+        campaign = create_campaign(db, TenderCampaignIn(name=name, domain_key=domain_key, subject_template=subject_template, text_template=text_template, tender_id=tender_id or None, project_id=project_id or None, hourly_rate=hourly_rate, created_by=user.email))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     audit(db, actor=user.email, action="tendermail_campaign_created", entity_type="mail_campaign", entity_id=campaign.campaign_id)
@@ -1818,14 +1627,7 @@ def create_tender_campaign_ui(
 
 
 @app.post("/tendermail/{campaign_id}/recipients")
-def add_tender_recipient_ui(
-    request: Request,
-    campaign_id: str,
-    email: Annotated[str, Form()],
-    company_name: Annotated[str | None, Form()] = None,
-    contact_name: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
+def add_tender_recipient_ui(request: Request, campaign_id: str, email: Annotated[str, Form()], company_name: Annotated[str | None, Form()] = None, contact_name: Annotated[str | None, Form()] = None, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)

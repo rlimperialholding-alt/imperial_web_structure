@@ -31,6 +31,20 @@ VISUAL_LAYOUT_TRACE_FIELDS = (
     "image_treatment",
     "background_treatment",
     "minimum_text_contrast_ratio",
+    "full_subject_expected",
+    "full_subject_contour_visible",
+    "accidental_crop_absent",
+    "text_boxes_within_bounds",
+    "text_background_clear",
+    "text_overlaps_primary_subject",
+    "text_background_overlaps_primary_subject",
+    "minimum_source_font_px",
+    "decorative_frame_area_ratio",
+    "primary_subject_dominance_required",
+    "primary_subject_area_ratio",
+    "logo_lockup_brand_native",
+    "proof_caption_present",
+    "proof_caption_semantically_complete",
 )
 
 COPY_VARIATION_MODES = {
@@ -40,15 +54,22 @@ COPY_VARIATION_MODES = {
 }
 
 COPY_VARIATION_TRACE_FIELDS = (
+    "brand_id",
+    "generation_run_id",
     "copy_mode",
     "copy_fingerprint",
     "copy_concept_id",
+    "copy_architecture_id",
+    "copy_structure_signature",
     "source_text_usage_ratio",
-    "professional_copy_quality_score",
     "creative_quality_benchmark_id",
     "creative_rationale",
     "introduces_new_factual_claims",
     "human_fact_review_required",
+    "consumer_promise_plain_language",
+    "promise_reason_or_mechanism",
+    "offer_terms_plain_language",
+    "cta_next_step_plain_language",
 )
 
 CREATIVE_QUALITY_BENCHMARKS = {
@@ -74,23 +95,45 @@ def validate_copy_variation_trace(
 
     try:
         source_text_usage_ratio = float(trace["source_text_usage_ratio"])
-        professional_score = float(trace["professional_copy_quality_score"])
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            "A szöveghasználati arány és a copy quality score szám kell legyen."
-        ) from exc
+        raise ValueError("A szöveghasználati arány szám kell legyen.") from exc
     if not 0 <= source_text_usage_ratio <= 1:
         raise ValueError("A source_text_usage_ratio 0 és 1 közötti érték.")
-    if not 0 <= professional_score <= 10:
-        raise ValueError("A professional_copy_quality_score 0 és 10 közötti érték.")
-    if professional_score < 8.5:
-        raise ValueError("A professzionális copywriting előminősítés minimuma 8.5/10.")
+    if "professional_copy_quality_score" in trace:
+        raise ValueError(
+            "A professional_copy_quality_score nem lehet generátori önminősítés. "
+            "A minőséget a kötelező, független szakértői GateResult igazolja."
+        )
 
     benchmark_id = str(trace["creative_quality_benchmark_id"])
     if benchmark_id not in CREATIVE_QUALITY_BENCHMARKS:
         raise ValueError("Ismeretlen creative_quality_benchmark_id.")
     if len(str(trace["creative_rationale"]).strip()) < 20:
         raise ValueError("A kreatív koncepció indoklása legalább 20 karakter.")
+    clarity_fields = {
+        "consumer_promise_plain_language": 10,
+        "promise_reason_or_mechanism": 10,
+        "offer_terms_plain_language": 10,
+        "cta_next_step_plain_language": 10,
+    }
+    weak_clarity = [
+        field
+        for field, minimum_length in clarity_fields.items()
+        if len(str(trace[field]).strip()) < minimum_length
+    ]
+    if weak_clarity:
+        raise ValueError(
+            "A fogyasztói ígéret, annak oka, az ajánlat és a következő lépés "
+            "köznyelvi magyarázata kötelező: " + ", ".join(weak_clarity)
+        )
+
+    copy_architecture_id = str(trace["copy_architecture_id"])
+    copy_structure_signature = str(trace["copy_structure_signature"])
+    if len(copy_architecture_id.strip()) < 8 or len(copy_structure_signature.strip()) < 12:
+        raise ValueError(
+            "A copy_architecture_id és copy_structure_signature nem lehet általános "
+            "vagy üres szerkezeti címke."
+        )
 
     introduces_new_facts = trace["introduces_new_factual_claims"] is True
     human_fact_review_required = trace["human_fact_review_required"] is True
@@ -120,6 +163,20 @@ def validate_copy_variation_trace(
     for sibling in sibling_traces:
         if sibling.get("copy_fingerprint") == copy_fingerprint:
             raise ValueError("A copy_fingerprint nem ismétlődhet ugyanazon brief assetjei között.")
+        if sibling.get("generation_run_id") == trace["generation_run_id"]:
+            raise ValueError(
+                "Külön kreatívhoz és külön márkához külön generation_run_id szükséges."
+            )
+        if sibling.get("copy_architecture_id") == copy_architecture_id:
+            raise ValueError(
+                "A copy_architecture_id nem ismétlődhet ugyanazon kampánycsalád "
+                "assetjei vagy márkái között."
+            )
+        if sibling.get("copy_structure_signature") == copy_structure_signature:
+            raise ValueError(
+                "A bekezdéssorrend és érvelési szerkezet nem ismétlődhet ugyanazon "
+                "kampánycsalád assetjei vagy márkái között."
+            )
 
     copy_traces = [item for item in sibling_traces if item.get("copy_mode")] + [trace]
     if len(copy_traces) >= 2:
@@ -167,6 +224,113 @@ def validate_visual_variant_trace(
         raise ValueError("A minimum_text_contrast_ratio szám kell legyen.") from exc
     if minimum_text_contrast_ratio < 4.5:
         raise ValueError("A kreatív normál szövegének WCAG-kontrasztja legalább 4.5:1 legyen.")
+
+    if trace["accidental_crop_absent"] is not True:
+        raise ValueError("Véletlen képkivágás mellett kreatív nem hagyható jóvá.")
+    if trace["text_boxes_within_bounds"] is not True:
+        raise ValueError("Minden szövegdoboznak és címkének a képhatáron belül kell maradnia.")
+    if trace["text_background_clear"] is not True:
+        raise ValueError("Dekoratív minta vagy képzaj nem ronthatja a szöveg olvashatóságát.")
+    if trace["text_overlaps_primary_subject"] is not False:
+        raise ValueError("Szöveg nem takarhat rá a típusházra vagy más elsődleges képi témára.")
+    if trace["text_background_overlaps_primary_subject"] is not False:
+        raise ValueError(
+            "Szövegdoboz vagy annak háttere nem takarhat rá az elsődleges képi témára."
+        )
+    try:
+        minimum_source_font_px = int(trace["minimum_source_font_px"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("A minimum_source_font_px egész szám kell legyen.") from exc
+    if minimum_source_font_px < 32:
+        raise ValueError(
+            "Facebook-kreatívon a legkisebb szerkesztett betűméret legalább 32 px "
+            "legyen 1080 px széles forrásképen; a hivatalos tanúsítási logók kivételek."
+        )
+    if trace["logo_lockup_brand_native"] is not True:
+        raise ValueError("A logó csak márkanatív, arculatilag jóváhagyott lockupban helyezhető el.")
+    if (
+        trace["proof_caption_present"] is True
+        and trace["proof_caption_semantically_complete"] is not True
+    ):
+        raise ValueError(
+            "Bizalmi jelzés képaláírása csak a díj vagy minősítés teljes jelentésével "
+            "együtt használható; önálló rövidítés nem engedélyezett."
+        )
+
+    full_subject_expected = trace["full_subject_expected"] is True
+    if full_subject_expected and trace["full_subject_contour_visible"] is not True:
+        raise ValueError(
+            "Teljes típusház-bemutatásnál minden tető-, fal- és épületsaroknak látszania kell."
+        )
+    if not full_subject_expected and len(str(trace.get("declared_crop_intent") or "").strip()) < 20:
+        raise ValueError(
+            "Részleges képkivágás csak előre deklarált, legalább 20 karakteres "
+            "kompozíciós céllal engedélyezett."
+        )
+
+    try:
+        decorative_frame_area_ratio = float(trace["decorative_frame_area_ratio"])
+        primary_subject_area_ratio = float(trace["primary_subject_area_ratio"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("A keret- és főtéma-terület aránya szám kell legyen.") from exc
+    if not 0 <= decorative_frame_area_ratio <= 1 or not 0 <= primary_subject_area_ratio <= 1:
+        raise ValueError("A keret- és főtéma-terület aránya 0 és 1 közötti érték.")
+    if decorative_frame_area_ratio > 0.08 and not trace.get(
+        "decorative_frame_exception_approved_by"
+    ):
+        raise ValueError("A céltalan dekoratív keret legfeljebb a kreatív 8%-át foglalhatja el.")
+    if trace["primary_subject_dominance_required"] is True and primary_subject_area_ratio < 0.45:
+        raise ValueError("Főtémás kreatívnál az elsődleges képi téma legalább 45% legyen.")
+    if trace.get("typehouse_offer_creative") is True:
+        if primary_subject_area_ratio < 0.75:
+            raise ValueError("Típusház-fókuszú kreatívnál a ház képi területe legalább 75% legyen.")
+        offer_fields = (
+            "offer_block_contiguous",
+            "offer_current_month_present",
+            "offer_model_name_present",
+            "offer_gross_area_m2_present",
+            "offer_selling_price_present",
+            "offer_price_plus_vat_present",
+            "discount_percentage_on_creative",
+            "original_price_on_creative",
+            "net_price_word_on_creative",
+            "build_time_label_plain",
+            "legal_disclaimer_on_impulse_creative",
+        )
+        missing_offer_fields = [
+            field for field in offer_fields if field not in trace or trace[field] is None
+        ]
+        if missing_offer_fields:
+            raise ValueError(
+                "A típusház-ajánlat kötelező vizuális trace mezői hiányoznak: "
+                + ", ".join(missing_offer_fields)
+            )
+        required_offer_truths = (
+            "offer_block_contiguous",
+            "offer_current_month_present",
+            "offer_model_name_present",
+            "offer_gross_area_m2_present",
+            "offer_selling_price_present",
+            "offer_price_plus_vat_present",
+            "build_time_label_plain",
+        )
+        if any(trace[field] is not True for field in required_offer_truths):
+            raise ValueError(
+                "Az akció hónapja, a típusház neve, bruttó m²-e, eladási ára és + ÁFA "
+                "jelölése egyetlen összefüggő ajánlati blokkban kötelező; az építési "
+                "idő felirata csak „Építési idő” lehet."
+            )
+        forbidden_impulse_details = (
+            "discount_percentage_on_creative",
+            "original_price_on_creative",
+            "net_price_word_on_creative",
+            "legal_disclaimer_on_impulse_creative",
+        )
+        if any(trace[field] is not False for field in forbidden_impulse_details):
+            raise ValueError(
+                "Első impulzusos típusház-kreatívon nem szerepelhet kedvezményszázalék, "
+                "eredeti ár, „nettó” felirat vagy jogi apróbetű."
+            )
 
     background_treatment = str(trace["background_treatment"]).casefold()
     uses_gradient = "gradient" in background_treatment or bool(

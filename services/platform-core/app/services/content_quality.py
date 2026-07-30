@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import uuid
 from datetime import UTC, date, datetime, time
@@ -15,17 +16,24 @@ from ..config import settings
 from ..copy_gate.engine import evaluate_content
 from ..copy_gate.models import (
     ApprovalSubmission,
+    AssemblySubmission,
     CanonicalSources,
     ContentAsset,
     ContentEvaluationRequest,
     CopyBrief,
     CopySourceIn,
+    CreativeDirectorReviewSubmission,
     Decision,
     EditorialReview,
     FourGateSubmission,
     GateResult,
+    LiveReviewSubmission,
+    MandatoryCopyGateReviewSubmission,
     PerformanceMetricIn,
     PublicationState,
+    ReleaseReviewSubmission,
+    StrategyReviewSubmission,
+    VisualProductionSubmission,
 )
 from ..copy_gate.orchestrator import (
     GENERATION_STAGES,
@@ -34,14 +42,18 @@ from ..copy_gate.orchestrator import (
     validate_visual_variant_trace,
 )
 from ..models import (
+    CampaignStrategyReviewRecord,
     ContentApprovalRecord,
     ContentAssetRecord,
     ContentGateDecision,
     ContentPerformanceMetric,
+    ContentWorkflowReviewRecord,
     CopyBriefRecord,
     CopyReviewRun,
     CopySourceRecord,
+    CreativeProductionRunRecord,
     OutboxMessage,
+    PublicationBundleRecord,
     TaskRecord,
 )
 from .commercial_prevalidation import evaluate_commercial_prevalidation
@@ -62,6 +74,13 @@ SPECIALIST_GATE_AGENTS = {
     "GATE_3_FINANCIAL_COMMERCIAL": "AGT-011",
     "GATE_4_TECHNICAL_FACTUAL": "AGT-013",
 }
+EXPERT_REVIEW_PROMPT_VERSION = "expert-hungarian-direct-response-v2"
+MANDATORY_COPY_GATE_PROMPT_VERSIONS = {
+    "MARKETING": "marketing-gate-v1",
+    "DIRECT_RESPONSE": "direct-response-copy-gate-v1",
+}
+VISUAL_REVIEW_PROMPT_VERSION = "visual-art-direction-gate-v1"
+PUBLICATION_ADAPTER_CONTRACT_VERSION = "publication-gate-envelope-v1"
 
 
 def utcnow() -> datetime:
@@ -76,6 +95,92 @@ def _json(value: Any) -> str:
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+def _verify_expert_review_attestation(editorial_review: EditorialReview) -> None:
+    secret = settings.content_expert_review_secret
+    if len(secret) < 32:
+        raise ValueError(
+            "A szakértői review nem ellenőrizhető: a secret-managementből hiányzik "
+            "a legalább 32 karakteres CONTENT_EXPERT_REVIEW_SECRET."
+        )
+    if editorial_review.attestation_key_id != settings.content_expert_review_key_id:
+        raise ValueError(
+            "A szakértői review ismeretlen vagy visszavont attestation-kulcsot használ."
+        )
+    if editorial_review.prompt_version != EXPERT_REVIEW_PROMPT_VERSION:
+        raise ValueError(
+            "A szakértői review nem a kötelező, verziózott magyar nyelvi és "
+            "direct-response ellenőrzési protokollal készült."
+        )
+    signed_payload = editorial_review.model_dump(
+        mode="json",
+        exclude={"attestation_sha256"},
+    )
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        _json(signed_payload).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected, editorial_review.attestation_sha256):
+        raise ValueError("Érvénytelen szakértői review-attestation; a COPY_QA blokkolva.")
+
+
+def _verify_hmac_attestation(
+    payload: Any,
+    *,
+    secret: str,
+    expected_key_id: str,
+    expected_prompt_version: str,
+    gate_name: str,
+) -> None:
+    if len(secret) < 32:
+        raise ValueError(
+            f"A {gate_name} kapu nem ellenőrizhető: a secret-managementből hiányzik "
+            "a legalább 32 karakteres, kapuspecifikus secret."
+        )
+    if payload.attestation_key_id != expected_key_id:
+        raise ValueError(f"A {gate_name} kapu ismeretlen vagy visszavont kulcsot használ.")
+    if payload.prompt_version != expected_prompt_version:
+        raise ValueError(f"A {gate_name} kapu nem a kötelező, verziózott protokollt használja.")
+    signed_payload = payload.model_dump(mode="json", exclude={"attestation_sha256"})
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        _json(signed_payload).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected, payload.attestation_sha256):
+        raise ValueError(f"Érvénytelen {gate_name} kapu-attestation; a folyamat blokkolva.")
+
+
+def _verify_mandatory_copy_gate_attestation(
+    submission: MandatoryCopyGateReviewSubmission,
+) -> None:
+    if submission.gate_id == "MARKETING":
+        secret = settings.content_marketing_review_secret
+        key_id = settings.content_marketing_review_key_id
+    else:
+        secret = settings.content_copywriter_review_secret
+        key_id = settings.content_copywriter_review_key_id
+    _verify_hmac_attestation(
+        submission,
+        secret=secret,
+        expected_key_id=key_id,
+        expected_prompt_version=MANDATORY_COPY_GATE_PROMPT_VERSIONS[submission.gate_id],
+        gate_name=submission.gate_id,
+    )
+
+
+def _verify_visual_review_attestation(
+    submission: CreativeDirectorReviewSubmission,
+) -> None:
+    _verify_hmac_attestation(
+        submission,
+        secret=settings.content_visual_review_secret,
+        expected_key_id=settings.content_visual_review_key_id,
+        expected_prompt_version=VISUAL_REVIEW_PROMPT_VERSION,
+        gate_name="VISUAL",
+    )
 
 
 def validate_copy_brief(payload: dict[str, Any]) -> dict[str, Any]:
@@ -309,7 +414,7 @@ def create_copy_brief(db: Session, payload: dict[str, Any], *, actor: str) -> Co
         channel=brief.channel,
         page_id=brief.page_id,
         campaign_id=brief.campaign_id,
-        status="APPROVED",
+        status="STRATEGY_QA",
         valid_from=datetime.combine(brief.valid_from, time.min, tzinfo=UTC),
         valid_until=datetime.combine(brief.valid_until, time.max, tzinfo=UTC),
         brief_json=_json(brief),
@@ -333,6 +438,63 @@ def create_copy_brief(db: Session, payload: dict[str, Any], *, actor: str) -> Co
     return row
 
 
+def record_strategy_review(
+    db: Session,
+    copy_brief_id: str,
+    submission: StrategyReviewSubmission,
+    *,
+    actor: str,
+) -> CampaignStrategyReviewRecord:
+    if actor != submission.reviewer_identity:
+        raise ValueError("A stratégiai reviewer_identity az autentikált actor kell legyen.")
+    brief_row = db.get(CopyBriefRecord, copy_brief_id)
+    if not brief_row:
+        raise KeyError(copy_brief_id)
+    if brief_row.status != "STRATEGY_QA":
+        raise ValueError(
+            f"Stratégiai review nem rögzíthető ebből az állapotból: {brief_row.status}"
+        )
+    if db.scalar(
+        select(CampaignStrategyReviewRecord).where(
+            CampaignStrategyReviewRecord.copy_brief_id == copy_brief_id
+        )
+    ):
+        raise ValueError("Ehhez a CopyBriefhez már tartozik stratégiai review.")
+    brief_hash = _hash(json.loads(brief_row.brief_json))
+    row = CampaignStrategyReviewRecord(
+        review_id=f"STR-{uuid.uuid4().hex[:16].upper()}",
+        copy_brief_id=copy_brief_id,
+        brief_hash=brief_hash,
+        strategist_run_id=submission.strategist_run_id,
+        reviewer_run_id=submission.reviewer_run_id,
+        reviewer_identity=submission.reviewer_identity,
+        decision=submission.decision,
+        review_json=_json(submission),
+        created_by=actor,
+    )
+    db.add(row)
+    brief_row.status = (
+        "STRATEGY_APPROVED" if submission.decision == Decision.APPROVED else "STRATEGY_BLOCKED"
+    )
+    audit(
+        db,
+        actor=actor,
+        action="campaign_strategy_reviewed",
+        entity_type="copy_brief",
+        entity_id=copy_brief_id,
+        after={
+            "review_id": row.review_id,
+            "brief_hash": brief_hash,
+            "decision": submission.decision,
+            "state": brief_row.status,
+            "reviewer_identity": submission.reviewer_identity,
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def create_content_asset(
     db: Session,
     payload: ContentAsset,
@@ -343,18 +505,36 @@ def create_content_asset(
     actor: str,
 ) -> ContentAssetRecord:
     brief_row = db.get(CopyBriefRecord, copy_brief_id)
-    if not brief_row or brief_row.status != "APPROVED":
-        raise ValueError("Csak jóváhagyott CopyBriefhez hozható létre asset.")
+    if not brief_row or brief_row.status != "STRATEGY_APPROVED":
+        raise ValueError(
+            "Csak külön stratégiai kapun jóváhagyott CopyBriefhez hozható létre asset."
+        )
+    strategy_review = db.scalar(
+        select(CampaignStrategyReviewRecord).where(
+            CampaignStrategyReviewRecord.copy_brief_id == copy_brief_id,
+            CampaignStrategyReviewRecord.decision == Decision.APPROVED,
+        )
+    )
+    if not strategy_review or strategy_review.brief_hash != _hash(json.loads(brief_row.brief_json)):
+        raise ValueError("Hiányzik az aktuális briefhashhez tartozó stratégiai GateResult.")
     if db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == payload.asset_id)):
         raise ValueError("Az AssetID már létezik.")
     if generation_trace.get("stages", []) != list(GENERATION_STAGES):
         raise ValueError("A kilenc kötelező generálási/szerkesztési szakasz sorrendje hiányos.")
     if not generation_trace.get("generation_run_id"):
         raise ValueError("A generation_run_id kötelező.")
+    if generation_trace.get("brand_id") != brief_row.brand_id:
+        raise ValueError("A generation_trace brand_id mezője nem egyezik a CopyBrieffel.")
     sibling_traces: list[dict[str, Any]] = []
-    sibling_rows = db.scalars(
-        select(ContentAssetRecord).where(ContentAssetRecord.copy_brief_id == copy_brief_id)
-    ).all()
+    sibling_query = select(ContentAssetRecord)
+    if brief_row.campaign_id:
+        sibling_query = sibling_query.join(
+            CopyBriefRecord,
+            CopyBriefRecord.copy_brief_id == ContentAssetRecord.copy_brief_id,
+        ).where(CopyBriefRecord.campaign_id == brief_row.campaign_id)
+    else:
+        sibling_query = sibling_query.where(ContentAssetRecord.copy_brief_id == copy_brief_id)
+    sibling_rows = db.scalars(sibling_query).all()
     for sibling in sibling_rows:
         try:
             sibling_traces.append(json.loads(sibling.generation_trace_json or "{}"))
@@ -421,6 +601,19 @@ def run_copy_quality(
     sources, snapshot_hash = resolve_canonical_sources(
         db, brief, visual_asset_ids=content.visual_asset_ids
     )
+    generation_trace = json.loads(asset_row.generation_trace_json or "{}")
+    if editorial_review.generation_run_id != generation_trace.get("generation_run_id"):
+        raise ValueError(
+            "A szakértői jegyzőkönyv generation_run_id mezője nem az aktuális "
+            "generálási futáshoz tartozik."
+        )
+    if editorial_review.model_version == generation_trace.get("model_version"):
+        raise ValueError("A generáló és a szakértői ellenőrző modell nem lehet azonos.")
+    if editorial_review.reviewed_asset_id != asset_row.asset_id:
+        raise ValueError("A szakértői jegyzőkönyv másik assethez tartozik.")
+    if editorial_review.reviewed_content_sha256 != asset_row.content_hash:
+        raise ValueError("A szakértői jegyzőkönyv nem az aktuális tartalomhashhez tartozik.")
+    _verify_expert_review_attestation(editorial_review)
     asset_row.state = PublicationState.COPY_QA
     result = evaluate_content(
         ContentEvaluationRequest(
@@ -432,7 +625,7 @@ def run_copy_quality(
         )
     )
     run_id = f"CQR-{uuid.uuid4().hex[:16].upper()}"
-    generation_trace = json.loads(asset_row.generation_trace_json or "{}")
+    expert_review_json = _json(editorial_review)
     run = CopyReviewRun(
         run_id=run_id,
         asset_id=asset_id,
@@ -455,6 +648,8 @@ def run_copy_quality(
         total_score=result.total_score,
         final_decision=result.final_decision,
         scorecard_json=_json(result),
+        expert_review_json=expert_review_json,
+        expert_review_hash=_hash(editorial_review),
         repair_brief_json=_json(result.repair_brief),
         created_by=actor,
     )
@@ -472,13 +667,52 @@ def run_copy_quality(
             source_versions_json=_json(result.gate_1.source_versions),
         )
     )
+    for gate_id, agent_id, approved in (
+        (
+            "GATE_HU_LANGUAGE_EXPERT",
+            "AGT-HU-LANGUAGE-EXPERT",
+            bool(result.metadata["expert_language_approved"]),
+        ),
+    ):
+        db.add(
+            ContentGateDecision(
+                run_id=run_id,
+                asset_id=asset_id,
+                gate_id=gate_id,
+                agent_id=agent_id,
+                decision=Decision.APPROVED if approved else Decision.RETURN_FOR_REVISION,
+                relevant=True,
+                certainty="HIGH",
+                findings_json=_json(
+                    []
+                    if approved
+                    else [
+                        {
+                            "code": f"{gate_id}_FAILED",
+                            "message": "A kötelező szakértői minimum nem teljesült.",
+                            "severity": "CRITICAL",
+                        }
+                    ]
+                ),
+                source_versions_json=_json(
+                    {
+                        "review_model": editorial_review.model_version,
+                        "review_prompt": editorial_review.prompt_version,
+                        "review_hash": _hash(editorial_review),
+                    }
+                ),
+            )
+        )
     asset_row.latest_run_id = run_id
     asset_row.gate_1_approved = result.final_decision == Decision.APPROVED
+    asset_row.expert_language_approved = bool(result.metadata["expert_language_approved"])
+    asset_row.expert_marketing_approved = False
+    asset_row.copywriter_approved = False
     asset_row.four_gate_approved = False
     asset_row.editorial_approved = False
     asset_row.owner_approved = False
     asset_row.state = (
-        PublicationState.FOUR_GATE_QA
+        PublicationState.SPECIALIST_QA
         if result.final_decision == Decision.APPROVED
         else PublicationState.BLOCKED
     )
@@ -493,6 +727,11 @@ def run_copy_quality(
             "score": result.total_score,
             "decision": result.final_decision,
             "state": asset_row.state,
+            "expert_review_hash": run.expert_review_hash,
+            "expert_reviewer_identity": editorial_review.reviewer_identity,
+            "expert_language_approved": asset_row.expert_language_approved,
+            "expert_marketing_approved": False,
+            "copywriter_approved": False,
         },
     )
     db.commit()
@@ -548,6 +787,113 @@ def _create_human_gate_task(
     )
 
 
+def record_mandatory_copy_gate_review(
+    db: Session,
+    asset_id: str,
+    submission: MandatoryCopyGateReviewSubmission,
+    *,
+    actor: str,
+) -> ContentWorkflowReviewRecord:
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise KeyError(asset_id)
+    if asset.state != PublicationState.SPECIALIST_QA:
+        raise ValueError(
+            "Kötelező marketing/copywriter review nem rögzíthető ebből az állapotból: "
+            f"{asset.state}"
+        )
+    generation_trace = json.loads(asset.generation_trace_json or "{}")
+    if submission.reviewed_asset_id != asset.asset_id:
+        raise ValueError("A kötelező kapujegyzőkönyv másik assethez tartozik.")
+    if submission.reviewed_content_sha256 != asset.content_hash:
+        raise ValueError("A kötelező kapujegyzőkönyv nem az aktuális tartalomhashhez tartozik.")
+    if submission.generation_run_id != generation_trace.get("generation_run_id"):
+        raise ValueError("A kötelező kapujegyzőkönyv másik generálási futáshoz tartozik.")
+    if submission.reviewer_model_version == generation_trace.get("model_version"):
+        raise ValueError("A generáló és a kötelező szakértői reviewer modell nem lehet azonos.")
+    _verify_mandatory_copy_gate_attestation(submission)
+
+    stage = f"{submission.gate_id}_QA"
+    existing_same_gate = db.scalar(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.asset_id == asset_id,
+            ContentWorkflowReviewRecord.content_version == asset.content_version,
+            ContentWorkflowReviewRecord.stage == stage,
+        )
+    )
+    if existing_same_gate:
+        raise ValueError("Ehhez a tartalomverzióhoz ez a kötelező kapu már döntött.")
+    other_stage = "DIRECT_RESPONSE_QA" if submission.gate_id == "MARKETING" else "MARKETING_QA"
+    other_review = db.scalar(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.asset_id == asset_id,
+            ContentWorkflowReviewRecord.content_version == asset.content_version,
+            ContentWorkflowReviewRecord.stage == other_stage,
+            ContentWorkflowReviewRecord.decision == Decision.APPROVED,
+        )
+    )
+    if other_review:
+        other_payload = MandatoryCopyGateReviewSubmission.model_validate_json(
+            other_review.review_json
+        )
+        if (
+            other_payload.reviewer_identity == submission.reviewer_identity
+            or other_payload.reviewer_run_id == submission.reviewer_run_id
+            or other_payload.reviewer_model_version == submission.reviewer_model_version
+        ):
+            raise ValueError(
+                "A marketing- és direct-response kaput külön reviewer entitásnak, "
+                "külön modellnek és külön futásnak kell elvégeznie."
+            )
+
+    row = ContentWorkflowReviewRecord(
+        review_id=f"{submission.gate_id[:3]}-{uuid.uuid4().hex[:16].upper()}",
+        asset_id=asset_id,
+        content_version=asset.content_version,
+        stage=stage,
+        reviewer_role=(
+            "ONLINE_MARKETING_MANAGER"
+            if submission.gate_id == "MARKETING"
+            else "DIRECT_RESPONSE_COPYWRITER"
+        ),
+        reviewer_identity=submission.reviewer_identity,
+        reviewer_run_id=submission.reviewer_run_id,
+        decision=submission.decision,
+        artifact_hash=asset.content_hash,
+        review_json=_json(submission),
+        created_by=actor,
+    )
+    db.add(row)
+    approved = submission.decision == Decision.APPROVED
+    if submission.gate_id == "MARKETING":
+        asset.expert_marketing_approved = approved
+    else:
+        asset.copywriter_approved = approved
+    if not approved:
+        asset.state = PublicationState.BLOCKED
+    elif asset.expert_marketing_approved and asset.copywriter_approved:
+        asset.state = PublicationState.FOUR_GATE_QA
+    audit(
+        db,
+        actor=actor,
+        action="mandatory_copy_gate_reviewed",
+        entity_type="content_asset",
+        entity_id=asset_id,
+        after={
+            "review_id": row.review_id,
+            "gate_id": submission.gate_id,
+            "reviewer_identity": submission.reviewer_identity,
+            "reviewer_run_id": submission.reviewer_run_id,
+            "reviewed_content_sha256": submission.reviewed_content_sha256,
+            "decision": submission.decision,
+            "state": asset.state,
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def submit_four_gates(
     db: Session,
     asset_id: str,
@@ -561,6 +907,9 @@ def submit_four_gates(
     if (
         asset.state != PublicationState.FOUR_GATE_QA
         or not asset.gate_1_approved
+        or not asset.expert_language_approved
+        or not asset.expert_marketing_approved
+        or not asset.copywriter_approved
         or not asset.latest_run_id
     ):
         raise ValueError("A négykapus review csak sikeres COPY_QA után indítható.")
@@ -667,7 +1016,7 @@ def submit_four_gates(
         asset.four_gate_approved = True
         asset.source_prevalidated = prevalidation.eligible and copy_fast_lane_allowed
         asset.state = (
-            PublicationState.SOURCE_PREVALIDATED
+            PublicationState.VISUAL_PRODUCTION
             if asset.source_prevalidated
             else PublicationState.HUMAN_EDITORIAL
         )
@@ -754,7 +1103,7 @@ def record_approval(
         asset.state = PublicationState.OWNER_APPROVAL if approved else PublicationState.BLOCKED
     else:
         asset.owner_approved = approved
-        asset.state = PublicationState.OWNER_APPROVAL if approved else PublicationState.BLOCKED
+        asset.state = PublicationState.VISUAL_PRODUCTION if approved else PublicationState.BLOCKED
     audit(
         db,
         actor=actor,
@@ -772,25 +1121,526 @@ def record_approval(
     return asset
 
 
+def submit_visual_production(
+    db: Session,
+    asset_id: str,
+    submission: VisualProductionSubmission,
+    *,
+    actor: str,
+) -> CreativeProductionRunRecord:
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise KeyError(asset_id)
+    if asset.state != PublicationState.VISUAL_PRODUCTION:
+        raise ValueError(f"Vizuális gyártás nem indítható ebből az állapotból: {asset.state}")
+    generation_trace = json.loads(asset.generation_trace_json or "{}")
+    if submission.generation_run_id == generation_trace.get("generation_run_id"):
+        raise ValueError("A copy- és vizuális generálási futás nem lehet azonos.")
+    if submission.contains_text:
+        raise ValueError(
+            "A vizuális alap nem tartalmazhat ráégetett kampányszöveget; "
+            "a szöveg az assembly szakaszban kerül rá."
+        )
+    existing_runs = db.scalars(
+        select(CreativeProductionRunRecord)
+        .where(
+            CreativeProductionRunRecord.asset_id == asset_id,
+            CreativeProductionRunRecord.content_version == asset.content_version,
+        )
+        .order_by(CreativeProductionRunRecord.sequence_number)
+    ).all()
+    if any(run.status == "DIRECTOR_QA" for run in existing_runs):
+        raise ValueError("Egyszerre csak egy kreatív lehet aktív kreatív igazgatói review alatt.")
+    if any(run.output_sha256 == submission.output_sha256 for run in existing_runs):
+        raise ValueError("A vizuális output nem ismételhet korábbi kreatívot.")
+    if any(run.visual_direction_id == submission.visual_direction_id for run in existing_runs):
+        raise ValueError("Az újragenerálásnak külön visual_direction_id szükséges.")
+    row = CreativeProductionRunRecord(
+        generation_run_id=submission.generation_run_id,
+        asset_id=asset_id,
+        content_version=asset.content_version,
+        sequence_number=len(existing_runs) + 1,
+        producer_identity=submission.producer_identity,
+        visual_direction_id=submission.visual_direction_id,
+        platform=submission.platform,
+        width_px=submission.width_px,
+        height_px=submission.height_px,
+        output_uri=submission.output_uri,
+        output_sha256=submission.output_sha256,
+        generation_prompt_hash=submission.generation_prompt_hash,
+        contains_text=False,
+        status="DIRECTOR_QA",
+        created_by=actor,
+    )
+    db.add(row)
+    asset.state = PublicationState.CREATIVE_DIRECTOR_QA
+    asset.creative_director_approved = False
+    asset.assembly_approved = False
+    asset.release_approved = False
+    asset.live_review_approved = False
+    audit(
+        db,
+        actor=actor,
+        action="visual_production_completed",
+        entity_type="content_asset",
+        entity_id=asset_id,
+        after={
+            "generation_run_id": row.generation_run_id,
+            "sequence_number": row.sequence_number,
+            "output_sha256": row.output_sha256,
+            "state": asset.state,
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def record_creative_director_review(
+    db: Session,
+    asset_id: str,
+    submission: CreativeDirectorReviewSubmission,
+    *,
+    actor: str,
+) -> ContentWorkflowReviewRecord:
+    if actor != submission.reviewer_identity:
+        raise ValueError("A kreatív reviewer_identity az autentikált actor kell legyen.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise KeyError(asset_id)
+    if asset.state != PublicationState.CREATIVE_DIRECTOR_QA:
+        raise ValueError(
+            f"Kreatív igazgatói review nem rögzíthető ebből az állapotból: {asset.state}"
+        )
+    creative = db.scalar(
+        select(CreativeProductionRunRecord)
+        .where(
+            CreativeProductionRunRecord.asset_id == asset_id,
+            CreativeProductionRunRecord.content_version == asset.content_version,
+            CreativeProductionRunRecord.status == "DIRECTOR_QA",
+        )
+        .order_by(CreativeProductionRunRecord.sequence_number.desc())
+    )
+    if not creative:
+        raise ValueError("Nincs review-ra váró kreatív futás.")
+    if submission.reviewed_asset_id != asset.asset_id:
+        raise ValueError("A vizuális review másik assethez tartozik.")
+    if submission.reviewed_content_sha256 != asset.content_hash:
+        raise ValueError("A vizuális review nem az aktuális copy hashhez tartozik.")
+    if submission.reviewed_visual_sha256 != creative.output_sha256:
+        raise ValueError("A vizuális review nem az aktuális képi output hashhez tartozik.")
+    if submission.generation_run_id != creative.generation_run_id:
+        raise ValueError("A vizuális review másik generálási futáshoz tartozik.")
+    _verify_visual_review_attestation(submission)
+    if submission.reviewer_run_id == creative.generation_run_id:
+        raise ValueError("A kreatív generáló és reviewer futása nem lehet azonos.")
+    if submission.reviewer_identity == creative.producer_identity:
+        raise ValueError("A kreatív producer nem hagyhatja jóvá a saját munkáját.")
+    row = ContentWorkflowReviewRecord(
+        review_id=f"CDR-{uuid.uuid4().hex[:16].upper()}",
+        asset_id=asset_id,
+        content_version=asset.content_version,
+        stage="CREATIVE_DIRECTOR_QA",
+        reviewer_role="CREATIVE_DIRECTOR",
+        reviewer_identity=submission.reviewer_identity,
+        reviewer_run_id=submission.reviewer_run_id,
+        decision=submission.decision,
+        artifact_hash=creative.output_sha256,
+        review_json=_json(submission),
+        created_by=actor,
+    )
+    db.add(row)
+    approved = submission.decision == Decision.APPROVED
+    creative.status = "APPROVED" if approved else "REJECTED"
+    asset.creative_director_approved = approved
+    asset.state = PublicationState.ASSEMBLY_QA if approved else PublicationState.VISUAL_PRODUCTION
+    audit(
+        db,
+        actor=actor,
+        action="creative_director_reviewed",
+        entity_type="content_asset",
+        entity_id=asset_id,
+        after={
+            "review_id": row.review_id,
+            "visual_generation_run_id": creative.generation_run_id,
+            "decision": submission.decision,
+            "state": asset.state,
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def assemble_publication_bundle(
+    db: Session,
+    asset_id: str,
+    submission: AssemblySubmission,
+    *,
+    actor: str,
+) -> PublicationBundleRecord:
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise KeyError(asset_id)
+    if asset.state != PublicationState.ASSEMBLY_QA or not asset.creative_director_approved:
+        raise ValueError(f"Assembly nem indítható ebből az állapotból: {asset.state}")
+    if submission.copy_content_sha256 != asset.content_hash:
+        raise ValueError("Az assembly nem az aktuális, jóváhagyott copy hashét használja.")
+    creative = db.get(CreativeProductionRunRecord, submission.visual_generation_run_id)
+    if (
+        not creative
+        or creative.asset_id != asset_id
+        or creative.content_version != asset.content_version
+        or creative.status != "APPROVED"
+    ):
+        raise ValueError(
+            "Az assembly vizuális futása nem jóváhagyott vagy másik assethez tartozik."
+        )
+    if submission.assembler_identity == creative.producer_identity:
+        raise ValueError("A vizuális producer nem végezheti a végső assembly ellenőrzött lépését.")
+    if creative.platform not in {item.platform for item in submission.exports}:
+        raise ValueError("A jóváhagyott kreatív platformjához nem készült export.")
+    bundle_payload = {
+        "asset_id": asset_id,
+        "content_version": asset.content_version,
+        "content_hash": asset.content_hash,
+        "visual_generation_run_id": creative.generation_run_id,
+        "visual_hash": creative.output_sha256,
+        "assembly": submission.model_dump(mode="json"),
+    }
+    row = PublicationBundleRecord(
+        bundle_id=f"BND-{uuid.uuid4().hex[:16].upper()}",
+        asset_id=asset_id,
+        content_version=asset.content_version,
+        content_hash=asset.content_hash,
+        visual_generation_run_id=creative.generation_run_id,
+        assembly_run_id=submission.assembly_run_id,
+        assembler_identity=submission.assembler_identity,
+        bundle_hash=_hash(bundle_payload),
+        exports_json=_json([export.model_dump(mode="json") for export in submission.exports]),
+        pairing_rationale=submission.pairing_rationale,
+        status="RELEASE_QA",
+        created_by=actor,
+    )
+    db.add(row)
+    asset.active_bundle_id = row.bundle_id
+    asset.assembly_approved = True
+    asset.release_approved = False
+    asset.state = PublicationState.RELEASE_QA
+    audit(
+        db,
+        actor=actor,
+        action="publication_bundle_assembled",
+        entity_type="content_asset",
+        entity_id=asset_id,
+        after={
+            "bundle_id": row.bundle_id,
+            "bundle_hash": row.bundle_hash,
+            "export_count": len(submission.exports),
+            "state": asset.state,
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def record_release_review(
+    db: Session,
+    asset_id: str,
+    submission: ReleaseReviewSubmission,
+    *,
+    actor: str,
+) -> ContentWorkflowReviewRecord:
+    if actor != submission.reviewer_identity:
+        raise ValueError("A release reviewer_identity az autentikált actor kell legyen.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise KeyError(asset_id)
+    if asset.state != PublicationState.RELEASE_QA or not asset.active_bundle_id:
+        raise ValueError(f"Release QA nem rögzíthető ebből az állapotból: {asset.state}")
+    bundle = db.get(PublicationBundleRecord, asset.active_bundle_id)
+    if (
+        not bundle
+        or bundle.asset_id != asset_id
+        or bundle.content_hash != asset.content_hash
+        or bundle.content_version != asset.content_version
+    ):
+        raise ValueError("Az aktív PublicationBundle hiányzik vagy elavult.")
+    if submission.reviewer_identity == bundle.assembler_identity:
+        raise ValueError("Az assembler nem hagyhatja jóvá a saját PublicationBundle-jét.")
+    if not all(
+        (
+            asset.gate_1_approved,
+            asset.expert_language_approved,
+            asset.expert_marketing_approved,
+            asset.copywriter_approved,
+            asset.four_gate_approved,
+            asset.creative_director_approved,
+            asset.assembly_approved,
+        )
+    ):
+        raise ValueError("A release QA előtt hiányzik legalább egy korábbi kötelező kapu.")
+    row = ContentWorkflowReviewRecord(
+        review_id=f"REL-{uuid.uuid4().hex[:16].upper()}",
+        asset_id=asset_id,
+        content_version=asset.content_version,
+        stage="RELEASE_QA",
+        reviewer_role="ONLINE_MARKETING_MANAGER",
+        reviewer_identity=submission.reviewer_identity,
+        reviewer_run_id=submission.reviewer_run_id,
+        decision=submission.decision,
+        artifact_hash=bundle.bundle_hash,
+        review_json=_json(submission),
+        created_by=actor,
+    )
+    db.add(row)
+    approved = submission.decision == Decision.APPROVED
+    asset.release_approved = approved
+    bundle.status = "APPROVED" if approved else "REJECTED"
+    if approved:
+        asset.state = PublicationState.RELEASE_APPROVED
+    else:
+        asset.state = PublicationState.ASSEMBLY_QA
+        asset.assembly_approved = False
+        asset.active_bundle_id = None
+    audit(
+        db,
+        actor=actor,
+        action="integrated_release_reviewed",
+        entity_type="content_asset",
+        entity_id=asset_id,
+        after={
+            "review_id": row.review_id,
+            "bundle_id": bundle.bundle_id,
+            "decision": submission.decision,
+            "state": asset.state,
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _verify_stored_mandatory_gate_reviews(
+    db: Session,
+    asset: ContentAssetRecord,
+    creative: CreativeProductionRunRecord,
+) -> dict[str, dict[str, Any]]:
+    rows = db.scalars(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.asset_id == asset.asset_id,
+            ContentWorkflowReviewRecord.content_version == asset.content_version,
+            ContentWorkflowReviewRecord.stage.in_(
+                ("MARKETING_QA", "DIRECT_RESPONSE_QA", "CREATIVE_DIRECTOR_QA")
+            ),
+            ContentWorkflowReviewRecord.decision == Decision.APPROVED,
+        )
+    ).all()
+    by_stage = {row.stage: row for row in rows}
+    required_stages = {"MARKETING_QA", "DIRECT_RESPONSE_QA", "CREATIVE_DIRECTOR_QA"}
+    if set(by_stage) != required_stages:
+        raise ValueError(
+            "Hiányzik az aktuális tartalomhoz tartozó, hitelesített marketing-, "
+            "copywriter- vagy vizuális kapudöntés."
+        )
+
+    copy_reviews: dict[str, MandatoryCopyGateReviewSubmission] = {}
+    for stage, gate_id in (
+        ("MARKETING_QA", "MARKETING"),
+        ("DIRECT_RESPONSE_QA", "DIRECT_RESPONSE"),
+    ):
+        row = by_stage[stage]
+        submission = MandatoryCopyGateReviewSubmission.model_validate_json(row.review_json)
+        _verify_mandatory_copy_gate_attestation(submission)
+        if (
+            submission.gate_id != gate_id
+            or submission.decision != Decision.APPROVED
+            or submission.reviewed_asset_id != asset.asset_id
+            or submission.reviewed_content_sha256 != asset.content_hash
+            or submission.generation_run_id
+            != json.loads(asset.generation_trace_json or "{}").get("generation_run_id")
+            or row.artifact_hash != asset.content_hash
+        ):
+            raise ValueError(f"A tárolt {gate_id} kapudöntés kötése vagy integritása sérült.")
+        copy_reviews[gate_id] = submission
+    marketing = copy_reviews["MARKETING"]
+    copywriter = copy_reviews["DIRECT_RESPONSE"]
+    if (
+        marketing.reviewer_identity == copywriter.reviewer_identity
+        or marketing.reviewer_run_id == copywriter.reviewer_run_id
+        or marketing.reviewer_model_version == copywriter.reviewer_model_version
+    ):
+        raise ValueError(
+            "A marketing- és direct-response kapudöntés nem független reviewerhez tartozik."
+        )
+
+    visual_row = by_stage["CREATIVE_DIRECTOR_QA"]
+    visual = CreativeDirectorReviewSubmission.model_validate_json(visual_row.review_json)
+    _verify_visual_review_attestation(visual)
+    if (
+        visual.decision != Decision.APPROVED
+        or visual.reviewed_asset_id != asset.asset_id
+        or visual.reviewed_content_sha256 != asset.content_hash
+        or visual.reviewed_visual_sha256 != creative.output_sha256
+        or visual.generation_run_id != creative.generation_run_id
+        or visual_row.artifact_hash != creative.output_sha256
+    ):
+        raise ValueError("A tárolt vizuális kapudöntés kötése vagy integritása sérült.")
+
+    return {
+        "MARKETING": {
+            "review_id": by_stage["MARKETING_QA"].review_id,
+            "review_hash": _hash(marketing),
+            "artifact_hash": asset.content_hash,
+            "reviewer_identity": marketing.reviewer_identity,
+        },
+        "DIRECT_RESPONSE": {
+            "review_id": by_stage["DIRECT_RESPONSE_QA"].review_id,
+            "review_hash": _hash(copywriter),
+            "artifact_hash": asset.content_hash,
+            "reviewer_identity": copywriter.reviewer_identity,
+        },
+        "VISUAL": {
+            "review_id": visual_row.review_id,
+            "review_hash": _hash(visual),
+            "artifact_hash": creative.output_sha256,
+            "reviewer_identity": visual.reviewer_identity,
+        },
+    }
+
+
+def _delivery_targets(exports: list[dict[str, Any]]) -> list[str]:
+    targets: set[str] = set()
+    for export in exports:
+        platform = str(export.get("platform") or "").strip().lower()
+        if platform in {"facebook", "instagram", "meta", "meta_ads"}:
+            targets.add("META_ADS")
+        elif platform in {"google", "google_ads"}:
+            targets.add("GOOGLE_ADS")
+        elif platform:
+            targets.add(f"CONTENT:{platform.upper()}")
+    return sorted(targets)
+
+
+def validate_publication_adapter_envelope(
+    db: Session,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    asset_id = str(payload.get("asset_id") or "")
+    proof_id = str(payload.get("publication_proof_id") or "")
+    if not asset_id or not proof_id:
+        raise ValueError("A publication-adapter üzenetből hiányzik az asset- vagy proofazonosító.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise ValueError("A publication-adapter üzenet ismeretlen assetre hivatkozik.")
+    if asset.publication_proof_id != proof_id:
+        raise ValueError(
+            "A publication-adapter üzenet proofazonosítója nem az aktuális publikációé."
+        )
+
+    if payload.get("action") == "PAUSE_OR_UNPUBLISH":
+        if asset.state != PublicationState.QUARANTINED:
+            raise ValueError("PAUSE_OR_UNPUBLISH csak karanténba helyezett assetre küldhető.")
+        if payload.get("automatic_republish_allowed") is not False:
+            raise ValueError("Karantén után az automatikus újrapublikálásnak tiltva kell maradnia.")
+        return {
+            "action": "PAUSE_OR_UNPUBLISH",
+            "asset_id": asset_id,
+            "publication_proof_id": proof_id,
+            "validated": True,
+        }
+    if payload.get("action") not in {None, "PUBLISH"}:
+        raise ValueError("Ismeretlen publication-adapter művelet.")
+    if asset.state not in {PublicationState.LIVE_QA, PublicationState.PUBLISHED}:
+        raise ValueError(f"Publikációs adapter nem futhat ebből az állapotból: {asset.state}")
+    if (
+        payload.get("content_hash") != asset.content_hash
+        or payload.get("publication_bundle_id") != asset.active_bundle_id
+    ):
+        raise ValueError("A publication-adapter envelope copy- vagy bundle-kötése elavult.")
+
+    bundle = db.get(PublicationBundleRecord, asset.active_bundle_id)
+    if (
+        not bundle
+        or bundle.status != "APPROVED"
+        or bundle.asset_id != asset_id
+        or bundle.content_version != asset.content_version
+        or bundle.content_hash != asset.content_hash
+    ):
+        raise ValueError(
+            "A publication-adapter envelope mögött nincs aktuális, jóváhagyott bundle."
+        )
+    creative = db.get(CreativeProductionRunRecord, bundle.visual_generation_run_id)
+    if not creative or creative.status != "APPROVED":
+        raise ValueError("A publication-adapter envelope vizuális forrása nem jóváhagyott.")
+    exports = json.loads(bundle.exports_json)
+    assembly_payload = {
+        "assembly_run_id": bundle.assembly_run_id,
+        "assembler_identity": bundle.assembler_identity,
+        "visual_generation_run_id": bundle.visual_generation_run_id,
+        "copy_content_sha256": bundle.content_hash,
+        "pairing_rationale": bundle.pairing_rationale,
+        "exports": exports,
+    }
+    expected_bundle_hash = _hash(
+        {
+            "asset_id": asset_id,
+            "content_version": asset.content_version,
+            "content_hash": asset.content_hash,
+            "visual_generation_run_id": creative.generation_run_id,
+            "visual_hash": creative.output_sha256,
+            "assembly": assembly_payload,
+        }
+    )
+    if (
+        bundle.bundle_hash != expected_bundle_hash
+        or payload.get("publication_bundle_hash") != expected_bundle_hash
+        or payload.get("exports") != exports
+    ):
+        raise ValueError("A publication-adapter envelope bundle-je vagy exportlistája sérült.")
+
+    gate_manifest = _verify_stored_mandatory_gate_reviews(db, asset, creative)
+    gate_manifest_hash = _hash(gate_manifest)
+    if (
+        payload.get("mandatory_gate_manifest") != gate_manifest
+        or payload.get("mandatory_gate_manifest_hash") != gate_manifest_hash
+    ):
+        raise ValueError("A publication-adapter envelope kötelező kapumanifesztje sérült.")
+    expected_contract = {
+        "version": PUBLICATION_ADAPTER_CONTRACT_VERSION,
+        "idempotency_key": proof_id,
+        "mandatory_gate_manifest_hash": gate_manifest_hash,
+        "delivery_targets": _delivery_targets(exports),
+    }
+    if payload.get("adapter_contract") != expected_contract:
+        raise ValueError("A publication-adapter szerződés hiányzik, sérült vagy elavult.")
+    return {
+        "action": "PUBLISH",
+        "asset_id": asset_id,
+        "publication_proof_id": proof_id,
+        "adapter_contract": expected_contract,
+        "validated": True,
+    }
+
+
 def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str, Any]:
     asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
     if not asset:
         raise KeyError(asset_id)
-    source_prevalidated = (
-        asset.state == PublicationState.SOURCE_PREVALIDATED and asset.source_prevalidated
-    )
-    if asset.state == PublicationState.SOURCE_PREVALIDATED and not asset.source_prevalidated:
-        raise ValueError(
-            "A SOURCE_PREVALIDATED állapothoz hiányzik az adatbázis-integritási jelző."
-        )
-    if asset.state not in {
-        PublicationState.OWNER_APPROVAL,
-        PublicationState.SOURCE_PREVALIDATED,
-    }:
+    source_prevalidated = asset.source_prevalidated
+    if asset.state != PublicationState.RELEASE_APPROVED:
         raise ValueError(f"Publikáció nem indítható ebből az állapotból: {asset.state}")
     required_flags = [
         asset.gate_1_approved,
+        asset.expert_language_approved,
+        asset.expert_marketing_approved,
+        asset.copywriter_approved,
         asset.four_gate_approved,
+        asset.creative_director_approved,
+        asset.assembly_approved,
+        asset.release_approved,
+        asset.active_bundle_id,
         asset.latest_run_id,
     ]
     if not source_prevalidated:
@@ -800,6 +1650,33 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
     run = db.get(CopyReviewRun, asset.latest_run_id)
     if not run or run.final_decision != Decision.APPROVED or run.content_hash != asset.content_hash:
         raise ValueError("Nincs az aktuális tartalomhashhez tartozó APPROVED GateResult.")
+    expert_gates = db.scalars(
+        select(ContentGateDecision).where(
+            ContentGateDecision.run_id == run.run_id,
+            ContentGateDecision.gate_id == "GATE_HU_LANGUAGE_EXPERT",
+            ContentGateDecision.decision == Decision.APPROVED,
+            ContentGateDecision.certainty == "HIGH",
+        )
+    ).all()
+    if {gate.gate_id for gate in expert_gates} != {"GATE_HU_LANGUAGE_EXPERT"}:
+        raise ValueError(
+            "Hiányzik az aktuális futáshoz tartozó magyar nyelvi vagy "
+            "online marketing-szövegírói szakértői GateResult."
+        )
+    if run.expert_review_hash != _hash(json.loads(run.expert_review_json)):
+        raise ValueError("A tárolt szakértői jegyzőkönyv integritása sérült.")
+    stored_expert_review = EditorialReview.model_validate_json(run.expert_review_json)
+    _verify_expert_review_attestation(stored_expert_review)
+    if (
+        stored_expert_review.reviewed_asset_id != asset.asset_id
+        or stored_expert_review.reviewed_content_sha256 != asset.content_hash
+        or stored_expert_review.generation_run_id
+        != json.loads(asset.generation_trace_json or "{}").get("generation_run_id")
+    ):
+        raise ValueError(
+            "A tárolt szakértői jegyzőkönyv nem az aktuális assethez, "
+            "tartalomhashhez vagy generálási futáshoz tartozik."
+        )
     approval_by_type: dict[str, ContentApprovalRecord] = {}
     if not source_prevalidated:
         approvals = db.scalars(
@@ -817,8 +1694,19 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
                 "Az emberi szerkesztői vagy tulajdonosi approval hiányzik az aktuális hashhez."
             )
     brief_row = db.get(CopyBriefRecord, asset.copy_brief_id)
-    if not brief_row:
-        raise ValueError("A CopyBrief rekord hiányzik.")
+    strategy_review = db.scalar(
+        select(CampaignStrategyReviewRecord).where(
+            CampaignStrategyReviewRecord.copy_brief_id == asset.copy_brief_id,
+            CampaignStrategyReviewRecord.decision == Decision.APPROVED,
+        )
+    )
+    if (
+        not brief_row
+        or brief_row.status != "STRATEGY_APPROVED"
+        or not strategy_review
+        or strategy_review.brief_hash != _hash(json.loads(brief_row.brief_json))
+    ):
+        raise ValueError("Az aktuális CopyBrief stratégiai jóváhagyása hiányzik vagy elavult.")
     brief = CopyBrief.model_validate_json(brief_row.brief_json)
     content = ContentAsset.model_validate_json(asset.content_json)
     prevalidation = evaluate_commercial_prevalidation(asset.brand_id, content)
@@ -833,16 +1721,57 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
     )
     if not sources.source_resolution_pass or snapshot_hash != run.source_snapshot_hash:
         raise ValueError("A kanonikus források hiányoznak vagy a review óta megváltoztak.")
+    bundle = db.get(PublicationBundleRecord, asset.active_bundle_id)
+    if (
+        not bundle
+        or bundle.status != "APPROVED"
+        or bundle.asset_id != asset_id
+        or bundle.content_version != asset.content_version
+        or bundle.content_hash != asset.content_hash
+    ):
+        raise ValueError("Nincs jóváhagyott, aktuális PublicationBundle.")
+    creative = db.get(CreativeProductionRunRecord, bundle.visual_generation_run_id)
+    if not creative or creative.status != "APPROVED":
+        raise ValueError("A PublicationBundle jóváhagyott vizuális forrása hiányzik.")
+    mandatory_gate_manifest = _verify_stored_mandatory_gate_reviews(db, asset, creative)
+    mandatory_gate_manifest_hash = _hash(mandatory_gate_manifest)
+    exports = json.loads(bundle.exports_json)
+    assembly_payload = {
+        "assembly_run_id": bundle.assembly_run_id,
+        "assembler_identity": bundle.assembler_identity,
+        "visual_generation_run_id": bundle.visual_generation_run_id,
+        "copy_content_sha256": bundle.content_hash,
+        "pairing_rationale": bundle.pairing_rationale,
+        "exports": exports,
+    }
+    expected_bundle_hash = _hash(
+        {
+            "asset_id": asset_id,
+            "content_version": asset.content_version,
+            "content_hash": asset.content_hash,
+            "visual_generation_run_id": creative.generation_run_id,
+            "visual_hash": creative.output_sha256,
+            "assembly": assembly_payload,
+        }
+    )
+    if bundle.bundle_hash != expected_bundle_hash:
+        raise ValueError("A PublicationBundle integritása sérült.")
 
     proof_id = f"PUB-{uuid.uuid4().hex[:16].upper()}"
     asset.publication_proof_id = proof_id
     asset.published_at = utcnow()
-    asset.state = PublicationState.PUBLISHED
+    asset.state = PublicationState.LIVE_QA
     proof = {
         "publication_proof_id": proof_id,
         "asset_id": asset_id,
         "content_hash": asset.content_hash,
         "run_id": run.run_id,
+        "expert_review_hash": run.expert_review_hash,
+        "mandatory_gate_manifest": mandatory_gate_manifest,
+        "mandatory_gate_manifest_hash": mandatory_gate_manifest_hash,
+        "publication_bundle_id": bundle.bundle_id,
+        "publication_bundle_hash": bundle.bundle_hash,
+        "exports": exports,
         "source_snapshot_hash": snapshot_hash,
         "approval_mode": (
             "SOURCE_PREVALIDATED" if source_prevalidated else "HUMAN_EDITORIAL_AND_OWNER"
@@ -861,7 +1790,14 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
             else None
         ),
         "published_at": asset.published_at.isoformat(),
+        "state": asset.state,
         "external_delivery_enabled": settings.content_external_publishing_enabled,
+        "adapter_contract": {
+            "version": PUBLICATION_ADAPTER_CONTRACT_VERSION,
+            "idempotency_key": proof_id,
+            "mandatory_gate_manifest_hash": mandatory_gate_manifest_hash,
+            "delivery_targets": _delivery_targets(exports),
+        },
     }
     if settings.content_external_publishing_enabled:
         db.add(
@@ -885,6 +1821,102 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
     return proof
 
 
+def record_live_publication_review(
+    db: Session,
+    asset_id: str,
+    submission: LiveReviewSubmission,
+    *,
+    actor: str,
+) -> dict[str, Any]:
+    if actor != submission.reviewer_identity:
+        raise ValueError("Az élő reviewer_identity az autentikált actor kell legyen.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise KeyError(asset_id)
+    if asset.state != PublicationState.LIVE_QA or not asset.publication_proof_id:
+        raise ValueError(f"Élő review nem rögzíthető ebből az állapotból: {asset.state}")
+    if submission.rendered_copy_sha256 != asset.content_hash:
+        raise ValueError("Az élő felületről visszaolvasott copy hash eltér a jóváhagyott copytól.")
+    existing = db.scalars(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.asset_id == asset_id,
+            ContentWorkflowReviewRecord.content_version == asset.content_version,
+            ContentWorkflowReviewRecord.stage == "LIVE_QA",
+        )
+    ).all()
+    if submission.reviewer_role in {row.reviewer_role for row in existing}:
+        raise ValueError("Ez a szakértői szerep már rögzítette az élő double checket.")
+    if submission.reviewer_identity in {row.reviewer_identity for row in existing}:
+        raise ValueError("A három élő review-t három külön reviewer entitásnak kell elvégeznie.")
+    row = ContentWorkflowReviewRecord(
+        review_id=f"LIVE-{uuid.uuid4().hex[:16].upper()}",
+        asset_id=asset_id,
+        content_version=asset.content_version,
+        stage="LIVE_QA",
+        reviewer_role=submission.reviewer_role,
+        reviewer_identity=submission.reviewer_identity,
+        reviewer_run_id=f"LIVE-{submission.reviewer_role}-{asset.publication_proof_id}",
+        decision=submission.decision,
+        artifact_hash=submission.screenshot_sha256,
+        review_json=_json(submission),
+        created_by=actor,
+    )
+    db.add(row)
+    if submission.decision == "REJECTED":
+        asset.state = PublicationState.QUARANTINED
+        asset.live_review_approved = False
+        db.add(
+            OutboxMessage(
+                message_id=f"MSG-CQ-{uuid.uuid4().hex[:12].upper()}",
+                destination_module="publication-adapter",
+                payload_json=_json(
+                    {
+                        "action": "PAUSE_OR_UNPUBLISH",
+                        "asset_id": asset_id,
+                        "publication_proof_id": asset.publication_proof_id,
+                        "reason": submission.findings,
+                        "automatic_republish_allowed": False,
+                    }
+                ),
+                status="pending",
+                next_attempt_at=utcnow(),
+            )
+        )
+    else:
+        approved_roles = {
+            item.reviewer_role for item in existing if item.decision == "APPROVED"
+        } | {submission.reviewer_role}
+        required_roles = {
+            "ONLINE_MARKETING_MANAGER",
+            "CREATIVE_DIRECTOR",
+            "DIRECT_RESPONSE_COPYWRITER",
+        }
+        if approved_roles == required_roles:
+            asset.state = PublicationState.PUBLISHED
+            asset.live_review_approved = True
+    audit(
+        db,
+        actor=actor,
+        action="live_publication_reviewed",
+        entity_type="content_asset",
+        entity_id=asset_id,
+        after={
+            "review_id": row.review_id,
+            "reviewer_role": submission.reviewer_role,
+            "reviewer_identity": submission.reviewer_identity,
+            "decision": submission.decision,
+            "state": asset.state,
+        },
+    )
+    db.commit()
+    return {
+        "asset_id": asset_id,
+        "review_id": row.review_id,
+        "state": asset.state,
+        "live_review_approved": asset.live_review_approved,
+    }
+
+
 def rollback_content_asset(
     db: Session, asset_id: str, *, actor: str, reason: str
 ) -> ContentAssetRecord:
@@ -899,10 +1931,18 @@ def rollback_content_asset(
     asset.content_version += 1
     asset.state = PublicationState.DRAFT
     asset.gate_1_approved = False
+    asset.expert_language_approved = False
+    asset.expert_marketing_approved = False
+    asset.copywriter_approved = False
     asset.four_gate_approved = False
     asset.editorial_approved = False
     asset.owner_approved = False
     asset.source_prevalidated = False
+    asset.creative_director_approved = False
+    asset.assembly_approved = False
+    asset.release_approved = False
+    asset.live_review_approved = False
+    asset.active_bundle_id = None
     asset.latest_run_id = None
     asset.publication_proof_id = None
     asset.published_at = None
