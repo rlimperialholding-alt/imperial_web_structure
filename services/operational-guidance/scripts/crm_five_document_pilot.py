@@ -5,8 +5,8 @@ import json
 import os
 import urllib.parse
 import urllib.request
-from urllib.error import HTTPError
 import uuid
+from urllib.error import HTTPError
 
 CRM = os.environ.get("CRM_API_BASE_URL", "http://127.0.0.1:8787").rstrip("/")
 MIGRATION_TOKEN = os.environ["CRM_MIGRATION_TOKEN"]
