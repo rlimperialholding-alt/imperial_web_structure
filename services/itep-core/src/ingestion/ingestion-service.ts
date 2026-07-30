@@ -23,7 +23,13 @@ export class SourceIngestionService {
     taskId?: string;
     reason: string;
   }> {
-    const existing = await this.events.findByFingerprint(event.fingerprint);
+    const existing =
+      (await this.events.findByFingerprint(event.fingerprint))
+      ?? (await this.events.findByExternalIdentity({
+        organizationId: event.organizationId,
+        source: event.source,
+        externalId: event.externalId,
+      }));
     if (existing) {
       return {
         status: "DUPLICATE_EVENT",
@@ -31,7 +37,28 @@ export class SourceIngestionService {
       };
     }
 
-    await this.events.create(event);
+    try {
+      await this.events.create(event);
+    } catch (error) {
+      // A manual sync and the scheduled worker may observe the same event
+      // before either transaction commits. Treat the losing unique-key race
+      // exactly like the normal duplicate path, but do not hide real storage
+      // failures.
+      const concurrentlyCreated =
+        (await this.events.findByFingerprint(event.fingerprint))
+        ?? (await this.events.findByExternalIdentity({
+          organizationId: event.organizationId,
+          source: event.source,
+          externalId: event.externalId,
+        }));
+      if (concurrentlyCreated) {
+        return {
+          status: "DUPLICATE_EVENT",
+          reason: "A forráseseményt egy párhuzamos szinkron már feldolgozta.",
+        };
+      }
+      throw error;
+    }
 
     try {
       const decision = this.engine.evaluate(event);

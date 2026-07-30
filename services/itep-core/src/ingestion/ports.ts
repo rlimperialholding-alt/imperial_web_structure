@@ -7,6 +7,11 @@ import type {
 
 export interface SourceEventRepository {
   findByFingerprint(fingerprint: string): Promise<SourceEvent | null>;
+  findByExternalIdentity(input: {
+    organizationId: string;
+    source: SourceEvent["source"];
+    externalId: string;
+  }): Promise<SourceEvent | null>;
   create(event: SourceEvent): Promise<void>;
   updateStatus(
     id: string,

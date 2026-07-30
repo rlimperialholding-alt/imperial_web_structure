@@ -9,12 +9,12 @@ describe("backup policy", () => {
     expect(() => validateBackupPolicy(defaultBackupPolicy)).not.toThrow();
   });
 
-  it("rejects a single backup copy", () => {
+  it("rejects fewer than three backup copies", () => {
     expect(() =>
       validateBackupPolicy({
         ...defaultBackupPolicy,
-        minimumVerifiedCopies: 1,
+        minimumVerifiedCopies: 2,
       }),
-    ).toThrow("two verified");
+    ).toThrow("three verified");
   });
 });

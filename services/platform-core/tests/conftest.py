@@ -62,10 +62,6 @@ def client():
 
 @pytest.fixture
 def logged_in_client(client):
-    response = client.post(
-        "/login",
-        data={"email": "owner@imperial.local", "password": "Imperial2026!"},
-        follow_redirects=False,
-    )
+    response = client.post("/login", data={"email": "platform-admin@imperial.local", "password": "Imperial2026!"}, follow_redirects=False)
     assert response.status_code == 303
     return client

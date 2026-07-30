@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { safeFileName, sha256Hex, validateDocumentFile } from "../lib/document-upload.ts";
+import {
+  assertProjectDocumentQuota,
+  projectDocumentQuotaBytes,
+  safeFileName,
+  sha256Hex,
+  validateDocumentFile,
+} from "../lib/document-upload.ts";
 
 test("valid PDF content is accepted and receives a deterministic SHA-256", async () => {
   const bytes = new TextEncoder().encode("%PDF-1.7\nMyImperial test document");
@@ -20,4 +26,14 @@ test("a spoofed extension or content signature is rejected", async () => {
 
 test("download names cannot inject response headers", () => {
   assert.equal(safeFileName("terv.pdf\r\nX-Test: injected"), "terv.pdfX-Test: injected");
+});
+
+test("project document storage has an enforced configurable quota", () => {
+  assert.equal(projectDocumentQuotaBytes("104857600"), 104857600);
+  assert.doesNotThrow(() => assertProjectDocumentQuota(90, 10, 100));
+  assert.throws(
+    () => assertProjectDocumentQuota(91, 10, 100),
+    (error) => error instanceof Response && error.status === 413,
+  );
+  assert.throws(() => projectDocumentQuotaBytes("not-a-number"));
 });

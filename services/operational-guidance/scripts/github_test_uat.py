@@ -89,7 +89,13 @@ checks.append({
     "connectors": hub_proxy.get("totals", {}).get("connectors"),
 })
 
-if any(int(check["status"]) >= 300 for check in checks):
+crm_failed = int(crm_result.get("failed", 0))
+control_room_failed = int(control_room.get("totals", {}).get("failed", 0))
+if (
+    any(int(check["status"]) >= 300 for check in checks)
+    or crm_failed > 0
+    or control_room_failed > 0
+):
     raise SystemExit(json.dumps(checks, ensure_ascii=False, indent=2))
 
 print(json.dumps({"ok": True, "checks": checks}, ensure_ascii=False, indent=2))

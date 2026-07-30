@@ -35,7 +35,13 @@ integrated_compose exec -T crm \
   tar -C /app/.wrangler/state -czf - . \
   >"$destination/crm-state.tar.gz"
 
-git -C "$repo_root" rev-parse HEAD >"$destination/source-commit.txt"
+if git -C "$repo_root" rev-parse HEAD >"$destination/source-commit.txt" 2>/dev/null; then
+  :
+elif [[ -s "$repo_root/.source-commit" ]]; then
+  cp "$repo_root/.source-commit" "$destination/source-commit.txt"
+else
+  echo "unknown" >"$destination/source-commit.txt"
+fi
 (
   cd "$destination"
   sha256sum ./* >SHA256SUMS
@@ -43,3 +49,35 @@ git -C "$repo_root" rev-parse HEAD >"$destination/source-commit.txt"
 
 echo "Backup completed: $destination"
 echo "Secrets were not included."
+
+replica_count=0
+if [[ -n "${IMPERIAL_BACKUP_REPLICA_DIRS:-}" ]]; then
+  IFS=',' read -r -a replica_roots <<<"$IMPERIAL_BACKUP_REPLICA_DIRS"
+  for replica_root in "${replica_roots[@]}"; do
+    replica_root="${replica_root#"${replica_root%%[![:space:]]*}"}"
+    replica_root="${replica_root%"${replica_root##*[![:space:]]}"}"
+    if [[ "$replica_root" != /* || "$replica_root" == "/" ]]; then
+      echo "Backup replica directory must be an absolute, non-root path: $replica_root" >&2
+      exit 1
+    fi
+    mkdir -p "$replica_root"
+    if [[ "$(readlink -f "$replica_root")" == "$(readlink -f "$backup_root")" ]]; then
+      echo "Backup replica directory cannot equal the primary backup directory." >&2
+      exit 1
+    fi
+    replica_destination="$replica_root/$stamp"
+    if [[ -e "$replica_destination" ]]; then
+      echo "Backup replica already exists: $replica_destination" >&2
+      exit 1
+    fi
+    cp -a "$destination" "$replica_destination"
+    (
+      cd "$replica_destination"
+      sha256sum -c SHA256SUMS
+    )
+    replica_count=$((replica_count + 1))
+    echo "Verified backup replica: $replica_destination"
+  done
+fi
+
+echo "Verified backup locations in this run: $((replica_count + 1))"

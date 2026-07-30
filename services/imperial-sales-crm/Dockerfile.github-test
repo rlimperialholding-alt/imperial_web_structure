@@ -17,6 +17,7 @@ ENV SITES_PREFER_OFFLINE=0
 
 COPY package.json package-lock.json .npmrc ./
 COPY scripts ./scripts
+RUN chmod +x ./scripts/*.sh
 RUN --mount=type=cache,target=/app/.sites-runtime/npm-cache \
     --mount=type=secret,id=build_ca,required=false \
     if grep -q "BEGIN CERTIFICATE" /run/secrets/build_ca 2>/dev/null; then \
@@ -38,9 +39,9 @@ RUN npm prune --omit=dev \
       /usr/local/bin/npm \
       /usr/local/bin/npx
 
-RUN mkdir -p /app/.wrangler/state /app/.sites-runtime /app/node_modules/.vite \
+RUN mkdir -p /app/.wrangler/state /app/.sites-runtime /app/node_modules/.vite /app/node_modules/.mf \
     && chown node:node /app \
-    && chown -R node:node /app/.wrangler /app/.sites-runtime /app/node_modules/.vite
+    && chown -R node:node /app/.wrangler /app/.sites-runtime /app/node_modules/.vite /app/node_modules/.mf
 
 USER node
 

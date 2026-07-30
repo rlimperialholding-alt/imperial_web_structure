@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
@@ -347,6 +348,7 @@ _ALLOWED_IMAGES = {
     "image/webp": (".webp", lambda b: len(b) >= 12 and b[:4] == b"RIFF" and b[8:12] == b"WEBP"),
 }
 _MAX_IMAGE_BYTES = 12 * 1024 * 1024
+_DEFAULT_PROJECT_EVIDENCE_QUOTA_BYTES = 5 * 1024 * 1024 * 1024
 
 
 def save_evidence(db: Session, access: PartnerFieldAccess, *, file_name: str, mime_type: str, raw: bytes,
@@ -357,6 +359,7 @@ def save_evidence(db: Session, access: PartnerFieldAccess, *, file_name: str, mi
         raise ValueError("Csak JPG, PNG vagy WEBP kép tölthető fel.")
     if not raw or len(raw) > _MAX_IMAGE_BYTES:
         raise ValueError("A kép üres vagy nagyobb 12 MB-nál.")
+    ensure_project_evidence_quota(db, access.project_id, len(raw))
     extension, validator = _ALLOWED_IMAGES[mime_type]
     if not validator(raw):
         raise ValueError("A fájl tartalma nem egyezik a képformátummal.")
@@ -393,6 +396,40 @@ def save_evidence(db: Session, access: PartnerFieldAccess, *, file_name: str, mi
     db.commit()
     db.refresh(row)
     return row
+
+
+def ensure_project_evidence_quota(
+    db: Session,
+    project_id: str,
+    incoming_bytes: int,
+    *,
+    quota_bytes: int | None = None,
+) -> None:
+    quota = quota_bytes
+    if quota is None:
+        raw_quota = os.getenv(
+            "PARTNER_EVIDENCE_PROJECT_QUOTA_BYTES",
+            str(_DEFAULT_PROJECT_EVIDENCE_QUOTA_BYTES),
+        )
+        try:
+            quota = int(raw_quota)
+        except ValueError as exc:
+            raise ValueError(
+                "A PARTNER_EVIDENCE_PROJECT_QUOTA_BYTES egész szám kell legyen."
+            ) from exc
+    if quota < _MAX_IMAGE_BYTES:
+        raise ValueError("A projekt bizonyítéktár-korlátja nem lehet 12 MB-nál kisebb.")
+    used = db.scalar(
+        select(func.coalesce(func.sum(PartnerEvidence.file_size), 0)).where(
+            PartnerEvidence.project_id == project_id
+        )
+    )
+    if int(used or 0) + incoming_bytes > quota:
+        quota_gib = quota / 1024 / 1024 / 1024
+        raise ValueError(
+            f"A projekt bizonyítéktára elérte a {quota_gib:.1f} GB-os korlátot. "
+            "Kérj külön fájlszerver-kapacitást."
+        )
 
 
 def internal_partner_projection(db: Session, project_id: str) -> dict:

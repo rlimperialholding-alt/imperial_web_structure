@@ -5,6 +5,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
+from urllib.error import HTTPError
 import uuid
 
 CRM = os.environ.get("CRM_API_BASE_URL", "http://127.0.0.1:8787").rstrip("/")
@@ -30,7 +31,10 @@ def synthetic_pdf(number: int) -> bytes:
 
 documents = [
     {
-        "externalId": f"synthetic-doc-{number:02d}",
+        # A synthetic rerun represents a new source document set. Include the
+        # unique batch ID so the CRM source identity constraint is exercised
+        # without colliding with an earlier pilot run.
+        "externalId": f"{BATCH_ID}-doc-{number:02d}",
         "title": f"Szintetikus migrációs próbadokumentum {number}",
         "metadata": {
             "synthetic": True,
@@ -95,8 +99,14 @@ def request_json(
         method=method,
         data=data,
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return response.status, json.loads(response.read().decode())
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.status, json.loads(response.read().decode())
+    except HTTPError as error:
+        response_body = error.read().decode(errors="replace")
+        raise RuntimeError(
+            f"{method} {path} returned HTTP {error.code}: {response_body}"
+        ) from error
 
 
 content_type, body = multipart_body()
@@ -148,7 +158,13 @@ status, activities = request_json(
     f"/api/integrations/itep/activities?{query}",
     token_header=("X-ITEP-Token", READ_TOKEN),
 )
-if status != 200 or len(activities["activities"]) != 5:
+expected_external_ids = set(expected_by_external_id)
+visible_pilot_activities = [
+    activity
+    for activity in activities["activities"]
+    if activity.get("leadId") in expected_external_ids
+]
+if status != 200 or len(visible_pilot_activities) != 5:
     raise RuntimeError(f"ITEP cannot read the five stored records: {activities}")
 
 print(
@@ -160,7 +176,7 @@ print(
             "newly_stored": imported["newlyStored"],
             "durably_read_back": len(batch["documents"]),
             "binary_sha256_verified": len(batch["documents"]),
-            "itep_activities_visible": len(activities["activities"]),
+            "itep_activities_visible": len(visible_pilot_activities),
         },
         ensure_ascii=False,
     )

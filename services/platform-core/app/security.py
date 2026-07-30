@@ -59,6 +59,16 @@ def require_role(*roles: str):
     return dependency
 
 
+def require_session_user(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> User:
+    user = current_user(request, db)
+    if not user or not user.active:
+        raise HTTPException(status_code=401, detail="Bejelentkezés szükséges.")
+    return user
+
+
 
 def current_partner_access(request: Request, db: Session) -> PartnerFieldAccess | None:
     access_id = request.session.get("partner_access_id")

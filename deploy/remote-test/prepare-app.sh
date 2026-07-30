@@ -7,8 +7,15 @@ if [[ ${EUID} -eq 0 ]]; then
   exit 1
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/../.." && pwd)"
+
+# Archives created on Windows do not preserve Unix executable bits.
+chmod +x "$script_dir"/*.sh "$repo_root/services/imperial-sales-crm/scripts/"*.sh
+
 secret_dir="${IMPERIAL_SECRET_DIR:-/opt/imperial-intelligence/secrets}"
 env_file="$secret_dir/remote-test.env"
+container_secret_gid="${IMPERIAL_CONTAINER_SECRET_GID:-10001}"
 mkdir -p "$secret_dir"
 chmod 700 "$secret_dir"
 
@@ -21,7 +28,8 @@ write_secret_file() {
   if [[ ! -s "$destination" ]]; then
     random_hex >"$destination"
   fi
-  chmod 600 "$destination"
+  chown "$(id -u):$container_secret_gid" "$destination"
+  chmod 640 "$destination"
 }
 
 write_secret_file "$secret_dir/platform_db_password.txt"

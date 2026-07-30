@@ -1,47 +1,147 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 import hashlib
 import json
+import re
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import (CalculationSourceRegistry, CopySourceRecord, DeliveryNoteProjection, DevelopmentDiscoveryRecord, EnvironmentRecord, EventRecord, ImportDataSource, MailSendingDomain, MaterialLot, MaterialMovement, MaterialUsageControl, ModuleRegistry, PMGateCheck, PMPhase, PMWorkPackage, ProcurementOrderProjection, ProjectFact, ProjectObjectState, ProjectRegistry, SiteDailyReport, SiteIssue, TaskRecord, User, WorkspaceDocument, PartnerFieldAccess, PartnerWorker)
+from .models import (
+    CalculationSourceRegistry,
+    CopySourceRecord,
+    DeliveryNoteProjection,
+    DevelopmentDiscoveryRecord,
+    EnvironmentRecord,
+    EventRecord,
+    ImportDataSource,
+    MailSendingDomain,
+    MaterialLot,
+    MaterialMovement,
+    MaterialUsageControl,
+    ModuleRegistry,
+    PartnerFieldAccess,
+    PartnerWorker,
+    PMGateCheck,
+    PMPhase,
+    PMWorkPackage,
+    ProcurementOrderProjection,
+    ProjectFact,
+    ProjectObjectState,
+    ProjectRegistry,
+    SiteDailyReport,
+    SiteIssue,
+    TaskRecord,
+    User,
+    WorkspaceDocument,
+)
 from .security import hash_password
+from .roles import ROLE_DEFINITIONS
 from .services.development_governance import seed_canonical_discoveries
 
 DEMO_PASSWORD = "Imperial2026!"
+# Synthetic accounts share one process-local hash so test database resets do
+# not repeat the intentionally expensive PBKDF2 operation twelve times.
+DEMO_PASSWORD_HASH = hash_password(DEMO_PASSWORD)
+DEMO_USER_NAMES = {
+    "owner": "Imperial Tulajdonos",
+    "managing-director": "Imperial Ügyvezető",
+    "marketing": "Imperial Marketing",
+    "technical-prep": "Imperial Műszaki Előkészítő",
+    "sales": "Imperial Értékesítő",
+    "finance": "Imperial Pénzügy",
+    "project-manager": "Imperial Projektmenedzser",
+    "designer": "Imperial Tervező",
+    "subcontractor": "Imperial Alvállalkozó",
+    "customer": "Imperial Ügyfél",
+    "legal": "Imperial Jogász",
+    "platform-admin": "Imperial Platform Admin",
+}
 
-MODULES = [
-    ("crm", "Imperial CRM", "1.3.0", "Értékesítés", "critical"),
-    ("contract_generator", "Imperial Contract Generator", "0.4.0", "Jogi / operáció", "high"),
-    ("project_control", "PM Cockpit", "1.0.0", "Projektvezetés", "critical"),
-    ("calendar", "Project Smart Calendar", "1.1.0", "Projektvezetés", "high"),
-    ("myimperial", "MyImperial", "0.1.0", "Ügyfélkapcsolat", "high"),
-    ("change_control", "ChangeControl", "0.1.0", "Projektvezetés", "critical"),
-    ("partner_connect", "Partner Connect", "0.3.0", "Beszerzés", "high"),
-    ("procurement", "Procurement Execution", "1.0.0", "Projektvezetés / beszerzés", "critical"),
-    ("finance", "Finance Intelligence", "1.0.0", "Pénzügy", "critical"),
-    ("imperial_care", "Imperial Care", "0.1.0", "Garancia", "high"),
-    ("housematch", "HouseMatch", "0.3.0", "Marketing / értékesítés", "medium"),
-    ("plotcheck", "PlotCheck", "0.2.0", "Műszaki", "medium"),
-    ("buildconfig", "BuildConfig", "0.2.0", "Árazás / műszaki", "high"),
-    ("plancheck", "PlanCheck", "0.1.0", "Műszaki", "high"),
-    ("control_center", "Control Center", "1.1.0", "Tulajdonos / ügyvezető", "critical"),
-    ("import_center", "Enterprise Import Center", "0.1.0", "Adatgazdák / vezetés", "critical"),
-    ("experience_hub", "Calculator + HouseMatch + BuildConfig Web Experience", "0.1.0", "Marketing / értékesítés / műszaki", "high"),
-    ("tender_mail", "Imperial TenderMail", "0.1.0", "Beszerzés / partnerkapcsolat", "high"),
-    ("operations_workspace", "Operations Workspace", "1.0.0", "Projektvezetés / helyszín / beszerzés", "critical"),
-    ("field_pwa", "Field PWA", "1.0.0", "Helyszíni csapat", "high"),
-    ("commercial_integration", "Commercial Integration Workspace", "1.0.0", "Jogi / operáció / projektvezetés", "critical"),
-]
+DEMO_MODULE_SEED = (
+    Path(__file__).resolve().parents[1] / "data" / "platform_demo_seed.json"
+)
+
+MODULE_METADATA = {
+    "crm": ("1.3.0", "Értékesítés", "critical"),
+    "contract-generator": ("0.4.0", "Jogi / operáció", "high"),
+    "pm-cockpit": ("1.0.0", "Projektvezetés", "critical"),
+    "smart-calendar": ("1.1.0", "Projektvezetés", "high"),
+    "my-imperial": ("0.1.0", "Ügyfélkapcsolat", "high"),
+    "change-control": ("0.1.0", "Projektvezetés", "critical"),
+    "partner-connect": ("0.3.0", "Beszerzés", "high"),
+    "procurement": ("1.0.0", "Projektvezetés / beszerzés", "critical"),
+    "finance-intelligence": ("1.0.0", "Pénzügy", "critical"),
+    "imperial-care": ("0.1.0", "Garancia", "high"),
+    "housematch": ("0.3.0", "Marketing / értékesítés", "medium"),
+    "plotcheck": ("0.2.0", "Műszaki", "medium"),
+    "buildconfig": ("0.2.0", "Árazás / műszaki", "high"),
+    "plancheck": ("0.1.0", "Műszaki", "high"),
+    "control-center": ("1.1.0", "Tulajdonos / ügyvezető", "critical"),
+    "import-center": ("0.1.0", "Adatgazdák / vezetés", "critical"),
+    "tendermail": ("0.1.0", "Beszerzés / partnerkapcsolat", "high"),
+    "operations-workspace": (
+        "1.0.0",
+        "Projektvezetés / helyszín / beszerzés",
+        "critical",
+    ),
+    "field-pwa": ("1.0.0", "Helyszíni csapat", "high"),
+    "integration-control-room": (
+        "1.0.0",
+        "Jogi / operáció / projektvezetés",
+        "critical",
+    ),
+}
+
+LEGACY_MODULE_ALIASES = {
+    "calendar": "smart-calendar",
+    "change_control": "change-control",
+    "commercial_integration": "integration-control-room",
+    "contract_generator": "contract-generator",
+    "control_center": "control-center",
+    "field_pwa": "field-pwa",
+    "finance": "finance-intelligence",
+    "imperial_care": "imperial-care",
+    "import_center": "import-center",
+    "myimperial": "my-imperial",
+    "operations_workspace": "operations-workspace",
+    "partner_connect": "partner-connect",
+    "project_control": "pm-cockpit",
+    "tender_mail": "tendermail",
+}
+
+
+def _release_version(source_release: str | None) -> str:
+    match = re.search(r"\b(?:v)?(\d+(?:\.\d+){1,2})\b", source_release or "")
+    if not match:
+        return "0.1.0"
+    parts = match.group(1).split(".")
+    return ".".join(parts + ["0"] * (3 - len(parts)))
+
+
+def _canonical_modules() -> list[tuple[str, str, str, str, str]]:
+    data = json.loads(DEMO_MODULE_SEED.read_text(encoding="utf-8"))
+    modules = []
+    for module in data["modules"]:
+        module_id = module["id"]
+        version, owner, criticality = MODULE_METADATA.get(
+            module_id,
+            (_release_version(module.get("sourceRelease")), "Imperial Intelligence", "medium"),
+        )
+        modules.append((module_id, module["name"], version, owner, criticality))
+    return modules
+
+
+MODULES = _canonical_modules()
 
 
 IMPORT_SOURCES = [
     ("google_drive_enterprise", "Google Drive – vállalati dokumentumok", "google_drive", "enterprise", "google-drive://connected"),
+    ("onedrive_enterprise", "Microsoft OneDrive / SharePoint – vállalati dokumentumok", "onedrive", "enterprise", None),
     ("gmail_enterprise", "Gmail – üzleti levelezés és mellékletek", "gmail", "enterprise", "gmail://connected"),
     ("google_sheets_enterprise", "Google Sheets – pénzügyi és projekt táblák", "google_sheets", "finance,project,procurement", "google-sheets://connected"),
     ("manual_upload", "Kézi Excel / CSV / JSON feltöltés", "file_upload", "enterprise", None),
@@ -350,8 +450,48 @@ def seed_content_quality_sources(db: Session) -> None:
 
 
 def seed_database(db: Session) -> None:
-    if not db.scalar(select(User).where(User.email == "owner@imperial.local")):
-        db.add(User(email="owner@imperial.local", password_hash=hash_password(DEMO_PASSWORD), name="Imperial Owner", role="owner"))
+    demo_emails = {
+        role.id: (
+            "owner@imperial.local"
+            if role.id == "owner"
+            else f"{role.id}@imperial.local"
+        )
+        for role in ROLE_DEFINITIONS
+    }
+    if settings.is_production:
+        for user in db.scalars(
+            select(User).where(User.email.in_(tuple(demo_emails.values())))
+        ).all():
+            user.active = False
+    else:
+        for role in ROLE_DEFINITIONS:
+            email = demo_emails[role.id]
+            user = db.scalar(select(User).where(User.email == email))
+            if not user:
+                db.add(
+                    User(
+                        email=email,
+                        password_hash=DEMO_PASSWORD_HASH,
+                        name=DEMO_USER_NAMES[role.id],
+                        role=role.id,
+                    )
+                )
+            else:
+                user.name = DEMO_USER_NAMES[role.id]
+                user.role = role.id
+                user.active = True
+    canonical_module_ids = {module[0] for module in MODULES}
+    existing_modules = db.scalars(select(ModuleRegistry)).all()
+    existing_by_key = {module.module_key: module for module in existing_modules}
+    for module in existing_modules:
+        canonical_key = LEGACY_MODULE_ALIASES.get(module.module_key)
+        if canonical_key and canonical_key not in existing_by_key:
+            module.module_key = canonical_key
+            existing_by_key[canonical_key] = module
+        elif module.module_key not in canonical_module_ids:
+            db.delete(module)
+    db.flush()
+    verified_at = datetime.now(timezone.utc)
     for key, name, version, owner, criticality in MODULES:
         module = db.scalar(select(ModuleRegistry).where(ModuleRegistry.module_key == key))
         if not module:
@@ -361,14 +501,28 @@ def seed_database(db: Session) -> None:
                 version=version,
                 owner=owner,
                 criticality=criticality,
-                lifecycle_status="pilot" if key != "control_center" else "production_candidate",
-                integration_status="not_connected" if key != "control_center" else "healthy",
+                lifecycle_status="test_ready",
+                integration_status="healthy",
+                api_base_url="/api/demo",
+                health_url=f"/api/demo/modules/{key}",
+                last_heartbeat_at=verified_at,
+                last_integration_test_at=verified_at,
+                last_integration_test_status="passed",
+                notes="Shared platform-core synthetic adapter; external writes disabled.",
             ))
         else:
             module.name = name
             module.version = version
             module.owner = owner
             module.criticality = criticality
+            module.lifecycle_status = "test_ready"
+            module.integration_status = "healthy"
+            module.api_base_url = "/api/demo"
+            module.health_url = f"/api/demo/modules/{key}"
+            module.last_heartbeat_at = verified_at
+            module.last_integration_test_at = verified_at
+            module.last_integration_test_status = "passed"
+            module.notes = "Shared platform-core synthetic adapter; external writes disabled."
     for key, name in (("development", "Fejlesztés"), ("uat", "UAT"), ("production", "Production")):
         if not db.scalar(select(EnvironmentRecord).where(EnvironmentRecord.environment_key == key)):
             db.add(EnvironmentRecord(environment_key=key, name=name, status="active" if key == "development" else "planned"))

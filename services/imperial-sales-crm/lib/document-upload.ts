@@ -1,4 +1,5 @@
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
+export const DEFAULT_PROJECT_DOCUMENT_QUOTA_BYTES = 5 * 1024 * 1024 * 1024;
 
 const acceptedTypes: Record<string, string[]> = {
   "application/pdf": ["pdf"],
@@ -25,6 +26,30 @@ export async function validateDocumentFile(file: File) {
   const data = await file.arrayBuffer();
   if (!hasSignature(new Uint8Array(data.slice(0, 16)), file.type)) throw new Response("A fájl tartalma nem egyezik a kiterjesztésével.", { status: 415 });
   return data;
+}
+
+export function projectDocumentQuotaBytes(value = process.env.CRM_PROJECT_DOCUMENT_QUOTA_BYTES) {
+  if (!value) return DEFAULT_PROJECT_DOCUMENT_QUOTA_BYTES;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < MAX_FILE_SIZE) {
+    throw new Error("CRM_PROJECT_DOCUMENT_QUOTA_BYTES must be a safe integer of at least 15 MB.");
+  }
+  return parsed;
+}
+
+export function assertProjectDocumentQuota(
+  usedBytes: number,
+  incomingBytes: number,
+  quotaBytes = projectDocumentQuotaBytes(),
+) {
+  if (usedBytes < 0 || incomingBytes < 0) throw new Error("Document storage usage cannot be negative.");
+  if (usedBytes + incomingBytes > quotaBytes) {
+    const quotaGiB = (quotaBytes / 1024 / 1024 / 1024).toFixed(1);
+    throw new Response(
+      `A projekt dokumentumtára elérte a ${quotaGiB} GB-os korlátot. Kérj külön fájlszerver-kapacitást.`,
+      { status: 413 },
+    );
+  }
 }
 
 export async function sha256Hex(data: ArrayBuffer) {

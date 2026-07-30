@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-trivy_image="${TRIVY_IMAGE:-aquasec/trivy:0.70.0}"
+trivy_image="${TRIVY_IMAGE:-aquasec/trivy:0.72.0}"
 images=(
   "imperial-platform-core:local"
   "imperial-digital-project-managers:local"

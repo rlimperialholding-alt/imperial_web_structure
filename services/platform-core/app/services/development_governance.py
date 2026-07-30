@@ -14,19 +14,29 @@ ALLOWED_DECISIONS = {"reuse", "extend", "integrate", "repair", "new_exception"}
 PASSING_DECISIONS = {"reuse", "extend", "integrate", "repair"}
 
 
+def canonical_module_key(module_key: str | None) -> str | None:
+    if not module_key:
+        return None
+    return module_key.strip().replace("_", "-")
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
 def create_discovery(db: Session, data: DevelopmentDiscoveryIn, *, actor: str = "api") -> DevelopmentDiscoveryRecord:
+    requested_module_key = canonical_module_key(data.requested_module_key)
+    canonical_key = canonical_module_key(data.canonical_module_key)
     if data.decision not in ALLOWED_DECISIONS:
         raise ValueError("Érvénytelen reuse döntés.")
-    if data.decision in PASSING_DECISIONS and not data.canonical_module_key:
+    if data.decision in PASSING_DECISIONS and not canonical_key:
         raise ValueError("Újrafelhasználásnál kötelező a kanonikus ModuleKey.")
     if data.decision == "new_exception" and not data.exception_reason:
         raise ValueError("Új kivételes megvalósításnál kötelező az indoklás.")
-    if data.canonical_module_key:
-        module = db.scalar(select(ModuleRegistry).where(ModuleRegistry.module_key == data.canonical_module_key))
+    if canonical_key:
+        module = db.scalar(
+            select(ModuleRegistry).where(ModuleRegistry.module_key == canonical_key)
+        )
         if not module:
             raise ValueError("A kanonikus ModuleKey nem található a modulregiszterben.")
     row = db.scalar(select(DevelopmentDiscoveryRecord).where(DevelopmentDiscoveryRecord.discovery_id == data.discovery_id))
@@ -34,10 +44,10 @@ def create_discovery(db: Session, data: DevelopmentDiscoveryIn, *, actor: str = 
         row = DevelopmentDiscoveryRecord(discovery_id=data.discovery_id, requested_capability=data.requested_capability, decision=data.decision, implementation_gap=data.implementation_gap)
         db.add(row)
     row.requested_capability = data.requested_capability
-    row.requested_module_key = data.requested_module_key
+    row.requested_module_key = requested_module_key
     row.searched_terms_json = json.dumps(data.searched_terms, ensure_ascii=False)
     row.candidate_artifacts_json = json.dumps(data.candidate_artifacts, ensure_ascii=False)
-    row.canonical_module_key = data.canonical_module_key
+    row.canonical_module_key = canonical_key
     row.canonical_object_owner = data.canonical_object_owner
     row.source_version = data.source_version
     row.source_sha256 = data.source_sha256
@@ -78,9 +88,12 @@ def discovery_passes(row: DevelopmentDiscoveryRecord | None) -> bool:
 
 
 def latest_approved_for_module(db: Session, module_key: str) -> DevelopmentDiscoveryRecord | None:
+    normalized_key = canonical_module_key(module_key)
+    accepted_keys = {module_key, normalized_key}
     rows = db.scalars(select(DevelopmentDiscoveryRecord).where(
         DevelopmentDiscoveryRecord.status == "approved",
-        (DevelopmentDiscoveryRecord.requested_module_key == module_key) | (DevelopmentDiscoveryRecord.canonical_module_key == module_key),
+        (DevelopmentDiscoveryRecord.requested_module_key.in_(accepted_keys))
+        | (DevelopmentDiscoveryRecord.canonical_module_key.in_(accepted_keys)),
     ).order_by(desc(DevelopmentDiscoveryRecord.reviewed_at), desc(DevelopmentDiscoveryRecord.id))).all()
     return next((r for r in rows if discovery_passes(r)), None)
 
