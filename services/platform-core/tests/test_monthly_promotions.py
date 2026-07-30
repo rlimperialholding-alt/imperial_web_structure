@@ -25,8 +25,7 @@ def finding_codes(result) -> set[str]:
 def promotional_request(*, position: int = 0, publication_allowed: bool = False):
     promotion_id = "PROMO-IMP-2026-08"
     promotion_copy = (
-        "Augusztusban válasszon akár 6% kedvezményt, vagy kérje a házhoz "
-        "a bioklimatikus pergolát."
+        "Augusztusban válasszon akár 6% kedvezményt, vagy kérje a házhoz a bioklimatikus pergolát."
     )
     brief = imperial_brief().model_copy(
         update={
@@ -81,10 +80,7 @@ def test_august_registry_matches_the_gmail_directive_and_brand_policies():
         if record.status == PromotionStatus.ACTIVE
     }
     assert approved == {"imperial", "danish-fabrik", "prefab"}
-    assert all(
-        registry.brands[brand_id].publication_allowed
-        for brand_id in approved
-    )
+    assert all(registry.brands[brand_id].publication_allowed for brand_id in approved)
     assert len(registry.brands["imperial"].models) == 10
     assert len(registry.brands["danish-fabrik"].models) == 10
     assert len(registry.brands["bautica"].models) == 10
@@ -95,15 +91,9 @@ def test_august_registry_matches_the_gmail_directive_and_brand_policies():
 def test_monthly_policy_distinguishes_no_promotion_never_and_missing_required():
     registry = load_monthly_promotion_registry()
 
-    baufreund = resolve_monthly_promotion(
-        "baufreund", on_date=date(2026, 8, 1), registry=registry
-    )
-    casa = resolve_monthly_promotion(
-        "casa-moderna", on_date=date(2026, 8, 1), registry=registry
-    )
-    red = resolve_monthly_promotion(
-        "red", on_date=date(2026, 8, 1), registry=registry
-    )
+    baufreund = resolve_monthly_promotion("baufreund", on_date=date(2026, 8, 1), registry=registry)
+    casa = resolve_monthly_promotion("casa-moderna", on_date=date(2026, 8, 1), registry=registry)
+    red = resolve_monthly_promotion("red", on_date=date(2026, 8, 1), registry=registry)
 
     assert baufreund.status == PromotionStatus.NO_PROMOTION_SOURCE
     assert baufreund.copy_required is False
@@ -126,12 +116,8 @@ def test_preparation_requires_leading_copy_but_keeps_creative_badge_optional():
 
 def test_approved_promotions_are_publishable_only_inside_the_august_window():
     for brand_id in ("imperial", "danish-fabrik", "prefab"):
-        before_window = resolve_monthly_promotion(
-            brand_id, on_date=date(2026, 7, 27)
-        )
-        inside_window = resolve_monthly_promotion(
-            brand_id, on_date=date(2026, 8, 1)
-        )
+        before_window = resolve_monthly_promotion(brand_id, on_date=date(2026, 7, 27))
+        inside_window = resolve_monthly_promotion(brand_id, on_date=date(2026, 8, 1))
 
         assert before_window.status == PromotionStatus.ACTIVE
         assert before_window.copy_required is False
@@ -142,27 +128,21 @@ def test_approved_promotions_are_publishable_only_inside_the_august_window():
 
 
 def test_copy_gate_accepts_first_block_placement_when_approvals_are_active():
-    result = evaluate_content(
-        promotional_request(publication_allowed=True)
-    )
+    result = evaluate_content(promotional_request(publication_allowed=True))
 
     assert result.final_decision == Decision.APPROVED
     assert "MONTHLY_PROMOTION_NOT_FIRST" not in finding_codes(result)
 
 
 def test_copy_gate_blocks_promotion_that_is_not_the_first_copy_block():
-    result = evaluate_content(
-        promotional_request(position=1, publication_allowed=True)
-    )
+    result = evaluate_content(promotional_request(position=1, publication_allowed=True))
 
     assert result.publication_blocked
     assert "MONTHLY_PROMOTION_NOT_FIRST" in finding_codes(result)
 
 
 def test_copy_gate_keeps_preparation_only_offer_out_of_publication():
-    result = evaluate_content(
-        promotional_request(publication_allowed=False)
-    )
+    result = evaluate_content(promotional_request(publication_allowed=False))
 
     assert result.publication_blocked
     assert "MONTHLY_PROMOTION_APPROVAL_PENDING" in finding_codes(result)
