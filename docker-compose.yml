@@ -168,13 +168,13 @@ services:
       DEMO_RUNTIME_PATH: /tmp/platform_demo_runtime.json
       SESSION_SECRET: local-test-session-key-not-for-production
       CONTENT_EXPERT_REVIEW_SECRET_FILE: /run/secrets/platform_expert_review_secret
-      CONTENT_EXPERT_REVIEW_KEY_ID: ${PLATFORM_EXPERT_REVIEW_KEY_ID:-content-expert-review-v1}
+      CONTENT_EXPERT_REVIEW_KEY_ID: test-expert-review-key-v1
       CONTENT_MARKETING_REVIEW_SECRET_FILE: /run/secrets/platform_marketing_review_secret
-      CONTENT_MARKETING_REVIEW_KEY_ID: ${PLATFORM_MARKETING_REVIEW_KEY_ID:-content-marketing-review-v1}
+      CONTENT_MARKETING_REVIEW_KEY_ID: test-marketing-review-key-v1
       CONTENT_COPYWRITER_REVIEW_SECRET_FILE: /run/secrets/platform_copywriter_review_secret
-      CONTENT_COPYWRITER_REVIEW_KEY_ID: ${PLATFORM_COPYWRITER_REVIEW_KEY_ID:-content-copywriter-review-v1}
+      CONTENT_COPYWRITER_REVIEW_KEY_ID: test-copywriter-review-key-v1
       CONTENT_VISUAL_REVIEW_SECRET_FILE: /run/secrets/platform_visual_review_secret
-      CONTENT_VISUAL_REVIEW_KEY_ID: ${PLATFORM_VISUAL_REVIEW_KEY_ID:-content-visual-review-v1}
+      CONTENT_VISUAL_REVIEW_KEY_ID: test-visual-review-key-v1
       ALLOWED_HOSTS: localhost,127.0.0.1,testserver
       RUFF_CACHE_DIR: /tmp/ruff-cache
       MYPY_CACHE_DIR: /tmp/mypy-cache
