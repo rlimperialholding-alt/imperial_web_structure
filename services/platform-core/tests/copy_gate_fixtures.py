@@ -1,13 +1,26 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import os
 from datetime import date
+from typing import Any
 
 from app.copy_gate.models import (
+    AssemblySubmission,
     CanonicalSources,
     ContentAsset,
     ContentBlock,
     CopyBrief,
+    CreativeDirectorReviewSubmission,
     EditorialReview,
+    LiveReviewSubmission,
+    MandatoryCopyGateReviewSubmission,
+    PlatformExport,
+    ReleaseReviewSubmission,
+    StrategyReviewSubmission,
+    VisualProductionSubmission,
 )
 from app.services.content_quality import GENERATION_STAGES
 
@@ -124,18 +137,76 @@ def canonical_sources() -> CanonicalSources:
     )
 
 
-def editorial_review() -> EditorialReview:
-    return EditorialReview(
-        decision="APPROVED",
-        reviewer_run_id="EDITOR-IMP-001",
-        generation_run_id="GEN-IMP-001",
-        model_version="editorial-model-test",
-        prompt_version="copy-editor-v1",
+def _reviewed_asset(asset: Any | None) -> ContentAsset:
+    if asset is None:
+        return imperial_asset()
+    if isinstance(asset, ContentAsset):
+        return asset
+    content_json = getattr(asset, "content_json", None)
+    if content_json:
+        return ContentAsset.model_validate_json(content_json)
+    return ContentAsset.model_validate(asset)
+
+
+def editorial_review(asset: Any | None = None, **overrides: Any) -> EditorialReview:
+    reviewed = _reviewed_asset(asset)
+    serialized = json.dumps(
+        reviewed.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
     )
+    payload: dict[str, Any] = {
+        "decision": "APPROVED",
+        "reviewed_asset_id": reviewed.asset_id,
+        "reviewed_content_sha256": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+        "reviewer_run_id": "EDITOR-IMP-001",
+        "generation_run_id": "GEN-IMP-001",
+        "reviewer_identity": "fixture-independent-hungarian-copy-expert",
+        "reviewer_type": "independent_ai",
+        "attestation_key_id": "test-expert-review-key-v1",
+        "model_version": "editorial-model-test",
+        "prompt_version": "expert-hungarian-direct-response-v2",
+        "idiomatic_hungarian_score": 10,
+        "grammar_score": 10,
+        "semantic_clarity_score": 10,
+        "terminology_score": 10,
+        "hook_strength_score": 10,
+        "offer_clarity_score": 10,
+        "specificity_score": 10,
+        "persuasion_score": 10,
+        "brand_voice_score": 10,
+        "conversion_path_score": 10,
+        "consumer_interpretation": (
+            "Az érdeklődő előre rögzített keretek között tervezhető otthonépítést kap."
+        ),
+        "offer_interpretation": (
+            "A szolgáltatás a rögzített ár, határidő és műszaki tartalom áttekintését kínálja."
+        ),
+        "cta_interpretation": (
+            "A CTA tételes mérnöki konzultáció kérésére viszi tovább az érdeklődőt."
+        ),
+    }
+    payload.update(overrides)
+    payload["attestation_sha256"] = "0" * 64
+    review = EditorialReview(**payload)
+    signed_payload = json.dumps(
+        review.model_dump(mode="json", exclude={"attestation_sha256"}),
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    review.attestation_sha256 = hmac.new(
+        os.environ["CONTENT_EXPERT_REVIEW_SECRET"].encode("utf-8"),
+        signed_payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return review
 
 
 def generation_trace() -> dict:
     return {
+        "brand_id": "imperial",
         "generation_run_id": "GEN-IMP-001",
         "model_version": "generator-model-test",
         "prompt_version": "copy-generation-v1",
@@ -143,11 +214,282 @@ def generation_trace() -> dict:
         "copy_mode": "verbatim_source",
         "copy_fingerprint": "sha256:test-imperial-copy-v1",
         "copy_concept_id": "imperial-source-proof-v1",
+        "copy_architecture_id": "imperial-proof-led-declaration-v1",
+        "copy_structure_signature": "offer>hard-claim>proof-stack>model>cta",
         "source_text_usage_ratio": 1.0,
-        "professional_copy_quality_score": 9.2,
         "creative_quality_benchmark_id": "prefab-facebook-etalon-v1",
         "creative_rationale": "Forráspontos, bizonyítékvezérelt Imperial tesztkreatív.",
         "introduces_new_factual_claims": False,
         "human_fact_review_required": False,
+        "consumer_promise_plain_language": "Az ügyfél előre rögzített áron kap házat.",
+        "promise_reason_or_mechanism": (
+            "A szerződésben rögzített ár és határidő adja a tervezhetőséget."
+        ),
+        "offer_terms_plain_language": "A kanonikus forrásban jóváhagyott feltételek érvényesek.",
+        "cta_next_step_plain_language": (
+            "Az ügyfél megnyitja az alaprajz és az ár részletes oldalát."
+        ),
         "source_prevalidation_requested": True,
     }
+
+
+def strategy_review(
+    *,
+    reviewer_identity: str = "strategy-reviewer@imperial.local",
+) -> StrategyReviewSubmission:
+    return StrategyReviewSubmission(
+        decision="APPROVED",
+        strategist_run_id="STRATEGIST-RUN-001",
+        reviewer_run_id="STRATEGY-REVIEW-001",
+        reviewer_identity=reviewer_identity,
+        objective_score=10,
+        audience_score=10,
+        offer_score=10,
+        message_architecture_score=10,
+        channel_plan_score=10,
+        brand_fit_score=10,
+        feasibility_score=10,
+        tactical_plan=(
+            "A kampány a tervezhetőségi kifogást kezeli, mérnöki konzultációra konvertál, "
+            "és platformonként külön szöveg- és kreatív assetet használ."
+        ),
+        asset_plan=["facebook-feed-1080x1080", "facebook-story-1080x1920"],
+    )
+
+
+def visual_submission(
+    *,
+    generation_run_id: str = "VISUAL-RUN-001",
+    visual_direction_id: str = "VISUAL-DIRECTION-001",
+) -> VisualProductionSubmission:
+    return VisualProductionSubmission(
+        generation_run_id=generation_run_id,
+        producer_identity="creative-producer@imperial.local",
+        visual_direction_id=visual_direction_id,
+        platform="facebook",
+        width_px=1080,
+        height_px=1080,
+        output_uri=f"/artifacts/{generation_run_id}.png",
+        output_sha256=hashlib.sha256(generation_run_id.encode("utf-8")).hexdigest(),
+        generation_prompt_hash=hashlib.sha256(f"prompt:{generation_run_id}".encode()).hexdigest(),
+        contains_text=False,
+    )
+
+
+def mandatory_copy_gate_review(
+    reviewed,
+    gate_id: str,
+    *,
+    reviewer_identity: str | None = None,
+    reviewer_run_id: str | None = None,
+    reviewer_model_version: str | None = None,
+    **overrides: Any,
+) -> MandatoryCopyGateReviewSubmission:
+    if gate_id == "MARKETING":
+        dimensions = {
+            "objective_fit": 10,
+            "audience_fit": 10,
+            "offer_strength": 10,
+            "message_architecture": 10,
+            "conversion_path": 10,
+            "qualification_quality": 10,
+            "brand_specificity": 10,
+        }
+        secret_name = "CONTENT_MARKETING_REVIEW_SECRET"
+        key_id = "test-marketing-review-key-v1"
+        prompt_version = "marketing-gate-v1"
+        reviewer_identity = reviewer_identity or "independent-marketing-gate@imperial.local"
+        reviewer_run_id = reviewer_run_id or "MARKETING-GATE-RUN-001"
+        reviewer_model_version = reviewer_model_version or "marketing-review-model-test"
+    else:
+        dimensions = {
+            "hook_strength": 10,
+            "emotional_tension": 10,
+            "specificity": 10,
+            "natural_hungarian": 10,
+            "direct_response_persuasion": 10,
+            "clarity": 10,
+            "cta_strength": 10,
+            "brand_voice": 10,
+        }
+        secret_name = "CONTENT_COPYWRITER_REVIEW_SECRET"
+        key_id = "test-copywriter-review-key-v1"
+        prompt_version = "direct-response-copy-gate-v1"
+        reviewer_identity = reviewer_identity or "independent-copywriter-gate@imperial.local"
+        reviewer_run_id = reviewer_run_id or "COPYWRITER-GATE-RUN-001"
+        reviewer_model_version = reviewer_model_version or "copywriter-review-model-test"
+    payload: dict[str, Any] = {
+        "gate_id": gate_id,
+        "decision": "APPROVED",
+        "reviewed_asset_id": reviewed.asset_id,
+        "reviewed_content_sha256": reviewed.content_hash,
+        "generation_run_id": "GEN-IMP-001",
+        "reviewer_run_id": reviewer_run_id,
+        "reviewer_identity": reviewer_identity,
+        "reviewer_model_version": reviewer_model_version,
+        "prompt_version": prompt_version,
+        "attestation_key_id": key_id,
+        "attestation_sha256": "0" * 64,
+        "dimension_scores": dimensions,
+        "consumer_readback": (
+            "Az érdeklődő pontosan érti az ajánlatot, annak következő lépését és a "
+            "márkaspecifikus értékígéretet."
+        ),
+        "conversion_rationale": (
+            "A konkrét előny, a hiteles bizonyíték és az alacsony súrlódású CTA együtt "
+            "minősített érdeklődést terel."
+        ),
+        "strongest_objection": "Az érdeklődő bizonytalan a költség és határidő tervezhetőségében.",
+        "dry_copy_detected": False,
+        "generic_copy_detected": False,
+        "brand_voice_violation_detected": False,
+    }
+    payload.update(overrides)
+    review = MandatoryCopyGateReviewSubmission(**payload)
+    signed_payload = json.dumps(
+        review.model_dump(mode="json", exclude={"attestation_sha256"}),
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    review.attestation_sha256 = hmac.new(
+        os.environ[secret_name].encode("utf-8"),
+        signed_payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return review
+
+
+def creative_director_review(
+    reviewed,
+    visual,
+    *,
+    reviewer_identity: str = "creative-director@imperial.local",
+    reviewer_run_id: str = "CREATIVE-DIRECTOR-RUN-001",
+) -> CreativeDirectorReviewSubmission:
+    review = CreativeDirectorReviewSubmission(
+        decision="APPROVED",
+        reviewed_asset_id=reviewed.asset_id,
+        reviewed_content_sha256=reviewed.content_hash,
+        reviewed_visual_sha256=visual.output_sha256,
+        generation_run_id=visual.generation_run_id,
+        reviewer_run_id=reviewer_run_id,
+        reviewer_identity=reviewer_identity,
+        reviewer_model_version="creative-director-model-test",
+        prompt_version="visual-art-direction-gate-v1",
+        attestation_key_id="test-visual-review-key-v1",
+        attestation_sha256="0" * 64,
+        brand_fidelity_score=10,
+        composition_score=10,
+        distinctiveness_score=10,
+        typography_score=10,
+        asset_accuracy_score=10,
+        minimum_contrast_ratio=7.2,
+        full_subject_expected=True,
+        full_subject_contour_visible=True,
+        accidental_crop_absent=True,
+        text_boxes_within_bounds=True,
+        text_background_clear=True,
+        text_overlaps_primary_subject=False,
+        text_background_overlaps_primary_subject=False,
+        minimum_source_font_px=32,
+        decorative_frame_area_ratio=0.0,
+        primary_subject_dominance_required=True,
+        primary_subject_area_ratio=0.8,
+        typehouse_offer_creative=True,
+        offer_block_contiguous=True,
+        offer_current_month_present=True,
+        offer_model_name_present=True,
+        offer_gross_area_m2_present=True,
+        offer_selling_price_present=True,
+        offer_price_plus_vat_present=True,
+        discount_percentage_on_creative=False,
+        original_price_on_creative=False,
+        net_price_word_on_creative=False,
+        build_time_label_plain=True,
+        legal_disclaimer_on_impulse_creative=False,
+        logo_lockup_brand_native=True,
+        proof_caption_present=False,
+        proof_caption_semantically_complete=True,
+    )
+    signed_payload = json.dumps(
+        review.model_dump(mode="json", exclude={"attestation_sha256"}),
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    review.attestation_sha256 = hmac.new(
+        os.environ["CONTENT_VISUAL_REVIEW_SECRET"].encode("utf-8"),
+        signed_payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return review
+
+
+def assembly_submission(
+    content_hash: str,
+    visual_generation_run_id: str,
+) -> AssemblySubmission:
+    return AssemblySubmission(
+        assembly_run_id=f"ASSEMBLY-{visual_generation_run_id}",
+        assembler_identity="production-designer@imperial.local",
+        visual_generation_run_id=visual_generation_run_id,
+        copy_content_sha256=content_hash,
+        pairing_rationale=(
+            "A jóváhagyott copy és a márkaspecifikus vizuális irány ugyanazt a "
+            "tervezhetőségi értékígéretet támogatja."
+        ),
+        exports=[
+            PlatformExport(
+                platform="facebook",
+                placement="feed",
+                width_px=1080,
+                height_px=1080,
+                output_uri=f"/exports/{visual_generation_run_id}-feed.png",
+                output_sha256=hashlib.sha256(
+                    f"export:{visual_generation_run_id}".encode()
+                ).hexdigest(),
+                safe_zone_checked=True,
+                text_legibility_checked=True,
+            )
+        ],
+    )
+
+
+def release_review(
+    *,
+    reviewer_identity: str = "marketing-manager@imperial.local",
+) -> ReleaseReviewSubmission:
+    return ReleaseReviewSubmission(
+        decision="APPROVED",
+        reviewer_run_id="RELEASE-REVIEW-RUN-001",
+        reviewer_identity=reviewer_identity,
+        strategy_match_score=10,
+        copy_visual_consistency_score=10,
+        channel_fit_score=10,
+        conversion_path_score=10,
+        four_gate_recheck_passed=True,
+        brand_recheck_passed=True,
+        technical_export_check_passed=True,
+    )
+
+
+def live_review(
+    role: str,
+    reviewer_identity: str,
+    content_hash: str,
+    *,
+    decision: str = "APPROVED",
+    findings: list[str] | None = None,
+) -> LiveReviewSubmission:
+    return LiveReviewSubmission(
+        reviewer_role=role,
+        reviewer_identity=reviewer_identity,
+        decision=decision,
+        live_url="https://preview.imperial.local/campaign/asset",
+        screenshot_sha256=hashlib.sha256(
+            f"screenshot:{role}:{reviewer_identity}".encode()
+        ).hexdigest(),
+        rendered_copy_sha256=content_hash,
+        findings=findings or [],
+    )

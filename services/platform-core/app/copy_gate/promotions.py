@@ -8,10 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 DEFAULT_REGISTRY_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "copy_gate"
-    / "monthly_promotions_2026_08.json"
+    Path(__file__).resolve().parents[2] / "data" / "copy_gate" / "monthly_promotions_2026_08.json"
 )
 
 
@@ -25,9 +22,7 @@ class PromotionStatus(StrEnum):
 
 class MonthlyPromotionRecord(BaseModel):
     brand_id: str = Field(min_length=2, max_length=100)
-    monthly_policy: str = Field(
-        pattern="^(ALWAYS_REQUIRED|SOURCE_DRIVEN|NEVER_PROMOTION)$"
-    )
+    monthly_policy: str = Field(pattern="^(ALWAYS_REQUIRED|SOURCE_DRIVEN|NEVER_PROMOTION)$")
     status: PromotionStatus
     promotion_id: str | None = Field(default=None, max_length=160)
     campaign_message: str | None = None

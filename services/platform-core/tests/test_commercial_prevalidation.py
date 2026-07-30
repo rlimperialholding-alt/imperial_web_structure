@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from copy_gate_fixtures import (
+    assembly_submission,
+    creative_director_review,
     editorial_review,
     generation_trace,
     imperial_asset,
     imperial_brief,
+    mandatory_copy_gate_review,
+    release_review,
+    strategy_review,
+    visual_submission,
 )
 
 from app.copy_gate.models import (
@@ -19,12 +25,28 @@ from app.services.commercial_prevalidation import (
     load_prevalidated_registry,
 )
 from app.services.content_quality import (
+    assemble_publication_bundle,
     create_content_asset,
     create_copy_brief,
     publish_content_asset,
+    record_creative_director_review,
+    record_mandatory_copy_gate_review,
+    record_release_review,
+    record_strategy_review,
     run_copy_quality,
     submit_four_gates,
+    submit_visual_production,
 )
+
+
+def _pass_mandatory_copy_gates(db, asset):
+    for gate_id in ("MARKETING", "DIRECT_RESPONSE"):
+        record_mandatory_copy_gate_review(
+            db,
+            asset.asset_id,
+            mandatory_copy_gate_review(asset, gate_id),
+            actor=f"{gate_id.lower()}-gate-verifier",
+        )
 
 
 def _fragment_evidence(
@@ -355,6 +377,12 @@ def test_prevalidated_asset_skips_human_editorial_and_owner_approval(db):
         }
     )
     brief_row = create_copy_brief(db, brief.model_dump(mode="json"), actor="test")
+    record_strategy_review(
+        db,
+        brief_row.copy_brief_id,
+        strategy_review(),
+        actor="strategy-reviewer@imperial.local",
+    )
     asset = create_content_asset(
         db,
         asset_payload,
@@ -363,7 +391,8 @@ def test_prevalidated_asset_skips_human_editorial_and_owner_approval(db):
         generation_trace=generation_trace(),
         actor="test",
     )
-    run_copy_quality(db, asset.asset_id, editorial_review(), actor="quality-worker")
+    run_copy_quality(db, asset.asset_id, editorial_review(asset), actor="quality-worker")
+    _pass_mandatory_copy_gates(db, asset)
 
     aggregate = submit_four_gates(
         db,
@@ -375,7 +404,31 @@ def test_prevalidated_asset_skips_human_editorial_and_owner_approval(db):
         ),
         actor="gate-orchestrator",
     )
-    assert aggregate["state"] == PublicationState.SOURCE_PREVALIDATED
+    assert aggregate["state"] == PublicationState.VISUAL_PRODUCTION
+    visual = submit_visual_production(
+        db,
+        asset.asset_id,
+        visual_submission(),
+        actor="creative-producer",
+    )
+    record_creative_director_review(
+        db,
+        asset.asset_id,
+        creative_director_review(asset, visual),
+        actor="creative-director@imperial.local",
+    )
+    assemble_publication_bundle(
+        db,
+        asset.asset_id,
+        assembly_submission(asset.content_hash, visual.generation_run_id),
+        actor="production-designer",
+    )
+    record_release_review(
+        db,
+        asset.asset_id,
+        release_review(),
+        actor="marketing-manager@imperial.local",
+    )
 
     proof = publish_content_asset(db, asset.asset_id, actor="publication-worker")
 
@@ -413,6 +466,12 @@ def test_adapted_copy_cannot_use_source_prevalidated_fast_lane(db):
         }
     )
     brief_row = create_copy_brief(db, brief.model_dump(mode="json"), actor="test")
+    record_strategy_review(
+        db,
+        brief_row.copy_brief_id,
+        strategy_review(),
+        actor="strategy-reviewer@imperial.local",
+    )
     asset = create_content_asset(
         db,
         asset_payload,
@@ -421,7 +480,8 @@ def test_adapted_copy_cannot_use_source_prevalidated_fast_lane(db):
         generation_trace=adapted_trace,
         actor="test",
     )
-    run_copy_quality(db, asset.asset_id, editorial_review(), actor="quality-worker")
+    run_copy_quality(db, asset.asset_id, editorial_review(asset), actor="quality-worker")
+    _pass_mandatory_copy_gates(db, asset)
 
     aggregate = submit_four_gates(
         db,

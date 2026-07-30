@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+
 from .models import (
     ContentEvaluationRequest,
     Decision,
@@ -50,6 +54,161 @@ def _dimension(name: str, score: int, findings: list[Finding]) -> DimensionScore
         passed=bounded >= 8 and not any(item.severity == Severity.CRITICAL for item in findings),
         findings=findings,
     )
+
+
+def _content_hash(request: ContentEvaluationRequest) -> str:
+    payload = request.asset.model_dump(mode="json")
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _expert_review_integrity_findings(
+    request: ContentEvaluationRequest,
+) -> list[Finding]:
+    review = request.editorial_review
+    findings: list[Finding] = []
+    if review.reviewed_asset_id != request.asset.asset_id:
+        findings.append(
+            _finding(
+                "EXPERT_REVIEW_ASSET_MISMATCH",
+                "A szakértői jegyzőkönyv másik tartalmi eszközhöz tartozik.",
+                Severity.CRITICAL,
+            )
+        )
+    if review.reviewed_content_sha256 != _content_hash(request):
+        findings.append(
+            _finding(
+                "EXPERT_REVIEW_HASH_MISMATCH",
+                "A szakértői jegyzőkönyv nem az aktuális tartalomhashhez tartozik.",
+                Severity.CRITICAL,
+            )
+        )
+    if review.reviewer_run_id == review.generation_run_id:
+        findings.append(
+            _finding(
+                "REVIEW_INDEPENDENCE_FAILED",
+                "A generáló és ellenőrző futás nem lehet azonos.",
+                Severity.CRITICAL,
+            )
+        )
+    return findings
+
+
+def _deterministic_hungarian_findings(text: str) -> list[Finding]:
+    """Fail closed on known nonsense, internal shorthand and ambiguous offer syntax."""
+
+    patterns = (
+        (
+            r"\botthona?\s+kör[ée]\s+zárul",
+            "UNNATURAL_HOME_CLOSURE_METAPHOR",
+            ("Az „otthona köré zárul” nem közérthető magyar vagy bevett építőipari megfogalmazás."),
+            ("Ne metaforával, hanem az ellenőrzés pontos tárgyával és időpontjával fogalmazzon."),
+        ),
+        (
+            r"\bkész\s+kertkapcsolat\w*\b",
+            "UNEXPLAINED_OFFER_SHORTHAND",
+            (
+                "A „kész kertkapcsolat” belső kampányelnevezés, önmagában nem mondja meg, "
+                "mit kap az ügyfél."
+            ),
+            (
+                "Nevezze meg a térkövezés területét, az alapréteget, a szegélyezést, "
+                "a kivitelezést és a választási feltételeket."
+            ),
+        ),
+        (
+            r"\b(?:nem\s+)?ködös\s+életérzés\b",
+            "INTERNAL_CRITIQUE_LEAKED_TO_CONSUMER_COPY",
+            (
+                "A „ködös életérzés” belső szövegkritikai megjegyzés, nem fogyasztói "
+                "marketingüzenet."
+            ),
+            (
+                "Törölje a szerkesztési kommentárt, és közvetlenül az ügyfél előnyét, "
+                "annak okát és a bizonyítékot fogalmazza meg."
+            ),
+        ),
+        (
+            r"\bnem\s+hangzatos\s+ígéret(?:ként)?\b",
+            "INTERNAL_CRITIQUE_LEAKED_TO_CONSUMER_COPY",
+            ("A „nem hangzatos ígéret” szerkesztői önigazolás, nem fogyasztói marketingüzenet."),
+            (
+                "Hagyja el a kommentárt, és közölje közvetlenül a konkrét vállalást "
+                "és annak bizonyítékát."
+            ),
+        ),
+        (
+            r"\ba\s+vállalás\b.{0,100}\bkapcsolódik\b",
+            "ADMINISTRATIVE_OFFER_LANGUAGE",
+            (
+                "Az „a vállalás ... kapcsolódik” adminisztratív, személytelen "
+                "megfogalmazás, nem piacképes ajánlati mondat."
+            ),
+            (
+                "Fogalmazza át közvetlen ügyfélértékre, például: „Fix ár, fix "
+                "határidő, tervezés az árban.”"
+            ),
+        ),
+        (
+            r"\bmagyar\s+brands\b",
+            "NONCANONICAL_AWARD_NAME",
+            "A díj hivatalos márkaneve egybeírandó: MagyarBrands.",
+            "Használja a hivatalos „MagyarBrands” írásmódot.",
+        ),
+    )
+    findings: list[Finding] = []
+    for pattern, code, message, repair in patterns:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            findings.append(
+                _finding(
+                    code,
+                    message,
+                    Severity.CRITICAL,
+                    repair=repair,
+                )
+            )
+    normalized = normalize(text)
+    causal_markers = {
+        "90 nap",
+        "120 nap",
+        "gyors kivitelezés",
+        "üzemben készül",
+        "kevesebb építési idő",
+    }
+    if "több idő élni" in normalized and not any(marker in normalized for marker in causal_markers):
+        findings.append(
+            _finding(
+                "UNEXPLAINED_LIFESTYLE_PROMISE",
+                (
+                    "A „több idő élni” önmagában levegőben lógó ígéret: nem derül ki, "
+                    "mihez képest és milyen okból ad több időt."
+                ),
+                Severity.CRITICAL,
+                repair=(
+                    "Nevezze meg a bizonyított mechanizmust, például a tervezéssel együtt "
+                    "vállalt kivitelezési időt vagy az üzemi előregyártást."
+                ),
+            )
+        )
+    if re.search(r"(?<!\w)aaa(?!\w)", normalized) and not re.search(
+        r"(?<!\w)aaa(?!\w).{0,90}(panaszmentességi|panaszmentes|igazolás|minősítés|kategóriás)",
+        normalized,
+    ):
+        findings.append(
+            _finding(
+                "UNEXPLAINED_TRUST_ACRONYM",
+                (
+                    "Az önálló „AAA” nem közérthető fogyasztói állítás; nem mondja meg, "
+                    "milyen minősítést vagy igazolást jelent."
+                ),
+                Severity.CRITICAL,
+                repair=(
+                    "A logót használja felirat nélkül, vagy írja ki teljesen: "
+                    "„AAA kategóriás panaszmentességi igazolás”."
+                ),
+            )
+        )
+    return findings
 
 
 def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
@@ -120,6 +279,23 @@ def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
 
     findings = []
     score = 10
+    findings.extend(_expert_review_integrity_findings(request))
+    findings.extend(_deterministic_hungarian_findings(full_text))
+    if brief.brand_id == "danish-fabrik" and re.search(
+        r"\b(?:díjmentes\s+tervezés|tervezési\s+díj\s+nélkül)\b",
+        normalized_text,
+    ):
+        findings.append(
+            _finding(
+                "DANISH_INCLUDED_DESIGN_WORDING_REQUIRED",
+                (
+                    "A Danish Fabrik tervezése nem „díjmentes”: a fogyasztói "
+                    "megfogalmazás szerint a tervezés az ár része."
+                ),
+                Severity.CRITICAL,
+                repair="Használja ezt: „Fix ár, fix határidő, tervezés az árban.”",
+            )
+        )
     lengths = sentence_lengths(full_text)
     if len(lengths) >= 4 and len(set(lengths)) <= 2:
         score -= 2
@@ -150,6 +326,36 @@ def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
                 Severity.CRITICAL,
             )
         )
+    language_scores = (
+        request.editorial_review.idiomatic_hungarian_score,
+        request.editorial_review.grammar_score,
+        request.editorial_review.semantic_clarity_score,
+        request.editorial_review.terminology_score,
+    )
+    score = min(score, min(language_scores))
+    if min(language_scores) < 9:
+        score = 0
+        findings.append(
+            _finding(
+                "HUNGARIAN_EXPERT_THRESHOLD_FAILED",
+                "A magyar nyelvi szakértői minimum minden dimenzióban 9/10.",
+                Severity.CRITICAL,
+            )
+        )
+    if (
+        request.editorial_review.ambiguous_phrases
+        or request.editorial_review.unnatural_phrases
+        or request.editorial_review.required_repairs
+        or request.editorial_review.findings
+    ):
+        score = 0
+        findings.append(
+            _finding(
+                "HUNGARIAN_EXPERT_OPEN_FINDINGS",
+                "A magyar nyelvi szakértői jegyzőkönyv nyitott hibát tartalmaz.",
+                Severity.CRITICAL,
+            )
+        )
     dimensions.append(_dimension("Natural Hungarian", score, findings))
 
     findings = []
@@ -172,6 +378,33 @@ def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
     if not asset.objection_ids_handled:
         score -= 2
         findings.append(_finding("NO_OBJECTION_SIGNAL", "A szöveg nem jelöl kezelt kifogást."))
+    marketing_scores = (
+        request.editorial_review.hook_strength_score,
+        request.editorial_review.offer_clarity_score,
+        request.editorial_review.specificity_score,
+        request.editorial_review.persuasion_score,
+        request.editorial_review.brand_voice_score,
+        request.editorial_review.conversion_path_score,
+    )
+    score = min(score, min(marketing_scores))
+    if min(marketing_scores) < 9:
+        score = 0
+        findings.append(
+            _finding(
+                "MARKETING_EXPERT_THRESHOLD_FAILED",
+                "Az online marketing-szövegírói minimum minden dimenzióban 9/10.",
+                Severity.CRITICAL,
+            )
+        )
+    if request.editorial_review.unsupported_claims:
+        score = 0
+        findings.append(
+            _finding(
+                "MARKETING_EXPERT_UNSUPPORTED_CLAIMS",
+                "A szakértői jegyzőkönyv alá nem támasztott állítást jelöl.",
+                Severity.CRITICAL,
+            )
+        )
     dimensions.append(_dimension("Direct Response Strength", score, findings))
 
     findings = []
@@ -343,8 +576,7 @@ def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
             )
         )
     promotion_required = (
-        brief.monthly_promotion_copy_required
-        or sources.monthly_promotion_copy_required
+        brief.monthly_promotion_copy_required or sources.monthly_promotion_copy_required
     )
     if brief.monthly_promotion_copy_required != sources.monthly_promotion_copy_required:
         integrity.append(
@@ -355,9 +587,7 @@ def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
             )
         )
     if promotion_required:
-        expected_promotion_id = (
-            sources.monthly_promotion_id or brief.monthly_promotion_id
-        )
+        expected_promotion_id = sources.monthly_promotion_id or brief.monthly_promotion_id
         if (
             not expected_promotion_id
             or brief.monthly_promotion_id != expected_promotion_id
@@ -379,9 +609,8 @@ def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
                     Severity.CRITICAL,
                 )
             )
-        elif (
-            asset.monthly_promotion_copy_position != 0
-            or not normalize(asset.body).startswith(normalize(promotion_copy))
+        elif asset.monthly_promotion_copy_position != 0 or not normalize(asset.body).startswith(
+            normalize(promotion_copy)
         ):
             integrity.append(
                 _finding(
@@ -504,5 +733,39 @@ def evaluate_content(request: ContentEvaluationRequest) -> EvaluationResult:
             "brand_id": brief.brand_id,
             "editorial_model_version": request.editorial_review.model_version,
             "editorial_prompt_version": request.editorial_review.prompt_version,
+            "expert_review_id": request.editorial_review.reviewer_run_id,
+            "expert_reviewer_identity": request.editorial_review.reviewer_identity,
+            "expert_reviewer_type": request.editorial_review.reviewer_type,
+            "expert_review_content_sha256": request.editorial_review.reviewed_content_sha256,
+            "expert_language_approved": (
+                request.editorial_review.decision == Decision.APPROVED
+                and next(
+                    dimension for dimension in dimensions if dimension.name == "Natural Hungarian"
+                ).passed
+                and min(
+                    request.editorial_review.idiomatic_hungarian_score,
+                    request.editorial_review.grammar_score,
+                    request.editorial_review.semantic_clarity_score,
+                    request.editorial_review.terminology_score,
+                )
+                >= 9
+            ),
+            "expert_marketing_approved": (
+                request.editorial_review.decision == Decision.APPROVED
+                and next(
+                    dimension
+                    for dimension in dimensions
+                    if dimension.name == "Direct Response Strength"
+                ).passed
+                and min(
+                    request.editorial_review.hook_strength_score,
+                    request.editorial_review.offer_clarity_score,
+                    request.editorial_review.specificity_score,
+                    request.editorial_review.persuasion_score,
+                    request.editorial_review.brand_voice_score,
+                    request.editorial_review.conversion_path_score,
+                )
+                >= 9
+            ),
         },
     )

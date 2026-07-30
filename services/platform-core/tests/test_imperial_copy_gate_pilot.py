@@ -59,7 +59,7 @@ def test_complete_imperial_pilot_has_distinct_publishable_assets():
                 brief=brief,
                 sources=canonical_sources(),
                 asset=asset,
-                editorial_review=editorial_review(),
+                editorial_review=editorial_review(asset),
                 evaluated_on=date(2026, 7, 26),
             )
         )

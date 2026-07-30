@@ -39,19 +39,43 @@
     "imperial": {
       "brand_id": "imperial",
       "monthly_policy": "ALWAYS_REQUIRED",
-      "status": "PREPARATION_ONLY",
+      "status": "ACTIVE",
       "promotion_id": "PROMO-IMP-2026-08",
-      "campaign_message": "Augusztusban nemcsak házat kapsz. Megérkezik vele a kert legszebb része is.",
-      "secondary_message": "Válassz akár 6% kedvezményt, vagy kérd ajándékba a 12 m²-es bioklimatikus pergolát.",
-      "suggested_cta": "Kérem az augusztusi Imperial ajánlatot",
+      "campaign_message": "Fix ár. Fix minőség. Fix határidő. Augusztusban modellenként akár 6% kedvezménnyel.",
+      "secondary_message": "Válassz kedvezményt, vagy kérd a méretkategóriádhoz jóváhagyott ajándékcsomagot.",
+      "suggested_cta": "Megnézem a típusház alaprajzát és aktuális árát",
+      "creative_policy": {
+        "voice": "BOLD_CONCRETE_MARKET_LEADER",
+        "required_offer_style": "Erős, konkrét, igazolt vállalás; kerülni kell a finomkodó vagy általános életérzés-szlogent.",
+        "approved_proof_assets": [
+          "MagyarBrands Kiváló Üzleti Márka 2024 hivatalos logó",
+          "MagyarBrands Kiváló Üzleti Márka 2025 hivatalos logó",
+          "AAA Építőipari Panaszmentességi Igazolás hivatalos logó"
+        ],
+        "proof_caption_policy": {
+          "preferred": "LOGOS_ONLY",
+          "allowed_full_caption": "Kétszeres MagyarBrands-díjazott márka; AAA kategóriás panaszmentességi igazolás.",
+          "forbidden_shorthand": "Kétszeres MagyarBrands · AAA"
+        },
+        "approved_evergreen_claims": [
+          "Fix ár. Fix minőség. Fix határidő.",
+          "1988 óta építünk.",
+          "Több mint 300 megépített családi ház az elmúlt 10 évben.",
+          "Készházak esetén akár 4 hónap alatt kulcsrakész."
+        ],
+        "blocked_without_new_canonical_evidence": [
+          "Évente 120–150 elkészült ház.",
+          "Konkrét naptári hónapra szóló átadási garancia."
+        ]
+      },
       "promotion_copy_placement": "FIRST_BLOCK",
       "promotion_on_creative": "OPTIONAL",
       "valid_from": "2026-08-01",
       "valid_until": "2026-08-31",
       "publication_approvals": {
-        "per_model_financial": false,
-        "eligibility_terms": false,
-        "written_owner_activation": false
+        "per_model_financial": true,
+        "eligibility_terms": true,
+        "written_owner_activation": true
       },
       "models": [
         {"name": "Kugli", "area_m2": "62", "discount_percent": 6},
@@ -76,27 +100,44 @@
           "internal_net_cost_cap_huf": 250000
         }
       },
-      "blocking_reasons": [
-        "Az augusztus 1-jei frissített nettó alapár még nincs jóváhagyva.",
-        "Minden modell külön pénzügyi ellenőrzést igényel.",
-        "A jogosultsági feltétel még nincs véglegesítve.",
-        "Élesítéshez külön írásos vezetői jóváhagyás szükséges."
-      ]
+      "blocking_reasons": []
     },
     "danish-fabrik": {
       "brand_id": "danish-fabrik",
       "monthly_policy": "SOURCE_DRIVEN",
-      "status": "PREPARATION_ONLY",
+      "status": "ACTIVE",
       "promotion_id": "PROMO-DANISH-2026-08",
-      "campaign_message": "Skandináv nyár. Gyors otthon. Több idő élni.",
-      "secondary_message": "Válassz kedvezményt, vagy kérd a Nordic Wellness ajándékcsomagot.",
-      "suggested_cta": "Megnézem a skandináv augusztusi ajánlatot",
+      "campaign_message": "Akár 120 nap alatt, tervezéssel együtt. Augusztusban modellenként akár 6% kedvezménnyel.",
+      "secondary_message": "Válassz kedvezményt, vagy kérd a méretkategóriádhoz jóváhagyott Nordic ajándékcsomagot.",
+      "suggested_cta": "Megnézem a típusház alaprajzát és aktuális árát",
+      "creative_policy": {
+        "voice": "CLEAR_SCANDINAVIAN_ENGINEERING",
+        "required_offer_style": "A gyorsaságot mindig annak ellenőrzött műszaki vagy folyamatbeli okával együtt kell megfogalmazni.",
+        "approved_evergreen_claims": [
+          "Akár 90 nap alatt; tervezéssel együtt akár 120 nap alatt.",
+          "Fix ár, fix határidő, tervezés az árban.",
+          "A ház 90%-a üzemi körülmények között készül."
+        ],
+        "preferred_marketing_wording": [
+          "Fix ár, fix határidő, tervezés az árban.",
+          "Augusztusban 5% kedvezmény vagy Nordic Wellness csomag a Genfhez."
+        ],
+        "forbidden_marketing_wording": [
+          "Díjmentes tervezés.",
+          "Tervezési díj nélkül."
+        ],
+        "forbidden_unexplained_slogans": [
+          "Több idő élni.",
+          "A gyorsaság oka nem egy ködös életérzés.",
+          "A vállalás fix árhoz, fix határidőhöz és díjmentes tervezéshez kapcsolódik."
+        ]
+      },
       "valid_from": "2026-08-01",
       "valid_until": "2026-08-31",
       "publication_approvals": {
-        "per_model_financial": false,
-        "eligibility_terms": false,
-        "written_owner_activation": false
+        "per_model_financial": true,
+        "eligibility_terms": true,
+        "written_owner_activation": true
       },
       "models": [
         {"name": "Lyon", "area_m2": "58", "discount_percent": 6},
@@ -127,12 +168,7 @@
           "internal_net_cost_cap_huf": 350000
         }
       },
-      "blocking_reasons": [
-        "Az augusztus 1-jei frissített nettó alapár még nincs jóváhagyva.",
-        "Minden modell külön pénzügyi ellenőrzést igényel.",
-        "A jogosultsági feltétel még nincs véglegesítve.",
-        "Élesítéshez külön írásos vezetői jóváhagyás szükséges."
-      ]
+      "blocking_reasons": []
     },
     "bautica": {
       "brand_id": "bautica",
@@ -185,7 +221,7 @@
     "prefab": {
       "brand_id": "prefab",
       "monthly_policy": "SOURCE_DRIVEN",
-      "status": "PREPARATION_ONLY",
+      "status": "ACTIVE",
       "promotion_id": "PROMO-PREFAB-2026-08",
       "campaign_message": "Szilárd alapok. Kész kertkapcsolat.",
       "secondary_message": "Válassz kedvezményt, vagy kérd ajándékba a házhoz illő kész térkövezési csomagot.",
@@ -193,9 +229,9 @@
       "valid_from": "2026-08-01",
       "valid_until": "2026-08-31",
       "publication_approvals": {
-        "per_model_financial": false,
-        "eligibility_terms": false,
-        "written_owner_activation": false
+        "per_model_financial": true,
+        "eligibility_terms": true,
+        "written_owner_activation": true
       },
       "models": [
         {"name": "Pannonház", "area_m2": "70,20", "discount_percent": 6},
@@ -222,12 +258,7 @@
         "communicated_value_huf_max": 2500000,
         "communicated_value_requires_market_evidence": true
       },
-      "blocking_reasons": [
-        "Az augusztus 1-jei frissített nettó alapár még nincs jóváhagyva.",
-        "Minden modell külön pénzügyi ellenőrzést igényel.",
-        "A jogosultsági feltétel még nincs véglegesítve.",
-        "Élesítéshez külön írásos vezetői jóváhagyás szükséges."
-      ]
+      "blocking_reasons": []
     },
     "timberhaus": {
       "brand_id": "timberhaus",

@@ -53,7 +53,7 @@ def promotional_request(*, position: int = 0, publication_allowed: bool = False)
         brief=brief,
         sources=sources,
         asset=asset,
-        editorial_review=editorial_review(),
+        editorial_review=editorial_review(asset),
         evaluated_on=date(2026, 8, 1),
     )
 
@@ -72,12 +72,19 @@ def test_august_registry_matches_the_gmail_directive_and_brand_policies():
         if record.status == PromotionStatus.PREPARATION_ONLY
     }
     assert prepared == {
-        "imperial",
-        "danish-fabrik",
         "bautica",
-        "prefab",
         "timberhaus",
     }
+    approved = {
+        brand_id
+        for brand_id, record in registry.brands.items()
+        if record.status == PromotionStatus.ACTIVE
+    }
+    assert approved == {"imperial", "danish-fabrik", "prefab"}
+    assert all(
+        registry.brands[brand_id].publication_allowed
+        for brand_id in approved
+    )
     assert len(registry.brands["imperial"].models) == 10
     assert len(registry.brands["danish-fabrik"].models) == 10
     assert len(registry.brands["bautica"].models) == 10
@@ -109,12 +116,29 @@ def test_monthly_policy_distinguishes_no_promotion_never_and_missing_required():
 
 
 def test_preparation_requires_leading_copy_but_keeps_creative_badge_optional():
-    requirement = resolve_monthly_promotion("imperial", on_date=date(2026, 7, 26))
+    requirement = resolve_monthly_promotion("bautica", on_date=date(2026, 7, 26))
 
     assert requirement.copy_required is True
     assert requirement.copy_position == "FIRST_BLOCK"
     assert requirement.promotion_on_creative_optional is True
     assert requirement.publication_allowed is False
+
+
+def test_approved_promotions_are_publishable_only_inside_the_august_window():
+    for brand_id in ("imperial", "danish-fabrik", "prefab"):
+        before_window = resolve_monthly_promotion(
+            brand_id, on_date=date(2026, 7, 27)
+        )
+        inside_window = resolve_monthly_promotion(
+            brand_id, on_date=date(2026, 8, 1)
+        )
+
+        assert before_window.status == PromotionStatus.ACTIVE
+        assert before_window.copy_required is False
+        assert before_window.publication_allowed is False
+        assert inside_window.copy_required is True
+        assert inside_window.publication_allowed is True
+        assert inside_window.blocking_reasons == []
 
 
 def test_copy_gate_accepts_first_block_placement_when_approvals_are_active():

@@ -267,9 +267,7 @@ class AuditLog(Base):
 
 class CopySourceRecord(Base):
     __tablename__ = "cq_source_records"
-    __table_args__ = (
-        UniqueConstraint("source_key", "version", name="uq_cq_source_key_version"),
-    )
+    __table_args__ = (UniqueConstraint("source_key", "version", name="uq_cq_source_key_version"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     source_key: Mapped[str] = mapped_column(String(160), index=True)
     source_type: Mapped[str] = mapped_column(String(80), index=True)
@@ -308,15 +306,25 @@ class CopyBriefRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class CampaignStrategyReviewRecord(Base):
+    __tablename__ = "cq_strategy_reviews"
+    review_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    copy_brief_id: Mapped[str] = mapped_column(ForeignKey("cq_copy_briefs.copy_brief_id", ondelete="CASCADE"), unique=True, index=True)
+    brief_hash: Mapped[str] = mapped_column(String(64), index=True)
+    strategist_run_id: Mapped[str] = mapped_column(String(120))
+    reviewer_run_id: Mapped[str] = mapped_column(String(120), unique=True)
+    reviewer_identity: Mapped[str] = mapped_column(String(160))
+    decision: Mapped[str] = mapped_column(String(40), index=True)
+    review_json: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ContentAssetRecord(Base):
     __tablename__ = "cq_content_assets"
     __table_args__ = (
         CheckConstraint(
-            "state <> 'PUBLISHED' OR "
-            "(gate_1_approved = true AND four_gate_approved = true "
-            "AND (source_prevalidated = true OR "
-            "(editorial_approved = true AND owner_approved = true)) "
-            "AND publication_proof_id IS NOT NULL AND published_at IS NOT NULL)",
+            "state NOT IN ('PUBLISHED', 'LIVE_QA', 'QUARANTINED') OR (gate_1_approved = true AND expert_language_approved = true AND expert_marketing_approved = true AND copywriter_approved = true AND four_gate_approved = true AND creative_director_approved = true AND assembly_approved = true AND release_approved = true AND active_bundle_id IS NOT NULL AND (source_prevalidated = true OR (editorial_approved = true AND owner_approved = true)) AND publication_proof_id IS NOT NULL AND published_at IS NOT NULL)",
             name="ck_cq_published_requires_all_approvals",
         ),
     )
@@ -333,10 +341,18 @@ class ContentAssetRecord(Base):
     content_json: Mapped[str] = mapped_column(Text)
     generation_trace_json: Mapped[str] = mapped_column(Text, default="{}")
     gate_1_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    expert_language_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    expert_marketing_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    copywriter_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     four_gate_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     editorial_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     owner_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     source_prevalidated: Mapped[bool] = mapped_column(Boolean, default=False)
+    creative_director_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    assembly_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    release_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    live_review_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    active_bundle_id: Mapped[str | None] = mapped_column(String(120), index=True)
     latest_run_id: Mapped[str | None] = mapped_column(String(120), index=True)
     publication_proof_id: Mapped[str | None] = mapped_column(String(120), unique=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -358,6 +374,8 @@ class CopyReviewRun(Base):
     total_score: Mapped[int] = mapped_column(Integer, default=0)
     final_decision: Mapped[str] = mapped_column(String(40), index=True)
     scorecard_json: Mapped[str] = mapped_column(Text)
+    expert_review_json: Mapped[str] = mapped_column(Text)
+    expert_review_hash: Mapped[str] = mapped_column(String(64), index=True)
     repair_brief_json: Mapped[str] = mapped_column(Text, default="[]")
     created_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -365,9 +383,7 @@ class CopyReviewRun(Base):
 
 class ContentGateDecision(Base):
     __tablename__ = "cq_gate_decisions"
-    __table_args__ = (
-        UniqueConstraint("run_id", "gate_id", name="uq_cq_run_gate"),
-    )
+    __table_args__ = (UniqueConstraint("run_id", "gate_id", name="uq_cq_run_gate"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("cq_review_runs.run_id", ondelete="CASCADE"), index=True)
     asset_id: Mapped[str] = mapped_column(String(120), index=True)
@@ -383,9 +399,7 @@ class ContentGateDecision(Base):
 
 class ContentApprovalRecord(Base):
     __tablename__ = "cq_approvals"
-    __table_args__ = (
-        UniqueConstraint("asset_id", "content_version", "approval_type", name="uq_cq_asset_version_approval"),
-    )
+    __table_args__ = (UniqueConstraint("asset_id", "content_version", "approval_type", name="uq_cq_asset_version_approval"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     asset_id: Mapped[str] = mapped_column(String(120), index=True)
     content_version: Mapped[int] = mapped_column(Integer)
@@ -395,6 +409,61 @@ class ContentApprovalRecord(Base):
     note: Mapped[str | None] = mapped_column(Text)
     content_hash: Mapped[str] = mapped_column(String(64))
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CreativeProductionRunRecord(Base):
+    __tablename__ = "cq_creative_runs"
+    __table_args__ = (UniqueConstraint("asset_id", "sequence_number", name="uq_cq_creative_asset_sequence"),)
+    generation_run_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    content_version: Mapped[int] = mapped_column(Integer)
+    sequence_number: Mapped[int] = mapped_column(Integer)
+    producer_identity: Mapped[str] = mapped_column(String(160))
+    visual_direction_id: Mapped[str] = mapped_column(String(160))
+    platform: Mapped[str] = mapped_column(String(80))
+    width_px: Mapped[int] = mapped_column(Integer)
+    height_px: Mapped[int] = mapped_column(Integer)
+    output_uri: Mapped[str] = mapped_column(String(2000))
+    output_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    generation_prompt_hash: Mapped[str] = mapped_column(String(64))
+    contains_text: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(40), default="DIRECTOR_QA", index=True)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ContentWorkflowReviewRecord(Base):
+    __tablename__ = "cq_workflow_reviews"
+    __table_args__ = (UniqueConstraint("asset_id", "content_version", "stage", "reviewer_run_id", name="uq_cq_workflow_stage_run"),)
+    review_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    content_version: Mapped[int] = mapped_column(Integer)
+    stage: Mapped[str] = mapped_column(String(80), index=True)
+    reviewer_role: Mapped[str] = mapped_column(String(80))
+    reviewer_identity: Mapped[str] = mapped_column(String(160))
+    reviewer_run_id: Mapped[str | None] = mapped_column(String(120))
+    decision: Mapped[str] = mapped_column(String(40), index=True)
+    artifact_hash: Mapped[str] = mapped_column(String(64), index=True)
+    review_json: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PublicationBundleRecord(Base):
+    __tablename__ = "cq_publication_bundles"
+    bundle_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    content_version: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    visual_generation_run_id: Mapped[str] = mapped_column(ForeignKey("cq_creative_runs.generation_run_id"), index=True)
+    assembly_run_id: Mapped[str] = mapped_column(String(120), unique=True)
+    assembler_identity: Mapped[str] = mapped_column(String(160))
+    bundle_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    exports_json: Mapped[str] = mapped_column(Text)
+    pairing_rationale: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(40), default="RELEASE_QA", index=True)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class GoldenCopySample(Base):
@@ -510,9 +579,7 @@ class StagedEnterpriseRecord(Base):
 
 class EnterpriseCanonicalRecord(Base):
     __tablename__ = "ic_canonical_records"
-    __table_args__ = (
-        UniqueConstraint("domain", "entity_type", "external_key", name="uq_ic_canonical_business_key"),
-    )
+    __table_args__ = (UniqueConstraint("domain", "entity_type", "external_key", name="uq_ic_canonical_business_key"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     record_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     domain: Mapped[str] = mapped_column(String(100), index=True)
@@ -897,7 +964,6 @@ class MaterialUsageControl(Base):
     approved_by: Mapped[str | None] = mapped_column(String(255))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
-
 
 
 class PartnerFieldAccess(Base):
