@@ -22,7 +22,7 @@ jobs:
   platform:
     name: Validate module routes, fixtures and links
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     env:
       COMPOSE_PROJECT_NAME: intelligence-ci-${{ github.run_id }}
       HTTP_PORT: "8080"
@@ -31,6 +31,28 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Generate ephemeral platform database secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p secrets
+          openssl rand -hex 32 > secrets/platform_db_password.txt
+          openssl rand -hex 32 > secrets/platform_expert_review_secret.txt
+          openssl rand -hex 32 > secrets/platform_marketing_review_secret.txt
+          openssl rand -hex 32 > secrets/platform_copywriter_review_secret.txt
+          openssl rand -hex 32 > secrets/platform_visual_review_secret.txt
+          chmod 0400 secrets/platform_db_password.txt
+          chmod 0400 secrets/platform_expert_review_secret.txt
+          chmod 0400 secrets/platform_marketing_review_secret.txt
+          chmod 0400 secrets/platform_copywriter_review_secret.txt
+          chmod 0400 secrets/platform_visual_review_secret.txt
+          sudo chown 10001:10001 \
+            secrets/platform_db_password.txt \
+            secrets/platform_expert_review_secret.txt \
+            secrets/platform_marketing_review_secret.txt \
+            secrets/platform_copywriter_review_secret.txt \
+            secrets/platform_visual_review_secret.txt
 
       - name: Validate platform model and cross-module links
         run: python3 scripts/validate-platform.py
@@ -45,7 +67,7 @@ jobs:
         run: docker compose config --quiet
 
       - name: Start isolated staging stack
-        run: docker compose up --detach --wait --wait-timeout 60
+        run: docker compose up --detach --wait --wait-timeout 180
 
       - name: Smoke test every module route
         shell: bash

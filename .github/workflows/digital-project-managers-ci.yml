@@ -43,13 +43,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p secrets
+          openssl rand -hex 32 > secrets/platform_db_password.txt
           openssl rand -hex 32 > secrets/dpm_db_password.txt
           openssl rand -hex 64 > secrets/dpm_auth_hs256_secret.txt
           # Local Compose implements file-backed secrets as bind mounts. Make
           # these ephemeral runner-only files owned and readable by the
           # non-root app UID used in the runtime image.
-          chmod 0400 secrets/dpm_db_password.txt secrets/dpm_auth_hs256_secret.txt
-          sudo chown 10001:10001 secrets/dpm_db_password.txt secrets/dpm_auth_hs256_secret.txt
+          chmod 0400 secrets/platform_db_password.txt secrets/dpm_db_password.txt secrets/dpm_auth_hs256_secret.txt
+          sudo chown 10001:10001 secrets/platform_db_password.txt secrets/dpm_db_password.txt secrets/dpm_auth_hs256_secret.txt
 
       - name: Validate Compose configuration
         run: docker compose --profile digital-pm --profile digital-pm-test config --quiet

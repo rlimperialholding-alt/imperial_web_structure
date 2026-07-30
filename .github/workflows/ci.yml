@@ -31,6 +31,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Generate ephemeral platform database secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p secrets
+          openssl rand -hex 32 > secrets/platform_db_password.txt
+          chmod 0400 secrets/platform_db_password.txt
+          sudo chown 10001:10001 secrets/platform_db_password.txt
+
       - name: Validate repository structure
         run: sh scripts/validate-structure.sh
 
@@ -38,7 +47,7 @@ jobs:
         run: docker compose config --quiet
 
       - name: Start staging stack
-        run: docker compose up --detach --wait --wait-timeout 60
+        run: docker compose up --detach --wait --wait-timeout 180
 
       - name: Smoke test portal and sites
         shell: bash

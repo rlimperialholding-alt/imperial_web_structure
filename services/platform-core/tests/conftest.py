@@ -1,18 +1,42 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import tempfile
 
-os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/iip_control_center_tests.db")
+test_temp_root = tempfile.gettempdir().replace("\\", "/")
+os.environ.setdefault(
+    "DATABASE_URL",
+    f"sqlite:///{test_temp_root}/iip_control_center_tests_{os.getpid()}.db",
+)
 os.environ.setdefault("SESSION_SECRET", "test-session-secret-which-is-long-enough")
 os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault(
+    "CONTENT_EXPERT_REVIEW_SECRET",
+    "test-only-expert-review-attestation-secret-which-is-long-enough",
+)
+os.environ.setdefault("CONTENT_EXPERT_REVIEW_KEY_ID", "test-expert-review-key-v1")
+os.environ.setdefault(
+    "CONTENT_MARKETING_REVIEW_SECRET",
+    "test-only-marketing-review-attestation-secret-which-is-long-enough",
+)
+os.environ.setdefault("CONTENT_MARKETING_REVIEW_KEY_ID", "test-marketing-review-key-v1")
+os.environ.setdefault(
+    "CONTENT_COPYWRITER_REVIEW_SECRET",
+    "test-only-copywriter-review-attestation-secret-which-is-long-enough",
+)
+os.environ.setdefault("CONTENT_COPYWRITER_REVIEW_KEY_ID", "test-copywriter-review-key-v1")
+os.environ.setdefault(
+    "CONTENT_VISUAL_REVIEW_SECRET",
+    "test-only-visual-review-attestation-secret-which-is-long-enough",
+)
+os.environ.setdefault("CONTENT_VISUAL_REVIEW_KEY_ID", "test-visual-review-key-v1")
 
-import pytest
-from fastapi.testclient import TestClient
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
-from app.database import Base, SessionLocal, engine
-from app.main import app
-from app.seed import seed_database
+from app.database import Base, SessionLocal, engine  # noqa: E402
+from app.main import app  # noqa: E402
+from app.seed import seed_database  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +62,10 @@ def client():
 
 @pytest.fixture
 def logged_in_client(client):
-    response = client.post("/login", data={"email": "owner@imperial.local", "password": "Imperial2026!"}, follow_redirects=False)
+    response = client.post(
+        "/login",
+        data={"email": "owner@imperial.local", "password": "Imperial2026!"},
+        follow_redirects=False,
+    )
     assert response.status_code == 303
     return client
