@@ -28,7 +28,7 @@ write_secret_file() {
   if [[ ! -s "$destination" ]]; then
     random_hex >"$destination"
   fi
-  chown "$(id -u):$container_secret_gid" "$destination"
+  sudo chown "$(id -u):$container_secret_gid" "$destination"
   chmod 640 "$destination"
 }
 
