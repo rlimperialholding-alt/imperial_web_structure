@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Imperial Intelligence isolated restore test
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 Europe/Budapest
+Persistent=true
+RandomizedDelaySec=30m
+Unit=imperial-intelligence-restore-test.service
+
+[Install]
+WantedBy=timers.target

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.parse
 import urllib.request
+from http.cookiejar import CookieJar
 from pathlib import Path
 
 
@@ -13,6 +15,31 @@ PLATFORM = json.loads(
         encoding="utf-8"
     )
 )
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+
+
+def login() -> None:
+    data = urllib.parse.urlencode(
+        {
+            "email": os.environ.get(
+                "PLATFORM_SMOKE_EMAIL",
+                "platform-admin@imperial.local",
+            ),
+            "password": os.environ.get(
+                "PLATFORM_SMOKE_PASSWORD",
+                "Imperial2026!",
+            ),
+            "return_to": "/",
+        }
+    ).encode()
+    request = urllib.request.Request(
+        f"{BASE_URL}/login",
+        data=data,
+        method="POST",
+    )
+    with OPENER.open(request, timeout=30) as response:
+        if response.status != 200:
+            raise RuntimeError(f"Platform login returned HTTP {response.status}")
 
 
 def request_json(path: str, *, method: str = "GET", payload: dict | None = None) -> dict:
@@ -27,7 +54,7 @@ def request_json(path: str, *, method: str = "GET", payload: dict | None = None)
         headers=headers,
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with OPENER.open(request, timeout=30) as response:
         if response.status != 200:
             raise RuntimeError(f"{path} returned HTTP {response.status}")
         return json.loads(response.read().decode())
@@ -38,9 +65,10 @@ if PLATFORM["meta"].get("synthetic") is not True:
 if PLATFORM["meta"].get("containsCustomerData") is not False:
     raise RuntimeError("The remote smoke dataset must not contain customer data")
 
+login()
 routes = [module["route"] for module in PLATFORM["modules"]]
 for route in routes:
-    with urllib.request.urlopen(f"{BASE_URL}{route}", timeout=20) as response:
+    with OPENER.open(f"{BASE_URL}{route}", timeout=20) as response:
         if response.status != 200:
             raise RuntimeError(f"{route} returned HTTP {response.status}")
 

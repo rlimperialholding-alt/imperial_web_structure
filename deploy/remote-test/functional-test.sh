@@ -11,6 +11,7 @@ cd "$repo_root"
 python3 scripts/validate-platform.py
 bash scripts/validate-structure.sh
 python3 deploy/remote-test/route-smoke.py
+python3 deploy/remote-test/all-modules-smoke.py
 
 integrated_compose exec -T \
   -e HUB_URL=http://hub-api:8000 \

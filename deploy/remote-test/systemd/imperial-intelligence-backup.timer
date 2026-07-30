@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Imperial Intelligence application backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Europe/Budapest
+Persistent=true
+RandomizedDelaySec=15m
+Unit=imperial-intelligence-backup.service
+
+[Install]
+WantedBy=timers.target

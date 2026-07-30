@@ -1,8 +1,13 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, getDocumentBucket } from "@/db";
 import { projectDocuments, projectDocumentVersions, projectEvents } from "@/db/schema";
 import { jsonError } from "@/lib/crm-auth";
-import { sha256Hex, safeFileName, validateDocumentFile } from "@/lib/document-upload";
+import {
+  assertProjectDocumentQuota,
+  sha256Hex,
+  safeFileName,
+  validateDocumentFile,
+} from "@/lib/document-upload";
 import { requireProjectAccess } from "@/lib/myimperial-auth";
 import { notificationAudience, queueProjectNotification } from "@/lib/notification-queue";
 
@@ -50,6 +55,17 @@ export async function POST(request: Request) {
     const data = await validateDocumentFile(file);
     const sha256 = await sha256Hex(data);
     const db = await getDb();
+    const [storageUsage] = await db
+      .select({
+        usedBytes: sql<number>`coalesce(sum(${projectDocumentVersions.size}), 0)`,
+      })
+      .from(projectDocumentVersions)
+      .innerJoin(
+        projectDocuments,
+        eq(projectDocuments.id, projectDocumentVersions.documentId),
+      )
+      .where(eq(projectDocuments.projectId, projectId));
+    assertProjectDocumentQuota(Number(storageUsage?.usedBytes || 0), file.size);
     const now = new Date().toISOString();
     let document: typeof projectDocuments.$inferSelect | undefined;
     if (requestedDocumentId) {

@@ -361,7 +361,7 @@ def main():
         "data-entity-type",
         "/data/platform.json",
         "/data/system.json",
-        'id="role-switcher"',
+        "/core/api/auth/session",
         "runtimeStorageKey",
         "HOUSE_PLAN_DRAFTED",
         "HOUSE_PLAN_APPROVED",

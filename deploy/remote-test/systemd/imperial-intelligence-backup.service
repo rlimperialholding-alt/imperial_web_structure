@@ -1,0 +1,15 @@
+[Unit]
+Description=Imperial Intelligence application backup
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=imperialadmin
+Group=imperialadmin
+WorkingDirectory=/opt/imperial-intelligence/app
+ExecStart=/opt/imperial-intelligence/app/deploy/remote-test/backup.sh
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

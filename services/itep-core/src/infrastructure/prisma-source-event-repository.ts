@@ -16,6 +16,21 @@ export class PrismaSourceEventRepository
     return row ? this.toDomain(row) : null;
   }
 
+  async findByExternalIdentity(input: {
+    organizationId: string;
+    source: SourceEvent["source"];
+    externalId: string;
+  }): Promise<SourceEvent | null> {
+    const row = await this.prisma.sourceEvent.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        source: input.source,
+        externalId: input.externalId,
+      },
+    });
+    return row ? this.toDomain(row) : null;
+  }
+
   async create(event: SourceEvent): Promise<void> {
     await this.prisma.sourceEvent.create({
       data: {

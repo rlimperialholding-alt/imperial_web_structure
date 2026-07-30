@@ -12,6 +12,7 @@ tmp/
 .test-tmp/
 coverage/
 htmlcov/
+outputs/
 .coverage
 .pytest_cache/
 .mypy_cache/
@@ -21,6 +22,8 @@ __pycache__/
 *.egg-info/
 .venv/
 services/platform-core/data/contract_packages/
+services/platform-core/data/platform_demo_runtime.json
+services/platform-core/data/*.db
 
 secrets/*
 !secrets/.gitkeep

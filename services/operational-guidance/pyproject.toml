@@ -20,6 +20,7 @@ dependencies = [
   "google-api-python-client>=2.160,<3",
   "google-analytics-data>=0.18,<1",
   "celery[redis]>=5.4,<6",
+  "msgpack>=1.2.1,<2",
   "structlog>=24.4,<26",
   "python-multipart>=0.0.20,<1",
   "orjson>=3.10,<4",

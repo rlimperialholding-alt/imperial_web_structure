@@ -33,6 +33,7 @@ services:
       CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-test}
       CRM_ADMIN_EMAIL: ${CRM_ADMIN_EMAIL:-developer@terminal.local}
       CRM_MIGRATION_TOKEN: ${CRM_MIGRATION_TOKEN:?required}
+      CRM_PROJECT_DOCUMENT_QUOTA_BYTES: ${CRM_PROJECT_DOCUMENT_QUOTA_BYTES:-5368709120}
       ITEP_CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:?required}
       ITEP_BASE_URL: http://itep-api:3000
     restart: unless-stopped

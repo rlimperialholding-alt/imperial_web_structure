@@ -8,7 +8,7 @@ export interface BackupPolicy {
 export const defaultBackupPolicy: BackupPolicy = {
   frequencyHours: 6,
   retentionDays: 35,
-  minimumVerifiedCopies: 2,
+  minimumVerifiedCopies: 3,
   restoreTestIntervalDays: 30,
 };
 
@@ -19,8 +19,8 @@ export function validateBackupPolicy(policy: BackupPolicy): void {
   if (policy.retentionDays < 7) {
     throw new Error("Backup retention must be at least 7 days");
   }
-  if (policy.minimumVerifiedCopies < 2) {
-    throw new Error("At least two verified backup copies are required");
+  if (policy.minimumVerifiedCopies < 3) {
+    throw new Error("At least three verified backup copies are required");
   }
   if (policy.restoreTestIntervalDays > 30) {
     throw new Error("Restore testing must happen at least monthly");

@@ -64,7 +64,8 @@
     selectedSite: "imperial",
     previewDevice: "desktop",
     drawerReturnFocus: null,
-    currentRoleId: localStorage.getItem("ii-current-role") || "platform-admin",
+    currentRoleId: null,
+    identity: null,
     runtime: null,
     backend: null,
     backendStatus: "connecting"
@@ -464,14 +465,10 @@
               <span class="ii-skip-link">Keresés az aktuális modulban</span>
               <input id="global-search" type="search" placeholder="Keresés az aktuális modulban…" autocomplete="off">
             </label>
-            <div class="ii-user ii-role-switcher">
-              <label>
-                <span class="ii-visually-hidden">Aktív tesztszerepkör</span>
-                <select id="role-switcher" aria-label="Aktív tesztszerepkör">
-                  ${state.system.roles.map((role) => `<option value="${escapeHtml(role.id)}" ${role.id === state.currentRoleId ? "selected" : ""}>${escapeHtml(role.label)}</option>`).join("")}
-                </select>
-              </label>
+            <div class="ii-user">
+              <span><strong>${escapeHtml(state.identity.user.name)}</strong><small>${escapeHtml(currentRole().label)}</small></span>
               <span class="ii-user-avatar" id="role-avatar" aria-hidden="true">${escapeHtml(currentRole().initials)}</span>
+              <form method="post" action="/logout"><button class="ii-button is-secondary is-small" type="submit">Kilépés</button></form>
             </div>
           </header>
           <div class="ii-content">
@@ -783,12 +780,19 @@
           ${badge(live.status)}
         </header>
         <div class="ii-live-meta">
-          <span><strong>ProjectID</strong> PRJ-DEMO-001</span>
+          <span><strong>Felhasználó</strong> ${escapeHtml(state.identity.user.email)}</span>
           <span><strong>Adat</strong> kizárólag szintetikus</span>
           <span><strong>Külső írás</strong> tiltva</span>
         </div>
         ${renderSystemRecords((live.records || []).map((record) => ({ ...record, __type: "systemRecord" })), "Backend demo rekord")}
-        <div class="ii-live-actions">
+        <form class="ii-live-actions ii-panel" data-module-operation-form="${escapeHtml(moduleId)}">
+          <label>ProjectID
+            <input name="project_id" value="PRJ-DEMO-001" minlength="3" maxlength="80" required>
+          </label>
+          <label>Megjegyzés / ellenőrzési cél
+            <textarea name="notes" rows="2" maxlength="1000" placeholder="A folyamat indításának oka vagy az ellenőrzés szempontja"></textarea>
+          </label>
+          <div>
           ${(live.actions || []).map((action) => `
             <button class="ii-button is-small" type="button"
               data-backend-action="${escapeHtml(action.id)}"
@@ -796,7 +800,8 @@
               ${escapeHtml(action.label)}
             </button>
           `).join("")}
-        </div>
+          </div>
+        </form>
         <div class="ii-section-head"><h3>Legutóbbi producer–consumer események</h3><span class="ii-badge">${events.length}</span></div>
         <div class="ii-runtime-list">
           ${events.map((event) => `
@@ -813,9 +818,10 @@
   }
 
   function renderBackendJourneys() {
-    if (!state.backend?.journeys) return "";
+    if (!state.backend?.journeys?.length) return "";
+    const canReset = state.currentRoleId === "platform-admin";
     return `
-      <div class="ii-section-head"><h2>Keresztmodul E2E tesztutak</h2><button class="ii-button is-secondary is-small" type="button" data-backend-reset>Demo visszaállítása</button></div>
+      <div class="ii-section-head"><h2>Keresztmodul E2E tesztutak</h2>${canReset ? '<button class="ii-button is-secondary is-small" type="button" data-backend-reset>Demo visszaállítása</button>' : ""}</div>
       <div class="ii-grid is-two">
         ${state.backend.journeys.map((journey) => {
           const completed = journey.steps.filter((step) => step.status === "completed").length;
@@ -839,7 +845,7 @@
     const tasks = filteredRecords("workspace");
     return `
       <div class="ii-kpi-grid">
-        <article class="ii-panel ii-kpi"><span>Aktív tesztszerepkör</span><strong>${escapeHtml(role.label)}</strong><small>felület-szimuláció, nem biztonsági határ</small></article>
+        <article class="ii-panel ii-kpi"><span>Aktív szerepkör</span><strong>${escapeHtml(role.label)}</strong><small>szerveroldalon érvényesített moduljogosultság</small></article>
         <article class="ii-panel ii-kpi"><span>Elérhető modul</span><strong>${access.length}</strong><small>a szerepkör munkaterületén</small></article>
         <article class="ii-panel ii-kpi"><span>Helyi esemény</span><strong>${state.runtime.events.length}</strong><small>event contract naplóban</small></article>
         <article class="ii-panel ii-kpi"><span>Outbox tétel</span><strong>${state.runtime.outbox.length}</strong><small>szimulált integrációs kézbesítés</small></article>
@@ -1293,6 +1299,10 @@
       headers: { "Content-Type": "application/json", ...(options.headers || {}) },
       ...options
     });
+    if (response.status === 401) {
+      location.assign(`/login?return_to=${encodeURIComponent(location.pathname)}`);
+      throw new Error("A munkamenet lejárt; új bejelentkezés szükséges.");
+    }
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
       throw new Error(detail.detail || `Backend hiba (${response.status})`);
@@ -1322,13 +1332,18 @@
       if (backendAction) {
         backendAction.disabled = true;
         try {
+          const operationForm = backendAction.closest("[data-module-operation-form]");
+          const operationData = new FormData(operationForm);
           const result = await backendRequest("/actions", {
             method: "POST",
             body: JSON.stringify({
               module_id: backendAction.dataset.backendModule,
               action_id: backendAction.dataset.backendAction,
-              project_id: "PRJ-DEMO-001",
-              actor: `${state.currentRoleId}@demo.imperial.local`
+              project_id: operationData.get("project_id"),
+              payload: {
+                notes: operationData.get("notes") || "",
+                initiatedFrom: location.pathname
+              }
             })
           });
           await refreshBackend();
@@ -1346,7 +1361,7 @@
         try {
           const result = await backendRequest(`/journeys/${encodeURIComponent(backendJourney.dataset.backendJourney)}/run`, {
             method: "POST",
-            body: JSON.stringify({ actor: `${state.currentRoleId}@demo.imperial.local` })
+            body: JSON.stringify({})
           });
           await refreshBackend();
           showToast(`${result.journey.name}: ${result.events.length} esemény sikeresen kézbesítve.`);
@@ -1449,14 +1464,6 @@
       state.status = event.target.value;
       renderModule();
     });
-    document.querySelector("#role-switcher").addEventListener("change", (event) => {
-      state.currentRoleId = event.target.value;
-      localStorage.setItem("ii-current-role", state.currentRoleId);
-      document.querySelector("#role-avatar").textContent = currentRole().initials;
-      state.query = "";
-      state.status = "all";
-      navigate("workspace");
-    });
     document.querySelector("#clear-filters").addEventListener("click", () => {
       state.query = "";
       state.status = "all";
@@ -1480,17 +1487,33 @@
     document.body.dataset.moduleId = state.moduleId;
     document.body.innerHTML = `<main class="ii-empty">Imperial Intelligence betöltése…</main>`;
     try {
-      const [platformResponse, brandResponse, systemResponse, backendResponse] = await Promise.all([
+      const [platformResponse, brandResponse, systemResponse, identityResponse, backendResponse] = await Promise.all([
         fetch("/data/platform.json", { cache: "no-store" }),
         fetch("/data/brands.json", { cache: "no-store" }),
         fetch("/data/system.json", { cache: "no-store" }),
+        fetch("/core/api/auth/session", { cache: "no-store" }),
         fetch("/core/api/demo/state", { cache: "no-store" }).catch(() => null)
       ]);
       if (!platformResponse.ok || !brandResponse.ok || !systemResponse.ok) throw new Error("A lokális tesztadat nem érhető el.");
+      if (identityResponse.status === 401) {
+        location.assign(`/login?return_to=${encodeURIComponent(location.pathname)}`);
+        return;
+      }
+      if (!identityResponse.ok) throw new Error("A felhasználói jogosultság nem ellenőrizhető.");
       state.data = await platformResponse.json();
       const brandData = await brandResponse.json();
       state.brands = brandData.brands || [];
       state.system = await systemResponse.json();
+      state.identity = await identityResponse.json();
+      state.currentRoleId = state.identity.role.id;
+      const configuredRole = state.system.roles.find((role) => role.id === state.currentRoleId);
+      if (!configuredRole) throw new Error("A bejelentkezett szerepkör nincs a platformon regisztrálva.");
+      configuredRole.moduleAccess = state.identity.role.moduleAccess;
+      configuredRole.label = state.identity.role.label;
+      configuredRole.initials = state.identity.role.initials;
+      if (!configuredRole.moduleAccess.includes(state.moduleId)) {
+        throw new Error(`A(z) ${configuredRole.label} szerepkör nem jogosult erre a modulra.`);
+      }
       if (backendResponse?.ok) {
         state.backend = await backendResponse.json();
         state.backendStatus = "connected";
@@ -1499,7 +1522,6 @@
         state.backendStatus = "degraded";
       }
       state.runtime = loadRuntime();
-      if (!state.system.roles.some((role) => role.id === state.currentRoleId)) state.currentRoleId = "platform-admin";
       document.body.innerHTML = platformMarkup();
       bindEvents();
       renderJourney();

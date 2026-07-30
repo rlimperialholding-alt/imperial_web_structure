@@ -41,7 +41,8 @@ from .schemas import (
     PartnerAccessCreateIn, PartnerAttendanceActionIn, PartnerChangeIn, PartnerProgressIn,
     DevelopmentDiscoveryIn, DevelopmentDiscoveryReviewIn, ContractGenerateIn, ChangeControlEventIn,
 )
-from .security import current_partner_access, current_user, require_api_token, require_internal_job_token, require_role, verify_password
+from .security import current_partner_access, current_user, require_api_token, require_internal_job_token, require_role, require_session_user, verify_password
+from .roles import can_access, modules_for_path, public_role_payload, role_definition
 from .seed import DEMO_PASSWORD, seed_database
 from .services.consistency import scan_consistency, upsert_fact
 from .services.commercial_integration import (
@@ -113,7 +114,10 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.filters["huf"] = lambda v: f"{Decimal(str(v or 0)):,.0f} Ft".replace(",", " ")
 templates.env.filters["dt"] = lambda v: v.astimezone().strftime("%Y.%m.%d. %H:%M") if v else "—"
-templates.env.globals["demo_password"] = DEMO_PASSWORD
+templates.env.globals["demo_password"] = (
+    None if settings.is_production else DEMO_PASSWORD
+)
+templates.env.globals["can_access"] = can_access
 
 
 class DemoActionIn(BaseModel):
@@ -136,8 +140,17 @@ class DemoFailureIn(BaseModel):
 
 def auth_or_redirect(request: Request, db: Session):
     user = current_user(request, db)
-    if not user:
-        return None, RedirectResponse("/login", status_code=303)
+    if not user or not user.active:
+        return None, RedirectResponse(
+            f"/login?return_to={request.url.path}",
+            status_code=303,
+        )
+    required_modules = modules_for_path(request.url.path)
+    if required_modules and not can_access(user, *required_modules):
+        raise HTTPException(
+            status_code=403,
+            detail="Ehhez a felülethez nincs szerepkör-jogosultság.",
+        )
     return user, None
 
 def partner_auth_or_redirect(request: Request, db: Session):
@@ -384,19 +397,61 @@ def health_ready(db: Session = Depends(get_db)):
         return JSONResponse({"status": "not_ready", "error": str(exc)}, status_code=503)
 
 
+@app.get("/api/auth/session")
+def api_auth_session(user: User = Depends(require_session_user)):
+    role = role_definition(user.role)
+    if not role:
+        raise HTTPException(403, "A felhasználó szerepköre nincs regisztrálva.")
+    return {
+        "authenticated": True,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+        },
+        "role": public_role_payload(user.role),
+    }
+
+
+def _demo_state_for(user: User):
+    state = demo_runtime.state()
+    role = role_definition(user.role)
+    if not role:
+        raise HTTPException(403, "A felhasználó szerepköre nincs regisztrálva.")
+    allowed = role.module_access
+    state["modules"] = [
+        module for module in state["modules"] if module["id"] in allowed
+    ]
+    state["events"] = [
+        event
+        for event in state.get("events", [])
+        if event.get("producer") in allowed
+        or any(consumer in allowed for consumer in event.get("consumers", []))
+    ]
+    if user.role not in {"owner", "managing-director", "platform-admin"}:
+        state["journeys"] = []
+    return state
+
+
 @app.get("/api/demo/state")
-def api_demo_state():
-    return demo_runtime.state()
+def api_demo_state(user: User = Depends(require_session_user)):
+    return _demo_state_for(user)
 
 
 @app.get("/api/demo/modules")
-def api_demo_modules():
-    state = demo_runtime.state()
+def api_demo_modules(user: User = Depends(require_session_user)):
+    state = _demo_state_for(user)
     return {"modules": state["modules"], "summary": state["summary"]}
 
 
 @app.get("/api/demo/modules/{module_id}")
-def api_demo_module(module_id: str):
+def api_demo_module(
+    module_id: str,
+    user: User = Depends(require_session_user),
+):
+    if not can_access(user, module_id):
+        raise HTTPException(403, "Ehhez a modulhoz nincs jogosultság.")
     try:
         return demo_runtime.module(module_id)
     except DemoRuntimeError as exc:
@@ -404,13 +459,18 @@ def api_demo_module(module_id: str):
 
 
 @app.post("/api/demo/actions")
-def api_demo_action(data: DemoActionIn):
+def api_demo_action(
+    data: DemoActionIn,
+    user: User = Depends(require_session_user),
+):
+    if not can_access(user, data.module_id):
+        raise HTTPException(403, "Ehhez a modulművelethez nincs jogosultság.")
     try:
         return demo_runtime.execute_action(
             module_id=data.module_id,
             action_id=data.action_id,
             project_id=data.project_id,
-            actor=data.actor,
+            actor=user.email,
             correlation_id=data.correlation_id,
             idempotency_key=data.idempotency_key,
             payload=data.payload,
@@ -420,15 +480,26 @@ def api_demo_action(data: DemoActionIn):
 
 
 @app.post("/api/demo/journeys/{journey_id}/run")
-def api_demo_journey(journey_id: str, data: DemoJourneyIn):
+def api_demo_journey(
+    journey_id: str,
+    data: DemoJourneyIn,
+    user: User = Depends(require_session_user),
+):
+    if user.role not in {"owner", "managing-director", "platform-admin"}:
+        raise HTTPException(403, "Teljes tesztutat csak vezetői szerepkör indíthat.")
     try:
-        return demo_runtime.run_journey(journey_id, data.actor)
+        return demo_runtime.run_journey(journey_id, user.email)
     except DemoRuntimeError as exc:
         raise HTTPException(404, str(exc)) from exc
 
 
 @app.post("/api/demo/failures")
-def api_demo_failure(data: DemoFailureIn):
+def api_demo_failure(
+    data: DemoFailureIn,
+    user: User = Depends(require_session_user),
+):
+    if user.role != "platform-admin":
+        raise HTTPException(403, "Hibainjektálást csak platform admin indíthat.")
     try:
         return demo_runtime.inject_failure(data.consumer)
     except DemoRuntimeError as exc:
@@ -436,7 +507,12 @@ def api_demo_failure(data: DemoFailureIn):
 
 
 @app.post("/api/demo/outbox/{outbox_id}/retry")
-def api_demo_retry(outbox_id: str):
+def api_demo_retry(
+    outbox_id: str,
+    user: User = Depends(require_session_user),
+):
+    if user.role != "platform-admin":
+        raise HTTPException(403, "Outbox újrapróbálást csak platform admin indíthat.")
     try:
         return demo_runtime.retry_outbox(outbox_id)
     except DemoRuntimeError as exc:
@@ -444,24 +520,49 @@ def api_demo_retry(outbox_id: str):
 
 
 @app.post("/api/demo/reset")
-def api_demo_reset():
+def api_demo_reset(user: User = Depends(require_session_user)):
+    if user.role != "platform-admin":
+        raise HTTPException(403, "Demo-visszaállítást csak platform admin indíthat.")
     return demo_runtime.reset()
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
+def login_page(request: Request, return_to: str = "/"):
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"error": None, "return_to": return_to},
+    )
 
 
 @app.post("/login", response_class=HTMLResponse)
-def login(request: Request, email: Annotated[str, Form()], password: Annotated[str, Form()], db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    email: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    return_to: Annotated[str, Form()] = "/",
+    db: Session = Depends(get_db),
+):
     user = db.scalar(select(User).where(User.email == email, User.active.is_(True)))
     if not user or not verify_password(password, user.password_hash):
-        return templates.TemplateResponse(request=request, name="login.html", context={"error": "Hibás e-mail vagy jelszó."}, status_code=401)
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={
+                "error": "Hibás e-mail vagy jelszó.",
+                "return_to": return_to,
+            },
+            status_code=401,
+        )
     request.session["user_id"] = user.id
     audit(db, actor=user.email, action="login", entity_type="user", entity_id=str(user.id))
     db.commit()
-    return RedirectResponse("/", status_code=303)
+    safe_return_to = (
+        return_to
+        if return_to.startswith("/") and not return_to.startswith("//")
+        else "/"
+    )
+    return RedirectResponse(safe_return_to, status_code=303)
 
 
 @app.post("/logout")
@@ -553,6 +654,7 @@ def documents_page(
 def documents_create(
     request: Request, title: Annotated[str, Form()], category: Annotated[str, Form()],
     project_id: Annotated[str | None, Form()] = None, source_url: Annotated[str | None, Form()] = None,
+    source_system: Annotated[str, Form()] = "google_drive",
     owner: Annotated[str | None, Form()] = None, extracted_summary: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
@@ -561,6 +663,7 @@ def documents_create(
         return redirect
     create_document(db, WorkspaceDocumentIn(
         title=title, category=category, project_id=project_id or None, source_url=source_url or None,
+        source_system=source_system,
         owner=owner or user.name, extracted_summary=extracted_summary or None,
     ), actor=user.email)
     return RedirectResponse("/documents", status_code=303)

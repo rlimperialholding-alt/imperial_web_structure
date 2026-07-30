@@ -17,10 +17,18 @@ RUN --mount=type=secret,id=build_ca,required=false \
       cat /etc/ssl/certs/ca-certificates.crt /run/secrets/build_ca > /tmp/build-ca.pem; \
       export PIP_CERT=/tmp/build-ca.pem; \
     fi; \
-    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install --upgrade pip \
+    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install --upgrade pip "setuptools>=78.1.1" \
     && PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install . \
     && mkdir -p /app/runtime \
-    && chown -R imperial:imperial /app/runtime; \
+    && chown -R imperial:imperial /app/runtime \
+    && rm -rf \
+      /usr/local/lib/python3.12/site-packages/pip \
+      /usr/local/lib/python3.12/site-packages/pip-*.dist-info \
+      /usr/local/lib/python3.12/site-packages/setuptools \
+      /usr/local/lib/python3.12/site-packages/setuptools-*.dist-info \
+      /usr/local/bin/pip \
+      /usr/local/bin/pip3 \
+      /usr/local/bin/pip3.12; \
     status=$?; rm -f /tmp/build-ca.pem; exit $status
 
 USER imperial

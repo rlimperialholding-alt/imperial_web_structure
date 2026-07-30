@@ -69,17 +69,33 @@ export class ConnectorSyncOrchestrator {
         updatedAt: now,
       });
 
+      const partialFailureMessage =
+        result.failed > 0 ? `${result.failed} source events failed` : undefined;
       const { lastError: _previousError, ...accountWithoutError } = account;
       await this.accounts.save({
         ...accountWithoutError,
         status: result.failed > 0 ? "DEGRADED" : "ACTIVE",
         updatedAt: now,
-        lastSuccessfulSyncAt: now,
+        ...(result.failed === 0 ? { lastSuccessfulSyncAt: now } : {}),
         ...(result.failed > 0
-          ? { lastError: `${result.failed} source events failed` }
+          ? { lastError: partialFailureMessage }
           : {}),
       });
-      await this.observer?.success({ organizationId: account.organizationId, connectorId: account.id, kind: account.kind });
+      if (partialFailureMessage) {
+        await this.observer?.failure({
+          organizationId: account.organizationId,
+          connectorId: account.id,
+          kind: account.kind,
+          errorMessage: partialFailureMessage,
+          reauthRequired: false,
+        });
+      } else {
+        await this.observer?.success({
+          organizationId: account.organizationId,
+          connectorId: account.id,
+          kind: account.kind,
+        });
+      }
 
       return result;
     } catch (error) {

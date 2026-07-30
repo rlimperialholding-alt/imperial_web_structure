@@ -65,3 +65,16 @@ def test_workspace_api_search_returns_grouped_results(client):
     data = response.json()
     assert data["projects"]
     assert set(data) == {"projects", "tasks", "events", "documents", "records"}
+
+
+def test_document_form_accepts_onedrive_reference(logged_in_client, db):
+    response = logged_in_client.post("/documents", data={
+        "title": "OneDrive tervcsomag",
+        "category": "plan",
+        "source_system": "onedrive",
+        "source_url": "https://imperialholding.sharepoint.com/example",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    document = db.scalar(select(WorkspaceDocument).where(WorkspaceDocument.title == "OneDrive tervcsomag"))
+    assert document is not None
+    assert document.source_system == "onedrive"

@@ -37,7 +37,10 @@ with urllib.request.urlopen(request, timeout=20) as response:
         raise RuntimeError(f"CRM returned HTTP {response.status}")
     payload = json.loads(response.read().decode("utf-8"))
 
-items = payload.get("activities") or payload.get("items") or payload.get("data")
+items = next(
+    (payload[key] for key in ("activities", "items", "data") if key in payload),
+    None,
+)
 if items is None:
     raise RuntimeError(
         "CRM response does not contain activities/items/data; field mapping must be updated"
