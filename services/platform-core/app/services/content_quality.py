@@ -1251,6 +1251,118 @@ def submit_four_gates(
     }
 
 
+def review_human_specialist_gate(
+    db: Session,
+    asset_id: str,
+    gate_id: str,
+    decision: str,
+    relevant: bool,
+    evidence: str,
+    *,
+    actor: str,
+) -> dict[str, Any]:
+    if gate_id not in SPECIALIST_GATE_AGENTS:
+        raise ValueError("Ismeretlen specialistakapu.")
+    if decision not in {Decision.APPROVED, Decision.RETURN_FOR_REVISION, Decision.SKIPPED_NOT_RELEVANT}:
+        raise ValueError("Érvénytelen specialistadöntés.")
+    if relevant and decision == Decision.SKIPPED_NOT_RELEVANT:
+        raise ValueError("Releváns specialistakapu nem hagyható ki.")
+    if not relevant and decision != Decision.SKIPPED_NOT_RELEVANT:
+        raise ValueError("Nem releváns kapuhoz SKIPPED_NOT_RELEVANT döntés szükséges.")
+    if len(evidence.strip()) < 10:
+        raise ValueError("A specialistadöntés bizonyítéka legalább 10 karakter legyen.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise KeyError(asset_id)
+    if asset.state != PublicationState.FOUR_GATE_QA or not asset.latest_run_id:
+        raise ValueError(f"Specialistakapu nem értékelhető ebből az állapotból: {asset.state}")
+    if asset.created_by.strip().lower() == actor.strip().lower():
+        raise ValueError("A tartalom létrehozója nem értékelheti a saját specialistakapuját.")
+    existing = db.scalar(
+        select(ContentGateDecision).where(
+            ContentGateDecision.run_id == asset.latest_run_id,
+            ContentGateDecision.gate_id == gate_id,
+        )
+    )
+    if existing and existing.decision != Decision.HUMAN_APPROVAL_REQUIRED:
+        raise ValueError("Ez a specialistakapu már végleges döntést rögzített.")
+    if existing:
+        db.delete(existing)
+        db.flush()
+    other_rows = list(
+        db.scalars(
+            select(ContentGateDecision).where(
+                ContentGateDecision.run_id == asset.latest_run_id,
+                ContentGateDecision.gate_id.in_(tuple(SPECIALIST_GATE_AGENTS)),
+                ContentGateDecision.gate_id != gate_id,
+            )
+        )
+    )
+    for other in other_rows:
+        try:
+            other_evidence = json.loads(other.source_versions_json or "{}")
+        except json.JSONDecodeError:
+            other_evidence = {}
+        if str(other_evidence.get("reviewer") or "").strip().lower() == actor.strip().lower():
+            raise ValueError("A jogi, pénzügyi és műszaki specialistakaput három külön felhasználónak kell értékelnie.")
+    db.add(
+        ContentGateDecision(
+            run_id=asset.latest_run_id,
+            asset_id=asset_id,
+            gate_id=gate_id,
+            agent_id=SPECIALIST_GATE_AGENTS[gate_id],
+            decision=decision,
+            relevant=relevant,
+            certainty="HIGH",
+            findings_json=_json([] if decision != Decision.RETURN_FOR_REVISION else [evidence.strip()]),
+            source_versions_json=_json({"human_evidence": evidence.strip(), "reviewer": actor}),
+        )
+    )
+    db.flush()
+    rows = list(
+        db.scalars(
+            select(ContentGateDecision).where(
+                ContentGateDecision.run_id == asset.latest_run_id,
+                ContentGateDecision.gate_id.in_(tuple(SPECIALIST_GATE_AGENTS)),
+            )
+        )
+    )
+    decisions = {row.gate_id: row.decision for row in rows}
+    if Decision.RETURN_FOR_REVISION in decisions.values():
+        asset.state = PublicationState.BLOCKED
+        asset.four_gate_approved = False
+        final = Decision.RETURN_FOR_REVISION
+    elif set(decisions) == set(SPECIALIST_GATE_AGENTS) and all(
+        value in {Decision.APPROVED, Decision.SKIPPED_NOT_RELEVANT}
+        for value in decisions.values()
+    ):
+        asset.state = PublicationState.HUMAN_EDITORIAL
+        asset.four_gate_approved = True
+        asset.source_prevalidated = False
+        final = Decision.APPROVED
+    else:
+        final = Decision.HUMAN_APPROVAL_REQUIRED
+    run = db.get(CopyReviewRun, asset.latest_run_id)
+    if run:
+        run.final_decision = final
+    audit(
+        db,
+        actor=actor,
+        action="human_specialist_gate_reviewed",
+        entity_type="content_asset",
+        entity_id=asset_id,
+        after={
+            "gate_id": gate_id,
+            "decision": decision,
+            "relevant": relevant,
+            "evidence": evidence.strip(),
+            "state": asset.state,
+        },
+    )
+    db.commit()
+    return {"asset_id": asset_id, "gate_id": gate_id, "decision": decision, "state": asset.state}
+
+
 def record_approval(
     db: Session,
     asset_id: str,
@@ -1270,6 +1382,19 @@ def record_approval(
         raise ValueError(
             f"{approval_type} jóváhagyás nem rögzíthető ebből az állapotból: {asset.state}"
         )
+    if approval_type == "OWNER":
+        editorial = db.scalar(
+            select(ContentApprovalRecord).where(
+                ContentApprovalRecord.asset_id == asset_id,
+                ContentApprovalRecord.content_version == asset.content_version,
+                ContentApprovalRecord.approval_type == "HUMAN_EDITORIAL",
+                ContentApprovalRecord.decision == "APPROVED",
+            )
+        )
+        if not editorial:
+            raise ValueError("Tulajdonosi döntés előtt jóváhagyott szerkesztői döntés szükséges.")
+        if editorial.actor.strip().lower() == actor.strip().lower():
+            raise ValueError("A szerkesztői és tulajdonosi döntést két külön felhasználónak kell elvégeznie.")
     existing = db.scalar(
         select(ContentApprovalRecord).where(
             ContentApprovalRecord.asset_id == asset_id,

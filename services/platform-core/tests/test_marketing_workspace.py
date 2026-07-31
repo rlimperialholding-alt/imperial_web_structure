@@ -243,3 +243,43 @@ def test_authenticated_human_copy_and_mandatory_gates_are_role_separated(client,
     assert asset.expert_marketing_approved is True
     assert asset.copywriter_approved is True
     assert asset.state == "FOUR_GATE_QA"
+
+    for role, gate_id, evidence in (
+        ("legal", "GATE_2_LEGAL_POLICY", "A jogi állítások és közzétételi feltételek forrásai ellenőrizve."),
+        ("finance", "GATE_3_FINANCIAL_COMMERCIAL", "Az ár, áfa, ajánlatverzió és kereskedelmi feltételek ellenőrizve."),
+        ("technical-prep", "GATE_4_TECHNICAL_FACTUAL", "A műszaki tartalom és minden számszerű tény forrásból ellenőrizve."),
+    ):
+        logout(client)
+        login(client, role)
+        response = client.post(
+            f"/marketing/assets/{asset.asset_id}/specialist-gates/{gate_id}",
+            data={"relevant": "on", "decision": "APPROVED", "evidence": evidence},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303, response.text
+    db.refresh(asset)
+    assert asset.four_gate_approved is True
+    assert asset.state == "HUMAN_EDITORIAL"
+
+    logout(client)
+    login(client, "managing-director")
+    editorial = client.post(
+        f"/marketing/assets/{asset.asset_id}/editorial-approval",
+        data={"decision": "APPROVED", "note": "A végleges szöveg, márkahang és állításkészlet szerkesztőileg rendben."},
+        follow_redirects=False,
+    )
+    assert editorial.status_code == 303, editorial.text
+    db.refresh(asset)
+    assert asset.state == "OWNER_APPROVAL"
+
+    logout(client)
+    login(client, "owner")
+    owner = client.post(
+        f"/marketing/assets/{asset.asset_id}/owner-approval",
+        data={"decision": "APPROVED", "note": "Az üzleti ajánlat és publikációs szándék tulajdonosként jóváhagyva."},
+        follow_redirects=False,
+    )
+    assert owner.status_code == 303, owner.text
+    db.refresh(asset)
+    assert asset.owner_approved is True
+    assert asset.state == "VISUAL_PRODUCTION"

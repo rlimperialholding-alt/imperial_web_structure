@@ -55,6 +55,7 @@ from .models import (
     PartnerFieldAccess,
     CampaignStrategyReviewRecord,
     ContentAssetRecord,
+    ContentGateDecision,
     CopyBriefRecord,
     CopySourceRecord,
 )
@@ -123,7 +124,7 @@ from .services.tender_mail import add_canonical_partner_recipients, add_recipien
 from .services.pilots import run_all_pilots, run_pilot_scenario
 from .services.itep_finance import ItepFinanceError, incoming_invoices
 from .services.releases import add_artifact, create_release, release_gate
-from .services.content_quality import assemble_publication_bundle, build_human_editorial_review, build_human_mandatory_gate_review, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
+from .services.content_quality import assemble_publication_bundle, build_human_editorial_review, build_human_mandatory_gate_review, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, review_human_specialist_gate, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
 from .services.technical_products import create_case, decide_case, get_case, list_cases, review_gate, submit_case
 from .demo_runtime import DemoRuntimeError, demo_runtime
 
@@ -460,6 +461,16 @@ def marketing_workspace(request: Request, db: Session = Depends(get_db)):
     sources = list(db.scalars(select(CopySourceRecord).order_by(CopySourceRecord.id.desc()).limit(250)))
     brief_rows = list(db.scalars(select(CopyBriefRecord).order_by(CopyBriefRecord.created_at.desc()).limit(150)))
     asset_rows = list(db.scalars(select(ContentAssetRecord).order_by(ContentAssetRecord.updated_at.desc()).limit(150)))
+    run_ids = [row.latest_run_id for row in asset_rows if row.latest_run_id]
+    specialist_by_run: dict[str, dict[str, str]] = {}
+    if run_ids:
+        for gate in db.scalars(
+            select(ContentGateDecision).where(
+                ContentGateDecision.run_id.in_(run_ids),
+                ContentGateDecision.gate_id.in_(("GATE_2_LEGAL_POLICY", "GATE_3_FINANCIAL_COMMERCIAL", "GATE_4_TECHNICAL_FACTUAL")),
+            )
+        ):
+            specialist_by_run.setdefault(gate.run_id, {})[gate.gate_id] = gate.decision
     briefs = []
     for row in brief_rows:
         data = json.loads(row.brief_json or "{}")
@@ -468,7 +479,7 @@ def marketing_workspace(request: Request, db: Session = Depends(get_db)):
     for row in asset_rows:
         data = json.loads(row.content_json or "{}")
         trace = json.loads(row.generation_trace_json or "{}")
-        assets.append({"row": row, "data": data, "trace": trace})
+        assets.append({"row": row, "data": data, "trace": trace, "specialist": specialist_by_run.get(row.latest_run_id or "", {})})
     return templates.TemplateResponse(
         request=request,
         name="marketing.html",
@@ -776,6 +787,77 @@ async def marketing_asset_mandatory_gate(asset_id: str, gate_id: str, request: R
         )
         record_mandatory_copy_gate_review(db, asset_id, review, actor=user.email)
     except (TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/specialist-gates/{gate_id}")
+async def marketing_asset_specialist_gate(asset_id: str, gate_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    allowed = {
+        "GATE_2_LEGAL_POLICY": {"legal", "owner", "managing-director", "platform-admin"},
+        "GATE_3_FINANCIAL_COMMERCIAL": {"finance", "owner", "managing-director", "platform-admin"},
+        "GATE_4_TECHNICAL_FACTUAL": {"technical-prep", "designer", "owner", "managing-director", "platform-admin"},
+    }
+    if gate_id not in allowed or user.role not in allowed[gate_id]:
+        raise HTTPException(403, "Ehhez a specialistakapuhoz nincs jogosultság.")
+    form = await request.form()
+    try:
+        review_human_specialist_gate(
+            db,
+            asset_id,
+            gate_id,
+            str(form.get("decision") or ""),
+            form.get("relevant") is not None,
+            str(form.get("evidence") or ""),
+            actor=user.email,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "A tartalomasset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/editorial-approval")
+async def marketing_asset_editorial_approval(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in {"marketing", "copywriter", "managing-director", "platform-admin"}:
+        raise HTTPException(403, "Szerkesztői döntéshez nincs jogosultság.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise HTTPException(404, "A tartalomasset nem található.")
+    if asset.created_by.strip().lower() == user.email.strip().lower():
+        raise HTTPException(409, "A tartalom létrehozója nem hagyhatja jóvá a saját assetjét.")
+    form = await request.form()
+    try:
+        record_approval(
+            db,
+            asset_id,
+            "HUMAN_EDITORIAL",
+            ApprovalSubmission(decision=str(form.get("decision") or ""), note=str(form.get("note") or "") or None),
+            actor=user.email,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/owner-approval")
+async def marketing_asset_owner_approval(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role != "owner":
+        raise HTTPException(403, "Tulajdonosi döntéshez tulajdonosi jogosultság szükséges.")
+    form = await request.form()
+    try:
+        record_approval(
+            db,
+            asset_id,
+            "OWNER",
+            ApprovalSubmission(decision=str(form.get("decision") or ""), note=str(form.get("note") or "") or None),
+            actor=user.email,
+        )
+    except (KeyError, ValueError) as exc:
         raise HTTPException(409, str(exc)) from exc
     return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
 
