@@ -33,6 +33,14 @@ test("signed contracts atomically create a project and MyImperial customer membe
   assert.match(source, /identity\.role === "sales"/);
 });
 
+test("imported customers are backfilled without inventing verified billing data", async () => {
+  const migration = await readFile("drizzle/0010_backfill_canonical_customers.sql", "utf8");
+  assert.match(migration, /crm_customer_imports/);
+  assert.match(migration, /Adatpótlás szükséges/);
+  assert.match(migration, /'prospect'/);
+  assert.match(migration, /INSERT OR IGNORE/);
+});
+
 test("the formerly placeholder Intelligence navigation opens persisted workspaces", async () => {
   const source = await readFile("app/page.tsx", "utf8");
   assert.match(source, /changeView\("projects"\)/);
