@@ -262,6 +262,26 @@ export const financeInvoiceImports = sqliteTable("finance_invoice_imports", {
   index("finance_invoice_imports_project_idx").on(table.projectId),
 ]);
 
+export const contractPaymentMilestones = sqliteTable("crm_contract_payment_milestones", {
+  id: text("id").primaryKey(),
+  contractId: text("contract_id").notNull().references(() => contracts.id, { onDelete: "cascade" }),
+  sequence: integer("sequence").notNull(),
+  name: text("name").notNull(),
+  dueDate: text("due_date").notNull(),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull(),
+  status: text("status", { enum: ["planned", "invoiced", "paid", "cancelled"] }).notNull(),
+  invoiceId: integer("invoice_id").references(() => financeInvoiceImports.id, { onDelete: "set null" }),
+  cashflowEntryId: text("cashflow_entry_id").notNull(),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("crm_contract_milestone_sequence_idx").on(table.contractId, table.sequence),
+  uniqueIndex("crm_contract_milestone_cashflow_idx").on(table.cashflowEntryId),
+  index("crm_contract_milestone_due_idx").on(table.status, table.dueDate),
+]);
+
 export const cashflowEntries = sqliteTable("finance_cashflow_entries", {
   id: text("id").primaryKey(),
   sourceType: text("source_type", {

@@ -1,7 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   businessAuditEvents,
+  cashflowEntries,
+  contractPaymentMilestones,
   contracts,
   customers,
   leads,
@@ -38,8 +40,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
     if (nextStatus === "signed") {
       const targetCompletion = String(body.targetCompletion ?? "").trim();
-      if (!targetCompletion) {
-        return Response.json({ error: "A projekt tervezett befejezése kötelező." }, { status: 400 });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(targetCompletion)) {
+        return Response.json({ error: "A projekt érvényes tervezett befejezési dátuma kötelező." }, { status: 400 });
+      }
+      const milestones = await db.select().from(contractPaymentMilestones).where(and(
+        eq(contractPaymentMilestones.contractId, contract.id),
+        ne(contractPaymentMilestones.status, "cancelled"),
+      ));
+      const scheduledTotal = milestones.reduce((total, milestone) => total + milestone.amount, 0);
+      if (milestones.length === 0 || scheduledTotal !== contract.grossAmount) {
+        return Response.json({
+          error: `Aláírás előtt a fizetési ütemnek pontosan le kell fednie a ${contract.grossAmount} ${contract.currency} bruttó értéket. Jelenleg: ${scheduledTotal} ${contract.currency}.`,
+        }, { status: 409 });
       }
       const customer = (await db.select().from(customers)
         .where(eq(customers.id, contract.customerId)).limit(1))[0];
@@ -73,6 +85,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         }),
         db.update(contracts).set({ status: "signed", projectId, signedAt: now, updatedAt: now })
           .where(eq(contracts.id, contract.id)),
+        db.update(cashflowEntries).set({ projectId, updatedAt: now }).where(inArray(
+          cashflowEntries.id,
+          milestones.map((milestone) => milestone.cashflowEntryId),
+        )),
         ...(contract.leadId ? [
           db.update(leads).set({ stage: "contract", updatedAt: now })
             .where(eq(leads.id, contract.leadId)),

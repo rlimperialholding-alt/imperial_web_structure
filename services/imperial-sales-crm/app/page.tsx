@@ -101,6 +101,17 @@ type Contract = {
   effectiveDate: string;
   signedAt: string | null;
 };
+type ContractMilestone = {
+  id: string;
+  contractId: string;
+  sequence: number;
+  name: string;
+  dueDate: string;
+  amount: number;
+  currency: string;
+  status: "planned" | "invoiced" | "paid" | "cancelled";
+  cashflowEntryId: string;
+};
 type BusinessProject = {
   id: string;
   portalCode: string;
@@ -605,6 +616,7 @@ export default function Home() {
     [tasks, setTasksRaw] = useState<Task[]>([]),
     [customers, setCustomers] = useState<Customer[]>([]),
     [contracts, setContracts] = useState<Contract[]>([]),
+    [contractMilestones, setContractMilestones] = useState<ContractMilestone[]>([]),
     [businessProjects, setBusinessProjects] = useState<BusinessProject[]>([]),
     [cashflow, setCashflow] = useState<CashflowWorkspace | null>(null),
     [invoices, setInvoices] = useState<Invoice[]>([]),
@@ -618,6 +630,7 @@ export default function Home() {
     [newOpen, setNewOpen] = useState(false),
     [newCustomerOpen, setNewCustomerOpen] = useState(false),
     [newContractOpen, setNewContractOpen] = useState(false),
+    [milestoneContract, setMilestoneContract] = useState<Contract | null>(null),
     [newCashflowOpen, setNewCashflowOpen] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false),
     [toast, setToast] = useState("");
@@ -645,6 +658,7 @@ export default function Home() {
           tasks: Task[];
           customers: Customer[];
           contracts: Contract[];
+          contractMilestones: ContractMilestone[];
           projects: BusinessProject[];
           invoices: Invoice[];
           importStatus: ImportStatus;
@@ -657,6 +671,7 @@ export default function Home() {
         setTasksRaw(data.tasks);
         setCustomers(data.customers);
         setContracts(data.contracts);
+        setContractMilestones(data.contractMilestones);
         setBusinessProjects(data.projects);
         setInvoices(data.invoices);
         setImportStatus(data.importStatus);
@@ -951,10 +966,55 @@ export default function Home() {
       if (!response.ok || !payload.contract) throw new Error(payload.error);
       setContracts((rows) => rows.map((item) => item.id === contract.id ? payload.contract! : item));
       if (payload.project) setBusinessProjects((rows) => [payload.project!, ...rows]);
+      if (status === "signed") await refreshCashflow();
       notify(status === "signed" ? "A szerződésből létrejött a projekt és a MyImperial hozzáférés." : "A szerződés állapota frissült.");
       return true;
     } catch (error) {
       notify(error instanceof Error && error.message ? error.message : "Az állapotváltás nem sikerült.");
+      return false;
+    }
+  };
+  const addContractMilestone = async (data: { name: string; dueDate: string; amount: number }) => {
+    if (!milestoneContract) return false;
+    try {
+      const response = await authenticatedFetch(`/api/crm/contracts/${milestoneContract.id}/milestones`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json() as { milestone?: ContractMilestone; error?: string };
+      if (!response.ok || !payload.milestone) throw new Error(payload.error);
+      setContractMilestones((rows) => [...rows, payload.milestone!]);
+      setMilestoneContract(null);
+      await refreshCashflow();
+      notify("A fizetési mérföldkő és a kapcsolódó cashflow-tétel létrejött.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A fizetési mérföldkő mentése nem sikerült.");
+      return false;
+    }
+  };
+  const advanceContractMilestone = async (
+    milestone: ContractMilestone,
+    status: "invoiced" | "paid" | "cancelled",
+  ) => {
+    try {
+      const response = await authenticatedFetch(
+        `/api/crm/contracts/${milestone.contractId}/milestones/${milestone.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status }),
+        },
+      );
+      const payload = await response.json() as { milestone?: ContractMilestone; error?: string };
+      if (!response.ok || !payload.milestone) throw new Error(payload.error);
+      setContractMilestones((rows) => rows.map((item) => item.id === milestone.id ? payload.milestone! : item));
+      await refreshCashflow();
+      notify(status === "paid" ? "A szerződéses részlet teljesítettként bekerült a cashflow-ba." : "A fizetési mérföldkő állapota frissült.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A fizetési mérföldkő frissítése nem sikerült.");
       return false;
     }
   };
@@ -1270,11 +1330,14 @@ export default function Home() {
             <Customers
               customers={customers}
               contracts={contracts}
+              milestones={contractMilestones}
               projects={businessProjects}
               identity={identity}
               onNewCustomer={() => setNewCustomerOpen(true)}
               onNewContract={() => setNewContractOpen(true)}
+              onNewMilestone={setMilestoneContract}
               onAdvanceContract={advanceContract}
+              onAdvanceMilestone={advanceContractMilestone}
             />
           ) : view === "reports" ? (
             <Reports leads={leads} />
@@ -1351,6 +1414,14 @@ export default function Home() {
       )}{" "}
       {newContractOpen && (
         <NewContractModal customers={customers} onClose={() => setNewContractOpen(false)} onSave={addContract} />
+      )}{" "}
+      {milestoneContract && (
+        <NewContractMilestoneModal
+          contract={milestoneContract}
+          scheduledAmount={contractMilestones.filter((item) => item.contractId === milestoneContract.id && item.status !== "cancelled").reduce((total, item) => total + item.amount, 0)}
+          onClose={() => setMilestoneContract(null)}
+          onSave={addContractMilestone}
+        />
       )}{" "}
       {newCashflowOpen && (
         <NewCashflowModal projects={businessProjects} onClose={() => setNewCashflowOpen(false)} onSave={addCashflowEntry} />
@@ -1808,22 +1879,31 @@ function Records({
 function Customers({
   customers,
   contracts,
+  milestones,
   projects,
   identity,
   onNewCustomer,
   onNewContract,
+  onNewMilestone,
   onAdvanceContract,
+  onAdvanceMilestone,
 }: {
   customers: Customer[];
   contracts: Contract[];
+  milestones: ContractMilestone[];
   projects: BusinessProject[];
   identity: Identity;
   onNewCustomer: () => void;
   onNewContract: () => void;
+  onNewMilestone: (contract: Contract) => void;
   onAdvanceContract: (
     contract: Contract,
     status: "review" | "approved" | "signed" | "cancelled",
     targetCompletion?: string,
+  ) => Promise<boolean>;
+  onAdvanceMilestone: (
+    milestone: ContractMilestone,
+    status: "invoiced" | "paid" | "cancelled",
   ) => Promise<boolean>;
 }) {
   const [targetCompletion, setTargetCompletion] = useState<Record<string, string>>({});
@@ -1881,20 +1961,30 @@ function Customers({
       </section>
       <section className="panel">
         <div className="record-table">
-          {contracts.map((contract) => (
+          {contracts.map((contract) => {
+            const paymentMilestones = milestones.filter((item) => item.contractId === contract.id);
+            const activeMilestones = paymentMilestones.filter((item) => item.status !== "cancelled");
+            const scheduledAmount = activeMilestones.reduce((total, item) => total + item.amount, 0);
+            const scheduleComplete = activeMilestones.length > 0 && scheduledAmount === contract.grossAmount;
+            return (
             <article key={contract.id}>
               <div><small>{contract.contractNumber}</small><strong>{contract.title}</strong><span>{customers.find((item) => item.id === contract.customerId)?.name ?? contract.customerId}</span></div>
-              <div><small>Bruttó érték</small><strong>{money(contract.grossAmount)}</strong><span>{contract.effectiveDate}</span></div>
+              <div><small>Bruttó érték</small><strong>{money(contract.grossAmount)}</strong><span>Ütemezve: {money(scheduledAmount)} · {scheduleComplete ? "teljes" : `${money(contract.grossAmount - scheduledAmount)} hiányzik`}</span></div>
               <div><small>Állapot</small><strong>{contractStatus[contract.status]}</strong><span>{contract.projectId ? `Projekt: ${contract.projectId}` : "Projekt még nincs"}</span></div>
+              <div><small>Fizetési mérföldkövek</small><strong>{activeMilestones.length} részlet</strong><span>{activeMilestones.map((item) => `${item.name}: ${money(item.amount)} (${item.dueDate})`).join(" · ") || "Még nincs fizetési ütem"}</span></div>
               <div className="row-actions">
+                {["draft", "review", "approved"].includes(contract.status) && <button onClick={() => onNewMilestone(contract)}>Részlet hozzáadása</button>}
                 {contract.status === "draft" && <button onClick={() => onAdvanceContract(contract, "review")}>Ellenőrzésre</button>}
                 {contract.status === "review" && identity.role !== "sales" && <button onClick={() => onAdvanceContract(contract, "approved")}>Jóváhagyás</button>}
                 {contract.status === "approved" && identity.role !== "sales" && (
-                  <><input type="date" aria-label={`${contract.contractNumber} tervezett befejezés`} value={targetCompletion[contract.id] ?? ""} onChange={(event) => setTargetCompletion((current) => ({ ...current, [contract.id]: event.target.value }))} /><button disabled={!targetCompletion[contract.id]} onClick={() => onAdvanceContract(contract, "signed", targetCompletion[contract.id])}>Aláírás és projektindítás</button></>
+                  <><input type="date" aria-label={`${contract.contractNumber} tervezett befejezés`} value={targetCompletion[contract.id] ?? ""} onChange={(event) => setTargetCompletion((current) => ({ ...current, [contract.id]: event.target.value }))} /><button disabled={!targetCompletion[contract.id] || !scheduleComplete} title={!scheduleComplete ? "A fizetési ütemnek pontosan le kell fednie a bruttó értéket." : undefined} onClick={() => onAdvanceContract(contract, "signed", targetCompletion[contract.id])}>Aláírás és projektindítás</button></>
                 )}
+                {paymentMilestones.filter((item) => item.status === "planned").map((item) => <button key={`${item.id}-invoice`} onClick={() => onAdvanceMilestone(item, "invoiced")}>{item.sequence}. részlet számlázva</button>)}
+                {paymentMilestones.filter((item) => item.status === "invoiced").map((item) => <button key={`${item.id}-paid`} onClick={() => onAdvanceMilestone(item, "paid")}>{item.sequence}. részlet fizetve</button>)}
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
         {contracts.length === 0 && <div className="empty"><h2>Még nincs szerződés</h2></div>}
       </section>
@@ -3126,6 +3216,40 @@ function NewContractModal({
           <div><label>Nettó összeg (Ft) *<input type="number" min="0" step="1" value={netAmount} onChange={(event) => setNetAmount(event.target.value)} /></label><label>ÁFA (%)<input type="number" min="0" max="100" value={vatRate} onChange={(event) => setVatRate(event.target.value)} /></label></div>
         </div>
         <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ customerId, title, contractType, netAmount: Number(netAmount), vatRate: Number(vatRate), effectiveDate }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Tervezet létrehozása"}</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function NewContractMilestoneModal({
+  contract,
+  scheduledAmount,
+  onClose,
+  onSave,
+}: {
+  contract: Contract;
+  scheduledAmount: number;
+  onClose: () => void;
+  onSave: (milestone: { name: string; dueDate: string; amount: number }) => Promise<boolean>;
+}) {
+  const [name, setName] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const remaining = contract.grossAmount - scheduledAmount;
+  const numericAmount = Math.round(Number(amount));
+  const valid = Boolean(name.trim() && dueDate && Number.isSafeInteger(numericAmount) && numericAmount > 0 && numericAmount <= remaining);
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="modal">
+        <header><div><p className="eyebrow">SZERZŐDÉSES CASHFLOW</p><h2>Új fizetési mérföldkő</h2><span>{contract.contractNumber} · még ütemezendő: {money(remaining)}</span></div><button onClick={onClose}><Icon name="close" /></button></header>
+        <div className="modal-form">
+          <label>Részlet megnevezése *<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="pl. előleg, szerkezetkész állapot" /></label>
+          <div><label>Esedékesség *<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label><label>Összeg ({contract.currency}) *<input type="number" min="1" max={remaining} step="1" value={amount} onChange={(event) => setAmount(event.target.value)} /></label></div>
+          {numericAmount > remaining && <p className="negative">Az összeg meghaladja a még ütemezhető {money(remaining)} összeget.</p>}
+        </div>
+        <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ name, dueDate, amount: numericAmount }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Mérföldkő és cashflow létrehozása"}</button></footer>
       </section>
     </div>
   );

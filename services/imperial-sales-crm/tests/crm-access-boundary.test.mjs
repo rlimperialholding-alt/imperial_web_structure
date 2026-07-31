@@ -13,6 +13,8 @@ test("every internal CRM endpoint uses the internal-only identity guard", async 
     "app/api/crm/customers/[id]/route.ts",
     "app/api/crm/contracts/route.ts",
     "app/api/crm/contracts/[id]/route.ts",
+    "app/api/crm/contracts/[id]/milestones/route.ts",
+    "app/api/crm/contracts/[id]/milestones/[milestoneId]/route.ts",
     "app/api/crm/projects/route.ts",
     "app/api/crm/finance/cashflow/route.ts",
     "app/api/crm/finance/cashflow/[id]/route.ts",
@@ -33,6 +35,24 @@ test("signed contracts atomically create a project and MyImperial customer membe
   assert.match(source, /db\.insert\(projectMembers\)/);
   assert.match(source, /contract\.signed_project\.created/);
   assert.match(source, /identity\.role === "sales"/);
+  assert.match(source, /scheduledTotal !== contract\.grossAmount/);
+  assert.match(source, /contractPaymentMilestones/);
+  assert.match(source, /db\.update\(cashflowEntries\)/);
+});
+
+test("contract milestones create auditable cashflow and preserve the payment lifecycle", async () => {
+  const createRoute = await readFile("app/api/crm/contracts/[id]/milestones/route.ts", "utf8");
+  const updateRoute = await readFile("app/api/crm/contracts/[id]/milestones/[milestoneId]/route.ts", "utf8");
+  const cashflowRoute = await readFile("app/api/crm/finance/cashflow/[id]/route.ts", "utf8");
+  const migration = await readFile("drizzle/0012_contract_payment_milestones.sql", "utf8");
+  assert.match(createRoute, /scheduled \+ amount > row\.contract\.grossAmount/);
+  assert.match(createRoute, /sourceType: "contract_schedule"/);
+  assert.match(createRoute, /contract\.payment_milestone\.created/);
+  assert.match(updateRoute, /invoiced: \["paid", "cancelled"\]/);
+  assert.match(updateRoute, /cashflowStatus/);
+  assert.match(cashflowRoute, /szerződéses részletet fizetés előtt számlázottra/);
+  assert.match(migration, /crm_contract_payment_milestones/);
+  assert.match(migration, /crm_contract_milestone_sequence_idx/);
 });
 
 test("imported customers are backfilled without inventing verified billing data", async () => {
