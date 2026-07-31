@@ -21,6 +21,7 @@ const seedTasks = [
 ];
 
 export async function seedCrmIfEmpty(ownerEmail: string) {
+  if (process.env.CRM_DEMO_SEED_ENABLED !== "true") return;
   const db = await getDb();
   const [{ total }] = await db.select({ total: count() }).from(leads);
   if (total > 0) return;

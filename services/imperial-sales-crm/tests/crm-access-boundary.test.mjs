@@ -81,3 +81,21 @@ test("WhatsApp conversations only use the authenticated server proxy", async () 
   assert.match(proxy, /proxyIdentityResponse/);
   assert.doesNotMatch(page, /graph\.facebook\.com/);
 });
+
+test("production CRM and MyImperial data are never auto-created as fixtures", async () => {
+  const crmSeed = await readFile("lib/crm-seed.ts", "utf8");
+  const portalSeed = await readFile("lib/myimperial-seed.ts", "utf8");
+  assert.match(crmSeed, /CRM_DEMO_SEED_ENABLED !== "true"/);
+  assert.match(portalSeed, /CRM_DEMO_SEED_ENABLED !== "true"/);
+});
+
+test("MyImperial resolves real project memberships instead of a hardcoded pilot", async () => {
+  const auth = await readFile("lib/myimperial-auth.ts", "utf8");
+  const route = await readFile("app/api/myimperial/route.ts", "utf8");
+  const page = await readFile("app/myimperial/page.tsx", "utf8");
+  assert.doesNotMatch(auth, /PILOT_PROJECT_ID/);
+  assert.match(auth, /projectMembers\.email/);
+  assert.match(auth, /x-imperial-project-id/);
+  assert.match(route, /availableProjects/);
+  assert.match(page, /Projekt kiválasztása/);
+});
