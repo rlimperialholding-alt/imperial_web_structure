@@ -56,10 +56,12 @@ from .models import (
     CampaignStrategyReviewRecord,
     ContentAssetRecord,
     ContentGateDecision,
+    CreativeProductionRunRecord,
+    PublicationBundleRecord,
     CopyBriefRecord,
     CopySourceRecord,
 )
-from .copy_gate.models import ApprovalSubmission, AssemblySubmission, ContentAsset, ContentAssetCreateRequest, CopyBrief, CopyQualityRequest, CopySourceIn, CreativeDirectorReviewSubmission, FourGateSubmission, LiveReviewSubmission, PerformanceSubmission, MandatoryCopyGateReviewSubmission, ReleaseReviewSubmission, StrategyReviewSubmission, VisualProductionSubmission
+from .copy_gate.models import ApprovalSubmission, AssemblySubmission, ContentAsset, ContentAssetCreateRequest, CopyBrief, CopyQualityRequest, CopySourceIn, CreativeDirectorReviewSubmission, FourGateSubmission, LiveReviewSubmission, PerformanceSubmission, MandatoryCopyGateReviewSubmission, PlatformExport, ReleaseReviewSubmission, StrategyReviewSubmission, VisualProductionSubmission
 from .copy_gate.orchestrator import GENERATION_STAGES
 from .schemas import (
     ArtifactIn,
@@ -124,12 +126,13 @@ from .services.tender_mail import add_canonical_partner_recipients, add_recipien
 from .services.pilots import run_all_pilots, run_pilot_scenario
 from .services.itep_finance import ItepFinanceError, incoming_invoices
 from .services.releases import add_artifact, create_release, release_gate
-from .services.content_quality import assemble_publication_bundle, build_human_editorial_review, build_human_mandatory_gate_review, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, review_human_specialist_gate, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
+from .services.content_quality import assemble_publication_bundle, build_human_creative_director_review, build_human_editorial_review, build_human_mandatory_gate_review, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, review_human_specialist_gate, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
 from .services.technical_products import create_case, decide_case, get_case, list_cases, review_gate, submit_case
 from .demo_runtime import DemoRuntimeError, demo_runtime
 
 BASE_DIR = Path(__file__).resolve().parent
 PARTNER_EVIDENCE_DIR = BASE_DIR.parent / "data" / "partner_evidence"
+MARKETING_CREATIVE_DIR = BASE_DIR.parent / "runtime" / "marketing_creatives"
 
 
 @asynccontextmanager
@@ -471,6 +474,22 @@ def marketing_workspace(request: Request, db: Session = Depends(get_db)):
             )
         ):
             specialist_by_run.setdefault(gate.run_id, {})[gate.gate_id] = gate.decision
+    asset_ids = [row.asset_id for row in asset_rows]
+    creative_by_asset: dict[str, CreativeProductionRunRecord] = {}
+    bundle_by_asset: dict[str, PublicationBundleRecord] = {}
+    if asset_ids:
+        for creative in db.scalars(
+            select(CreativeProductionRunRecord)
+            .where(CreativeProductionRunRecord.asset_id.in_(asset_ids))
+            .order_by(CreativeProductionRunRecord.sequence_number.desc())
+        ):
+            creative_by_asset.setdefault(creative.asset_id, creative)
+        for bundle in db.scalars(
+            select(PublicationBundleRecord)
+            .where(PublicationBundleRecord.asset_id.in_(asset_ids))
+            .order_by(PublicationBundleRecord.created_at.desc())
+        ):
+            bundle_by_asset.setdefault(bundle.asset_id, bundle)
     briefs = []
     for row in brief_rows:
         data = json.loads(row.brief_json or "{}")
@@ -479,7 +498,14 @@ def marketing_workspace(request: Request, db: Session = Depends(get_db)):
     for row in asset_rows:
         data = json.loads(row.content_json or "{}")
         trace = json.loads(row.generation_trace_json or "{}")
-        assets.append({"row": row, "data": data, "trace": trace, "specialist": specialist_by_run.get(row.latest_run_id or "", {})})
+        assets.append({
+            "row": row,
+            "data": data,
+            "trace": trace,
+            "specialist": specialist_by_run.get(row.latest_run_id or "", {}),
+            "creative": creative_by_asset.get(row.asset_id),
+            "bundle": bundle_by_asset.get(row.asset_id),
+        })
     return templates.TemplateResponse(
         request=request,
         name="marketing.html",
@@ -859,6 +885,260 @@ async def marketing_asset_owner_approval(asset_id: str, request: Request, db: Se
         )
     except (KeyError, ValueError) as exc:
         raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+async def _save_marketing_upload(upload: object, file_stem: str) -> tuple[Path, str]:
+    if not hasattr(upload, "read"):
+        raise HTTPException(400, "A képfájl feltöltése kötelező.")
+    content_type = str(getattr(upload, "content_type", "") or "").lower()
+    extensions = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+    if content_type not in extensions:
+        raise HTTPException(400, "Csak PNG, JPEG vagy WebP képfájl tölthető fel.")
+    content = await upload.read(20 * 1024 * 1024 + 1)
+    if not content or len(content) > 20 * 1024 * 1024:
+        raise HTTPException(400, "A képfájl mérete 1 bájt és 20 MB között lehet.")
+    MARKETING_CREATIVE_DIR.mkdir(parents=True, exist_ok=True)
+    path = MARKETING_CREATIVE_DIR / f"{file_stem}{extensions[content_type]}"
+    path.write_bytes(content)
+    return path, hashlib.sha256(content).hexdigest()
+
+
+def _marketing_artifact_path(file_stem: str) -> Path | None:
+    matches = list(MARKETING_CREATIVE_DIR.glob(f"{file_stem}.*")) if MARKETING_CREATIVE_DIR.exists() else []
+    return matches[0] if len(matches) == 1 else None
+
+
+@app.post("/marketing/assets/{asset_id}/visual-production")
+async def marketing_visual_production(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in {"marketing", "designer", "creative-director", "platform-admin"}:
+        raise HTTPException(403, "Vizuális gyártáshoz nincs jogosultság.")
+    form = await request.form()
+    run_id = f"VIS-{uuid4().hex[:16].upper()}"
+    path, output_sha = await _save_marketing_upload(form.get("creative_file"), run_id)
+    try:
+        row = submit_visual_production(
+            db,
+            asset_id,
+            VisualProductionSubmission(
+                generation_run_id=run_id,
+                producer_identity=user.email,
+                visual_direction_id=str(form.get("visual_direction_id") or ""),
+                platform=str(form.get("platform") or ""),
+                width_px=int(str(form.get("width_px") or "0")),
+                height_px=int(str(form.get("height_px") or "0")),
+                output_uri=f"/marketing/assets/{asset_id}/creative/{run_id}",
+                output_sha256=output_sha,
+                generation_prompt_hash=hashlib.sha256(str(form.get("creative_rationale") or "").encode("utf-8")).hexdigest(),
+                contains_text=form.get("contains_text") is not None,
+            ),
+            actor=user.email,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{row.asset_id}", status_code=303)
+
+
+@app.get("/marketing/assets/{asset_id}/creative/{run_id}")
+def marketing_creative_file(asset_id: str, run_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if not can_access(user, "marketing-control", "content-factory"):
+        raise HTTPException(403, "Nincs jogosultság.")
+    row = db.get(CreativeProductionRunRecord, run_id)
+    path = _marketing_artifact_path(run_id)
+    if not row or row.asset_id != asset_id or not path:
+        raise HTTPException(404, "A kreatív fájl nem található.")
+    return FileResponse(path)
+
+
+@app.post("/marketing/assets/{asset_id}/creative-director-review")
+async def marketing_creative_director_review(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in {"creative-director", "platform-admin"}:
+        raise HTTPException(403, "Kreatív igazgatói review jogosultság szükséges.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    creative = db.scalar(select(CreativeProductionRunRecord).where(CreativeProductionRunRecord.asset_id == asset_id, CreativeProductionRunRecord.status == "DIRECTOR_QA").order_by(CreativeProductionRunRecord.sequence_number.desc()))
+    if not asset or not creative:
+        raise HTTPException(404, "A review-ra váró kreatív nem található.")
+    form = await request.form()
+    try:
+        review = build_human_creative_director_review(
+            asset,
+            creative,
+            reviewer_identity=user.email,
+            decision=str(form.get("decision") or ""),
+            review={
+                "brand_fidelity_score": int(str(form.get("brand_fidelity_score") or "0")),
+                "composition_score": int(str(form.get("composition_score") or "0")),
+                "distinctiveness_score": int(str(form.get("distinctiveness_score") or "0")),
+                "typography_score": int(str(form.get("typography_score") or "0")),
+                "asset_accuracy_score": int(str(form.get("asset_accuracy_score") or "0")),
+                "minimum_contrast_ratio": float(str(form.get("minimum_contrast_ratio") or "0")),
+                "full_subject_expected": form.get("full_subject_expected") is not None,
+                "full_subject_contour_visible": form.get("full_subject_contour_visible") is not None,
+                "declared_crop_intent": str(form.get("declared_crop_intent") or "") or None,
+                "accidental_crop_absent": form.get("accidental_crop_absent") is not None,
+                "text_boxes_within_bounds": form.get("text_boxes_within_bounds") is not None,
+                "text_background_clear": form.get("text_background_clear") is not None,
+                "text_overlaps_primary_subject": form.get("text_overlaps_primary_subject") is not None,
+                "text_background_overlaps_primary_subject": form.get("text_background_overlaps_primary_subject") is not None,
+                "minimum_source_font_px": int(str(form.get("minimum_source_font_px") or "0")),
+                "decorative_frame_area_ratio": float(str(form.get("decorative_frame_area_ratio") or "0")),
+                "primary_subject_dominance_required": form.get("primary_subject_dominance_required") is not None,
+                "primary_subject_area_ratio": float(str(form.get("primary_subject_area_ratio") or "0")),
+                "logo_lockup_brand_native": form.get("logo_lockup_brand_native") is not None,
+                "proof_caption_present": form.get("proof_caption_present") is not None,
+                "proof_caption_semantically_complete": form.get("proof_caption_semantically_complete") is not None,
+                "findings": _form_values(form.get("findings")),
+                "repair_brief": _form_values(form.get("repair_brief")),
+            },
+        )
+        record_creative_director_review(db, asset_id, review, actor=user.email)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/assembly")
+async def marketing_asset_assembly(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in {"marketing", "designer", "copywriter", "platform-admin"}:
+        raise HTTPException(403, "Publikációs assembly jogosultság szükséges.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    creative = db.scalar(select(CreativeProductionRunRecord).where(CreativeProductionRunRecord.asset_id == asset_id, CreativeProductionRunRecord.status == "APPROVED").order_by(CreativeProductionRunRecord.sequence_number.desc()))
+    if not asset or not creative:
+        raise HTTPException(404, "A jóváhagyott kreatív nem található.")
+    form = await request.form()
+    assembly_run_id = f"ASM-{uuid4().hex[:16].upper()}"
+    path, output_sha = await _save_marketing_upload(form.get("export_file"), assembly_run_id)
+    try:
+        row = assemble_publication_bundle(
+            db,
+            asset_id,
+            AssemblySubmission(
+                assembly_run_id=assembly_run_id,
+                assembler_identity=user.email,
+                visual_generation_run_id=creative.generation_run_id,
+                copy_content_sha256=asset.content_hash,
+                pairing_rationale=str(form.get("pairing_rationale") or ""),
+                exports=[PlatformExport(
+                    platform=str(form.get("platform") or ""),
+                    placement=str(form.get("placement") or ""),
+                    width_px=int(str(form.get("width_px") or "0")),
+                    height_px=int(str(form.get("height_px") or "0")),
+                    output_uri=f"/marketing/assets/{asset_id}/exports/{assembly_run_id}",
+                    output_sha256=output_sha,
+                    safe_zone_checked=form.get("safe_zone_checked") is not None,
+                    text_legibility_checked=form.get("text_legibility_checked") is not None,
+                )],
+            ),
+            actor=user.email,
+        )
+    except (TypeError, ValueError) as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{row.asset_id}", status_code=303)
+
+
+@app.get("/marketing/assets/{asset_id}/exports/{assembly_run_id}")
+def marketing_export_file(asset_id: str, assembly_run_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if not can_access(user, "marketing-control", "content-factory"):
+        raise HTTPException(403, "Nincs jogosultság.")
+    row = db.scalar(select(PublicationBundleRecord).where(PublicationBundleRecord.asset_id == asset_id, PublicationBundleRecord.assembly_run_id == assembly_run_id))
+    path = _marketing_artifact_path(assembly_run_id)
+    if not row or not path:
+        raise HTTPException(404, "A publikációs export nem található.")
+    return FileResponse(path)
+
+
+@app.post("/marketing/assets/{asset_id}/release-review")
+async def marketing_asset_release_review(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in {"marketing", "managing-director", "platform-admin"}:
+        raise HTTPException(403, "Release QA jogosultság szükséges.")
+    form = await request.form()
+    try:
+        record_release_review(
+            db,
+            asset_id,
+            ReleaseReviewSubmission(
+                decision=str(form.get("decision") or ""),
+                reviewer_run_id=f"REL-HUMAN-{uuid4().hex[:12].upper()}",
+                reviewer_identity=user.email,
+                strategy_match_score=int(str(form.get("strategy_match_score") or "0")),
+                copy_visual_consistency_score=int(str(form.get("copy_visual_consistency_score") or "0")),
+                channel_fit_score=int(str(form.get("channel_fit_score") or "0")),
+                conversion_path_score=int(str(form.get("conversion_path_score") or "0")),
+                four_gate_recheck_passed=form.get("four_gate_recheck_passed") is not None,
+                brand_recheck_passed=form.get("brand_recheck_passed") is not None,
+                technical_export_check_passed=form.get("technical_export_check_passed") is not None,
+                findings=_form_values(form.get("findings")),
+            ),
+            actor=user.email,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/publish")
+def marketing_asset_publish(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role != "owner":
+        raise HTTPException(403, "Publikációt csak tulajdonos indíthat.")
+    try:
+        publish_content_asset(db, asset_id, actor=user.email)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/live-review")
+async def marketing_asset_live_review(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    reviewer_roles = {"marketing": "ONLINE_MARKETING_MANAGER", "creative-director": "CREATIVE_DIRECTOR", "copywriter": "DIRECT_RESPONSE_COPYWRITER"}
+    if user.role not in reviewer_roles:
+        raise HTTPException(403, "Élő double checkhez kijelölt szakértői szerepkör szükséges.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise HTTPException(404, "A tartalomasset nem található.")
+    form = await request.form()
+    screenshot_id = f"LIVE-{uuid4().hex[:16].upper()}"
+    path, screenshot_sha = await _save_marketing_upload(form.get("screenshot_file"), screenshot_id)
+    try:
+        record_live_publication_review(
+            db,
+            asset_id,
+            LiveReviewSubmission(
+                reviewer_role=reviewer_roles[user.role], reviewer_identity=user.email,
+                decision=str(form.get("decision") or ""), live_url=str(form.get("live_url") or ""),
+                screenshot_sha256=screenshot_sha, rendered_copy_sha256=asset.content_hash,
+                findings=_form_values(form.get("findings")),
+            ),
+            actor=user.email,
+        )
+    except (KeyError, ValueError) as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/rollback")
+async def marketing_asset_rollback(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role != "owner":
+        raise HTTPException(403, "Visszavonást csak tulajdonos indíthat.")
+    form = await request.form()
+    reason = str(form.get("reason") or "")
+    if len(reason.strip()) < 10:
+        raise HTTPException(400, "A visszavonás indoklása legalább 10 karakter legyen.")
+    try:
+        rollback_content_asset(db, asset_id, actor=user.email, reason=reason)
+    except KeyError as exc:
+        raise HTTPException(404, "A tartalomasset nem található.") from exc
     return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
 
 

@@ -211,6 +211,33 @@ def build_human_mandatory_gate_review(
     return _signed_submission(draft, secret)
 
 
+def build_human_creative_director_review(
+    asset: ContentAssetRecord,
+    creative: CreativeProductionRunRecord,
+    *,
+    reviewer_identity: str,
+    decision: str,
+    review: dict[str, Any],
+) -> CreativeDirectorReviewSubmission:
+    if creative.producer_identity.strip().lower() == reviewer_identity.strip().lower():
+        raise ValueError("A kreatív producer nem végezheti a saját munkája igazgatói review-ját.")
+    draft = CreativeDirectorReviewSubmission(
+        decision=decision,
+        reviewed_asset_id=asset.asset_id,
+        reviewed_content_sha256=asset.content_hash,
+        reviewed_visual_sha256=creative.output_sha256,
+        generation_run_id=creative.generation_run_id,
+        reviewer_run_id=f"HUMAN-VISUAL-QA-{uuid.uuid4().hex[:12].upper()}",
+        reviewer_identity=reviewer_identity,
+        reviewer_model_version="authenticated-human-creative-director-v1",
+        prompt_version=VISUAL_REVIEW_PROMPT_VERSION,
+        attestation_key_id=settings.content_visual_review_key_id,
+        attestation_sha256="0" * 64,
+        **review,
+    )
+    return _signed_submission(draft, settings.content_visual_review_secret)
+
+
 def _verify_expert_review_attestation(editorial_review: EditorialReview) -> None:
     secret = settings.content_expert_review_secret
     if len(secret) < 32:

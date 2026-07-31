@@ -283,3 +283,143 @@ def test_authenticated_human_copy_and_mandatory_gates_are_role_separated(client,
     db.refresh(asset)
     assert asset.owner_approved is True
     assert asset.state == "VISUAL_PRODUCTION"
+
+    logout(client)
+    login(client, "designer")
+    visual = client.post(
+        f"/marketing/assets/{asset.asset_id}/visual-production",
+        data={
+            "visual_direction_id": "VD-HUMAN-QA-001",
+            "platform": "website",
+            "width_px": "1200",
+            "height_px": "628",
+            "creative_rationale": "A vizuális irány a jóváhagyott ajánlatot és a márka prémium pozícióját szolgálja.",
+        },
+        files={"creative_file": ("creative.png", b"\x89PNG\r\n\x1a\nvisual-human-qa", "image/png")},
+        follow_redirects=False,
+    )
+    assert visual.status_code == 303, visual.text
+    db.refresh(asset)
+    assert asset.state == "CREATIVE_DIRECTOR_QA"
+
+    logout(client)
+    login(client, "creative-director")
+    director = client.post(
+        f"/marketing/assets/{asset.asset_id}/creative-director-review",
+        data={
+            "decision": "APPROVED",
+            "brand_fidelity_score": "9",
+            "composition_score": "9",
+            "distinctiveness_score": "9",
+            "typography_score": "9",
+            "asset_accuracy_score": "9",
+            "minimum_contrast_ratio": "4.5",
+            "full_subject_expected": "on",
+            "full_subject_contour_visible": "on",
+            "accidental_crop_absent": "on",
+            "text_boxes_within_bounds": "on",
+            "text_background_clear": "on",
+            "minimum_source_font_px": "32",
+            "decorative_frame_area_ratio": "0.08",
+            "primary_subject_dominance_required": "on",
+            "primary_subject_area_ratio": "0.75",
+            "logo_lockup_brand_native": "on",
+            "findings": "",
+            "repair_brief": "",
+        },
+        follow_redirects=False,
+    )
+    assert director.status_code == 303, director.text
+    db.refresh(asset)
+    assert asset.creative_director_approved is True
+    assert asset.state == "ASSEMBLY_QA"
+
+    logout(client)
+    login(client, "copywriter")
+    assembly = client.post(
+        f"/marketing/assets/{asset.asset_id}/assembly",
+        data={
+            "platform": "website",
+            "placement": "hero",
+            "width_px": "1200",
+            "height_px": "628",
+            "pairing_rationale": "A jóváhagyott copy, CTA és vizuális hierarchia együtt vezeti a látogatót a kapcsolatfelvételig.",
+            "safe_zone_checked": "on",
+            "text_legibility_checked": "on",
+        },
+        files={"export_file": ("export.png", b"\x89PNG\r\n\x1a\nassembled-human-qa", "image/png")},
+        follow_redirects=False,
+    )
+    assert assembly.status_code == 303, assembly.text
+    db.refresh(asset)
+    assert asset.assembly_approved is True
+    assert asset.state == "RELEASE_QA"
+
+    logout(client)
+    login(client, "managing-director")
+    release = client.post(
+        f"/marketing/assets/{asset.asset_id}/release-review",
+        data={
+            "decision": "APPROVED",
+            "strategy_match_score": "9",
+            "copy_visual_consistency_score": "9",
+            "channel_fit_score": "9",
+            "conversion_path_score": "9",
+            "four_gate_recheck_passed": "on",
+            "brand_recheck_passed": "on",
+            "technical_export_check_passed": "on",
+            "findings": "",
+        },
+        follow_redirects=False,
+    )
+    assert release.status_code == 303, release.text
+    db.refresh(asset)
+    assert asset.release_approved is True
+    assert asset.state == "RELEASE_APPROVED"
+
+    logout(client)
+    login(client, "owner")
+    published = client.post(
+        f"/marketing/assets/{asset.asset_id}/publish",
+        follow_redirects=False,
+    )
+    assert published.status_code == 303, published.text
+    db.refresh(asset)
+    assert asset.publication_proof_id
+    assert asset.state == "LIVE_QA"
+
+    for index, role in enumerate(("marketing", "creative-director", "copywriter"), start=1):
+        logout(client)
+        login(client, role)
+        live_review = client.post(
+            f"/marketing/assets/{asset.asset_id}/live-review",
+            data={
+                "decision": "APPROVED",
+                "live_url": f"https://app.imperialholding.hu/campaign/{asset.asset_id}",
+                "findings": "",
+            },
+            files={
+                "screenshot_file": (
+                    f"live-{index}.png",
+                    b"\x89PNG\r\n\x1a\n" + f"live-review-{index}".encode(),
+                    "image/png",
+                )
+            },
+            follow_redirects=False,
+        )
+        assert live_review.status_code == 303, live_review.text
+    db.refresh(asset)
+    assert asset.live_review_approved is True
+    assert asset.state == "PUBLISHED"
+
+    logout(client)
+    login(client, "owner")
+    rollback = client.post(
+        f"/marketing/assets/{asset.asset_id}/rollback",
+        data={"reason": "Tesztelt visszavonási folyamat és új tartalomverzió indítása."},
+        follow_redirects=False,
+    )
+    assert rollback.status_code == 303, rollback.text
+    db.refresh(asset)
+    assert asset.state == "DRAFT"
+    assert asset.content_version == 2
