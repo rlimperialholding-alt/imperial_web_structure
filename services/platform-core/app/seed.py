@@ -482,7 +482,7 @@ def seed_database(db: Session) -> None:
         )
         for role in ROLE_DEFINITIONS
     }
-    if settings.is_production:
+    if not settings.demo_runtime_enabled:
         for user in db.scalars(
             select(User).where(User.email.in_(tuple(demo_emails.values())))
         ).all():

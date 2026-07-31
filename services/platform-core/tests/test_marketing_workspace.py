@@ -1,8 +1,11 @@
+from types import SimpleNamespace
+
 from copy_gate_fixtures import generation_trace, imperial_asset, imperial_brief
 from sqlalchemy import select
 
 from app.models import ContentAssetRecord, CopyBriefRecord, CopySourceRecord
-from app.seed import retire_seeded_content_quality_sources
+from app.models import User
+from app.seed import retire_seeded_content_quality_sources, seed_database
 
 
 PASSWORD = "Imperial2026!"
@@ -144,3 +147,16 @@ def test_production_retirement_fails_closed_for_synthetic_sources(db):
     db.refresh(source)
     assert source.status == "retired"
     assert source.approved is False
+
+
+def test_demo_disabled_deactivates_seed_accounts(monkeypatch, db):
+    import app.seed as seed_module
+
+    monkeypatch.setattr(
+        seed_module,
+        "settings",
+        SimpleNamespace(demo_runtime_enabled=False, environment="staging"),
+    )
+    seed_database(db)
+    owner = db.scalar(select(User).where(User.email == "owner@imperial.local"))
+    assert owner.active is False
