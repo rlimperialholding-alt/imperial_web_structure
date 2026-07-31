@@ -139,6 +139,42 @@ type Invoice = {
   crmCustomerName: string | null;
   projectTitle: string | null;
 };
+type CashflowEntry = {
+  id: string;
+  sourceType: "imported_invoice" | "manual" | "contract_schedule" | "bank";
+  direction: "inflow" | "outflow";
+  category: string;
+  counterparty: string;
+  description: string;
+  projectId: string | null;
+  amount: number;
+  currency: string;
+  status: "planned" | "due" | "paid" | "cancelled";
+  dueDate: string;
+  paidAt: string | null;
+};
+type CashflowWorkspace = {
+  period: { from: string; to: string };
+  summaries: Array<{
+    currency: string;
+    actualInflow: number;
+    actualOutflow: number;
+    forecastInflow: number;
+    forecastOutflow: number;
+    overdueOutflow: number;
+    actualBalance: number;
+    forecastBalance: number;
+  }>;
+  monthly: Array<{
+    month: string;
+    currency: string;
+    actualInflow: number;
+    actualOutflow: number;
+    forecastInflow: number;
+    forecastOutflow: number;
+  }>;
+  entries: CashflowEntry[];
+};
 type ImportStatus = {
   workspaceId: string;
   recordCounts: {
@@ -570,6 +606,7 @@ export default function Home() {
     [customers, setCustomers] = useState<Customer[]>([]),
     [contracts, setContracts] = useState<Contract[]>([]),
     [businessProjects, setBusinessProjects] = useState<BusinessProject[]>([]),
+    [cashflow, setCashflow] = useState<CashflowWorkspace | null>(null),
     [invoices, setInvoices] = useState<Invoice[]>([]),
     [importStatus, setImportStatus] = useState<ImportStatus | null>(null),
     [intelligence, setIntelligence] = useState<IntelligenceWorkspace | null>(null);
@@ -581,6 +618,7 @@ export default function Home() {
     [newOpen, setNewOpen] = useState(false),
     [newCustomerOpen, setNewCustomerOpen] = useState(false),
     [newContractOpen, setNewContractOpen] = useState(false),
+    [newCashflowOpen, setNewCashflowOpen] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false),
     [toast, setToast] = useState("");
   const [identity, setIdentity] = useState<Identity>({
@@ -656,6 +694,24 @@ export default function Home() {
     return () => {
       active = false;
     };
+  }, []);
+  const refreshCashflow = async () => {
+    const response = await authenticatedFetch("/api/crm/finance/cashflow", { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    const workspace = await response.json() as CashflowWorkspace;
+    setCashflow(workspace);
+    return workspace;
+  };
+  useEffect(() => {
+    let active = true;
+    authenticatedFetch("/api/crm/finance/cashflow", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        return response.json() as Promise<CashflowWorkspace>;
+      })
+      .then((workspace) => { if (active) setCashflow(workspace); })
+      .catch(() => { if (active) setCashflow(null); });
+    return () => { active = false; };
   }, []);
   const filtered = useMemo(
     () =>
@@ -900,6 +956,48 @@ export default function Home() {
     } catch (error) {
       notify(error instanceof Error && error.message ? error.message : "Az állapotváltás nem sikerült.");
       return false;
+    }
+  };
+  const addCashflowEntry = async (entry: {
+    direction: "inflow" | "outflow";
+    category: string;
+    counterparty: string;
+    description: string;
+    projectId: string;
+    amount: number;
+    dueDate: string;
+    status: "planned" | "due";
+  }) => {
+    try {
+      const response = await authenticatedFetch("/api/crm/finance/cashflow", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      const payload = await response.json() as { entry?: CashflowEntry; error?: string };
+      if (!response.ok || !payload.entry) throw new Error(payload.error);
+      await refreshCashflow();
+      setNewCashflowOpen(false);
+      notify("A cashflow-tételt auditáltan rögzítettük.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A cashflow-tétel mentése nem sikerült.");
+      return false;
+    }
+  };
+  const markCashflowPaid = async (entry: CashflowEntry) => {
+    try {
+      const response = await authenticatedFetch(`/api/crm/finance/cashflow/${entry.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "paid" }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error);
+      await refreshCashflow();
+      notify("A pénzmozgást teljesítettként rögzítettük.");
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A teljesítés mentése nem sikerült.");
     }
   };
   const initials = identity.name
@@ -1181,7 +1279,13 @@ export default function Home() {
           ) : view === "reports" ? (
             <Reports leads={leads} />
           ) : view === "finance" ? (
-            <Finance invoices={invoices} importStatus={importStatus} />
+            <Finance
+              invoices={invoices}
+              importStatus={importStatus}
+              cashflow={cashflow}
+              onNew={() => setNewCashflowOpen(true)}
+              onPaid={markCashflowPaid}
+            />
           ) : view === "executive" ? (
             <ExecutiveDashboard
               leads={leads}
@@ -1247,6 +1351,9 @@ export default function Home() {
       )}{" "}
       {newContractOpen && (
         <NewContractModal customers={customers} onClose={() => setNewContractOpen(false)} onSave={addContract} />
+      )}{" "}
+      {newCashflowOpen && (
+        <NewCashflowModal projects={businessProjects} onClose={() => setNewCashflowOpen(false)} onSave={addCashflowEntry} />
       )}{" "}
       {toast && (
         <div className="toast">
@@ -1909,9 +2016,15 @@ function Reports({ leads }: { leads: Lead[] }) {
 function Finance({
   invoices,
   importStatus,
+  cashflow,
+  onNew,
+  onPaid,
 }: {
   invoices: Invoice[];
   importStatus: ImportStatus | null;
+  cashflow: CashflowWorkspace | null;
+  onNew: () => void;
+  onPaid: (entry: CashflowEntry) => void;
 }) {
   const signedGross = invoices.reduce(
     (total, invoice) => total + invoice.grossAmount,
@@ -1946,11 +2059,47 @@ function Finance({
     currency: "HUF",
     maximumFractionDigits: 0,
   });
+  const hufSummary = cashflow?.summaries.find((item) => item.currency === "HUF");
   return (
     <>
       <section className="section-title">
         <div>
-          <p className="eyebrow">TÉNYADATOK · KIMENŐ SZÁMLÁK</p>
+          <p className="eyebrow">PÉNZÜGYI TÉNY ÉS ELŐREJELZÉS</p>
+          <h2>Cashflow</h2>
+          <p>A tervezett, esedékes és tényleges pénzmozgások elkülönítve; a számlaimport nem minősül automatikusan kifizetésnek.</p>
+        </div>
+        {cashflow && <button className="secondary" onClick={onNew}><Icon name="plus" /> Új cashflow-tétel</button>}
+      </section>
+      {cashflow ? (
+        <>
+          <section className="kpis finance-kpis">
+            <article><span>Tényleges egyenleg</span><strong>{huf.format(hufSummary?.actualBalance ?? 0)}</strong><small>Csak teljesített HUF pénzmozgás</small></article>
+            <article><span>Várható egyenleg</span><strong>{huf.format(hufSummary?.forecastBalance ?? 0)}</strong><small>Tervezett és esedékes HUF tételek</small></article>
+            <article><span>Várható bevétel</span><strong>{huf.format(hufSummary?.forecastInflow ?? 0)}</strong><small>A kiválasztott időszakban</small></article>
+            <article className={(hufSummary?.overdueOutflow ?? 0) > 0 ? "warning" : ""}><span>Lejárt esedékes kiadás</span><strong>{huf.format(hufSummary?.overdueOutflow ?? 0)}</strong><small>Kifizetettnek még nem jelölt tételek</small></article>
+          </section>
+          <section className="table-panel finance-panel">
+            <div className="panel-head"><div><p className="eyebrow">CASHFLOW-NAPLÓ</p><h3>Pénzmozgások</h3></div><span className="count">{cashflow.entries.length}</span></div>
+            <div className="invoice-table">
+              <div className="invoice-row invoice-head"><span>Határidő</span><span>Partner és tétel</span><span>Irány</span><span>Összeg</span><span>Állapot</span></div>
+              {cashflow.entries.slice(0, 100).map((entry) => (
+                <article className="invoice-row" key={entry.id}>
+                  <span><strong>{entry.dueDate}</strong><small>{entry.category}</small></span>
+                  <span><strong>{entry.counterparty}</strong><small>{entry.description}</small></span>
+                  <span><strong>{entry.direction === "inflow" ? "Bevétel" : "Kiadás"}</strong><small>{entry.sourceType === "imported_invoice" ? "Számlaimport" : "Kézi tétel"}</small></span>
+                  <span className={entry.direction === "outflow" ? "negative" : ""}><strong>{entry.currency === "HUF" ? huf.format(entry.amount) : `${entry.amount.toLocaleString("hu-HU")} ${entry.currency}`}</strong></span>
+                  <span className="invoice-links"><b className={entry.status === "paid" ? "matched" : "review"}>{entry.status === "planned" ? "Tervezett" : entry.status === "due" ? "Esedékes" : entry.status === "paid" ? "Teljesített" : "Törölt"}</b>{entry.status !== "paid" && entry.status !== "cancelled" && <button onClick={() => onPaid(entry)}>Teljesítve</button>}</span>
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="empty"><h2>A cashflow-hoz pénzügyi jogosultság szükséges</h2><p>A számlajegyzék ettől függetlenül csak olvasható forrásadatként látható.</p></section>
+      )}
+      <section className="section-title">
+        <div>
+          <p className="eyebrow">FORRÁSADATOK · BEJÖVŐ SZÁMLÁK</p>
           <h2>Számlapilot</h2>
           <p>
             Drive-forrással igazolt, duplikációvédett számlaadatok és
@@ -2977,6 +3126,52 @@ function NewContractModal({
           <div><label>Nettó összeg (Ft) *<input type="number" min="0" step="1" value={netAmount} onChange={(event) => setNetAmount(event.target.value)} /></label><label>ÁFA (%)<input type="number" min="0" max="100" value={vatRate} onChange={(event) => setVatRate(event.target.value)} /></label></div>
         </div>
         <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ customerId, title, contractType, netAmount: Number(netAmount), vatRate: Number(vatRate), effectiveDate }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Tervezet létrehozása"}</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function NewCashflowModal({
+  projects,
+  onClose,
+  onSave,
+}: {
+  projects: BusinessProject[];
+  onClose: () => void;
+  onSave: (entry: {
+    direction: "inflow" | "outflow";
+    category: string;
+    counterparty: string;
+    description: string;
+    projectId: string;
+    amount: number;
+    dueDate: string;
+    status: "planned" | "due";
+  }) => Promise<boolean>;
+}) {
+  const [direction, setDirection] = useState<"inflow" | "outflow">("outflow");
+  const [category, setCategory] = useState("");
+  const [counterparty, setCounterparty] = useState("");
+  const [description, setDescription] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [status, setStatus] = useState<"planned" | "due">("planned");
+  const [busy, setBusy] = useState(false);
+  const valid = Boolean(category.trim() && counterparty.trim() && description.trim() && Number(amount) > 0 && dueDate);
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="modal">
+        <header><div><p className="eyebrow">CASHFLOW</p><h2>Új pénzmozgás</h2><span>A teljesített állapot külön, utólagos művelettel rögzíthető.</span></div><button onClick={onClose}><Icon name="close" /></button></header>
+        <div className="modal-form">
+          <div><label>Irány<select value={direction} onChange={(event) => setDirection(event.target.value as "inflow" | "outflow")}><option value="inflow">Bevétel</option><option value="outflow">Kiadás</option></select></label><label>Állapot<select value={status} onChange={(event) => setStatus(event.target.value as "planned" | "due")}><option value="planned">Tervezett</option><option value="due">Esedékes</option></select></label></div>
+          <div><label>Kategória *<input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="pl. kivitelezési részszámla" /></label><label>Partner *<input value={counterparty} onChange={(event) => setCounterparty(event.target.value)} /></label></div>
+          <label>Leírás *<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+          <div><label>Összeg (HUF) *<input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} /></label><label>Esedékesség *<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label></div>
+          <label>Projekt<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Nincs projekthez kapcsolva</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.portalCode} · {project.title}</option>)}</select></label>
+        </div>
+        <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ direction, category, counterparty, description, projectId, amount: Number(amount), dueDate, status }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Cashflow-tétel rögzítése"}</button></footer>
       </section>
     </div>
   );

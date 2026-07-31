@@ -262,6 +262,31 @@ export const financeInvoiceImports = sqliteTable("finance_invoice_imports", {
   index("finance_invoice_imports_project_idx").on(table.projectId),
 ]);
 
+export const cashflowEntries = sqliteTable("finance_cashflow_entries", {
+  id: text("id").primaryKey(),
+  sourceType: text("source_type", {
+    enum: ["imported_invoice", "manual", "contract_schedule", "bank"],
+  }).notNull(),
+  sourceId: text("source_id"),
+  direction: text("direction", { enum: ["inflow", "outflow"] }).notNull(),
+  category: text("category").notNull(),
+  counterparty: text("counterparty").notNull(),
+  description: text("description").notNull(),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull(),
+  status: text("status", { enum: ["planned", "due", "paid", "cancelled"] }).notNull(),
+  dueDate: text("due_date").notNull(),
+  paidAt: text("paid_at"),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("finance_cashflow_source_idx").on(table.sourceType, table.sourceId),
+  index("finance_cashflow_due_idx").on(table.status, table.dueDate),
+  index("finance_cashflow_project_idx").on(table.projectId, table.dueDate),
+]);
+
 export const sourceRecords = sqliteTable("crm_source_records", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   workspaceId: text("workspace_id").notNull(),

@@ -14,6 +14,8 @@ test("every internal CRM endpoint uses the internal-only identity guard", async 
     "app/api/crm/contracts/route.ts",
     "app/api/crm/contracts/[id]/route.ts",
     "app/api/crm/projects/route.ts",
+    "app/api/crm/finance/cashflow/route.ts",
+    "app/api/crm/finance/cashflow/[id]/route.ts",
     "app/api/intelligence/route.ts",
     "app/api/intelligence/reviews/[id]/route.ts",
   ];
@@ -39,6 +41,19 @@ test("imported customers are backfilled without inventing verified billing data"
   assert.match(migration, /Adatpótlás szükséges/);
   assert.match(migration, /'prospect'/);
   assert.match(migration, /INSERT OR IGNORE/);
+});
+
+test("cashflow separates forecast, actual and overdue amounts by currency", async () => {
+  const route = await readFile("app/api/crm/finance/cashflow/route.ts", "utf8");
+  const migration = await readFile("drizzle/0011_cashflow_ledger.sql", "utf8");
+  assert.match(route, /actualBalance/);
+  assert.match(route, /forecastBalance/);
+  assert.match(route, /overdueOutflow/);
+  assert.match(route, /byCurrency/);
+  assert.match(route, /finance\.write/);
+  assert.match(migration, /'imported_invoice'/);
+  assert.match(migration, /'due'/);
+  assert.doesNotMatch(migration, /'paid'/);
 });
 
 test("the formerly placeholder Intelligence navigation opens persisted workspaces", async () => {
