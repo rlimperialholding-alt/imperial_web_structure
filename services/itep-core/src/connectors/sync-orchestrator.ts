@@ -55,10 +55,26 @@ export class ConnectorSyncOrchestrator {
         accessToken: token,
       });
 
-      const cursor = result.nextCheckpoint.cursor ?? checkpoint?.cursor;
-      const historyId = result.nextCheckpoint.historyId ?? checkpoint?.historyId;
-      const syncToken = result.nextCheckpoint.syncToken ?? checkpoint?.syncToken;
-      const expiresAt = result.nextCheckpoint.expiresAt ?? checkpoint?.expiresAt;
+      const cursor = checkpointValue(
+        result.nextCheckpoint,
+        "cursor",
+        checkpoint?.cursor,
+      );
+      const historyId = checkpointValue(
+        result.nextCheckpoint,
+        "historyId",
+        checkpoint?.historyId,
+      );
+      const syncToken = checkpointValue(
+        result.nextCheckpoint,
+        "syncToken",
+        checkpoint?.syncToken,
+      );
+      const expiresAt = checkpointValue(
+        result.nextCheckpoint,
+        "expiresAt",
+        checkpoint?.expiresAt,
+      );
       await this.checkpoints.save({
         id: checkpoint?.id ?? this.ids.next(),
         connectorAccountId: account.id,
@@ -159,4 +175,17 @@ export class ConnectorSyncOrchestrator {
 
     return results;
   }
+}
+
+function checkpointValue<
+  T extends Record<string, unknown>,
+  K extends keyof T,
+>(
+  nextCheckpoint: T,
+  key: K,
+  previous: T[K] | undefined,
+): T[K] | undefined {
+  return Object.prototype.hasOwnProperty.call(nextCheckpoint, key)
+    ? nextCheckpoint[key]
+    : previous;
 }

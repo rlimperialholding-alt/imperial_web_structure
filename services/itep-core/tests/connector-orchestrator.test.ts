@@ -35,6 +35,25 @@ describe("ConnectorSyncOrchestrator", () => {
     expect(status).toBe("REAUTH_REQUIRED");
   });
 
+  it("clears a completed pagination cursor when the adapter explicitly resets it", async () => {
+    const saved:any[]=[];
+    const account:any={id:"billingo-1",organizationId:"o",kind:"BILLINGO",scope:"LEGAL_ENTITY",scopeKey:"entity",legalEntityId:"entity",externalAccountId:"all",displayName:"Billingo",status:"ACTIVE",scopes:["invoices.read"],createdAt:new Date(),updatedAt:new Date()};
+    const orchestrator=new ConnectorSyncOrchestrator(
+      {async getById(){return account},async save(v){saved.push(v)},async listActive(){return[account]}},
+      {async get(){return{id:"cp1",connectorAccountId:"billingo-1",cursor:"7",updatedAt:new Date()}},async save(v){saved.push(v)}},
+      {async getAccessToken(){return"token"},async invalidate(){}},
+      {BILLINGO:{async sync(){return{received:0,ingested:0,ignored:0,failed:0,nextCheckpoint:{cursor:undefined}}}}},
+      {async open(){}},
+      {now:()=>new Date("2026-07-24T08:00:00Z")},
+      {next:()=>"cp1"},
+    );
+
+    await orchestrator.syncAccount("billingo-1");
+
+    const savedCheckpoint=saved.find(v=>v.connectorAccountId==="billingo-1");
+    expect(savedCheckpoint.cursor).toBeUndefined();
+  });
+
   it("reports a partial sync as a failure and keeps the last success timestamp", async () => {
     const saved:any[]=[];
     const observed:any[]=[];

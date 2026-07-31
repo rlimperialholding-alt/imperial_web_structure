@@ -11,6 +11,7 @@ describe("business gateways",()=>{
   expect((await g.listInvoiceChanges({accessToken:"x",externalAccountId:"p"}))
    .invoices[0]?.invoiceNumber).toBe("I1");
   expect(requestedUrl).toContain("/v3/documents");
+  expect(requestedUrl).toContain("per_page=100");
   await g.listInvoiceChanges({accessToken:"x",externalAccountId:"all"});
   expect(requestedUrl).not.toContain("partner_id");});
  it("maps bank",async()=>{const g=new Psd2BankApiGateway("https://x.test",

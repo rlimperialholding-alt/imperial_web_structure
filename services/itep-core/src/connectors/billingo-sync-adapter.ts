@@ -34,7 +34,14 @@ export class BillingoSyncAdapter implements ConnectorSyncAdapter {
         result.status === "TASK_CREATED" ? ingested++ : ignored++;
       } catch { failed++; }
     }
-    return { received: batch.invoices.length, ingested, ignored, failed,
-      nextCheckpoint: batch.nextCursor ? {cursor:batch.nextCursor} : {} };
+    return {
+      received: batch.invoices.length,
+      ingested,
+      ignored,
+      failed,
+      // The explicit undefined clears the completed pagination cycle. Other
+      // adapters may omit cursor to preserve a provider-owned checkpoint.
+      nextCheckpoint: { cursor: batch.nextCursor },
+    };
   }
 }
