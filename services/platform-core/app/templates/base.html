@@ -36,6 +36,7 @@
       {% if can_access(user, 'control-center', 'executive-dashboard') %}<a class="{% if active=='exceptions' %}active{% endif %}" href="/exceptions"><i>!</i><span>Kivételek</span></a>{% endif %}
       <span class="nav-label">RENDSZER</span>
       {% if can_access(user, 'control-center', 'admin') %}<a class="{% if active=='modules' %}active{% endif %}" href="/modules"><i>▦</i><span>Modulok</span></a>{% endif %}
+      {% if user.role in ['owner','platform-admin'] %}<a class="{% if active=='user-admin' %}active{% endif %}" href="/admin/users"><i>◇</i><span>Felhasználók</span></a>{% endif %}
       {% if can_access(user, 'admin') %}<a class="{% if active=='governance' %}active{% endif %}" href="/development-governance"><i>≠</i><span>Reuse gate</span></a>{% endif %}
       {% if can_access(user, 'completion-audit', 'admin') %}<a class="{% if active=='releases' %}active{% endif %}" href="/releases"><i>⇧</i><span>Kiadások</span></a>{% endif %}
       {% if can_access(user, 'integration-control-room', 'admin') %}<a class="{% if active=='pilots' %}active{% endif %}" href="/pilots"><i>⌁</i><span>Integrációs pilot</span></a>{% endif %}
@@ -46,7 +47,7 @@
     <header class="workspace-topbar">
       <button class="menu-toggle" type="button" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
       <form class="global-search" action="/search" method="get"><span>⌕</span><input name="q" placeholder="Keressen projektet, feladatot, dokumentumot vagy céget…" autocomplete="off"></form>
-      <div class="top-actions">{% if can_access(user, 'workflow-center', 'workspace') %}<a class="top-action" href="/tasks">Feladatok</a>{% endif %}{% if can_access(user, 'control-center', 'executive-dashboard') %}<a class="top-action" href="/exceptions">Riasztások</a>{% endif %}<form method="post" action="/logout"><button class="logout-button">Kilépés</button></form></div>
+      <div class="top-actions">{% if can_access(user, 'workflow-center', 'workspace') %}<a class="top-action" href="/tasks">Feladatok</a>{% endif %}{% if can_access(user, 'control-center', 'executive-dashboard') %}<a class="top-action" href="/exceptions">Riasztások</a>{% endif %}<a class="top-action" href="/account/password">Jelszó</a><form method="post" action="/logout"><button class="logout-button">Kilépés</button></form></div>
     </header>
     <main class="workspace-content">
 {% else %}

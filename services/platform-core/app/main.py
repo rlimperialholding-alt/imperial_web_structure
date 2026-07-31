@@ -104,8 +104,8 @@ from .schemas import (
     ContractGenerateIn,
     ChangeControlEventIn,
 )
-from .security import current_partner_access, current_user, require_api_token, require_internal_job_token, require_role, require_session_user, verify_password
-from .roles import can_access, modules_for_path, public_role_payload, role_definition
+from .security import current_partner_access, current_user, hash_password, require_api_token, require_internal_job_token, require_role, require_session_user, verify_password
+from .roles import ROLE_DEFINITIONS, can_access, modules_for_path, public_role_payload, role_definition
 from .seed import DEMO_PASSWORD, seed_database
 from .services.consistency import scan_consistency, upsert_fact
 from .services.commercial_integration import commercial_workspace, contract_source_status, generate_contract_package, ingest_change_control_event, ingest_contract_signed, validate_contract_payload
@@ -183,6 +183,8 @@ def auth_or_redirect(request: Request, db: Session):
             f"/login?return_to={request.url.path}",
             status_code=303,
         )
+    if user.must_change_password and request.url.path != "/account/password":
+        return None, RedirectResponse("/account/password", status_code=303)
     required_modules = modules_for_path(request.url.path)
     if required_modules and not can_access(user, *required_modules):
         raise HTTPException(
@@ -891,13 +893,145 @@ def login(
         if return_to.startswith("/") and not return_to.startswith("//")
         else "/"
     )
-    return RedirectResponse(safe_return_to, status_code=303)
+    return RedirectResponse("/account/password" if user.must_change_password else safe_return_to, status_code=303)
 
 
 @app.post("/logout")
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
+
+
+@app.get("/account/password", response_class=HTMLResponse)
+def account_password_page(request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or not user.active:
+        return RedirectResponse("/login?return_to=/account/password", status_code=303)
+    return templates.TemplateResponse(
+        request=request,
+        name="account_password.html",
+        context={"user": user, "active": "account", "error": None, "success": None},
+    )
+
+
+@app.post("/account/password", response_class=HTMLResponse)
+async def account_password_change(request: Request, db: Session = Depends(get_db)):
+    user = current_user(request, db)
+    if not user or not user.active:
+        return RedirectResponse("/login?return_to=/account/password", status_code=303)
+    form = await request.form()
+    current_password = str(form.get("current_password") or "")
+    new_password = str(form.get("new_password") or "")
+    confirm_password = str(form.get("confirm_password") or "")
+    error = None
+    if not verify_password(current_password, user.password_hash):
+        error = "A jelenlegi jelszó nem megfelelő."
+    elif len(new_password) < 14:
+        error = "Az új jelszó legalább 14 karakter legyen."
+    elif new_password != confirm_password:
+        error = "Az új jelszó és a megerősítés nem egyezik."
+    elif verify_password(new_password, user.password_hash):
+        error = "Az új jelszó nem lehet azonos a jelenlegivel."
+    if error:
+        return templates.TemplateResponse(
+            request=request,
+            name="account_password.html",
+            context={"user": user, "active": "account", "error": error, "success": None},
+            status_code=400,
+        )
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = False
+    audit(db, actor=user.email, action="user.password_changed", entity_type="user", entity_id=str(user.id))
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="account_password.html",
+        context={"user": user, "active": "account", "error": None, "success": "A jelszó módosítása sikeres."},
+    )
+
+
+def _require_user_admin(request: Request, db: Session) -> User:
+    user = require_session_user(request, db)
+    if user.role not in {"owner", "platform-admin"}:
+        raise HTTPException(403, "Felhasználókezeléshez tulajdonosi vagy platform admin jogosultság szükséges.")
+    return user
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def user_admin_workspace(request: Request, db: Session = Depends(get_db)):
+    user = _require_user_admin(request, db)
+    users = list(db.scalars(select(User).order_by(User.active.desc(), User.name, User.email)))
+    return templates.TemplateResponse(
+        request=request,
+        name="user_admin.html",
+        context={"user": user, "active": "user-admin", "users": users, "roles": ROLE_DEFINITIONS},
+    )
+
+
+@app.post("/admin/users")
+async def user_admin_create(request: Request, db: Session = Depends(get_db)):
+    actor = _require_user_admin(request, db)
+    form = await request.form()
+    email = str(form.get("email") or "").strip().lower()
+    name = str(form.get("name") or "").strip()
+    role = str(form.get("role") or "")
+    temporary_password = str(form.get("temporary_password") or "")
+    if "@" not in email or len(name) < 2:
+        raise HTTPException(400, "Érvényes név és e-mail-cím szükséges.")
+    if role not in {item.id for item in ROLE_DEFINITIONS}:
+        raise HTTPException(400, "Ismeretlen szerepkör.")
+    if role == "owner" and actor.role != "owner":
+        raise HTTPException(403, "Tulajdonosi fiókot csak tulajdonos hozhat létre.")
+    if len(temporary_password) < 14:
+        raise HTTPException(400, "Az ideiglenes jelszó legalább 14 karakter legyen.")
+    if db.scalar(select(User).where(User.email == email)):
+        raise HTTPException(409, "Ezzel az e-mail-címmel már létezik felhasználó.")
+    row = User(
+        email=email,
+        name=name,
+        role=role,
+        password_hash=hash_password(temporary_password),
+        active=True,
+        must_change_password=True,
+    )
+    db.add(row)
+    db.flush()
+    audit(db, actor=actor.email, action="user.created", entity_type="user", entity_id=str(row.id), after={"email": email, "name": name, "role": role, "must_change_password": True})
+    db.commit()
+    return RedirectResponse(f"/admin/users#user-{row.id}", status_code=303)
+
+
+@app.post("/admin/users/{user_id}")
+async def user_admin_update(user_id: int, request: Request, db: Session = Depends(get_db)):
+    actor = _require_user_admin(request, db)
+    row = db.get(User, user_id)
+    if not row:
+        raise HTTPException(404, "A felhasználó nem található.")
+    form = await request.form()
+    role = str(form.get("role") or row.role)
+    active = form.get("active") is not None
+    temporary_password = str(form.get("temporary_password") or "")
+    if role not in {item.id for item in ROLE_DEFINITIONS}:
+        raise HTTPException(400, "Ismeretlen szerepkör.")
+    if (row.role == "owner" or role == "owner") and actor.role != "owner":
+        raise HTTPException(403, "Tulajdonosi fiókot csak tulajdonos kezelhet.")
+    if row.id == actor.id and not active:
+        raise HTTPException(409, "A saját aktív fiók nem kapcsolható ki.")
+    if row.role == "owner" and (not active or role != "owner"):
+        other_owners = db.scalar(select(text("count(*)")).select_from(User).where(User.role == "owner", User.active.is_(True), User.id != row.id)) or 0
+        if other_owners == 0:
+            raise HTTPException(409, "Az utolsó aktív tulajdonosi fiók nem kapcsolható ki és nem sorolható át.")
+    before = {"role": row.role, "active": row.active, "must_change_password": row.must_change_password}
+    row.role = role
+    row.active = active
+    if temporary_password:
+        if len(temporary_password) < 14:
+            raise HTTPException(400, "Az ideiglenes jelszó legalább 14 karakter legyen.")
+        row.password_hash = hash_password(temporary_password)
+        row.must_change_password = True
+    audit(db, actor=actor.email, action="user.updated", entity_type="user", entity_id=str(row.id), before=before, after={"role": row.role, "active": row.active, "must_change_password": row.must_change_password})
+    db.commit()
+    return RedirectResponse(f"/admin/users#user-{row.id}", status_code=303)
 
 
 @app.get("/executive", response_class=HTMLResponse)
