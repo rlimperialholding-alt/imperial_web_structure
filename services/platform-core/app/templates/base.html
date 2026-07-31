@@ -29,6 +29,7 @@
       {% if can_access(user, 'import-center') %}<a class="{% if active=='imports' %}active{% endif %}" href="/imports"><i>⇩</i><span>Import Center</span></a>{% endif %}
       {% if can_access(user, 'financial-control', 'finance-intelligence') %}<a class="{% if active=='financial' %}active{% endif %}" href="/financial/incoming-invoices"><i>Ft</i><span>Bejövő számlák</span></a>{% endif %}
       {% if can_access(user, 'housematch', 'buildconfig') %}<a class="{% if active=='experience' %}active{% endif %}" href="/experience"><i>⌂</i><span>HouseMatch & BuildConfig</span></a>{% endif %}
+      {% if can_access(user, 'housebuild-agent', 'plotcheck', 'buildconfig', 'plancheck') %}<a class="{% if active=='technical' %}active{% endif %}" href="/technical"><i>⌬</i><span>Műszaki termékfolyamatok</span></a>{% endif %}
       {% if can_access(user, 'tendermail') %}<a class="{% if active=='tendermail' %}active{% endif %}" href="/tendermail"><i>✉</i><span>TenderMail</span></a>{% endif %}
       {% if can_access(user, 'contract-generator', 'change-control') %}<a class="{% if active=='commercial' %}active{% endif %}" href="/commercial"><i>§</i><span>Szerződés & ChangeControl</span></a>{% endif %}
       {% if can_access(user, 'control-center', 'executive-dashboard') %}<a class="{% if active=='exceptions' %}active{% endif %}" href="/exceptions"><i>!</i><span>Kivételek</span></a>{% endif %}

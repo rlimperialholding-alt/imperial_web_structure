@@ -26,13 +26,13 @@ def _role(
 
 
 ROLE_DEFINITIONS = (
-    _role("owner", "Tulajdonos", "TU", "workspace executive-dashboard control-center integration-control-room completion-audit financial-control finance-intelligence crm project-control digital-project-managers pm-cockpit operations-workspace"),
-    _role("managing-director", "Ügyvezető", "ÜV", "workspace executive-dashboard control-center crm project-control digital-project-managers pm-cockpit operations-workspace smart-calendar financial-control finance-intelligence procurement document-evidence workflow-center"),
+    _role("owner", "Tulajdonos", "TU", "workspace executive-dashboard control-center integration-control-room completion-audit financial-control finance-intelligence crm project-control digital-project-managers pm-cockpit operations-workspace housebuild-agent plotcheck buildconfig plancheck"),
+    _role("managing-director", "Ügyvezető", "ÜV", "workspace executive-dashboard control-center crm project-control digital-project-managers pm-cockpit operations-workspace smart-calendar financial-control finance-intelligence procurement document-evidence workflow-center housebuild-agent plotcheck buildconfig plancheck"),
     _role("marketing", "Marketing", "MK", "workspace marketing-control campaign-factory content-factory claim-registry website-content-control lead-intelligence b2b-project-intake housematch housevision crm answer-center"),
     _role("technical-prep", "Műszaki előkészítő", "ME", "workspace house-catalog housebuild-agent housematch plotcheck buildconfig plancheck engineering-workspace document-evidence project-control"),
     _role("sales", "Értékesítő", "ÉR", "workspace crm sales housematch plotcheck buildconfig booking-engine reservation-engine contract-generator my-imperial"),
-    _role("finance", "Pénzügy", "PÜ", "workspace financial-control finance-intelligence procurement import-center tendermail project-control change-control document-evidence executive-dashboard"),
-    _role("project-manager", "Projektmenedzser", "PM", "workspace project-control digital-project-managers pm-cockpit operations-workspace smart-calendar procurement change-control my-imperial document-evidence partner-connect partner-field field-pwa imperial-care"),
+    _role("finance", "Pénzügy", "PÜ", "workspace financial-control finance-intelligence procurement import-center tendermail project-control change-control document-evidence executive-dashboard buildconfig"),
+    _role("project-manager", "Projektmenedzser", "PM", "workspace project-control digital-project-managers pm-cockpit operations-workspace smart-calendar procurement change-control my-imperial document-evidence partner-connect partner-field field-pwa imperial-care plotcheck plancheck"),
     _role("designer", "Tervező partner", "TP", "workspace engineering-workspace plancheck plotcheck buildconfig my-imperial document-evidence"),
     _role("subcontractor", "Alvállalkozó", "AV", "workspace partner-connect partner-field field-pwa operations-workspace procurement document-evidence imperial-care"),
     _role("customer", "Ügyfél", "ÜF", "workspace my-imperial housematch plotcheck buildconfig booking-engine reservation-engine change-control imperial-care"),
@@ -54,6 +54,7 @@ PAGE_ACCESS = (
     ("/search", ("workspace",)),
     ("/imports", ("import-center",)),
     ("/experience", ("housematch", "buildconfig")),
+    ("/technical", ("housebuild-agent", "plotcheck", "buildconfig", "plancheck")),
     ("/tendermail", ("tendermail",)),
     ("/commercial", ("contract-generator", "change-control")),
     ("/exceptions", ("control-center", "executive-dashboard")),

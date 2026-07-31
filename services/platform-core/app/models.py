@@ -265,6 +265,52 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TechnicalCase(Base):
+    __tablename__ = "cc_technical_cases"
+    __table_args__ = (
+        UniqueConstraint("module_key", "case_id", name="uq_cc_technical_case_module_id"),
+        CheckConstraint("module_key IN ('housebuild-agent','plotcheck','buildconfig','plancheck')", name="ck_cc_technical_case_module"),
+        CheckConstraint("status IN ('draft','review','approved','rejected')", name="ck_cc_technical_case_status"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    module_key: Mapped[str] = mapped_column(String(50), index=True)
+    project_id: Mapped[str] = mapped_column(String(100), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(30), default="draft", index=True)
+    input_json: Mapped[str] = mapped_column(Text, default="{}")
+    result_json: Mapped[str] = mapped_column(Text, default="{}")
+    source_snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_by: Mapped[str] = mapped_column(String(255))
+    assigned_to: Mapped[str | None] = mapped_column(String(255))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[str | None] = mapped_column(String(255))
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class TechnicalGate(Base):
+    __tablename__ = "cc_technical_gates"
+    __table_args__ = (
+        UniqueConstraint("case_id", "gate_key", name="uq_cc_technical_gate_case_key"),
+        CheckConstraint("status IN ('pending','pass','fail','not_applicable')", name="ck_cc_technical_gate_status"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[str] = mapped_column(ForeignKey("cc_technical_cases.case_id", ondelete="CASCADE"), index=True)
+    gate_key: Mapped[str] = mapped_column(String(100))
+    label: Mapped[str] = mapped_column(String(255))
+    required: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    evidence: Mapped[str | None] = mapped_column(Text)
+    checked_by: Mapped[str | None] = mapped_column(String(255))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class CopySourceRecord(Base):
     __tablename__ = "cq_source_records"
     __table_args__ = (UniqueConstraint("source_key", "version", name="uq_cq_source_key_version"),)

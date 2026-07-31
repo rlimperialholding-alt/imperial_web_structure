@@ -34,6 +34,7 @@ from .models import (
     ProjectRegistry,
     ReleaseRecord,
     TaskRecord,
+    TechnicalCase,
     User,
     CalculationSourceRegistry,
     EnterpriseCanonicalRecord,
@@ -55,6 +56,9 @@ from .copy_gate.models import ApprovalSubmission, AssemblySubmission, ContentAss
 from .schemas import (
     ArtifactIn,
     CalculationRequest,
+    TechnicalCaseIn,
+    TechnicalDecisionIn,
+    TechnicalGateReviewIn,
     EnvironmentIn,
     EventIn,
     FactIn,
@@ -113,6 +117,7 @@ from .services.pilots import run_all_pilots, run_pilot_scenario
 from .services.itep_finance import ItepFinanceError, incoming_invoices
 from .services.releases import add_artifact, create_release, release_gate
 from .services.content_quality import assemble_publication_bundle, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
+from .services.technical_products import create_case, decide_case, get_case, list_cases, review_gate, submit_case
 from .demo_runtime import DemoRuntimeError, demo_runtime
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -1290,6 +1295,230 @@ def api_housematch(data: HouseMatchIn):
         return housematch_repository.match(HouseProfile(budget_huf=data.budget_huf, target_area_m2=data.target_area_m2, lifestyle=data.lifestyle, allowed_brands=tuple(data.allowed_brands), score_profile=data.score_profile), limit=data.limit)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+def _technical_payload_for_user(payload: dict, user: User) -> dict:
+    if payload.get("module_key") != "buildconfig" or user.role in {"owner", "managing-director", "finance", "platform-admin"}:
+        return payload
+    result = dict(payload.get("result") or {})
+    result.pop("internal_control", None)
+    return {**payload, "result": result}
+
+
+_TECHNICAL_ADMIN_ROLES = {"owner", "managing-director", "platform-admin"}
+_TECHNICAL_CREATOR_ROLES = {
+    "housebuild-agent": _TECHNICAL_ADMIN_ROLES | {"technical-prep"},
+    "plotcheck": _TECHNICAL_ADMIN_ROLES | {"technical-prep", "sales", "project-manager", "designer"},
+    "buildconfig": _TECHNICAL_ADMIN_ROLES | {"technical-prep", "sales", "designer"},
+    "plancheck": _TECHNICAL_ADMIN_ROLES | {"technical-prep", "project-manager", "designer"},
+}
+_TECHNICAL_REVIEWER_ROLES = {
+    "housebuild-agent": _TECHNICAL_ADMIN_ROLES | {"technical-prep"},
+    "plotcheck": _TECHNICAL_ADMIN_ROLES | {"technical-prep", "project-manager", "designer"},
+    "buildconfig": _TECHNICAL_ADMIN_ROLES | {"technical-prep", "designer"},
+    "plancheck": _TECHNICAL_ADMIN_ROLES | {"technical-prep", "project-manager", "designer"},
+}
+
+
+def _can_view_technical_case(user: User, module_key: str) -> bool:
+    """Keep internal technical records away from customer/partner workspaces."""
+    return user.role not in {"customer", "subcontractor"} and can_access(user, module_key)
+
+
+def _can_create_technical_case(user: User, module_key: str) -> bool:
+    return _can_view_technical_case(user, module_key) and user.role in _TECHNICAL_CREATOR_ROLES.get(module_key, set())
+
+
+def _can_review_technical_gate(user: User, module_key: str, gate_key: str) -> bool:
+    if not _can_view_technical_case(user, module_key) or gate_key == "margin":
+        return False
+    if module_key == "buildconfig" and gate_key in {"finance", "cashflow"}:
+        return user.role in _TECHNICAL_ADMIN_ROLES | {"finance"}
+    if user.role == "finance":
+        return False
+    return user.role in _TECHNICAL_REVIEWER_ROLES.get(module_key, set())
+
+
+@app.get("/technical", response_class=HTMLResponse)
+def technical_workspace(request: Request, module: str = "", project_id: str = "", db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    visible_modules = {key for key in _TECHNICAL_CREATOR_ROLES if _can_view_technical_case(user, key)}
+    if not visible_modules or (module and module not in visible_modules):
+        raise HTTPException(403, "Ehhez a műszaki munkatérhez nincs jogosultság.")
+    rows = [
+        row
+        for row in list_cases(db, module_key=module or None, project_id=project_id or None)
+        if row["module_key"] in visible_modules
+    ]
+    return templates.TemplateResponse(
+        request=request,
+        name="technical.html",
+        context={
+            "user": user,
+            "active": "technical",
+            "cases": [_technical_payload_for_user(row, user) for row in rows],
+            "selected_module": module,
+            "project_id": project_id,
+            "catalog": pricing_repository.brand_catalog(),
+            "houses": housematch_repository.catalog(active_only=True),
+            "creatable_modules": {key for key in visible_modules if _can_create_technical_case(user, key)},
+            "can_review_technical_gate": lambda module_key, gate_key: _can_review_technical_gate(user, module_key, gate_key),
+        },
+    )
+
+
+@app.post("/technical/cases")
+async def technical_case_create(request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    form = await request.form()
+    module_key = str(form.get("module_key") or "")
+    if not _can_create_technical_case(user, module_key):
+        raise HTTPException(403, "Ehhez a műszaki modulhoz nincs jogosultság.")
+    data: dict = {}
+    if module_key == "housebuild-agent":
+        data = {"source_house_id": str(form.get("source_house_id") or ""), "rights_evidence": str(form.get("rights_evidence") or "")}
+    elif module_key == "plotcheck":
+        data = {
+            "address": str(form.get("address") or ""), "parcel_number": str(form.get("parcel_number") or ""),
+            "zoning_code": str(form.get("zoning_code") or ""), "plot_area_m2": str(form.get("plot_area_m2") or ""),
+            "utilities": str(form.get("utilities") or ""),
+            "evidence_references": [line.strip() for line in str(form.get("evidence_references") or "").splitlines() if line.strip()],
+        }
+    elif module_key == "buildconfig":
+        data = {
+            "brand": str(form.get("brand") or ""), "technology": str(form.get("technology") or ""),
+            "completion_level": str(form.get("completion_level") or ""), "package": str(form.get("package") or ""),
+            "gross_area_m2": str(form.get("gross_area_m2") or ""),
+        }
+    elif module_key == "plancheck":
+        data = {"document_refs": [line.strip() for line in str(form.get("document_refs") or "").splitlines() if line.strip()]}
+    try:
+        row = create_case(
+            db, module_key=module_key, project_id=str(form.get("project_id") or ""),
+            title=str(form.get("title") or ""), data=data, actor=user.email,
+            assigned_to=str(form.get("assigned_to") or "") or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return RedirectResponse(f"/technical?module={module_key}#{row['case_id']}", status_code=303)
+
+
+@app.post("/technical/cases/{case_id}/submit")
+def technical_case_submit(case_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    try:
+        row = get_case(db, case_id)
+        if not _can_create_technical_case(user, row["module_key"]):
+            raise HTTPException(403, "Nincs jogosultság.")
+        submit_case(db, case_id, user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "A műszaki ügy nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/technical?module={row['module_key']}#{case_id}", status_code=303)
+
+
+@app.post("/technical/cases/{case_id}/gates/{gate_key}")
+async def technical_gate_review(case_id: str, gate_key: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    form = await request.form()
+    try:
+        row = get_case(db, case_id)
+        if not _can_review_technical_gate(user, row["module_key"], gate_key):
+            raise HTTPException(403, "Ezt az ellenőrzési kaput nem értékelheted.")
+        review_gate(db, case_id, gate_key, str(form.get("status") or ""), str(form.get("evidence") or ""), user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "A műszaki ügy vagy kapu nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/technical?module={row['module_key']}#{case_id}", status_code=303)
+
+
+@app.post("/technical/cases/{case_id}/decision")
+async def technical_case_decision(case_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    form = await request.form()
+    try:
+        row = get_case(db, case_id)
+        decision_roles = {"owner", "managing-director", "platform-admin"}
+        if row["module_key"] in {"plotcheck", "plancheck"}:
+            decision_roles |= {"technical-prep", "designer"}
+        if user.role not in decision_roles:
+            raise HTTPException(403, "A végső műszaki döntéshez nincs jogosultság.")
+        decide_case(db, case_id, str(form.get("decision") or ""), str(form.get("reason") or ""), user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "A műszaki ügy nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/technical?module={row['module_key']}#{case_id}", status_code=303)
+
+
+@app.get("/api/technical/cases")
+def api_technical_cases(request: Request, module: str = "", project_id: str = "", db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if module and not _can_view_technical_case(user, module):
+        raise HTTPException(403, "Nincs jogosultság.")
+    rows = list_cases(db, module_key=module or None, project_id=project_id or None)
+    return [_technical_payload_for_user(row, user) for row in rows if _can_view_technical_case(user, row["module_key"])]
+
+
+@app.post("/api/technical/cases")
+def api_technical_case_create(payload: TechnicalCaseIn, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if not _can_create_technical_case(user, payload.module_key):
+        raise HTTPException(403, "Nincs jogosultság.")
+    try:
+        row = create_case(db, module_key=payload.module_key, project_id=payload.project_id, title=payload.title, data=payload.input, actor=user.email, assigned_to=payload.assigned_to)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _technical_payload_for_user(row, user)
+
+
+@app.post("/api/technical/cases/{case_id}/submit")
+def api_technical_case_submit(case_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    try:
+        row = get_case(db, case_id)
+        if not _can_create_technical_case(user, row["module_key"]):
+            raise HTTPException(403, "Nincs jogosultság.")
+        return _technical_payload_for_user(submit_case(db, case_id, user.email), user)
+    except KeyError as exc:
+        raise HTTPException(404, "A műszaki ügy nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/technical/cases/{case_id}/gates/{gate_key}")
+def api_technical_gate_review(case_id: str, gate_key: str, payload: TechnicalGateReviewIn, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    try:
+        row = get_case(db, case_id)
+        if not _can_review_technical_gate(user, row["module_key"], gate_key):
+            raise HTTPException(403, "Nincs jogosultság.")
+        return _technical_payload_for_user(review_gate(db, case_id, gate_key, payload.status, payload.evidence, user.email), user)
+    except KeyError as exc:
+        raise HTTPException(404, "A műszaki ügy vagy kapu nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/technical/cases/{case_id}/decision")
+def api_technical_case_decision(case_id: str, payload: TechnicalDecisionIn, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    try:
+        row = get_case(db, case_id)
+        decision_roles = {"owner", "managing-director", "platform-admin"}
+        if row["module_key"] in {"plotcheck", "plancheck"}:
+            decision_roles |= {"technical-prep", "designer"}
+        if user.role not in decision_roles:
+            raise HTTPException(403, "Nincs döntési jogosultság.")
+        return _technical_payload_for_user(decide_case(db, case_id, payload.decision, payload.reason, user.email), user)
+    except KeyError as exc:
+        raise HTTPException(404, "A műszaki ügy nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 def _form_datetime(value: str | None, *, end_of_day: bool = False) -> datetime | None:
