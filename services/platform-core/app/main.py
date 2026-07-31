@@ -114,6 +114,7 @@ from .services.consistency import scan_consistency, upsert_fact
 from .services.commercial_integration import commercial_workspace, contract_source_status, generate_contract_package, ingest_change_control_event, ingest_contract_signed, validate_contract_payload
 from .services.development_governance import create_discovery, list_discoveries, review_discovery
 from .services.dashboard import dashboard_metrics
+from .services.executive_decisions import assign_consistency_issue, resolve_executive_event
 from .services.integration import ingest_event, process_outbox, register_heartbeat
 from .services.file_ingestion import parse_upload
 from .services.housematch import HouseProfile, housematch_repository
@@ -1817,6 +1818,81 @@ def exceptions_page(request: Request, db: Session = Depends(get_db)):
     issues = db.scalars(select(ConsistencyIssue).where(ConsistencyIssue.status == "open").order_by(desc(ConsistencyIssue.last_detected_at))).all()
     tasks = db.scalars(select(TaskRecord).where(TaskRecord.status == "open", TaskRecord.executive_relevance.is_(True)).order_by(TaskRecord.due_at)).all()
     return templates.TemplateResponse(request=request, name="exceptions.html", context={"user": user, "events": events, "issues": issues, "tasks": tasks, "active": "exceptions"})
+
+
+@app.post("/exceptions/events/{event_id}/resolve")
+async def exceptions_event_resolve(event_id: str, request: Request, db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    form = await request.form()
+    try:
+        resolve_executive_event(
+            db,
+            event_id,
+            resolution_note=str(form.get("resolution_note") or ""),
+            close_related_tasks=form.get("close_related_tasks") is not None,
+            actor=user.email,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "A vezetői esemény nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse("/exceptions", status_code=303)
+
+
+@app.post("/exceptions/issues/{fingerprint}/assign")
+async def exceptions_issue_assign(fingerprint: str, request: Request, db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    form = await request.form()
+    try:
+        assign_consistency_issue(
+            db,
+            fingerprint,
+            responsible=str(form.get("responsible") or ""),
+            assignment_note=str(form.get("assignment_note") or ""),
+            actor=user.email,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "Az adateltérés nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse("/exceptions", status_code=303)
+
+
+@app.post("/exceptions/issues/{fingerprint}/recheck")
+def exceptions_issue_recheck(fingerprint: str, request: Request, db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    issue = db.scalar(select(ConsistencyIssue).where(ConsistencyIssue.fingerprint == fingerprint))
+    if not issue:
+        raise HTTPException(404, "Az adateltérés nem található.")
+    scan_consistency(db, project_id=issue.project_id, actor=user.email)
+    return RedirectResponse("/exceptions", status_code=303)
+
+
+@app.post("/exceptions/tasks/{task_id}/update")
+async def exceptions_task_update(task_id: str, request: Request, db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    form = await request.form()
+    try:
+        update_task(
+            db,
+            task_id,
+            TaskUpdateIn(
+                status=str(form.get("status") or "") or None,
+                assignee=str(form.get("assignee") or "") or None,
+            ),
+            actor=user.email,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "A vezetői feladat nem található.") from exc
+    return RedirectResponse("/exceptions", status_code=303)
 
 
 @app.get("/releases", response_class=HTMLResponse)

@@ -83,6 +83,9 @@ class EventRecord(Base):
     executive_relevance: Mapped[bool] = mapped_column(Boolean, default=False)
     evidence_url: Mapped[str | None] = mapped_column(String(1000))
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    resolved_by: Mapped[str | None] = mapped_column(String(255))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -163,6 +166,7 @@ class ConsistencyIssue(Base):
     value_b: Mapped[str | None] = mapped_column(Text)
     financial_impact_huf: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     responsible: Mapped[str | None] = mapped_column(String(255))
+    assignment_note: Mapped[str | None] = mapped_column(Text)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
     first_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
