@@ -110,6 +110,7 @@ from .services.operations import create_daily_report, create_delivery_note, crea
 from .services.partner_field import access_is_valid, attendance_action, authenticate_access, create_access, create_change, create_partner_issue, create_progress, deactivate_access, internal_partner_projection, partner_dashboard, review_progress, save_evidence
 from .services.tender_mail import add_canonical_partner_recipients, add_recipient, approve_campaign, campaign_readiness, create_campaign, dispatch_batch, queue_campaign, record_event, suppress_email, tender_mail_metrics, unsubscribe_by_token, upsert_domain, verify_domain
 from .services.pilots import run_all_pilots, run_pilot_scenario
+from .services.itep_finance import ItepFinanceError, incoming_invoices
 from .services.releases import add_artifact, create_release, release_gate
 from .services.content_quality import assemble_publication_bundle, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
 from .demo_runtime import DemoRuntimeError, demo_runtime
@@ -187,6 +188,36 @@ def partner_auth_or_redirect(request: Request, db: Session):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "imperial-intelligence-control-center", "version": __version__, "platform_version": "5.0.0"}
+
+
+@app.get("/financial/incoming-invoices", response_class=HTMLResponse)
+def financial_incoming_invoices(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    try:
+        page = max(1, int(request.query_params.get("page", "1")))
+    except ValueError:
+        page = 1
+    try:
+        data = incoming_invoices(
+            user,
+            page=page,
+            page_size=50,
+            search=request.query_params.get("search", ""),
+            payment_status=request.query_params.get("paymentStatus", ""),
+            currency=request.query_params.get("currency", ""),
+        )
+    except ItepFinanceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return templates.TemplateResponse(
+        request=request,
+        name="incoming_invoices.html",
+        context={"user": user, "data": data, "active": "financial"},
+    )
 
 
 @app.post("/api/content-quality/sources", dependencies=[Depends(require_api_token)])

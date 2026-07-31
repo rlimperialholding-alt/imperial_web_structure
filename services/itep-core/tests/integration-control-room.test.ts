@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { IntegrationControlRoomService } from "../src/integration-control-room/service.js";
+import { PrismaIntegrationControlRoomRepository } from "../src/infrastructure/prisma-integration-control-room-repository.js";
 
 function memoryRepository() {
   const snapshots = new Map<string, any>();
@@ -72,5 +73,36 @@ describe("IntegrationControlRoomService", () => {
     expect(result.deadLettered).toBe(1);
     expect(mem.retries.get(retry.id).status).toBe("DEAD_LETTER");
     expect(mem.deadLetters.size).toBe(1);
+  });
+
+  it("persists cleared connector errors after a successful recovery", async () => {
+    let updateData:any;
+    const prisma={
+      connectorOperationalSnapshot:{
+        async upsert(input:any){
+          updateData=input.update;
+          return input.update;
+        },
+      },
+    };
+    const repository=new PrismaIntegrationControlRoomRepository(prisma as any);
+
+    await repository.saveConnectorSnapshot({
+      connectorId:"billingo-1",
+      organizationId:"imperial-holding",
+      kind:"BILLINGO",
+      status:"HEALTHY",
+      lastSuccessfulSyncAt:new Date("2026-07-31T10:00:00Z"),
+      lastAttemptAt:new Date("2026-07-31T10:00:00Z"),
+      consecutiveFailures:0,
+      pendingRetries:0,
+      deadLetterCount:0,
+      reauthRequired:false,
+      updatedAt:new Date("2026-07-31T10:00:00Z"),
+    });
+
+    expect(updateData.lastErrorCode).toBeNull();
+    expect(updateData.lastErrorMessage).toBeNull();
+    expect(updateData.rateLimitedUntil).toBeNull();
   });
 });

@@ -40,6 +40,10 @@ class Settings:
     session_secret: str = os.getenv("SESSION_SECRET", "change-this-before-production")
     api_token: str = os.getenv("CONTROL_CENTER_API_TOKEN", "")
     internal_job_token: str = os.getenv("INTERNAL_JOB_TOKEN", "")
+    itep_api_base_url: str = os.getenv("ITEP_API_BASE_URL", "")
+    itep_identity_shared_secret: str = _secret_value(
+        "ITEP_IDENTITY_SHARED_SECRET"
+    )
     content_expert_review_secret: str = _secret_value("CONTENT_EXPERT_REVIEW_SECRET")
     content_expert_review_key_id: str = os.getenv(
         "CONTENT_EXPERT_REVIEW_KEY_ID",
@@ -137,6 +141,14 @@ class Settings:
                         "A nyelvi, marketing-, copywriter- és vizuális kapuknak "
                         "négy különálló secretet kell használniuk."
                     )
+        if bool(self.itep_api_base_url) != bool(self.itep_identity_shared_secret):
+            errors.append(
+                "Az ITEP_API_BASE_URL és az ITEP_IDENTITY_SHARED_SECRET együtt kötelező."
+            )
+        if self.itep_identity_shared_secret and len(self.itep_identity_shared_secret) < 32:
+            errors.append(
+                "Az ITEP_IDENTITY_SHARED_SECRET legalább 32 karakteres legyen."
+            )
         if self.ai_external_calls_enabled:
             if self.ai_routing_provider not in {"openrouter", "openai"}:
                 errors.append("Az AI_ROUTING_PROVIDER csak openrouter vagy openai lehet.")

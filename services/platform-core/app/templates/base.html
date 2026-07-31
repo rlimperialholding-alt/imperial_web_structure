@@ -27,6 +27,7 @@
       <span class="nav-label">ÜZLETI MODULOK</span>
       {% if can_access(user, 'executive-dashboard') %}<a class="{% if active=='executive' %}active{% endif %}" href="/executive"><i>◉</i><span>Vezetői cockpit</span></a>{% endif %}
       {% if can_access(user, 'import-center') %}<a class="{% if active=='imports' %}active{% endif %}" href="/imports"><i>⇩</i><span>Import Center</span></a>{% endif %}
+      {% if can_access(user, 'financial-control', 'finance-intelligence') %}<a class="{% if active=='financial' %}active{% endif %}" href="/financial/incoming-invoices"><i>Ft</i><span>Bejövő számlák</span></a>{% endif %}
       {% if can_access(user, 'housematch', 'buildconfig') %}<a class="{% if active=='experience' %}active{% endif %}" href="/experience"><i>⌂</i><span>HouseMatch & BuildConfig</span></a>{% endif %}
       {% if can_access(user, 'tendermail') %}<a class="{% if active=='tendermail' %}active{% endif %}" href="/tendermail"><i>✉</i><span>TenderMail</span></a>{% endif %}
       {% if can_access(user, 'contract-generator', 'change-control') %}<a class="{% if active=='commercial' %}active{% endif %}" href="/commercial"><i>§</i><span>Szerződés & ChangeControl</span></a>{% endif %}

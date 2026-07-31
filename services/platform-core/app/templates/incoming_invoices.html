@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Bejövő számlák | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="page-hero">
+  <div>
+    <span class="eyebrow">PÉNZÜGY · BILLINGO · CSAK OLVASÁS</span>
+    <h1>Bejövő számlák</h1>
+    <p>Az Imperial Holding Billingo-fiókjából átvett, ellenőrzött számlaadatok. A képernyő nem tud számlát létrehozni vagy módosítani.</p>
+  </div>
+  <div class="hero-seal"><b>{{ data.total }} tétel</b><span>élő ITEP-lekérdezés</span></div>
+</section>
+
+<section class="metric-grid">
+  <article><span>Találatok</span><strong>{{ data.total }}</strong><small>{{ data.page }}. / {{ data.totalPages }}. oldal</small></article>
+  <article><span>Kifizetett</span><strong>{{ data.summary.paid }}</strong><small>fizetési dátummal</small></article>
+  <article><span>Nyitott</span><strong>{{ data.summary.unpaid }}</strong><small>fizetési dátum nélkül</small></article>
+  {% for code, total in data.summary.currencyTotals.items() %}
+  <article class="metric-emphasis"><span>{{ code }} bruttó</span><strong>{{ "{:,.2f}".format(total.grossAmount).replace(",", " ") }}</strong><small>{{ total.count }} számlasor</small></article>
+  {% endfor %}
+</section>
+
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">SZŰRÉS</span><h2>Számlakereső</h2></div><span class="status-dot good">élő adat</span></div>
+  <form class="form-grid" method="get" action="/financial/incoming-invoices">
+    <label class="span-2">Sorszám vagy partner<input name="search" value="{{ data.filters.search }}" placeholder="Keresés számlaszámra vagy partnerre"></label>
+    <label>Fizetési állapot<select name="paymentStatus"><option value="">Mind</option><option value="PAID" {% if data.filters.paymentStatus=='PAID' %}selected{% endif %}>Kifizetett</option><option value="UNPAID" {% if data.filters.paymentStatus=='UNPAID' %}selected{% endif %}>Nyitott</option></select></label>
+    <label>Pénznem<select name="currency"><option value="">Mind</option><option value="HUF" {% if data.filters.currency=='HUF' %}selected{% endif %}>HUF</option><option value="EUR" {% if data.filters.currency=='EUR' %}selected{% endif %}>EUR</option></select></label>
+    <div class="form-action"><button class="primary">Szűrés</button></div>
+  </form>
+</section>
+
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">SZÁMLÁK</span><h2>Ellenőrzött bejövő tételek</h2></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Sorszám</th><th>Partner</th><th>Kiállítás</th><th>Határidő</th><th>Bruttó</th><th>Fizetés</th><th>Forrás</th></tr></thead>
+      <tbody>
+      {% for invoice in data["items"] %}
+      <tr>
+        <td><b>{{ invoice.invoiceNumber }}</b><small>{{ invoice.category or "—" }}</small></td>
+        <td><b>{{ invoice.partnerName }}</b><small>{{ invoice.taxNumber or "adószám nélkül" }}</small></td>
+        <td>{{ invoice.issueDate }}</td>
+        <td>{{ invoice.dueDate or "—" }}</td>
+        <td><b>{{ "{:,.2f}".format(invoice.grossAmount).replace(",", " ") }} {{ invoice.currency }}</b><small>nettó {{ "{:,.2f}".format(invoice.netAmount).replace(",", " ") }}</small></td>
+        <td><span class="badge {{ 'green' if invoice.paymentStatus=='PAID' else 'yellow' }}">{{ 'kifizetett' if invoice.paymentStatus=='PAID' else 'nyitott' }}</span><small>{{ invoice.paymentDate or invoice.paymentMethod or "—" }}</small></td>
+        <td><span class="badge green">Billingo</span><small>csak olvasás</small></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty">A megadott szűrésre nincs számla.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination">
+    {% if data.page > 1 %}<a class="table-link" href="/financial/incoming-invoices?page={{ data.page - 1 }}&search={{ data.filters.search|urlencode }}&paymentStatus={{ data.filters.paymentStatus }}&currency={{ data.filters.currency }}">← Előző</a>{% endif %}
+    <span>{{ data.page }}. / {{ data.totalPages }}. oldal</span>
+    {% if data.page < data.totalPages %}<a class="table-link" href="/financial/incoming-invoices?page={{ data.page + 1 }}&search={{ data.filters.search|urlencode }}&paymentStatus={{ data.filters.paymentStatus }}&currency={{ data.filters.currency }}">Következő →</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

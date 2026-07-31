@@ -43,6 +43,7 @@ ROLE_DEFINITIONS = (
 ROLES = {role.id: role for role in ROLE_DEFINITIONS}
 
 PAGE_ACCESS = (
+    ("/financial", ("financial-control", "finance-intelligence")),
     ("/executive", ("executive-dashboard",)),
     ("/tasks", ("workflow-center", "workspace")),
     ("/projects", ("project-control",)),
