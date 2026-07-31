@@ -202,6 +202,11 @@ def _validate_drive_price(
         vat_rate=Decimal(evidence.price_input["vat_rate"]),
     )
     output_field = evidence.price_output_field or ""
+    if output_field != "estimated_net_total_huf":
+        return (
+            f"{evidence.evidence_id}: marketinganyagban kizárólag a nettó kalkulátor-kimenet "
+            "használható; bruttó ár publikálása tilos."
+        )
     expected_value = result.get(output_field)
     if not isinstance(expected_value, int) or expected_value != evidence.price_value_huf:
         return f"{evidence.evidence_id}: a publikált ár eltér a kalkulátor kimenetétől."
@@ -210,6 +215,19 @@ def _validate_drive_price(
         return f"{evidence.evidence_id}: a kalkulált ár nem jelenik meg az asset ármezőiben."
     if not asset.condition_mentions:
         return f"{evidence.evidence_id}: az ár scope-ja/feltételei hiányoznak."
+    return None
+
+
+def _validate_customer_facing_price_format(asset: ContentAsset) -> str | None:
+    if not asset.price_mentions:
+        return None
+    all_price_text = normalize(
+        " ".join([*asset.price_mentions, *asset.condition_mentions, asset.body, asset.title])
+    )
+    if "bruttó" in all_price_text:
+        return "Ügyféloldali marketinganyagban bruttó ár nem jelenhet meg."
+    if not re.search(r"(?:\+|\bplusz\b)\s*áfa\b", all_price_text):
+        return "Minden ügyféloldali nettó ár mellett kötelező a '+ ÁFA' jelölés."
     return None
 
 
@@ -242,6 +260,9 @@ def evaluate_commercial_prevalidation(
             "Külső kötelezettségvállalás, szerződésmódosítás, felelősségelismerés "
             "vagy teljesítésigazolás kötelező emberi R6–R7 művelet."
         )
+    price_format_error = _validate_customer_facing_price_format(asset)
+    if price_format_error:
+        findings.append(price_format_error)
 
     for evidence in asset.prevalidated_source_evidence:
         error: str | None
@@ -313,5 +334,6 @@ def evaluate_commercial_prevalidation(
             "brand_id": canonical_brand,
             "covered_categories": sorted(covered_categories),
             "drive_price_verified": drive_price_verified,
+            "price_publication_policy": "NET_HUF_PLUS_VAT_2026-07-31",
         },
     )

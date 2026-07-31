@@ -55,6 +55,8 @@ def test_external_publication_requires_separate_expert_review_secret():
         content_marketing_review_secret="",
         content_copywriter_review_secret="",
         content_visual_review_secret="",
+        content_campaign_package_secret="",
+        imperial_release_hmac_key="",
     )
 
     errors = unsafe.validate()
@@ -63,6 +65,8 @@ def test_external_publication_requires_separate_expert_review_secret():
     assert any("CONTENT_MARKETING_REVIEW_SECRET" in error for error in errors)
     assert any("CONTENT_COPYWRITER_REVIEW_SECRET" in error for error in errors)
     assert any("CONTENT_VISUAL_REVIEW_SECRET" in error for error in errors)
+    assert any("CONTENT_CAMPAIGN_PACKAGE_SECRET" in error for error in errors)
+    assert any("IMPERIAL_RELEASE_HMAC_KEY" in error for error in errors)
 
 
 def test_external_publication_rejects_shared_gate_secrets():
@@ -78,6 +82,8 @@ def test_external_publication_rejects_shared_gate_secrets():
         content_marketing_review_secret=shared,
         content_copywriter_review_secret=shared,
         content_visual_review_secret=shared,
+        content_campaign_package_secret=shared,
+        imperial_release_hmac_key=shared,
     )
 
     assert any("különálló secretet" in error for error in unsafe.validate())

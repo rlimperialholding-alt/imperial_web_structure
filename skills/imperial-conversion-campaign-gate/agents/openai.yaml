@@ -1,0 +1,4 @@
+interface:
+  display_name: "Imperial Conversion Campaign Gate"
+  short_description: "Kikényszerített márka-, copy- és vizuális kapu"
+  default_prompt: "Use $imperial-conversion-campaign-gate to create and fail-closed validate a distinct, conversion-led campaign for one Imperial brand."

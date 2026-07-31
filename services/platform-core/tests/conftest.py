@@ -30,6 +30,15 @@ os.environ.setdefault(
     "test-only-visual-review-attestation-secret-which-is-long-enough",
 )
 os.environ.setdefault("CONTENT_VISUAL_REVIEW_KEY_ID", "test-visual-review-key-v1")
+os.environ.setdefault(
+    "CONTENT_CAMPAIGN_PACKAGE_SECRET",
+    "test-only-campaign-package-attestation-secret-which-is-long-enough",
+)
+os.environ.setdefault("CONTENT_CAMPAIGN_PACKAGE_KEY_ID", "test-campaign-package-key-v1")
+os.environ.setdefault(
+    "IMPERIAL_RELEASE_HMAC_KEY",
+    "test-only-release-hmac-key-which-is-long-enough-and-distinct",
+)
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

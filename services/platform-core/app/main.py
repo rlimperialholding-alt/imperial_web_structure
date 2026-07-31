@@ -61,6 +61,7 @@ from .models import (
     CopyBriefRecord,
     CopySourceRecord,
 )
+from .copy_gate.campaign_package import CampaignPackage
 from .copy_gate.models import ApprovalSubmission, AssemblySubmission, ContentAsset, ContentAssetCreateRequest, CopyBrief, CopyQualityRequest, CopySourceIn, CreativeDirectorReviewSubmission, FourGateSubmission, LiveReviewSubmission, PerformanceSubmission, MandatoryCopyGateReviewSubmission, PlatformExport, ReleaseReviewSubmission, StrategyReviewSubmission, VisualProductionSubmission
 from .copy_gate.orchestrator import GENERATION_STAGES
 from .schemas import (
@@ -128,7 +129,7 @@ from .services.tender_mail import add_canonical_partner_recipients, add_recipien
 from .services.pilots import run_all_pilots, run_pilot_scenario
 from .services.itep_finance import ItepFinanceError, incoming_invoices
 from .services.releases import add_artifact, create_release, release_gate
-from .services.content_quality import assemble_publication_bundle, build_human_creative_director_review, build_human_editorial_review, build_human_mandatory_gate_review, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, review_human_specialist_gate, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
+from .services.content_quality import assemble_publication_bundle, build_human_creative_director_review, build_human_editorial_review, build_human_mandatory_gate_review, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_campaign_package_gate, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, review_human_specialist_gate, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
 from .services.technical_products import create_case, decide_case, get_case, list_cases, review_gate, submit_case
 from .demo_runtime import DemoRuntimeError, demo_runtime
 
@@ -383,6 +384,22 @@ def api_content_quality_assembly(asset_id: str, payload: AssemblySubmission, db:
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"asset_id": row.asset_id, "bundle_id": row.bundle_id, "bundle_hash": row.bundle_hash, "status": row.status}
+
+
+@app.post("/api/content-quality/assets/{asset_id}/campaign-package")
+def api_content_quality_campaign_package(asset_id: str, payload: CampaignPackage, user: User = Depends(require_role("owner", "managing-director", "marketing", "platform-admin")), db: Session = Depends(get_db)):
+    try:
+        row = record_campaign_package_gate(db, asset_id, payload, actor=user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "Asset nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {
+        "asset_id": row.asset_id,
+        "campaign_package_approved": row.campaign_package_approved,
+        "campaign_package_hash": row.campaign_package_hash,
+        "campaign_artifact_set_hash": row.campaign_artifact_set_hash,
+    }
 
 
 @app.post("/api/content-quality/assets/{asset_id}/release-review")
@@ -745,7 +762,7 @@ async def marketing_asset_create(request: Request, db: Session = Depends(get_db)
 @app.post("/marketing/assets/{asset_id}/copy-qa")
 async def marketing_asset_copy_qa(asset_id: str, request: Request, db: Session = Depends(get_db)):
     user = require_session_user(request, db)
-    if user.role not in {"copywriter", "owner", "managing-director", "platform-admin"}:
+    if user.role not in {"language-editor", "owner", "managing-director", "platform-admin"}:
         raise HTTPException(403, "Copy QA-hoz független szövegírói vagy vezetői jogosultság szükséges.")
     asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
     if not asset:

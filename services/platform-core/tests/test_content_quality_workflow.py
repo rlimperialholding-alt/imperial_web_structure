@@ -6,6 +6,7 @@ import json
 import pytest
 from copy_gate_fixtures import (
     assembly_submission,
+    campaign_package,
     creative_director_review,
     editorial_review,
     generation_trace,
@@ -41,6 +42,7 @@ from app.services.content_quality import (
     create_copy_brief,
     publish_content_asset,
     record_approval,
+    record_campaign_package_gate,
     record_creative_director_review,
     record_live_publication_review,
     record_mandatory_copy_gate_review,
@@ -198,11 +200,25 @@ def test_full_content_factory_to_four_gates_to_human_approvals_to_publish(db):
         creative_director_review(asset, visual),
         actor="creative-director@imperial.local",
     )
+    assembly = assembly_submission(asset.content_hash, visual.generation_run_id)
     bundle = assemble_publication_bundle(
         db,
         asset.asset_id,
-        assembly_submission(asset.content_hash, visual.generation_run_id),
+        assembly,
         actor="production-designer",
+    )
+    with pytest.raises(ValueError, match="kampánycsomag"):
+        record_release_review(
+            db,
+            asset.asset_id,
+            release_review(),
+            actor="marketing-manager@imperial.local",
+        )
+    record_campaign_package_gate(
+        db,
+        asset.asset_id,
+        campaign_package(asset, visual, assembly),
+        actor="campaign-package-gate@imperial.local",
     )
     record_release_review(
         db,
@@ -269,7 +285,10 @@ def test_full_content_factory_to_four_gates_to_human_approvals_to_publish(db):
         "VISUAL",
     }
     assert len(proof["mandatory_gate_manifest_hash"]) == 64
-    assert proof["adapter_contract"]["version"] == "publication-gate-envelope-v1"
+    assert proof["adapter_contract"]["version"] == "publication-gate-envelope-v2"
+    assert proof["campaign_package_hash"] == refreshed.campaign_package_hash
+    assert proof["campaign_artifact_set_hash"] == refreshed.campaign_artifact_set_hash
+    assert proof["release_token"]
     assert proof["adapter_contract"]["idempotency_key"] == proof["publication_proof_id"]
     assert proof["adapter_contract"]["delivery_targets"] == ["META_ADS"]
 
@@ -384,11 +403,18 @@ def test_rejected_live_double_check_quarantines_without_automatic_republish(db):
         creative_director_review(asset, visual, reviewer_run_id="CDR-LIVE-REJECT"),
         actor="creative-director@imperial.local",
     )
+    assembly = assembly_submission(asset.content_hash, visual.generation_run_id)
     assemble_publication_bundle(
         db,
         asset.asset_id,
-        assembly_submission(asset.content_hash, visual.generation_run_id),
+        assembly,
         actor="production-designer",
+    )
+    record_campaign_package_gate(
+        db,
+        asset.asset_id,
+        campaign_package(asset, visual, assembly),
+        actor="campaign-package-gate@imperial.local",
     )
     record_release_review(
         db,

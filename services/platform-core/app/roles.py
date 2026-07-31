@@ -30,6 +30,7 @@ ROLE_DEFINITIONS = (
     _role("managing-director", "Ügyvezető", "ÜV", "workspace executive-dashboard control-center crm project-control digital-project-managers pm-cockpit operations-workspace smart-calendar financial-control finance-intelligence procurement document-evidence workflow-center housebuild-agent plotcheck buildconfig plancheck marketing-control campaign-factory content-factory claim-registry website-content-control"),
     _role("marketing", "Marketing", "MK", "workspace marketing-control campaign-factory content-factory claim-registry website-content-control lead-intelligence b2b-project-intake housematch housevision crm answer-center"),
     _role("copywriter", "Direct-response szövegíró", "SZ", "workspace marketing-control campaign-factory content-factory claim-registry website-content-control"),
+    _role("language-editor", "Magyar nyelvi szerkesztő", "NY", "workspace marketing-control content-factory website-content-control"),
     _role("creative-director", "Kreatív igazgató", "KI", "workspace marketing-control content-factory website-content-control housevision"),
     _role("technical-prep", "Műszaki előkészítő", "ME", "workspace house-catalog housebuild-agent housematch plotcheck buildconfig plancheck engineering-workspace document-evidence project-control"),
     _role("sales", "Értékesítő", "ÉR", "workspace crm sales housematch plotcheck buildconfig booking-engine reservation-engine contract-generator my-imperial"),

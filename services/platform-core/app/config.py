@@ -71,6 +71,12 @@ class Settings:
         "CONTENT_VISUAL_REVIEW_KEY_ID",
         "content-visual-review-v1",
     )
+    content_campaign_package_secret: str = _secret_value("CONTENT_CAMPAIGN_PACKAGE_SECRET")
+    content_campaign_package_key_id: str = os.getenv(
+        "CONTENT_CAMPAIGN_PACKAGE_KEY_ID",
+        "content-campaign-package-v1",
+    )
+    imperial_release_hmac_key: str = _secret_value("IMPERIAL_RELEASE_HMAC_KEY")
     content_external_publishing_enabled: bool = (
         os.getenv("CONTENT_EXTERNAL_PUBLISHING_ENABLED", "false").lower() == "true"
     )
@@ -142,6 +148,8 @@ class Settings:
                 "CONTENT_MARKETING_REVIEW_SECRET": self.content_marketing_review_secret,
                 "CONTENT_COPYWRITER_REVIEW_SECRET": self.content_copywriter_review_secret,
                 "CONTENT_VISUAL_REVIEW_SECRET": self.content_visual_review_secret,
+                "CONTENT_CAMPAIGN_PACKAGE_SECRET": self.content_campaign_package_secret,
+                "IMPERIAL_RELEASE_HMAC_KEY": self.imperial_release_hmac_key,
             }
             if self.content_external_publishing_enabled:
                 for name, secret in mandatory_gate_secrets.items():
@@ -154,10 +162,10 @@ class Settings:
                     self.content_expert_review_secret,
                     *mandatory_gate_secrets.values(),
                 ]
-                if all(len(secret) >= 32 for secret in configured) and len(set(configured)) != 4:
+                if all(len(secret) >= 32 for secret in configured) and len(set(configured)) != 6:
                     errors.append(
-                        "A nyelvi, marketing-, copywriter- és vizuális kapuknak "
-                        "négy különálló secretet kell használniuk."
+                        "A nyelvi, marketing-, copywriter-, vizuális, kampánycsomag- és "
+                        "release-kapuknak hat különálló secretet kell használniuk."
                     )
         if bool(self.itep_api_base_url) != bool(self.itep_identity_shared_secret):
             errors.append(

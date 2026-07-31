@@ -1,12 +1,31 @@
+import json
 from types import SimpleNamespace
 
-from copy_gate_fixtures import generation_trace, imperial_asset, imperial_brief, strategy_review
+from copy_gate_fixtures import (
+    campaign_package,
+    generation_trace,
+    imperial_asset,
+    imperial_brief,
+    strategy_review,
+)
 from sqlalchemy import select
 
-from app.models import ContentAssetRecord, CopyBriefRecord, CopySourceRecord
-from app.models import User
+from app.copy_gate.models import AssemblySubmission, PlatformExport
+from app.models import (
+    ContentAssetRecord,
+    CopyBriefRecord,
+    CopySourceRecord,
+    CreativeProductionRunRecord,
+    PublicationBundleRecord,
+    User,
+)
 from app.seed import retire_seeded_content_quality_sources, seed_database
-from app.services.content_quality import create_content_asset, create_copy_brief, record_strategy_review
+from app.services.content_quality import (
+    create_content_asset,
+    create_copy_brief,
+    record_campaign_package_gate,
+    record_strategy_review,
+)
 
 
 PASSWORD = "Imperial2026!"
@@ -178,7 +197,7 @@ def test_authenticated_human_copy_and_mandatory_gates_are_role_separated(client,
         actor="content.author@example.com",
     )
 
-    login(client, "copywriter")
+    login(client, "language-editor")
     copy_scores = {
         key: "9"
         for key in (
@@ -290,9 +309,9 @@ def test_authenticated_human_copy_and_mandatory_gates_are_role_separated(client,
         f"/marketing/assets/{asset.asset_id}/visual-production",
         data={
             "visual_direction_id": "VD-HUMAN-QA-001",
-            "platform": "website",
-            "width_px": "1200",
-            "height_px": "628",
+            "platform": "facebook",
+            "width_px": "1080",
+            "height_px": "1080",
             "creative_rationale": "A vizuális irány a jóváhagyott ajánlatot és a márka prémium pozícióját szolgálja.",
         },
         files={"creative_file": ("creative.png", b"\x89PNG\r\n\x1a\nvisual-human-qa", "image/png")},
@@ -319,7 +338,7 @@ def test_authenticated_human_copy_and_mandatory_gates_are_role_separated(client,
             "accidental_crop_absent": "on",
             "text_boxes_within_bounds": "on",
             "text_background_clear": "on",
-            "minimum_source_font_px": "32",
+            "minimum_source_font_px": "40",
             "decorative_frame_area_ratio": "0.08",
             "primary_subject_dominance_required": "on",
             "primary_subject_area_ratio": "0.75",
@@ -339,10 +358,10 @@ def test_authenticated_human_copy_and_mandatory_gates_are_role_separated(client,
     assembly = client.post(
         f"/marketing/assets/{asset.asset_id}/assembly",
         data={
-            "platform": "website",
-            "placement": "hero",
-            "width_px": "1200",
-            "height_px": "628",
+            "platform": "facebook",
+            "placement": "feed",
+            "width_px": "1080",
+            "height_px": "1080",
             "pairing_rationale": "A jóváhagyott copy, CTA és vizuális hierarchia együtt vezeti a látogatót a kapcsolatfelvételig.",
             "safe_zone_checked": "on",
             "text_legibility_checked": "on",
@@ -354,6 +373,47 @@ def test_authenticated_human_copy_and_mandatory_gates_are_role_separated(client,
     db.refresh(asset)
     assert asset.assembly_approved is True
     assert asset.state == "RELEASE_QA"
+
+    visual_row = db.scalar(
+        select(CreativeProductionRunRecord).where(
+            CreativeProductionRunRecord.asset_id == asset.asset_id
+        )
+    )
+    bundle_row = db.scalar(
+        select(PublicationBundleRecord).where(
+            PublicationBundleRecord.bundle_id == asset.active_bundle_id
+        )
+    )
+    package_assembly = AssemblySubmission(
+        assembly_run_id=bundle_row.assembly_run_id,
+        assembler_identity=bundle_row.assembler_identity,
+        visual_generation_run_id=bundle_row.visual_generation_run_id,
+        copy_content_sha256=bundle_row.content_hash,
+        pairing_rationale=bundle_row.pairing_rationale,
+        exports=[
+            PlatformExport.model_validate(item)
+            for item in json.loads(bundle_row.exports_json)
+        ],
+    )
+    record_campaign_package_gate(
+        db,
+        asset.asset_id,
+        campaign_package(
+            asset,
+            visual_row,
+            package_assembly,
+            photo_visible_ratio=0.75,
+            reviewer_overrides={
+                "marketing_strategist": "owner@imperial.local",
+                "direct_response_copywriter": "copywriter@imperial.local",
+                "hungarian_language_editor": "language-editor@imperial.local",
+                "brand_guardian": "managing-director@imperial.local",
+            },
+        ),
+        actor="platform-admin@imperial.local",
+    )
+    db.refresh(asset)
+    assert asset.campaign_package_approved is True
 
     logout(client)
     login(client, "managing-director")

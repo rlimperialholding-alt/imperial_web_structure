@@ -7,6 +7,19 @@ import os
 from datetime import date
 from typing import Any
 
+from app.copy_gate.campaign_package import (
+    CampaignArtifact,
+    CampaignCopy,
+    CampaignPackage,
+    CampaignProgramContext,
+    CampaignRelease,
+    CampaignReview,
+    CampaignSourceHashes,
+    CampaignStrategy,
+    CampaignVisual,
+    RejectedCopyCandidate,
+    artifact_set_digest,
+)
 from app.copy_gate.models import (
     AssemblySubmission,
     CanonicalSources,
@@ -74,7 +87,7 @@ def imperial_asset(
 ) -> ContentAsset:
     return ContentAsset(
         asset_id=asset_id,
-        title="Már a szerződéskor lássa, milyen keretek között készül el az otthona",
+        title="Már a szerződéskor lássa otthona biztos kereteit",
         body=(
             "A fix ár, fix határidő és rögzített műszaki tartalom együtt teszi "
             "követhetővé a 126 m²-es ház döntéseit. A szerződés tételes scope-ja "
@@ -392,7 +405,7 @@ def creative_director_review(
         text_background_clear=True,
         text_overlaps_primary_subject=False,
         text_background_overlaps_primary_subject=False,
-        minimum_source_font_px=32,
+        minimum_source_font_px=40,
         decorative_frame_area_ratio=0.0,
         primary_subject_dominance_required=True,
         primary_subject_area_ratio=0.8,
@@ -453,6 +466,200 @@ def assembly_submission(
                 text_legibility_checked=True,
             )
         ],
+    )
+
+
+def campaign_package(
+    reviewed,
+    visual,
+    assembly: AssemblySubmission,
+    *,
+    brand_id: str = "imperial",
+    campaign_id: str = "CMP-IMP-PILOT",
+    concept_id: str = "imperial-contract-certainty-v1",
+    layout_archetype: str = "imperial-proof-led-typehouse-stage-v1",
+    brand_guardian: str = "editor@imperial.local",
+    reviewer_overrides: dict[str, str] | None = None,
+    photo_visible_ratio: float = 0.8,
+    min_text_px: int = 40,
+) -> CampaignPackage:
+    def digest(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    def sentence(*parts: str) -> str:
+        return "".join(parts)
+
+    content = (
+        ContentAsset.model_validate_json(reviewed.content_json)
+        if hasattr(reviewed, "content_json")
+        else reviewed
+    )
+    export = assembly.exports[0]
+    artifacts = [
+        CampaignArtifact(path="content.json", sha256=reviewed.content_hash, role="copy"),
+        CampaignArtifact(
+            path=visual.output_uri,
+            sha256=visual.output_sha256,
+            role="visual_source",
+        ),
+        CampaignArtifact(
+            path=f"/masters/{campaign_id}.svg",
+            sha256=digest(f"master:{campaign_id}"),
+            role="canonical_master",
+        ),
+        CampaignArtifact(
+            path=export.output_uri,
+            sha256=export.output_sha256,
+            role="render_1080",
+        ),
+        CampaignArtifact(
+            path=f"/masks/{campaign_id}.png",
+            sha256=digest(f"mask:{campaign_id}"),
+            role="subject_mask",
+        ),
+        CampaignArtifact(
+            path=export.output_uri,
+            sha256=export.output_sha256,
+            role="platform_export",
+        ),
+    ]
+    artifact_hash = artifact_set_digest(artifacts)
+    reviewers = {
+        "marketing_strategist": "strategy-reviewer@imperial.local",
+        "direct_response_copywriter": "independent-copywriter-gate@imperial.local",
+        "hungarian_language_editor": "fixture-independent-hungarian-copy-expert",
+        "brand_guardian": brand_guardian,
+        "creative_director": "creative-director@imperial.local",
+        "legal": "AGT-016",
+        "financial": "AGT-011",
+    }
+    reviewers.update(reviewer_overrides or {})
+    return CampaignPackage(
+        schema_version="1.0",
+        brand_id=brand_id,
+        campaign_id=campaign_id,
+        campaign_type="typehouse",
+        period="2026-08",
+        author_id="campaign-author@imperial.local",
+        source_hashes=CampaignSourceHashes(
+            brand_brief=digest("imperial-brand-brief-v1"),
+            visual_guide=digest("imperial-visual-guide-v1"),
+            conversion_architecture=digest("imperial-conversion-architecture-v1"),
+        ),
+        strategy=CampaignStrategy(
+            concept_id=concept_id,
+            target_segment="Fizetőképes családok, akik belátható időn belül építkezni akarnak.",
+            life_situation=sentence(
+                "A család kivitelezőt választ, és a költség- valamint ",
+                "határidőkockázatot mérlegeli.",
+            ),
+            market_problem=sentence(
+                "A változó költség és a bizonytalan átadás megingatja ",
+                "az építési döntést.",
+            ),
+            fear_or_tension=sentence(
+                "A család attól tart, hogy menet közben elszáll az ár ",
+                "vagy csúszik az átadás.",
+            ),
+            desired_outcome=sentence(
+                "Előre kiszámítható otthonépítés konkrét műszaki és ",
+                "szerződéses bizonyítékokkal.",
+            ),
+            product_or_service="Imperial típusház rögzített műszaki tartalommal",
+            primary_offer=sentence(
+                "Típusház választása szerződésben rögzített ár-, ",
+                "határidő- és műszaki kerettel.",
+            ),
+            brand_specific_mechanism=sentence(
+                "A három fix vállalást tételes műszaki scope és bizonyítható ",
+                "cégcsoportos tapasztalat támasztja alá.",
+            ),
+            brand_specific_differentiator=sentence(
+                "Az Imperial nem hangulatígéretet ad: a fix ár, fix határidő ",
+                "és fix minőség szerződéses keretét sok száz elkészült ház, ",
+                "a 2024-es és 2025-ös MagyarBrands díj, valamint az AAA ",
+                "panaszmentességi igazolás erősíti.",
+            ),
+            proof_stack=[
+                "Kétszeres MagyarBrands díjazott márka",
+                "AAA kategóriás panaszmentességi igazolás",
+                "1989 óta működő cégcsoport és sok száz megépített családi ház",
+            ],
+            objection_answer=sentence(
+                "A döntés előtt tételesen látható, mi kerül a szerződésbe ",
+                "és milyen feltételek mellett tartható.",
+            ),
+            why_now=sentence(
+                "A kiválasztott típusház és a finanszírozási keret most ",
+                "összevethető a vállalt feltételekkel.",
+            ),
+            conversion_event="Típusház részleteinek és alaprajzának megnyitása",
+            primary_concept_class="contractual_certainty_proof_stack",
+        ),
+        copy=CampaignCopy(
+            headline=content.title,
+            support="Fix ár, fix határidő és rögzített műszaki tartalom.",
+            cta=content.cta,
+            primary_text=content.body,
+            concept_candidates=[
+                "Szerződéses biztonság három konkrét vállalással",
+                "Díjakkal és referenciákkal bizonyított építési kiszámíthatóság",
+                "Típusház mint előre átlátható, megvásárolható termék",
+            ],
+            rejected_candidates=[
+                RejectedCopyCandidate(
+                    text="Kérjen ingyenes konzultációt",
+                    reason=sentence(
+                        "Önálló főüzenetként generikus, és nem mutatja meg ",
+                        "az Imperial piaci erejét.",
+                    ),
+                ),
+                RejectedCopyCandidate(
+                    text="Megnézzük, mi építhető a telkére",
+                    reason=sentence(
+                        "Közös szolgáltatásállítás, ezért nem különíti el ",
+                        "a márkát a többi cégtől.",
+                    ),
+                ),
+            ],
+        ),
+        visual=CampaignVisual(
+            canonical_master=f"/masters/{campaign_id}.svg",
+            render_1080=export.output_uri,
+            layout_archetype=layout_archetype,
+            subject_mask=f"/masks/{campaign_id}.png",
+            photo_visible_ratio=photo_visible_ratio,
+            min_text_px=min_text_px,
+            headline_lines=2,
+            support_lines=1,
+            cta_lines=1,
+            text_subject_intersections=0,
+            text_box_overflows=0,
+            ocr_match=True,
+            downscale_readable=True,
+            official_brand_assets=True,
+            gradient_used=False,
+            typehouse_image_verified=True,
+        ),
+        program_context=CampaignProgramContext(
+            residential_house_brand=True,
+            product_led_share=0.8,
+            cross_brand_registry="campaign-registry/2026-08.json",
+            concept_unique=True,
+            layout_unique=True,
+            allowed_copy_similarity=0.62,
+        ),
+        artifacts=artifacts,
+        reviews=[
+            CampaignReview(
+                role=role,
+                reviewer_id=reviewer_id,
+                decision="PASS",
+                artifact_set_sha256=artifact_hash,
+            )
+            for role, reviewer_id in reviewers.items()
+        ],
+        release=CampaignRelease(publication_authorized=False, r6_r7="HUMAN_ONLY"),
     )
 
 

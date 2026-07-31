@@ -68,12 +68,24 @@ production_platform_configured() {
     [[ -n "${PLATFORM_CONTROL_CENTER_API_TOKEN:-}" ]]
 }
 
+campaign_release_secrets_ready() {
+  local campaign_file release_file
+  campaign_file="${PLATFORM_CAMPAIGN_PACKAGE_SECRET_FILE:-}"
+  release_file="${PLATFORM_RELEASE_HMAC_KEY_FILE:-}"
+  [[ -n "$campaign_file" && -s "$campaign_file" ]] || return 1
+  [[ -n "$release_file" && -s "$release_file" ]] || return 1
+  [[ "$(wc -c <"$campaign_file")" -ge 32 ]] || return 1
+  [[ "$(wc -c <"$release_file")" -ge 32 ]] || return 1
+  ! cmp --silent "$campaign_file" "$release_file"
+}
+
 check "legalább 4 vCPU" at_least_four_cpu
 check "legalább 8 GB RAM" at_least_eight_gib_ram
 check "Docker-alapú platform fut" base_compose ps --status running platform-core
 check "a PostgreSQL ugyanazon a szerveren fut" local_postgres_running
 check "a legfrissebb elsődleges mentés SHA-256 ellenőrzése sikeres" latest_backup_verified
 check "projekt- és bizonyítéktár-kvóták érvényesek" valid_storage_quotas
+check "a kampánycsomag- és release-secretek különállók" campaign_release_secrets_ready
 
 if [[ "$mode" == "production" ]]; then
   check "három mentési hely van konfigurálva" three_backup_locations_configured

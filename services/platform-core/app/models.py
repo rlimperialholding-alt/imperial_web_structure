@@ -422,7 +422,7 @@ class ContentAssetRecord(Base):
     __tablename__ = "cq_content_assets"
     __table_args__ = (
         CheckConstraint(
-            "state NOT IN ('PUBLISHED', 'LIVE_QA', 'QUARANTINED') OR (gate_1_approved = true AND expert_language_approved = true AND expert_marketing_approved = true AND copywriter_approved = true AND four_gate_approved = true AND creative_director_approved = true AND assembly_approved = true AND release_approved = true AND active_bundle_id IS NOT NULL AND (source_prevalidated = true OR (editorial_approved = true AND owner_approved = true)) AND publication_proof_id IS NOT NULL AND published_at IS NOT NULL)",
+            "state NOT IN ('PUBLISHED', 'LIVE_QA', 'QUARANTINED') OR (gate_1_approved = true AND expert_language_approved = true AND expert_marketing_approved = true AND copywriter_approved = true AND four_gate_approved = true AND creative_director_approved = true AND assembly_approved = true AND campaign_package_approved = true AND campaign_package_hash IS NOT NULL AND campaign_artifact_set_hash IS NOT NULL AND release_approved = true AND active_bundle_id IS NOT NULL AND (source_prevalidated = true OR (editorial_approved = true AND owner_approved = true)) AND publication_proof_id IS NOT NULL AND published_at IS NOT NULL)",
             name="ck_cq_published_requires_all_approvals",
         ),
     )
@@ -448,6 +448,9 @@ class ContentAssetRecord(Base):
     source_prevalidated: Mapped[bool] = mapped_column(Boolean, default=False)
     creative_director_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     assembly_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    campaign_package_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    campaign_package_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    campaign_artifact_set_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     release_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     live_review_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     active_bundle_id: Mapped[str | None] = mapped_column(String(120), index=True)

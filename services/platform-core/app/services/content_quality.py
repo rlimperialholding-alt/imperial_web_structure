@@ -13,8 +13,16 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..config import settings
+from ..copy_gate.campaign_package import (
+    CampaignPackage,
+    CampaignPackageGateSubmission,
+    artifact_set_digest,
+    cross_brand_failures,
+    package_hash,
+)
 from ..copy_gate.engine import evaluate_content
 from ..copy_gate.models import (
+    MANDATORY_COPY_GATE_DIMENSIONS,
     ApprovalSubmission,
     AssemblySubmission,
     CanonicalSources,
@@ -28,7 +36,6 @@ from ..copy_gate.models import (
     FourGateSubmission,
     GateResult,
     LiveReviewSubmission,
-    MANDATORY_COPY_GATE_DIMENSIONS,
     MandatoryCopyGateReviewSubmission,
     PerformanceMetricIn,
     PublicationState,
@@ -82,7 +89,7 @@ MANDATORY_COPY_GATE_PROMPT_VERSIONS = {
     "DIRECT_RESPONSE": "direct-response-copy-gate-v1",
 }
 VISUAL_REVIEW_PROMPT_VERSION = "visual-art-direction-gate-v1"
-PUBLICATION_ADAPTER_CONTRACT_VERSION = "publication-gate-envelope-v1"
+PUBLICATION_ADAPTER_CONTRACT_VERSION = "publication-gate-envelope-v2"
 
 
 def utcnow() -> datetime:
@@ -108,6 +115,63 @@ def _signed_submission(payload: Any, secret: str) -> Any:
     return payload.model_copy(update={"attestation_sha256": signature})
 
 
+def _verify_campaign_package_attestation(submission: CampaignPackageGateSubmission) -> None:
+    if submission.attestation_key_id != settings.content_campaign_package_key_id:
+        raise ValueError("A kampánycsomag-kapu ismeretlen attestation key azonosítót használ.")
+    if len(settings.content_campaign_package_secret) < 32:
+        raise ValueError("A kampánycsomag-kapu külön, legalább 32 karakteres secretje hiányzik.")
+    expected = hmac.new(
+        settings.content_campaign_package_secret.encode("utf-8"),
+        _json(submission.model_dump(mode="json", exclude={"attestation_sha256"})).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected, submission.attestation_sha256):
+        raise ValueError("A kampánycsomag-kapu attestation aláírása érvénytelen.")
+
+
+def _release_token(
+    *,
+    asset: ContentAssetRecord,
+    bundle: PublicationBundleRecord,
+    actor: str,
+    proof_id: str,
+    approved_at: datetime,
+) -> dict[str, str]:
+    if len(settings.imperial_release_hmac_key) < 32:
+        raise ValueError("Az IMPERIAL_RELEASE_HMAC_KEY külön release-secretként kötelező.")
+    payload = {
+        "asset_id": asset.asset_id,
+        "brand_id": asset.brand_id,
+        "publication_proof_id": proof_id,
+        "campaign_package_hash": str(asset.campaign_package_hash or ""),
+        "artifact_set_sha256": str(asset.campaign_artifact_set_hash or ""),
+        "publication_bundle_hash": bundle.bundle_hash,
+        "human_reviewer_id": actor,
+        "approved_at": approved_at.isoformat(),
+        "r6_r7": "HUMAN_ONLY",
+    }
+    signature = hmac.new(
+        settings.imperial_release_hmac_key.encode("utf-8"),
+        _json(payload).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return payload | {"hmac_sha256": signature}
+
+
+def _verify_release_token(token: dict[str, Any]) -> None:
+    if len(settings.imperial_release_hmac_key) < 32:
+        raise ValueError("Az IMPERIAL_RELEASE_HMAC_KEY hiányzik a secret-managementből.")
+    signature = str(token.get("hmac_sha256") or "")
+    unsigned = {key: value for key, value in token.items() if key != "hmac_sha256"}
+    expected = hmac.new(
+        settings.imperial_release_hmac_key.encode("utf-8"),
+        _json(unsigned).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise ValueError("A release-token HMAC aláírása érvénytelen.")
+
+
 def build_human_editorial_review(
     asset: ContentAssetRecord,
     *,
@@ -124,15 +188,21 @@ def build_human_editorial_review(
         raise ValueError("A négy szem elve miatt az asset létrehozója nem végezheti a Copy QA-t.")
     trace = json.loads(asset.generation_trace_json or "{}")
     score_fields = {
-        "idiomatic_hungarian_score", "grammar_score", "semantic_clarity_score",
-        "terminology_score", "hook_strength_score", "offer_clarity_score",
-        "specificity_score", "persuasion_score", "brand_voice_score",
+        "idiomatic_hungarian_score",
+        "grammar_score",
+        "semantic_clarity_score",
+        "terminology_score",
+        "hook_strength_score",
+        "offer_clarity_score",
+        "specificity_score",
+        "persuasion_score",
+        "brand_voice_score",
         "conversion_path_score",
     }
     if set(scores) != score_fields:
         raise ValueError("A Copy QA pontozási dimenziói hiányosak.")
     draft = EditorialReview(
-        decision=decision,
+        decision=Decision(decision),
         reviewed_asset_id=asset.asset_id,
         reviewed_content_sha256=asset.content_hash,
         reviewer_run_id=f"HUMAN-COPY-QA-{uuid.uuid4().hex[:12].upper()}",
@@ -175,11 +245,13 @@ def build_human_mandatory_gate_review(
     if gate_id not in MANDATORY_COPY_GATE_DIMENSIONS:
         raise ValueError("Ismeretlen kötelező tartalomkapu.")
     if asset.created_by.strip().lower() == reviewer_identity.strip().lower():
-        raise ValueError("A négy szem elve miatt az asset létrehozója nem értékelheti a saját tartalmát.")
+        raise ValueError(
+            "A négy szem elve miatt az asset létrehozója nem értékelheti a saját tartalmát."
+        )
     trace = json.loads(asset.generation_trace_json or "{}")
     draft = MandatoryCopyGateReviewSubmission(
         gate_id=gate_id,
-        decision=decision,
+        decision=Decision(decision),
         reviewed_asset_id=asset.asset_id,
         reviewed_content_sha256=asset.content_hash,
         generation_run_id=str(trace.get("generation_run_id") or ""),
@@ -222,7 +294,7 @@ def build_human_creative_director_review(
     if creative.producer_identity.strip().lower() == reviewer_identity.strip().lower():
         raise ValueError("A kreatív producer nem végezheti a saját munkája igazgatói review-ját.")
     draft = CreativeDirectorReviewSubmission(
-        decision=decision,
+        decision=Decision(decision),
         reviewed_asset_id=asset.asset_id,
         reviewed_content_sha256=asset.content_hash,
         reviewed_visual_sha256=creative.output_sha256,
@@ -663,7 +735,9 @@ def record_strategy_review(
             f"Stratégiai review nem rögzíthető ebből az állapotból: {brief_row.status}"
         )
     if brief_row.created_by.strip().lower() == actor.strip().lower():
-        raise ValueError("A négy szem elve miatt a brief létrehozója nem végezheti a stratégiai jóváhagyást.")
+        raise ValueError(
+            "A négy szem elve miatt a brief létrehozója nem végezheti a stratégiai jóváhagyást."
+        )
     if db.scalar(
         select(CampaignStrategyReviewRecord).where(
             CampaignStrategyReviewRecord.copy_brief_id == copy_brief_id
@@ -1290,7 +1364,11 @@ def review_human_specialist_gate(
 ) -> dict[str, Any]:
     if gate_id not in SPECIALIST_GATE_AGENTS:
         raise ValueError("Ismeretlen specialistakapu.")
-    if decision not in {Decision.APPROVED, Decision.RETURN_FOR_REVISION, Decision.SKIPPED_NOT_RELEVANT}:
+    if decision not in {
+        Decision.APPROVED,
+        Decision.RETURN_FOR_REVISION,
+        Decision.SKIPPED_NOT_RELEVANT,
+    }:
         raise ValueError("Érvénytelen specialistadöntés.")
     if relevant and decision == Decision.SKIPPED_NOT_RELEVANT:
         raise ValueError("Releváns specialistakapu nem hagyható ki.")
@@ -1331,7 +1409,10 @@ def review_human_specialist_gate(
         except json.JSONDecodeError:
             other_evidence = {}
         if str(other_evidence.get("reviewer") or "").strip().lower() == actor.strip().lower():
-            raise ValueError("A jogi, pénzügyi és műszaki specialistakaput három külön felhasználónak kell értékelnie.")
+            raise ValueError(
+                "A jogi, pénzügyi és műszaki specialistakaput három külön "
+                "felhasználónak kell értékelnie."
+            )
     db.add(
         ContentGateDecision(
             run_id=asset.latest_run_id,
@@ -1341,7 +1422,9 @@ def review_human_specialist_gate(
             decision=decision,
             relevant=relevant,
             certainty="HIGH",
-            findings_json=_json([] if decision != Decision.RETURN_FOR_REVISION else [evidence.strip()]),
+            findings_json=_json(
+                [] if decision != Decision.RETURN_FOR_REVISION else [evidence.strip()]
+            ),
             source_versions_json=_json({"human_evidence": evidence.strip(), "reviewer": actor}),
         )
     )
@@ -1360,8 +1443,7 @@ def review_human_specialist_gate(
         asset.four_gate_approved = False
         final = Decision.RETURN_FOR_REVISION
     elif set(decisions) == set(SPECIALIST_GATE_AGENTS) and all(
-        value in {Decision.APPROVED, Decision.SKIPPED_NOT_RELEVANT}
-        for value in decisions.values()
+        value in {Decision.APPROVED, Decision.SKIPPED_NOT_RELEVANT} for value in decisions.values()
     ):
         asset.state = PublicationState.HUMAN_EDITORIAL
         asset.four_gate_approved = True
@@ -1421,7 +1503,9 @@ def record_approval(
         if not editorial:
             raise ValueError("Tulajdonosi döntés előtt jóváhagyott szerkesztői döntés szükséges.")
         if editorial.actor.strip().lower() == actor.strip().lower():
-            raise ValueError("A szerkesztői és tulajdonosi döntést két külön felhasználónak kell elvégeznie.")
+            raise ValueError(
+                "A szerkesztői és tulajdonosi döntést két külön felhasználónak kell elvégeznie."
+            )
     existing = db.scalar(
         select(ContentApprovalRecord).where(
             ContentApprovalRecord.asset_id == asset_id,
@@ -1521,6 +1605,9 @@ def submit_visual_production(
     asset.state = PublicationState.CREATIVE_DIRECTOR_QA
     asset.creative_director_approved = False
     asset.assembly_approved = False
+    asset.campaign_package_approved = False
+    asset.campaign_package_hash = None
+    asset.campaign_artifact_set_hash = None
     asset.release_approved = False
     asset.live_review_approved = False
     audit(
@@ -1670,6 +1757,9 @@ def assemble_publication_bundle(
     db.add(row)
     asset.active_bundle_id = row.bundle_id
     asset.assembly_approved = True
+    asset.campaign_package_approved = False
+    asset.campaign_package_hash = None
+    asset.campaign_artifact_set_hash = None
     asset.release_approved = False
     asset.state = PublicationState.RELEASE_QA
     audit(
@@ -1688,6 +1778,289 @@ def assemble_publication_bundle(
     db.commit()
     db.refresh(row)
     return row
+
+
+def _campaign_package_reviewers(
+    db: Session,
+    asset: ContentAssetRecord,
+    *,
+    package_gate_actor: str,
+) -> dict[str, str]:
+    brief_row = db.get(CopyBriefRecord, asset.copy_brief_id)
+    strategy = db.scalar(
+        select(CampaignStrategyReviewRecord).where(
+            CampaignStrategyReviewRecord.copy_brief_id == asset.copy_brief_id,
+            CampaignStrategyReviewRecord.decision == Decision.APPROVED,
+        )
+    )
+    run = db.get(CopyReviewRun, asset.latest_run_id) if asset.latest_run_id else None
+    if not brief_row or not strategy or not run:
+        raise ValueError("A kampánycsomaghoz hiányzik a stratégiai vagy nyelvi review.")
+    expert = EditorialReview.model_validate_json(run.expert_review_json)
+    workflow_rows = db.scalars(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.asset_id == asset.asset_id,
+            ContentWorkflowReviewRecord.content_version == asset.content_version,
+            ContentWorkflowReviewRecord.stage.in_(
+                ("MARKETING_QA", "DIRECT_RESPONSE_QA", "CREATIVE_DIRECTOR_QA")
+            ),
+            ContentWorkflowReviewRecord.decision == Decision.APPROVED,
+        )
+    ).all()
+    workflow = {row.stage: row for row in workflow_rows}
+    if set(workflow) != {"MARKETING_QA", "DIRECT_RESPONSE_QA", "CREATIVE_DIRECTOR_QA"}:
+        raise ValueError(
+            "A kampánycsomaghoz hiányzik marketing-, copywriter- vagy vizuális review."
+        )
+    approvals = db.scalars(
+        select(ContentApprovalRecord).where(
+            ContentApprovalRecord.asset_id == asset.asset_id,
+            ContentApprovalRecord.content_version == asset.content_version,
+            ContentApprovalRecord.decision == "APPROVED",
+        )
+    ).all()
+    approval_by_type = {row.approval_type: row for row in approvals}
+    specialist_rows = db.scalars(
+        select(ContentGateDecision).where(
+            ContentGateDecision.asset_id == asset.asset_id,
+            ContentGateDecision.run_id == asset.latest_run_id,
+            ContentGateDecision.gate_id.in_(("GATE_2_LEGAL_POLICY", "GATE_3_FINANCIAL_COMMERCIAL")),
+        )
+    ).all()
+    specialist = {row.gate_id: row for row in specialist_rows}
+    if set(specialist) != {"GATE_2_LEGAL_POLICY", "GATE_3_FINANCIAL_COMMERCIAL"}:
+        raise ValueError("A kampánycsomaghoz hiányzik jogi vagy pénzügyi kapudöntés.")
+    if any(row.decision == Decision.HUMAN_APPROVAL_REQUIRED for row in specialist.values()):
+        raise ValueError(
+            "Nyitott jogi vagy pénzügyi eszkaláció mellett nincs kampánycsomag-approval."
+        )
+    brand_guardian = approval_by_type.get("HUMAN_EDITORIAL")
+    return {
+        "marketing_strategist": strategy.reviewer_identity,
+        "direct_response_copywriter": workflow["DIRECT_RESPONSE_QA"].reviewer_identity,
+        "hungarian_language_editor": expert.reviewer_identity,
+        "brand_guardian": brand_guardian.actor if brand_guardian else package_gate_actor,
+        "creative_director": workflow["CREATIVE_DIRECTOR_QA"].reviewer_identity,
+        "legal": specialist["GATE_2_LEGAL_POLICY"].agent_id,
+        "financial": specialist["GATE_3_FINANCIAL_COMMERCIAL"].agent_id,
+    }
+
+
+def _validate_campaign_package_bindings(
+    db: Session,
+    asset: ContentAssetRecord,
+    package: CampaignPackage,
+    *,
+    package_gate_actor: str,
+) -> tuple[PublicationBundleRecord, CreativeProductionRunRecord, str]:
+    if not asset.active_bundle_id:
+        raise ValueError("A kampánycsomaghoz nincs aktív PublicationBundle.")
+    bundle = db.get(PublicationBundleRecord, asset.active_bundle_id)
+    if (
+        not bundle
+        or bundle.asset_id != asset.asset_id
+        or bundle.content_version != asset.content_version
+        or bundle.content_hash != asset.content_hash
+    ):
+        raise ValueError("A kampánycsomag nem az aktuális PublicationBundle-höz tartozik.")
+    creative = db.get(CreativeProductionRunRecord, bundle.visual_generation_run_id)
+    if not creative or creative.status != "APPROVED":
+        raise ValueError("A kampánycsomag vizuális forrása nem jóváhagyott.")
+    brief_row = db.get(CopyBriefRecord, asset.copy_brief_id)
+    if not brief_row:
+        raise ValueError("A kampánycsomag CopyBriefje hiányzik.")
+    brief = CopyBrief.model_validate_json(brief_row.brief_json)
+    expected_campaign_id = brief.campaign_id or brief.page_id
+    if package.brand_id != asset.brand_id or package.campaign_id != expected_campaign_id:
+        raise ValueError("A kampánycsomag márka- vagy kampányazonosítója eltér az assettől.")
+    content = ContentAsset.model_validate_json(asset.content_json)
+    if (
+        package.copy_spec.headline != content.title
+        or package.copy_spec.primary_text != content.body
+        or package.copy_spec.cta != content.cta
+    ):
+        raise ValueError("A kampánycsomag copyja nem egyezik az aktuális tartalomhash tartalmával.")
+
+    artifact_set = artifact_set_digest(package.artifacts)
+    artifacts_by_role: dict[str, list[tuple[str, str]]] = {}
+    for artifact in package.artifacts:
+        artifacts_by_role.setdefault(artifact.role, []).append((artifact.path, artifact.sha256))
+    if ("content.json", asset.content_hash) not in artifacts_by_role.get("copy", []):
+        raise ValueError("A kampánycsomag copy artifactja nem az aktuális content hashhez kötött.")
+    if (creative.output_uri, creative.output_sha256) not in artifacts_by_role.get(
+        "visual_source", []
+    ):
+        raise ValueError("A kampánycsomag nem a jóváhagyott vizuális forrást használja.")
+    required_named_artifacts = {
+        "canonical_master": package.visual.canonical_master,
+        "render_1080": package.visual.render_1080,
+        "subject_mask": package.visual.subject_mask,
+    }
+    for role, path in required_named_artifacts.items():
+        if not any(candidate_path == path for candidate_path, _ in artifacts_by_role.get(role, [])):
+            raise ValueError(f"A {role} artifact útvonala nem egyezik a vizuális manifeszttel.")
+    exports = json.loads(bundle.exports_json)
+    export_bindings = set(artifacts_by_role.get("platform_export", []))
+    expected_exports = {(item["output_uri"], item["output_sha256"]) for item in exports}
+    if export_bindings != expected_exports:
+        raise ValueError("A kampánycsomag platformexport-listája eltér a PublicationBundle-től.")
+
+    visual_rows = db.scalars(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.asset_id == asset.asset_id,
+            ContentWorkflowReviewRecord.content_version == asset.content_version,
+            ContentWorkflowReviewRecord.stage == "CREATIVE_DIRECTOR_QA",
+            ContentWorkflowReviewRecord.decision == Decision.APPROVED,
+        )
+    ).all()
+    if len(visual_rows) != 1:
+        raise ValueError("Pontosan egy aktuális kreatívigazgatói approval szükséges.")
+    visual_review = CreativeDirectorReviewSubmission.model_validate_json(visual_rows[0].review_json)
+    if (
+        visual_review.minimum_source_font_px != package.visual.min_text_px
+        or abs(visual_review.primary_subject_area_ratio - package.visual.photo_visible_ratio)
+        > 0.0001
+        or visual_review.text_overlaps_primary_subject
+        or visual_review.text_background_overlaps_primary_subject
+        or not visual_review.text_boxes_within_bounds
+        or not visual_review.logo_lockup_brand_native
+    ):
+        raise ValueError("A vizuális manifeszt eltér a kreatívigazgatói mérési jegyzőkönyvtől.")
+
+    expected_reviewers = _campaign_package_reviewers(
+        db, asset, package_gate_actor=package_gate_actor
+    )
+    actual_reviewers = {review.role: review.reviewer_id for review in package.reviews}
+    if actual_reviewers != expected_reviewers:
+        raise ValueError(
+            "A kampánycsomag review-identitásai nem egyeznek a tárolt kapubizonyítékokkal."
+        )
+
+    other_rows = db.scalars(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.stage == "CAMPAIGN_PACKAGE_QA",
+            ContentWorkflowReviewRecord.decision == Decision.APPROVED,
+        )
+    ).all()
+    other_packages: list[CampaignPackage] = []
+    for row in other_rows:
+        stored = CampaignPackageGateSubmission.model_validate_json(row.review_json)
+        _verify_campaign_package_attestation(stored)
+        other_packages.append(stored.package)
+    failures = cross_brand_failures(package, other_packages)
+    if failures:
+        raise ValueError("Márkaközi elkülönítési hiba: " + " ".join(failures))
+    return bundle, creative, artifact_set
+
+
+def record_campaign_package_gate(
+    db: Session,
+    asset_id: str,
+    package: CampaignPackage,
+    *,
+    actor: str,
+) -> ContentWorkflowReviewRecord:
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise KeyError(asset_id)
+    if asset.state != PublicationState.RELEASE_QA or not asset.assembly_approved:
+        raise ValueError(f"Kampánycsomag-review nem indítható ebből az állapotból: {asset.state}")
+    if actor.casefold() == package.author_id.casefold():
+        raise ValueError("A kampánycsomag szerzője nem futtathatja a végső csomagkaput.")
+    existing = db.scalar(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.asset_id == asset_id,
+            ContentWorkflowReviewRecord.content_version == asset.content_version,
+            ContentWorkflowReviewRecord.stage == "CAMPAIGN_PACKAGE_QA",
+        )
+    )
+    if existing:
+        raise ValueError("Ehhez a tartalomverzióhoz már létezik kampánycsomag-kapudöntés.")
+    _, _, artifact_set = _validate_campaign_package_bindings(
+        db, asset, package, package_gate_actor=actor
+    )
+    if len(settings.content_campaign_package_secret) < 32:
+        raise ValueError("A CONTENT_CAMPAIGN_PACKAGE_SECRET kötelező és legalább 32 karakteres.")
+    draft = CampaignPackageGateSubmission(
+        package=package,
+        gate_run_id=f"CPG-{uuid.uuid4().hex[:16].upper()}",
+        reviewer_identity=actor,
+        attestation_key_id=settings.content_campaign_package_key_id,
+        attestation_sha256="0" * 64,
+    )
+    signed = _signed_submission(draft, settings.content_campaign_package_secret)
+    _verify_campaign_package_attestation(signed)
+    digest = package_hash(package)
+    row = ContentWorkflowReviewRecord(
+        review_id=f"CPG-{uuid.uuid4().hex[:16].upper()}",
+        asset_id=asset_id,
+        content_version=asset.content_version,
+        stage="CAMPAIGN_PACKAGE_QA",
+        reviewer_role="CONVERSION_CAMPAIGN_GATE",
+        reviewer_identity=actor,
+        reviewer_run_id=signed.gate_run_id,
+        decision=Decision.APPROVED,
+        artifact_hash=digest,
+        review_json=_json(signed),
+        created_by=actor,
+    )
+    db.add(row)
+    asset.campaign_package_approved = True
+    asset.campaign_package_hash = digest
+    asset.campaign_artifact_set_hash = artifact_set
+    audit(
+        db,
+        actor=actor,
+        action="conversion_campaign_package_approved",
+        entity_type="content_asset",
+        entity_id=asset_id,
+        after={
+            "review_id": row.review_id,
+            "campaign_package_hash": digest,
+            "artifact_set_sha256": artifact_set,
+            "skill": "imperial-conversion-campaign-gate",
+            "skill_version": "1.0",
+            "publication_authorized": False,
+            "r6_r7": "HUMAN_ONLY",
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _verify_stored_campaign_package_gate(
+    db: Session,
+    asset: ContentAssetRecord,
+) -> CampaignPackageGateSubmission:
+    rows = db.scalars(
+        select(ContentWorkflowReviewRecord).where(
+            ContentWorkflowReviewRecord.asset_id == asset.asset_id,
+            ContentWorkflowReviewRecord.content_version == asset.content_version,
+            ContentWorkflowReviewRecord.stage == "CAMPAIGN_PACKAGE_QA",
+            ContentWorkflowReviewRecord.decision == Decision.APPROVED,
+        )
+    ).all()
+    if len(rows) != 1:
+        raise ValueError("Pontosan egy hitelesített kampánycsomag-kapudöntés kötelező.")
+    row = rows[0]
+    submission = CampaignPackageGateSubmission.model_validate_json(row.review_json)
+    _verify_campaign_package_attestation(submission)
+    _, _, artifact_set = _validate_campaign_package_bindings(
+        db,
+        asset,
+        submission.package,
+        package_gate_actor=submission.reviewer_identity,
+    )
+    digest = package_hash(submission.package)
+    if (
+        row.artifact_hash != digest
+        or asset.campaign_package_hash != digest
+        or asset.campaign_artifact_set_hash != artifact_set
+        or not asset.campaign_package_approved
+    ):
+        raise ValueError("A tárolt kampánycsomag-kapu hashkötése vagy adatbázis-állapota sérült.")
+    return submission
 
 
 def record_release_review(
@@ -1716,6 +2089,14 @@ def record_release_review(
         raise ValueError("Az assembler nem hagyhatja jóvá a saját PublicationBundle-jét.")
     if not all(
         (
+            asset.campaign_package_approved,
+            asset.campaign_package_hash,
+            asset.campaign_artifact_set_hash,
+        )
+    ):
+        raise ValueError("A release QA előtt kötelező a hitelesített kampánycsomag-kapu.")
+    if not all(
+        (
             asset.gate_1_approved,
             asset.expert_language_approved,
             asset.expert_marketing_approved,
@@ -1726,6 +2107,7 @@ def record_release_review(
         )
     ):
         raise ValueError("A release QA előtt hiányzik legalább egy korábbi kötelező kapu.")
+    _verify_stored_campaign_package_gate(db, asset)
     row = ContentWorkflowReviewRecord(
         review_id=f"REL-{uuid.uuid4().hex[:16].upper()}",
         asset_id=asset_id,
@@ -1748,6 +2130,9 @@ def record_release_review(
     else:
         asset.state = PublicationState.ASSEMBLY_QA
         asset.assembly_approved = False
+        asset.campaign_package_approved = False
+        asset.campaign_package_hash = None
+        asset.campaign_artifact_set_hash = None
         asset.active_bundle_id = None
     audit(
         db,
@@ -1952,10 +2337,40 @@ def validate_publication_adapter_envelope(
         or payload.get("mandatory_gate_manifest_hash") != gate_manifest_hash
     ):
         raise ValueError("A publication-adapter envelope kötelező kapumanifesztje sérült.")
+    campaign_package = _verify_stored_campaign_package_gate(db, asset)
+    if (
+        payload.get("campaign_package_hash") != package_hash(campaign_package.package)
+        or payload.get("campaign_artifact_set_hash") != asset.campaign_artifact_set_hash
+    ):
+        raise ValueError("A publication-adapter kampánycsomag-kötése hiányzik vagy sérült.")
+    release_token = payload.get("release_token")
+    if not isinstance(release_token, dict):
+        raise ValueError("A publication-adapter envelope-ból hiányzik a release-token.")
+    _verify_release_token(release_token)
+    expected_release_token = {
+        "asset_id": asset.asset_id,
+        "brand_id": asset.brand_id,
+        "publication_proof_id": proof_id,
+        "campaign_package_hash": asset.campaign_package_hash,
+        "artifact_set_sha256": asset.campaign_artifact_set_hash,
+        "publication_bundle_hash": bundle.bundle_hash,
+        "human_reviewer_id": payload.get("owner_actor"),
+        "approved_at": payload.get("published_at"),
+        "r6_r7": "HUMAN_ONLY",
+    }
+    if {key: value for key, value in release_token.items() if key != "hmac_sha256"} != (
+        expected_release_token
+    ):
+        raise ValueError(
+            "A release-token nem az aktuális assethez, csomaghoz vagy emberhez kötött."
+        )
     expected_contract = {
         "version": PUBLICATION_ADAPTER_CONTRACT_VERSION,
         "idempotency_key": proof_id,
         "mandatory_gate_manifest_hash": gate_manifest_hash,
+        "campaign_package_hash": asset.campaign_package_hash,
+        "campaign_artifact_set_hash": asset.campaign_artifact_set_hash,
+        "release_token_hash": _hash(release_token),
         "delivery_targets": _delivery_targets(exports),
     }
     if payload.get("adapter_contract") != expected_contract:
@@ -1984,6 +2399,9 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
         asset.four_gate_approved,
         asset.creative_director_approved,
         asset.assembly_approved,
+        asset.campaign_package_approved,
+        asset.campaign_package_hash,
+        asset.campaign_artifact_set_hash,
         asset.release_approved,
         asset.active_bundle_id,
         asset.latest_run_id,
@@ -2108,10 +2526,19 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
     )
     if bundle.bundle_hash != expected_bundle_hash:
         raise ValueError("A PublicationBundle integritása sérült.")
+    campaign_package = _verify_stored_campaign_package_gate(db, asset)
 
     proof_id = f"PUB-{uuid.uuid4().hex[:16].upper()}"
+    published_at = utcnow()
+    release_token = _release_token(
+        asset=asset,
+        bundle=bundle,
+        actor=actor,
+        proof_id=proof_id,
+        approved_at=published_at,
+    )
     asset.publication_proof_id = proof_id
-    asset.published_at = utcnow()
+    asset.published_at = published_at
     asset.state = PublicationState.LIVE_QA
     proof = {
         "publication_proof_id": proof_id,
@@ -2121,6 +2548,8 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
         "expert_review_hash": run.expert_review_hash,
         "mandatory_gate_manifest": mandatory_gate_manifest,
         "mandatory_gate_manifest_hash": mandatory_gate_manifest_hash,
+        "campaign_package_hash": package_hash(campaign_package.package),
+        "campaign_artifact_set_hash": asset.campaign_artifact_set_hash,
         "publication_bundle_id": bundle.bundle_id,
         "publication_bundle_hash": bundle.bundle_hash,
         "exports": exports,
@@ -2131,7 +2560,8 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
         "human_editorial_actor": (
             None if source_prevalidated else approval_by_type["HUMAN_EDITORIAL"].actor
         ),
-        "owner_actor": None if source_prevalidated else approval_by_type["OWNER"].actor,
+        "owner_actor": actor,
+        "release_token": release_token,
         "commercial_prevalidation": (
             {
                 "registry_version": prevalidation.registry_version,
@@ -2148,6 +2578,9 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
             "version": PUBLICATION_ADAPTER_CONTRACT_VERSION,
             "idempotency_key": proof_id,
             "mandatory_gate_manifest_hash": mandatory_gate_manifest_hash,
+            "campaign_package_hash": asset.campaign_package_hash,
+            "campaign_artifact_set_hash": asset.campaign_artifact_set_hash,
+            "release_token_hash": _hash(release_token),
             "delivery_targets": _delivery_targets(exports),
         },
     }
@@ -2292,6 +2725,9 @@ def rollback_content_asset(
     asset.source_prevalidated = False
     asset.creative_director_approved = False
     asset.assembly_approved = False
+    asset.campaign_package_approved = False
+    asset.campaign_package_hash = None
+    asset.campaign_artifact_set_hash = None
     asset.release_approved = False
     asset.live_review_approved = False
     asset.active_bundle_id = None

@@ -101582,6 +101582,15 @@
       "source_version": "Imperial_100m2_Technologia_Keszultseg_Armodell_2026_07"
     }
   ],
-  "registry_version": "commercial-source-snapshot-2026-07-26",
+  "price_publication_policy": {
+    "authorized_at": "2026-07-31",
+    "period": "2026-08",
+    "calculated_price": "estimated_net_total_huf",
+    "fallback": "verified current official website price",
+    "gross_price_publication": "prohibited",
+    "required_suffix": "+ ÁFA",
+    "separate_price_acceptance": "not required for deterministic calculator or verified website price"
+  },
+  "registry_version": "commercial-source-snapshot-2026-07-31-pricing-authorized",
   "schema_version": 1
 }
