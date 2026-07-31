@@ -116,4 +116,4 @@ def test_incoming_invoice_screen_renders_live_projection(
     assert response.status_code == 200
     assert "Bejövő számlák" in response.text
     assert "Minta Partner Kft." in response.text
-    assert "1 270.00 HUF" in response.text
+    assert "1 270,00 HUF" in response.text

@@ -136,6 +136,9 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_ho
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.filters["huf"] = lambda v: f"{Decimal(str(v or 0)):,.0f} Ft".replace(",", " ")
+templates.env.filters["amount"] = lambda v: (
+    f"{Decimal(str(v or 0)):,.2f}".replace(",", " ").replace(".", ",")
+)
 templates.env.filters["dt"] = lambda v: v.astimezone().strftime("%Y.%m.%d. %H:%M") if v else "—"
 templates.env.globals["demo_password"] = (
     None if settings.is_production else DEMO_PASSWORD

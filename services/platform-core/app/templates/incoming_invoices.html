@@ -15,7 +15,7 @@
   <article><span>Kifizetett</span><strong>{{ data.summary.paid }}</strong><small>fizetési dátummal</small></article>
   <article><span>Nyitott</span><strong>{{ data.summary.unpaid }}</strong><small>fizetési dátum nélkül</small></article>
   {% for code, total in data.summary.currencyTotals.items() %}
-  <article class="metric-emphasis"><span>{{ code }} bruttó</span><strong>{{ "{:,.2f}".format(total.grossAmount).replace(",", " ") }}</strong><small>{{ total.count }} számlasor</small></article>
+  <article class="metric-emphasis"><span>{{ code }} bruttó</span><strong>{{ total.grossAmount|amount }}</strong><small>{{ total.count }} számlasor</small></article>
   {% endfor %}
 </section>
 
@@ -41,7 +41,7 @@
         <td><b>{{ invoice.partnerName }}</b><small>{{ invoice.taxNumber or "adószám nélkül" }}</small></td>
         <td>{{ invoice.issueDate }}</td>
         <td>{{ invoice.dueDate or "—" }}</td>
-        <td><b>{{ "{:,.2f}".format(invoice.grossAmount).replace(",", " ") }} {{ invoice.currency }}</b><small>nettó {{ "{:,.2f}".format(invoice.netAmount).replace(",", " ") }}</small></td>
+        <td><b>{{ invoice.grossAmount|amount }} {{ invoice.currency }}</b><small>nettó {{ invoice.netAmount|amount }}</small></td>
         <td><span class="badge {{ 'green' if invoice.paymentStatus=='PAID' else 'yellow' }}">{{ 'kifizetett' if invoice.paymentStatus=='PAID' else 'nyitott' }}</span><small>{{ invoice.paymentDate or invoice.paymentMethod or "—" }}</small></td>
         <td><span class="badge green">Billingo</span><small>csak olvasás</small></td>
       </tr>
