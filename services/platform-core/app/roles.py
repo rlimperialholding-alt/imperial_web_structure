@@ -48,6 +48,7 @@ PAGE_ACCESS = (
     ("/financial", ("financial-control", "finance-intelligence")),
     ("/executive", ("executive-dashboard",)),
     ("/tasks", ("workflow-center", "workspace")),
+    ("/communications", ("workspace",)),
     ("/projects", ("project-control",)),
     ("/operations", ("operations-workspace", "pm-cockpit")),
     ("/field", ("field-pwa", "partner-field")),

@@ -18,6 +18,7 @@
       <span class="nav-label">MUNKATÉR</span>
       <a class="{% if active=='workspace' %}active{% endif %}" href="/"><i>⌂</i><span>Kezdőlap</span></a>
       {% if can_access(user, 'workflow-center', 'workspace') %}<a class="{% if active=='tasks' %}active{% endif %}" href="/tasks"><i>✓</i><span>Saját feladataim</span></a>{% endif %}
+      {% if user.role not in ['customer','subcontractor'] %}<a class="{% if active=='communications' %}active{% endif %}" href="/communications"><i>✉</i><span>Belső üzenetek</span></a>{% endif %}
       {% if can_access(user, 'project-control') %}<a class="{% if active=='projects' %}active{% endif %}" href="/projects"><i>◆</i><span>Projekt 360°</span></a>{% endif %}
       {% if can_access(user, 'operations-workspace', 'pm-cockpit') %}<a class="{% if active=='operations' %}active{% endif %}" href="/operations"><i>▥</i><span>PM Cockpit 2.0</span></a>{% endif %}
       {% if can_access(user, 'field-pwa', 'partner-field') %}<a class="{% if active=='field' %}active{% endif %}" href="/field"><i>◫</i><span>Helyszíni mobil</span></a>{% endif %}
@@ -47,7 +48,7 @@
     <header class="workspace-topbar">
       <button class="menu-toggle" type="button" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
       <form class="global-search" action="/search" method="get"><span>⌕</span><input name="q" placeholder="Keressen projektet, feladatot, dokumentumot vagy céget…" autocomplete="off"></form>
-      <div class="top-actions">{% if can_access(user, 'workflow-center', 'workspace') %}<a class="top-action" href="/tasks">Feladatok</a>{% endif %}{% if can_access(user, 'control-center', 'executive-dashboard') %}<a class="top-action" href="/exceptions">Riasztások</a>{% endif %}<a class="top-action" href="/account/password">Jelszó</a><form method="post" action="/logout"><button class="logout-button">Kilépés</button></form></div>
+      <div class="top-actions">{% if can_access(user, 'workflow-center', 'workspace') %}<a class="top-action" href="/tasks">Feladatok</a>{% endif %}{% if user.role not in ['customer','subcontractor'] %}<a class="top-action" href="/communications">Üzenetek <b id="unread-notification-count"></b></a>{% endif %}{% if can_access(user, 'control-center', 'executive-dashboard') %}<a class="top-action" href="/exceptions">Riasztások</a>{% endif %}<a class="top-action" href="/account/password">Jelszó</a><form method="post" action="/logout"><button class="logout-button">Kilépés</button></form></div>
     </header>
     <main class="workspace-content">
 {% else %}
@@ -57,6 +58,6 @@
 {% block content %}{% endblock %}
 </main>
 {% if user %}</div></div>{% endif %}
-{% if user %}<script>if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("/static/service-worker.js").catch(() => {})); }</script>{% endif %}
+{% if user %}<script>if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("/static/service-worker.js").catch(() => {})); }const unreadBadge=document.getElementById("unread-notification-count");if(unreadBadge){fetch("/api/communications/unread").then(r=>r.ok?r.json():null).then(d=>{if(d&&d.unread){unreadBadge.textContent=`(${d.unread})`;}}).catch(()=>{});}</script>{% endif %}
 </body>
 </html>

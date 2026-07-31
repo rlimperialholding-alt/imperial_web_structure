@@ -122,6 +122,53 @@ class TaskRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class CommunicationThread(Base):
+    __tablename__ = "cc_communication_threads"
+    thread_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), index=True)
+    thread_type: Mapped[str] = mapped_column(String(30), index=True)
+    project_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    task_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("cc_users.id", ondelete="RESTRICT"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, index=True)
+
+
+class CommunicationParticipant(Base):
+    __tablename__ = "cc_communication_participants"
+    __table_args__ = (UniqueConstraint("thread_id", "user_id", name="uq_cc_communication_participant"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    thread_id: Mapped[str] = mapped_column(ForeignKey("cc_communication_threads.thread_id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("cc_users.id", ondelete="CASCADE"), index=True)
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    muted: Mapped[bool] = mapped_column(Boolean, default=False)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CommunicationMessage(Base):
+    __tablename__ = "cc_communication_messages"
+    message_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(ForeignKey("cc_communication_threads.thread_id", ondelete="CASCADE"), index=True)
+    sender_user_id: Mapped[int] = mapped_column(ForeignKey("cc_users.id", ondelete="RESTRICT"), index=True)
+    body: Mapped[str] = mapped_column(Text)
+    reply_to_message_id: Mapped[str | None] = mapped_column(ForeignKey("cc_communication_messages.message_id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class InternalNotification(Base):
+    __tablename__ = "cc_internal_notifications"
+    notification_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("cc_users.id", ondelete="CASCADE"), index=True)
+    thread_id: Mapped[str | None] = mapped_column(ForeignKey("cc_communication_threads.thread_id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str | None] = mapped_column(Text)
+    target_url: Mapped[str] = mapped_column(String(1000))
+    actor_email: Mapped[str | None] = mapped_column(String(255))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class OutboxMessage(Base):
     __tablename__ = "cc_outbox"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -115,6 +115,7 @@ from .services.commercial_integration import commercial_workspace, contract_sour
 from .services.development_governance import create_discovery, list_discoveries, review_discovery
 from .services.dashboard import dashboard_metrics
 from .services.executive_decisions import assign_consistency_issue, resolve_executive_event
+from .services.communications import create_thread, get_thread, list_notifications, list_threads, mark_notifications_read, post_message, unread_notification_count
 from .services.integration import ingest_event, process_outbox, register_heartbeat
 from .services.file_ingestion import parse_upload
 from .services.housematch import HouseProfile, housematch_repository
@@ -134,6 +135,7 @@ from .demo_runtime import DemoRuntimeError, demo_runtime
 BASE_DIR = Path(__file__).resolve().parent
 PARTNER_EVIDENCE_DIR = BASE_DIR.parent / "data" / "partner_evidence"
 MARKETING_CREATIVE_DIR = BASE_DIR.parent / "runtime" / "marketing_creatives"
+_INTERNAL_COMMUNICATION_ROLES = {item.id for item in ROLE_DEFINITIONS} - {"customer", "subcontractor"}
 
 
 @asynccontextmanager
@@ -1518,6 +1520,123 @@ def action_center_update(request: Request, task_id: str, status: Annotated[str |
         raise HTTPException(404, "Feladat nem található.")
     target = f"/tasks?project_id={project_id}" if project_id else "/tasks"
     return RedirectResponse(target, status_code=303)
+
+
+@app.get("/communications", response_class=HTMLResponse)
+def communications_page(
+    request: Request,
+    thread_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    if user.role not in _INTERNAL_COMMUNICATION_ROLES:
+        raise HTTPException(403, "A belső kommunikáció csak belső felhasználóknak érhető el.")
+    active_thread = None
+    if thread_id:
+        try:
+            active_thread = get_thread(db, thread_id=thread_id, user=user)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(404, "A beszélgetés nem található.") from exc
+    users = list(
+        db.scalars(
+            select(User).where(
+                User.active.is_(True),
+                User.id != user.id,
+                User.role.in_(_INTERNAL_COMMUNICATION_ROLES),
+            ).order_by(User.name, User.email)
+        )
+    )
+    projects = list(db.scalars(select(ProjectRegistry).order_by(ProjectRegistry.name)))
+    tasks = list(
+        db.scalars(
+            select(TaskRecord)
+            .where(TaskRecord.status.not_in(("done", "cancelled")))
+            .order_by(TaskRecord.project_id, TaskRecord.due_at)
+            .limit(250)
+        )
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="communications.html",
+        context={
+            "user": user,
+            "threads": list_threads(db, user),
+            "active_thread": active_thread,
+            "notifications": list_notifications(db, user),
+            "unread_notifications": unread_notification_count(db, user),
+            "users": users,
+            "projects": projects,
+            "tasks": tasks,
+            "active": "communications",
+        },
+    )
+
+
+@app.post("/communications/threads")
+async def communications_thread_create(request: Request, db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    if user.role not in _INTERNAL_COMMUNICATION_ROLES:
+        raise HTTPException(403, "A belső kommunikáció csak belső felhasználóknak érhető el.")
+    form = await request.form()
+    try:
+        participant_ids = [int(value) for value in form.getlist("participant_user_ids")]
+        thread = create_thread(
+            db,
+            creator=user,
+            subject=str(form.get("subject") or ""),
+            thread_type=str(form.get("thread_type") or ""),
+            participant_user_ids=participant_ids,
+            project_id=str(form.get("project_id") or "") or None,
+            task_id=str(form.get("task_id") or "") or None,
+            initial_message=str(form.get("initial_message") or "") or None,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/communications?thread_id={thread.thread_id}", status_code=303)
+
+
+@app.post("/communications/{thread_id}/messages")
+async def communications_message_create(thread_id: str, request: Request, db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    if user.role not in _INTERNAL_COMMUNICATION_ROLES:
+        raise HTTPException(403, "A belső kommunikáció csak belső felhasználóknak érhető el.")
+    form = await request.form()
+    try:
+        post_message(db, thread_id=thread_id, sender=user, body=str(form.get("body") or ""))
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, "A beszélgetés nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/communications?thread_id={thread_id}", status_code=303)
+
+
+@app.post("/communications/notifications/read-all")
+def communications_notifications_read_all(request: Request, db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    if user.role not in _INTERNAL_COMMUNICATION_ROLES:
+        raise HTTPException(403, "A belső kommunikáció csak belső felhasználóknak érhető el.")
+    mark_notifications_read(db, user)
+    return RedirectResponse("/communications#notifications", status_code=303)
+
+
+@app.get("/api/communications/unread")
+def communications_unread_api(request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in _INTERNAL_COMMUNICATION_ROLES:
+        raise HTTPException(403, "A belső kommunikáció csak belső felhasználóknak érhető el.")
+    return {"unread": unread_notification_count(db, user)}
 
 
 @app.get("/documents", response_class=HTMLResponse)
