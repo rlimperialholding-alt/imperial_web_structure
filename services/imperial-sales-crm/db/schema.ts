@@ -491,9 +491,25 @@ export const projectTasks = sqliteTable("project_tasks", {
   status: text("status", { enum: ["waiting_customer", "submitted", "completed"] }).notNull(),
   severity: text("severity", { enum: ["normal", "high"] }).notNull(),
   action: text("action").notNull(),
+  assignedToEmail: text("assigned_to_email"),
+  createdByEmail: text("created_by_email"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [index("project_tasks_project_idx").on(table.projectId)]);
+
+export const projectComments = sqliteTable("project_comments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  entityType: text("entity_type", { enum: ["project", "task", "change", "document"] }).notNull(),
+  entityId: text("entity_id").notNull(),
+  authorEmail: text("author_email").notNull(),
+  body: text("body").notNull(),
+  mentionsJson: text("mentions_json").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("project_comments_entity_idx").on(table.projectId, table.entityType, table.entityId),
+  index("project_comments_created_idx").on(table.projectId, table.createdAt),
+]);
 
 export const projectChanges = sqliteTable("project_changes", {
   id: text("id").primaryKey(),

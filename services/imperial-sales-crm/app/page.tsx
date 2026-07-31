@@ -9,7 +9,6 @@ import {
   CalendarWorkspace,
   KnowledgeWorkspace,
   ModulesWorkspace,
-  ProjectsWorkspace,
   type IntelligenceWorkspace,
 } from "./intelligence-workspace";
 
@@ -122,6 +121,18 @@ type BusinessProject = {
   phase: string;
   progress: number;
   targetCompletion: string;
+};
+type ProjectWorkspace = {
+  project: BusinessProject & { customerName: string; customerEmail: string };
+  tasks: Array<{
+    id: string; title: string; due: string; status: "waiting_customer" | "submitted" | "completed";
+    severity: "normal" | "high"; action: string; assignedToEmail: string | null;
+  }>;
+  comments: Array<{ id: number; entityType: string; entityId: string; authorEmail: string; body: string; createdAt: string }>;
+  messages: Array<{ id: number; authorEmail: string; topic: string; body: string; createdAt: string }>;
+  documents: Array<{ id: string; name: string; group: string; status: "draft" | "approval" | "verified"; currentVersion: number; updatedAt: string }>;
+  members: Array<{ projectId: string; email: string; role: string; createdAt: string }>;
+  events: Array<{ id: number; actorEmail: string; action: string; detail: string; createdAt: string }>;
 };
 type Identity = {
   email: string;
@@ -1362,9 +1373,7 @@ export default function Home() {
               ? <ModulesWorkspace data={intelligence} />
               : <IntelligenceLoading />
           ) : view === "projects" ? (
-            intelligence
-              ? <ProjectsWorkspace data={intelligence} />
-              : <IntelligenceLoading />
+            <ProjectOperations projects={businessProjects} intelligence={intelligence} notify={notify} />
           ) : view === "calendar" ? (
             intelligence
               ? <CalendarWorkspace data={intelligence} />
@@ -2002,6 +2011,161 @@ function Customers({
     </>
   );
 }
+function ProjectOperations({
+  projects,
+  intelligence,
+  notify,
+}: {
+  projects: BusinessProject[];
+  intelligence: IntelligenceWorkspace | null;
+  notify: (message: string) => void;
+}) {
+  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
+  const [workspace, setWorkspace] = useState<ProjectWorkspace | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState("");
+  const [progress, setProgress] = useState("0");
+  const [targetCompletion, setTargetCompletion] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDue, setTaskDue] = useState("");
+  const [taskAction, setTaskAction] = useState("");
+  const [taskAssignee, setTaskAssignee] = useState("");
+  const [commentBody, setCommentBody] = useState("");
+  const [commentEntityId, setCommentEntityId] = useState("");
+  const [messageTopic, setMessageTopic] = useState("");
+  const [messageBody, setMessageBody] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberRole, setMemberRole] = useState("project_manager");
+
+  const load = async (selectedId = projectId) => {
+    if (!selectedId) { setWorkspace(null); return; }
+    setLoading(true);
+    try {
+      const response = await authenticatedFetch(`/api/crm/projects/${selectedId}/workspace`, { cache: "no-store" });
+      const payload = await response.json() as ProjectWorkspace & { error?: string };
+      if (!response.ok) throw new Error(payload.error);
+      setWorkspace(payload);
+      setPhase(payload.project.phase);
+      setProgress(String(payload.project.progress));
+      setTargetCompletion(payload.project.targetCompletion);
+    } catch (error) {
+      setWorkspace(null);
+      notify(error instanceof Error && error.message ? error.message : "A projektmunkatér nem tölthető be.");
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    if (!projectId && projects[0]?.id) setProjectId(projects[0].id);
+  }, [projectId, projects]);
+  useEffect(() => { void load(projectId); }, [projectId]);
+
+  const postAction = async (body: Record<string, unknown>, success: string) => {
+    if (!projectId) return false;
+    try {
+      const response = await authenticatedFetch(`/api/crm/projects/${projectId}/workspace`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error);
+      await load();
+      notify(success);
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A projektművelet nem sikerült.");
+      return false;
+    }
+  };
+
+  const patchAction = async (body: Record<string, unknown>, success: string) => {
+    if (!projectId) return false;
+    try {
+      const response = await authenticatedFetch(`/api/crm/projects/${projectId}/workspace`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error);
+      await load();
+      notify(success);
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A projekt frissítése nem sikerült.");
+      return false;
+    }
+  };
+
+  return (
+    <>
+      <section className="section-title">
+        <div><p className="eyebrow">PROJECT 360°</p><h2>Projektmunkatér</h2><p>Fázis, készültség, felelősök, teendők, dokumentumok, megjegyzések és dokumentált belső üzenetek egy helyen.</p></div>
+        <select aria-label="Projekt kiválasztása" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+          {projects.map((project) => <option key={project.id} value={project.id}>{project.portalCode} · {project.title}</option>)}
+        </select>
+      </section>
+      {!projectId && <section className="empty"><h2>Még nincs elindított projekt</h2><p>Jóváhagyott, teljes fizetési ütemű szerződés aláírásakor jön létre.</p></section>}
+      {projectId && loading && <section className="empty"><h2>A projekt betöltése folyamatban van…</h2></section>}
+      {workspace && !loading && <>
+        <section className="kpi-grid">
+          <article><small>Készültség</small><strong>{workspace.project.progress}%</strong><span>{workspace.project.phase}</span></article>
+          <article><small>Nyitott teendő</small><strong>{workspace.tasks.filter((item) => item.status !== "completed").length}</strong><span>{workspace.tasks.filter((item) => item.severity === "high" && item.status !== "completed").length} kiemelt</span></article>
+          <article><small>Dokumentum</small><strong>{workspace.documents.length}</strong><span>{workspace.documents.filter((item) => item.status === "approval").length} jóváhagyásra vár</span></article>
+          <article><small>Projektcsapat</small><strong>{workspace.members.length}</strong><span>{workspace.comments.length} megjegyzés</span></article>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Projektállapot</h2><p>A MyImperial ügyfélnézet ugyanezt az élő készültséget mutatja.</p></div></div>
+          <div className="modal-form">
+            <div><label>Fázis<input value={phase} onChange={(event) => setPhase(event.target.value)} /></label><label>Készültség (%)<input type="number" min="0" max="100" value={progress} onChange={(event) => setProgress(event.target.value)} /></label></div>
+            <div><label>Céldátum<input type="date" value={targetCompletion} onChange={(event) => setTargetCompletion(event.target.value)} /></label><button className="primary" onClick={() => patchAction({ phase, progress: Number(progress), targetCompletion }, "A projekt állapota frissült.")}>Állapot mentése</button></div>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Teendők és felelősök</h2><p>A feladatok határidővel és projekttaghoz rendelve követhetők.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "task", title: taskTitle, due: taskDue, taskAction, assignedToEmail: taskAssignee }, "A projektfeladat létrejött.")) { setTaskTitle(""); setTaskAction(""); } }}>
+            <div><label>Feladat *<input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /></label><label>Határidő *<input type="date" value={taskDue} onChange={(event) => setTaskDue(event.target.value)} /></label></div>
+            <div><label>Végrehajtási leírás *<input value={taskAction} onChange={(event) => setTaskAction(event.target.value)} /></label><label>Felelős<select value={taskAssignee} onChange={(event) => setTaskAssignee(event.target.value)}><option value="">Nincs kijelölve</option>{workspace.members.filter((item) => !["customer", "contact"].includes(item.role)).map((member) => <option key={member.email} value={member.email}>{member.email} · {member.role}</option>)}</select></label></div>
+            <button className="primary" disabled={!taskTitle || !taskDue || !taskAction}>Feladat létrehozása</button>
+          </form>
+          <div className="record-table">
+            {workspace.tasks.map((task) => <article key={task.id}><div><small>{task.due}</small><strong>{task.title}</strong><span>{task.action}</span></div><div><small>Felelős</small><strong>{task.assignedToEmail || "Nincs kijelölve"}</strong><span>{task.status}</span></div><div className="row-actions">{task.status !== "completed" && <button onClick={() => patchAction({ action: "task_status", taskId: task.id, status: "completed" }, "A projektfeladat lezárult.")}>Lezárás</button>}<button onClick={() => setCommentEntityId(task.id)}>Megjegyzés</button></div></article>)}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Projektmegjegyzések</h2><p>A projekthez vagy konkrét teendőhöz fűzött belső kommentek visszakereshetők.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); const entityId = commentEntityId || projectId; if (await postAction({ action: "comment", entityType: commentEntityId ? "task" : "project", entityId, body: commentBody }, "A megjegyzés rögzítve.")) setCommentBody(""); }}>
+            <label>Kapcsolódás<select value={commentEntityId} onChange={(event) => setCommentEntityId(event.target.value)}><option value="">Teljes projekt</option>{workspace.tasks.map((task) => <option key={task.id} value={task.id}>Feladat: {task.title}</option>)}</select></label>
+            <label>Megjegyzés *<textarea value={commentBody} onChange={(event) => setCommentBody(event.target.value)} /></label>
+            <button className="primary" disabled={!commentBody.trim()}>Megjegyzés küldése</button>
+          </form>
+          <div className="record-table">{workspace.comments.map((comment) => <article key={comment.id}><div><small>{new Date(comment.createdAt).toLocaleString("hu-HU")} · {comment.authorEmail}</small><strong>{comment.entityType === "project" ? "Projekt" : `Feladat: ${workspace.tasks.find((item) => item.id === comment.entityId)?.title ?? comment.entityId}`}</strong><span>{comment.body}</span></div></article>)}</div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Belső projektüzenetek</h2><p>Dokumentált, időbélyeges kommunikáció a projektcsapat számára.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "message", topic: messageTopic, body: messageBody }, "A belső üzenet elküldve.")) { setMessageTopic(""); setMessageBody(""); } }}>
+            <div><label>Tárgy *<input value={messageTopic} onChange={(event) => setMessageTopic(event.target.value)} /></label><label>Üzenet *<input value={messageBody} onChange={(event) => setMessageBody(event.target.value)} /></label></div>
+            <button className="primary" disabled={!messageTopic.trim() || !messageBody.trim()}>Üzenet küldése</button>
+          </form>
+          <div className="record-table">{workspace.messages.map((message) => <article key={message.id}><div><small>{new Date(message.createdAt).toLocaleString("hu-HU")} · {message.authorEmail}</small><strong>{message.topic}</strong><span>{message.body}</span></div></article>)}</div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Projektcsapat és dokumentumok</h2><p>A kijelölt munkatársak hozzáférnek a projekt MyImperial dokumentumtárához is.</p></div><button onClick={() => window.location.assign(`/myimperial?projectId=${encodeURIComponent(projectId)}`)}>Dokumentumtár megnyitása</button></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "member", email: memberEmail, role: memberRole }, "A munkatárs projektszerepe rögzítve.")) setMemberEmail(""); }}>
+            <div><label>Munkatárs email *<input type="email" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} /></label><label>Projektszerep<select value={memberRole} onChange={(event) => setMemberRole(event.target.value)}><option value="project_manager">Projektmenedzser</option><option value="technical">Műszaki</option><option value="finance">Pénzügy</option><option value="warranty">Garancia</option></select></label></div>
+            <button className="primary" disabled={!memberEmail.includes("@")}>Munkatárs hozzárendelése</button>
+          </form>
+          <div className="record-table">{workspace.members.map((member) => <article key={member.email}><div><small>{member.role}</small><strong>{member.email}</strong><span>{new Date(member.createdAt).toLocaleDateString("hu-HU")}</span></div></article>)}</div>
+          <div className="record-table">{workspace.documents.map((document) => <article key={document.id}><div><small>{document.group} · v{document.currentVersion}</small><strong>{document.name}</strong><span>{document.status} · {new Date(document.updatedAt).toLocaleDateString("hu-HU")}</span></div></article>)}</div>
+        </section>
+
+        {intelligence && <section className="panel"><div className="section-title"><div><h2>Partnerkapacitás</h2><p>Az importált partnerforrásokból {intelligence.partners.length} szervezet érhető el; az adatminőség jelzése megmaradt.</p></div></div><div className="record-table">{intelligence.partners.slice(0, 20).map((partner) => <article key={partner.id}><div><small>{partner.partnerType}</small><strong>{partner.name}</strong><span>{partner.location || partner.specialties || "Adatpótlás szükséges"} · {partner.status}</span></div></article>)}</div></section>}
+      </>}
+    </>
+  );
+}
+
 function Reports({ leads }: { leads: Lead[] }) {
   const sources = [
     "Google Ads",

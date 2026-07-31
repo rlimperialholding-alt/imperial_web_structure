@@ -16,6 +16,7 @@ test("every internal CRM endpoint uses the internal-only identity guard", async 
     "app/api/crm/contracts/[id]/milestones/route.ts",
     "app/api/crm/contracts/[id]/milestones/[milestoneId]/route.ts",
     "app/api/crm/projects/route.ts",
+    "app/api/crm/projects/[id]/workspace/route.ts",
     "app/api/crm/finance/cashflow/route.ts",
     "app/api/crm/finance/cashflow/[id]/route.ts",
     "app/api/intelligence/route.ts",
@@ -53,6 +54,21 @@ test("contract milestones create auditable cashflow and preserve the payment lif
   assert.match(cashflowRoute, /szerződéses részletet fizetés előtt számlázottra/);
   assert.match(migration, /crm_contract_payment_milestones/);
   assert.match(migration, /crm_contract_milestone_sequence_idx/);
+});
+
+test("the internal project workspace persists assignments, tasks, comments and messages with role checks", async () => {
+  const source = await readFile("app/api/crm/projects/[id]/workspace/route.ts", "utf8");
+  const page = await readFile("app/page.tsx", "utf8");
+  const migration = await readFile("drizzle/0013_internal_project_workspace.sql", "utf8");
+  assert.match(source, /project\.progress\.updated/);
+  assert.match(source, /action === "task"/);
+  assert.match(source, /action === "comment"/);
+  assert.match(source, /action === "message"/);
+  assert.match(source, /action === "member"/);
+  assert.match(source, /Csak a felelős vagy a projektmenedzser/);
+  assert.match(page, /Projektmunkatér/);
+  assert.match(page, /Belső projektüzenetek/);
+  assert.match(migration, /CREATE TABLE `project_comments`/);
 });
 
 test("imported customers are backfilled without inventing verified billing data", async () => {
