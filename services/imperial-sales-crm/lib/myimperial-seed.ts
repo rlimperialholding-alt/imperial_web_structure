@@ -12,6 +12,7 @@ import type { CrmIdentity } from "@/lib/crm-auth";
 export const PILOT_PROJECT_ID = "PRJ-2026-014";
 
 export async function seedMyImperialIfEmpty(identity: CrmIdentity) {
+  if (process.env.CRM_DEMO_SEED_ENABLED !== "true") return;
   const db = await getDb();
   const [existing] = await db.select({ id: projects.id }).from(projects)
     .where(eq(projects.id, PILOT_PROJECT_ID)).limit(1);

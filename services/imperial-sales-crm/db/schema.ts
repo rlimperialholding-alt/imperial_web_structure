@@ -38,6 +38,38 @@ export const leads = sqliteTable("leads", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const customers = sqliteTable("crm_customers", {
+  id: text("id").primaryKey(),
+  customerType: text("customer_type", { enum: ["person", "company"] }).notNull(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone").notNull(),
+  billingAddress: text("billing_address").notNull(),
+  taxNumber: text("tax_number"),
+  companyRegistrationNumber: text("company_registration_number"),
+  sourceLeadId: integer("source_lead_id").references(() => leads.id, { onDelete: "set null" }),
+  status: text("status", { enum: ["prospect", "active", "archived"] }).notNull(),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("crm_customers_email_idx").on(table.email),
+  uniqueIndex("crm_customers_source_lead_idx").on(table.sourceLeadId),
+  index("crm_customers_status_idx").on(table.status, table.name),
+]);
+
+export const businessAuditEvents = sqliteTable("crm_business_audit_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  actorEmail: text("actor_email").notNull(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  detail: text("detail").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("crm_business_audit_entity_idx").on(table.entityType, table.entityId, table.createdAt),
+]);
+
 export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),
@@ -132,6 +164,8 @@ export const projects = sqliteTable("projects", {
   portalCode: text("portal_code").notNull().unique(),
   customerName: text("customer_name").notNull(),
   customerEmail: text("customer_email").notNull(),
+  customerId: text("customer_id").references(() => customers.id, { onDelete: "set null" }),
+  contractId: text("contract_id"),
   title: text("title").notNull(),
   status: text("status", { enum: ["planning", "construction", "handover", "care"] }).notNull(),
   phase: text("phase").notNull(),
@@ -141,6 +175,30 @@ export const projects = sqliteTable("projects", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const contracts = sqliteTable("crm_contracts", {
+  id: text("id").primaryKey(),
+  contractNumber: text("contract_number").notNull().unique(),
+  customerId: text("customer_id").notNull().references(() => customers.id, { onDelete: "restrict" }),
+  leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  contractType: text("contract_type", { enum: ["construction", "design", "consulting", "other"] }).notNull(),
+  netAmount: integer("net_amount").notNull(),
+  vatRate: integer("vat_rate").notNull(),
+  grossAmount: integer("gross_amount").notNull(),
+  currency: text("currency").notNull(),
+  status: text("status", { enum: ["draft", "review", "approved", "signed", "cancelled"] }).notNull(),
+  effectiveDate: text("effective_date").notNull(),
+  signedAt: text("signed_at"),
+  sourceUrl: text("source_url"),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("crm_contracts_customer_idx").on(table.customerId, table.status),
+  index("crm_contracts_project_idx").on(table.projectId),
+]);
 
 export const financeInvoiceImports = sqliteTable("finance_invoice_imports", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -202,6 +260,51 @@ export const financeInvoiceImports = sqliteTable("finance_invoice_imports", {
     table.leadId,
   ),
   index("finance_invoice_imports_project_idx").on(table.projectId),
+]);
+
+export const contractPaymentMilestones = sqliteTable("crm_contract_payment_milestones", {
+  id: text("id").primaryKey(),
+  contractId: text("contract_id").notNull().references(() => contracts.id, { onDelete: "cascade" }),
+  sequence: integer("sequence").notNull(),
+  name: text("name").notNull(),
+  dueDate: text("due_date").notNull(),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull(),
+  status: text("status", { enum: ["planned", "invoiced", "paid", "cancelled"] }).notNull(),
+  invoiceId: integer("invoice_id").references(() => financeInvoiceImports.id, { onDelete: "set null" }),
+  cashflowEntryId: text("cashflow_entry_id").notNull(),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("crm_contract_milestone_sequence_idx").on(table.contractId, table.sequence),
+  uniqueIndex("crm_contract_milestone_cashflow_idx").on(table.cashflowEntryId),
+  index("crm_contract_milestone_due_idx").on(table.status, table.dueDate),
+]);
+
+export const cashflowEntries = sqliteTable("finance_cashflow_entries", {
+  id: text("id").primaryKey(),
+  sourceType: text("source_type", {
+    enum: ["imported_invoice", "manual", "contract_schedule", "bank"],
+  }).notNull(),
+  sourceId: text("source_id"),
+  direction: text("direction", { enum: ["inflow", "outflow"] }).notNull(),
+  category: text("category").notNull(),
+  counterparty: text("counterparty").notNull(),
+  description: text("description").notNull(),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull(),
+  status: text("status", { enum: ["planned", "due", "paid", "cancelled"] }).notNull(),
+  dueDate: text("due_date").notNull(),
+  paidAt: text("paid_at"),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("finance_cashflow_source_idx").on(table.sourceType, table.sourceId),
+  index("finance_cashflow_due_idx").on(table.status, table.dueDate),
+  index("finance_cashflow_project_idx").on(table.projectId, table.dueDate),
 ]);
 
 export const sourceRecords = sqliteTable("crm_source_records", {
@@ -388,9 +491,59 @@ export const projectTasks = sqliteTable("project_tasks", {
   status: text("status", { enum: ["waiting_customer", "submitted", "completed"] }).notNull(),
   severity: text("severity", { enum: ["normal", "high"] }).notNull(),
   action: text("action").notNull(),
+  assignedToEmail: text("assigned_to_email"),
+  createdByEmail: text("created_by_email"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [index("project_tasks_project_idx").on(table.projectId)]);
+
+export const projectComments = sqliteTable("project_comments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  entityType: text("entity_type", { enum: ["project", "task", "change", "document"] }).notNull(),
+  entityId: text("entity_id").notNull(),
+  authorEmail: text("author_email").notNull(),
+  body: text("body").notNull(),
+  mentionsJson: text("mentions_json").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("project_comments_entity_idx").on(table.projectId, table.entityType, table.entityId),
+  index("project_comments_created_idx").on(table.projectId, table.createdAt),
+]);
+
+export const projectSiteLogs = sqliteTable("project_site_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  logDate: text("log_date").notNull(),
+  weather: text("weather").notNull(),
+  workforce: integer("workforce").notNull(),
+  summary: text("summary").notNull(),
+  blockers: text("blockers").notNull(),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("project_site_logs_date_idx").on(table.projectId, table.logDate),
+]);
+
+export const procurementRequests = sqliteTable("procurement_requests", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  category: text("category").notNull(),
+  quantity: integer("quantity").notNull(),
+  unit: text("unit").notNull(),
+  requiredBy: text("required_by").notNull(),
+  budgetAmount: integer("budget_amount").notNull(),
+  currency: text("currency").notNull(),
+  supplierPartnerId: integer("supplier_partner_id").references(() => businessPartners.id, { onDelete: "set null" }),
+  status: text("status", { enum: ["draft", "requested", "ordered", "delivered", "cancelled"] }).notNull(),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("procurement_requests_project_idx").on(table.projectId, table.status, table.requiredBy),
+  index("procurement_requests_supplier_idx").on(table.supplierPartnerId),
+]);
 
 export const projectChanges = sqliteTable("project_changes", {
   id: text("id").primaryKey(),

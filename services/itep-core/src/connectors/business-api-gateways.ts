@@ -9,6 +9,7 @@ export class BillingoApiGateway implements BillingoGateway {
     private readonly fetcher:FetchLike=fetch){}
   async listInvoiceChanges(input:{accessToken:string;externalAccountId:string;cursor?:string}){
     const url=new URL("/v3/documents",this.baseUrl);
+    url.searchParams.set("per_page", "100");
     if (!["all", "account"].includes(input.externalAccountId.toLowerCase())) {
       url.searchParams.set("partner_id",input.externalAccountId);
     }

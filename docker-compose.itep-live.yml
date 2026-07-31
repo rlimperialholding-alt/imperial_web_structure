@@ -1,0 +1,17 @@
+services:
+  platform-core:
+    environment:
+      ENVIRONMENT: staging
+      DEMO_FEATURES_ENABLED: "false"
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver,gateway,platform-core,91.99.93.80
+      REQUIRE_HTTPS: "false"
+      ITEP_API_BASE_URL: http://itep-api:3000
+      ITEP_IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
+    networks:
+      - default
+      - itep-live
+
+networks:
+  itep-live:
+    external: true
+    name: imperial-intelligence-test_default

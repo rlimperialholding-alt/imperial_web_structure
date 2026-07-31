@@ -22,6 +22,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(50), default="operator")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -82,6 +83,9 @@ class EventRecord(Base):
     executive_relevance: Mapped[bool] = mapped_column(Boolean, default=False)
     evidence_url: Mapped[str | None] = mapped_column(String(1000))
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+    resolved_by: Mapped[str | None] = mapped_column(String(255))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -116,6 +120,53 @@ class TaskRecord(Base):
     executive_relevance: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class CommunicationThread(Base):
+    __tablename__ = "cc_communication_threads"
+    thread_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), index=True)
+    thread_type: Mapped[str] = mapped_column(String(30), index=True)
+    project_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    task_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("cc_users.id", ondelete="RESTRICT"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, index=True)
+
+
+class CommunicationParticipant(Base):
+    __tablename__ = "cc_communication_participants"
+    __table_args__ = (UniqueConstraint("thread_id", "user_id", name="uq_cc_communication_participant"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    thread_id: Mapped[str] = mapped_column(ForeignKey("cc_communication_threads.thread_id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("cc_users.id", ondelete="CASCADE"), index=True)
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    muted: Mapped[bool] = mapped_column(Boolean, default=False)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CommunicationMessage(Base):
+    __tablename__ = "cc_communication_messages"
+    message_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(ForeignKey("cc_communication_threads.thread_id", ondelete="CASCADE"), index=True)
+    sender_user_id: Mapped[int] = mapped_column(ForeignKey("cc_users.id", ondelete="RESTRICT"), index=True)
+    body: Mapped[str] = mapped_column(Text)
+    reply_to_message_id: Mapped[str | None] = mapped_column(ForeignKey("cc_communication_messages.message_id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class InternalNotification(Base):
+    __tablename__ = "cc_internal_notifications"
+    notification_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("cc_users.id", ondelete="CASCADE"), index=True)
+    thread_id: Mapped[str | None] = mapped_column(ForeignKey("cc_communication_threads.thread_id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str | None] = mapped_column(Text)
+    target_url: Mapped[str] = mapped_column(String(1000))
+    actor_email: Mapped[str | None] = mapped_column(String(255))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class OutboxMessage(Base):
@@ -162,6 +213,7 @@ class ConsistencyIssue(Base):
     value_b: Mapped[str | None] = mapped_column(Text)
     financial_impact_huf: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     responsible: Mapped[str | None] = mapped_column(String(255))
+    assignment_note: Mapped[str | None] = mapped_column(Text)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
     first_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -265,11 +317,55 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TechnicalCase(Base):
+    __tablename__ = "cc_technical_cases"
+    __table_args__ = (
+        UniqueConstraint("module_key", "case_id", name="uq_cc_technical_case_module_id"),
+        CheckConstraint("module_key IN ('housebuild-agent','plotcheck','buildconfig','plancheck')", name="ck_cc_technical_case_module"),
+        CheckConstraint("status IN ('draft','review','approved','rejected')", name="ck_cc_technical_case_status"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    module_key: Mapped[str] = mapped_column(String(50), index=True)
+    project_id: Mapped[str] = mapped_column(String(100), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(30), default="draft", index=True)
+    input_json: Mapped[str] = mapped_column(Text, default="{}")
+    result_json: Mapped[str] = mapped_column(Text, default="{}")
+    source_snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_by: Mapped[str] = mapped_column(String(255))
+    assigned_to: Mapped[str | None] = mapped_column(String(255))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[str | None] = mapped_column(String(255))
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class TechnicalGate(Base):
+    __tablename__ = "cc_technical_gates"
+    __table_args__ = (
+        UniqueConstraint("case_id", "gate_key", name="uq_cc_technical_gate_case_key"),
+        CheckConstraint("status IN ('pending','pass','fail','not_applicable')", name="ck_cc_technical_gate_status"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[str] = mapped_column(ForeignKey("cc_technical_cases.case_id", ondelete="CASCADE"), index=True)
+    gate_key: Mapped[str] = mapped_column(String(100))
+    label: Mapped[str] = mapped_column(String(255))
+    required: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    evidence: Mapped[str | None] = mapped_column(Text)
+    checked_by: Mapped[str | None] = mapped_column(String(255))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class CopySourceRecord(Base):
     __tablename__ = "cq_source_records"
-    __table_args__ = (
-        UniqueConstraint("source_key", "version", name="uq_cq_source_key_version"),
-    )
+    __table_args__ = (UniqueConstraint("source_key", "version", name="uq_cq_source_key_version"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     source_key: Mapped[str] = mapped_column(String(160), index=True)
     source_type: Mapped[str] = mapped_column(String(80), index=True)
@@ -308,15 +404,25 @@ class CopyBriefRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class CampaignStrategyReviewRecord(Base):
+    __tablename__ = "cq_strategy_reviews"
+    review_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    copy_brief_id: Mapped[str] = mapped_column(ForeignKey("cq_copy_briefs.copy_brief_id", ondelete="CASCADE"), unique=True, index=True)
+    brief_hash: Mapped[str] = mapped_column(String(64), index=True)
+    strategist_run_id: Mapped[str] = mapped_column(String(120))
+    reviewer_run_id: Mapped[str] = mapped_column(String(120), unique=True)
+    reviewer_identity: Mapped[str] = mapped_column(String(160))
+    decision: Mapped[str] = mapped_column(String(40), index=True)
+    review_json: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ContentAssetRecord(Base):
     __tablename__ = "cq_content_assets"
     __table_args__ = (
         CheckConstraint(
-            "state <> 'PUBLISHED' OR "
-            "(gate_1_approved = true AND four_gate_approved = true "
-            "AND (source_prevalidated = true OR "
-            "(editorial_approved = true AND owner_approved = true)) "
-            "AND publication_proof_id IS NOT NULL AND published_at IS NOT NULL)",
+            "state NOT IN ('PUBLISHED', 'LIVE_QA', 'QUARANTINED') OR (gate_1_approved = true AND expert_language_approved = true AND expert_marketing_approved = true AND copywriter_approved = true AND four_gate_approved = true AND creative_director_approved = true AND assembly_approved = true AND campaign_package_approved = true AND campaign_package_hash IS NOT NULL AND campaign_artifact_set_hash IS NOT NULL AND release_approved = true AND active_bundle_id IS NOT NULL AND (source_prevalidated = true OR (editorial_approved = true AND owner_approved = true)) AND publication_proof_id IS NOT NULL AND published_at IS NOT NULL)",
             name="ck_cq_published_requires_all_approvals",
         ),
     )
@@ -333,10 +439,21 @@ class ContentAssetRecord(Base):
     content_json: Mapped[str] = mapped_column(Text)
     generation_trace_json: Mapped[str] = mapped_column(Text, default="{}")
     gate_1_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    expert_language_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    expert_marketing_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    copywriter_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     four_gate_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     editorial_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     owner_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     source_prevalidated: Mapped[bool] = mapped_column(Boolean, default=False)
+    creative_director_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    assembly_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    campaign_package_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    campaign_package_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    campaign_artifact_set_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    release_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    live_review_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    active_bundle_id: Mapped[str | None] = mapped_column(String(120), index=True)
     latest_run_id: Mapped[str | None] = mapped_column(String(120), index=True)
     publication_proof_id: Mapped[str | None] = mapped_column(String(120), unique=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -358,6 +475,8 @@ class CopyReviewRun(Base):
     total_score: Mapped[int] = mapped_column(Integer, default=0)
     final_decision: Mapped[str] = mapped_column(String(40), index=True)
     scorecard_json: Mapped[str] = mapped_column(Text)
+    expert_review_json: Mapped[str] = mapped_column(Text)
+    expert_review_hash: Mapped[str] = mapped_column(String(64), index=True)
     repair_brief_json: Mapped[str] = mapped_column(Text, default="[]")
     created_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -365,9 +484,7 @@ class CopyReviewRun(Base):
 
 class ContentGateDecision(Base):
     __tablename__ = "cq_gate_decisions"
-    __table_args__ = (
-        UniqueConstraint("run_id", "gate_id", name="uq_cq_run_gate"),
-    )
+    __table_args__ = (UniqueConstraint("run_id", "gate_id", name="uq_cq_run_gate"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("cq_review_runs.run_id", ondelete="CASCADE"), index=True)
     asset_id: Mapped[str] = mapped_column(String(120), index=True)
@@ -383,9 +500,7 @@ class ContentGateDecision(Base):
 
 class ContentApprovalRecord(Base):
     __tablename__ = "cq_approvals"
-    __table_args__ = (
-        UniqueConstraint("asset_id", "content_version", "approval_type", name="uq_cq_asset_version_approval"),
-    )
+    __table_args__ = (UniqueConstraint("asset_id", "content_version", "approval_type", name="uq_cq_asset_version_approval"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     asset_id: Mapped[str] = mapped_column(String(120), index=True)
     content_version: Mapped[int] = mapped_column(Integer)
@@ -395,6 +510,61 @@ class ContentApprovalRecord(Base):
     note: Mapped[str | None] = mapped_column(Text)
     content_hash: Mapped[str] = mapped_column(String(64))
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CreativeProductionRunRecord(Base):
+    __tablename__ = "cq_creative_runs"
+    __table_args__ = (UniqueConstraint("asset_id", "sequence_number", name="uq_cq_creative_asset_sequence"),)
+    generation_run_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    content_version: Mapped[int] = mapped_column(Integer)
+    sequence_number: Mapped[int] = mapped_column(Integer)
+    producer_identity: Mapped[str] = mapped_column(String(160))
+    visual_direction_id: Mapped[str] = mapped_column(String(160))
+    platform: Mapped[str] = mapped_column(String(80))
+    width_px: Mapped[int] = mapped_column(Integer)
+    height_px: Mapped[int] = mapped_column(Integer)
+    output_uri: Mapped[str] = mapped_column(String(2000))
+    output_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    generation_prompt_hash: Mapped[str] = mapped_column(String(64))
+    contains_text: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(40), default="DIRECTOR_QA", index=True)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ContentWorkflowReviewRecord(Base):
+    __tablename__ = "cq_workflow_reviews"
+    __table_args__ = (UniqueConstraint("asset_id", "content_version", "stage", "reviewer_run_id", name="uq_cq_workflow_stage_run"),)
+    review_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    content_version: Mapped[int] = mapped_column(Integer)
+    stage: Mapped[str] = mapped_column(String(80), index=True)
+    reviewer_role: Mapped[str] = mapped_column(String(80))
+    reviewer_identity: Mapped[str] = mapped_column(String(160))
+    reviewer_run_id: Mapped[str | None] = mapped_column(String(120))
+    decision: Mapped[str] = mapped_column(String(40), index=True)
+    artifact_hash: Mapped[str] = mapped_column(String(64), index=True)
+    review_json: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PublicationBundleRecord(Base):
+    __tablename__ = "cq_publication_bundles"
+    bundle_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String(120), index=True)
+    content_version: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    visual_generation_run_id: Mapped[str] = mapped_column(ForeignKey("cq_creative_runs.generation_run_id"), index=True)
+    assembly_run_id: Mapped[str] = mapped_column(String(120), unique=True)
+    assembler_identity: Mapped[str] = mapped_column(String(160))
+    bundle_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    exports_json: Mapped[str] = mapped_column(Text)
+    pairing_rationale: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(40), default="RELEASE_QA", index=True)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class GoldenCopySample(Base):
@@ -510,9 +680,7 @@ class StagedEnterpriseRecord(Base):
 
 class EnterpriseCanonicalRecord(Base):
     __tablename__ = "ic_canonical_records"
-    __table_args__ = (
-        UniqueConstraint("domain", "entity_type", "external_key", name="uq_ic_canonical_business_key"),
-    )
+    __table_args__ = (UniqueConstraint("domain", "entity_type", "external_key", name="uq_ic_canonical_business_key"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     record_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     domain: Mapped[str] = mapped_column(String(100), index=True)
@@ -899,7 +1067,6 @@ class MaterialUsageControl(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
-
 class PartnerFieldAccess(Base):
     __tablename__ = "ops_partner_field_access"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1041,6 +1208,7 @@ class DevelopmentDiscoveryRecord(Base):
     status: Mapped[str] = mapped_column(String(40), default="pending_review", index=True)
     requested_by: Mapped[str | None] = mapped_column(String(255))
     reviewed_by: Mapped[str | None] = mapped_column(String(255))
+    review_note: Mapped[str | None] = mapped_column(Text)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

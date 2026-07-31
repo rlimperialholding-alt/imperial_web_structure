@@ -1,6 +1,7 @@
 from sqlalchemy import select
 
 from app.models import ModuleRegistry, User
+from app.roles import ROLE_DEFINITIONS
 
 
 def test_health_and_readiness(client):
@@ -27,9 +28,5 @@ def test_seeded_module_registry(db):
 
 def test_all_role_accounts_are_seeded_outside_production(db):
     users = db.scalars(select(User)).all()
-    assert len(users) == 12
-    assert {user.role for user in users} == {
-        "owner", "managing-director", "marketing", "technical-prep", "sales",
-        "finance", "project-manager", "designer", "subcontractor", "customer",
-        "legal", "platform-admin",
-    }
+    assert len(users) == len(ROLE_DEFINITIONS)
+    assert {user.role for user in users} == {role.id for role in ROLE_DEFINITIONS}

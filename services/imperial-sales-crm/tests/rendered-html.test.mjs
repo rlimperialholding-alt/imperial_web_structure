@@ -12,6 +12,12 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
     notificationMigration,
     itepMigration,
     liveSourceMigration,
+    businessWorkflowMigration,
+    customerBackfillMigration,
+    cashflowMigration,
+    milestoneMigration,
+    projectWorkspaceMigration,
+    fieldProcurementMigration,
     server,
   ] = await Promise.all([
     readFile("dist/.openai/hosting.json", "utf8"),
@@ -22,6 +28,12 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
     readFile("dist/.openai/drizzle/0004_myimperial_notifications.sql", "utf8"),
     readFile("dist/.openai/drizzle/0005_itep_migration_contract.sql", "utf8"),
     readFile("dist/.openai/drizzle/0008_live_source_registry.sql", "utf8"),
+    readFile("dist/.openai/drizzle/0009_customer_contract_project.sql", "utf8"),
+    readFile("dist/.openai/drizzle/0010_backfill_canonical_customers.sql", "utf8"),
+    readFile("dist/.openai/drizzle/0011_cashflow_ledger.sql", "utf8"),
+    readFile("dist/.openai/drizzle/0012_contract_payment_milestones.sql", "utf8"),
+    readFile("dist/.openai/drizzle/0013_internal_project_workspace.sql", "utf8"),
+    readFile("dist/.openai/drizzle/0014_field_and_procurement.sql", "utf8"),
     readFile("dist/server/index.js", "utf8"),
   ]);
   assert.deepEqual(JSON.parse(hosting), {
@@ -39,6 +51,13 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
   assert.match(itepMigration, /CREATE TABLE `crm_migration_batches`/);
   assert.match(itepMigration, /CREATE TABLE `crm_migration_documents`/);
   assert.match(liveSourceMigration, /CREATE TABLE `crm_source_records`/);
+  assert.match(businessWorkflowMigration, /CREATE TABLE `crm_customers`/);
+  assert.match(businessWorkflowMigration, /CREATE TABLE `crm_contracts`/);
+  assert.match(customerBackfillMigration, /INSERT OR IGNORE INTO `crm_customers`/);
+  assert.match(cashflowMigration, /CREATE TABLE `finance_cashflow_entries`/);
+  assert.match(milestoneMigration, /CREATE TABLE `crm_contract_payment_milestones`/);
+  assert.match(projectWorkspaceMigration, /CREATE TABLE `project_comments`/);
+  assert.match(fieldProcurementMigration, /CREATE TABLE `procurement_requests`/);
   assert.match(server, /crm_source_records/);
 });
 
@@ -53,4 +72,13 @@ test("the customer ChangeControl view does not expose an internal margin percent
   assert.doesNotMatch(source, /FRISSÍTETT FEDEZET|35% alatt|35,8%|36,2%/);
   assert.match(source, /BELSŐ KONTROLL/);
   assert.match(source, /jóváhagyás nélkül nincs végrehajtás/i);
+});
+
+test("MyImperial fails closed instead of showing pilot data after an API error", async () => {
+  const source = await readFile("app/myimperial/page.tsx", "utf8");
+  assert.match(source, /setLiveData\("error"\)/);
+  assert.match(source, /liveData !== "live"/);
+  assert.match(source, /nem jelenítünk meg mintaadatokat/);
+  assert.doesNotMatch(source, /setLiveData\("demo"\)/);
+  assert.doesNotMatch(source, /PILOT \/ BEMUTATÓ/);
 });

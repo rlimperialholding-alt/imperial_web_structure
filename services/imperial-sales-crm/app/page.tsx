@@ -9,7 +9,6 @@ import {
   CalendarWorkspace,
   KnowledgeWorkspace,
   ModulesWorkspace,
-  ProjectsWorkspace,
   type IntelligenceWorkspace,
 } from "./intelligence-workspace";
 
@@ -74,6 +73,70 @@ type Task = {
   ai?: boolean;
 };
 type NewTask = Pick<Task, "title" | "type" | "due" | "priority">;
+type Customer = {
+  id: string;
+  customerType: "person" | "company";
+  name: string;
+  email: string;
+  phone: string;
+  billingAddress: string;
+  taxNumber: string | null;
+  sourceLeadId: number | null;
+  status: "prospect" | "active" | "archived";
+};
+type Contract = {
+  id: string;
+  contractNumber: string;
+  customerId: string;
+  leadId: number | null;
+  projectId: string | null;
+  title: string;
+  contractType: "construction" | "design" | "consulting" | "other";
+  netAmount: number;
+  vatRate: number;
+  grossAmount: number;
+  currency: string;
+  status: "draft" | "review" | "approved" | "signed" | "cancelled";
+  effectiveDate: string;
+  signedAt: string | null;
+};
+type ContractMilestone = {
+  id: string;
+  contractId: string;
+  sequence: number;
+  name: string;
+  dueDate: string;
+  amount: number;
+  currency: string;
+  status: "planned" | "invoiced" | "paid" | "cancelled";
+  cashflowEntryId: string;
+};
+type BusinessProject = {
+  id: string;
+  portalCode: string;
+  customerId: string | null;
+  contractId: string | null;
+  title: string;
+  status: "planning" | "construction" | "handover" | "care";
+  phase: string;
+  progress: number;
+  targetCompletion: string;
+};
+type ProjectWorkspace = {
+  project: BusinessProject & { customerName: string; customerEmail: string };
+  tasks: Array<{
+    id: string; title: string; due: string; status: "waiting_customer" | "submitted" | "completed";
+    severity: "normal" | "high"; action: string; assignedToEmail: string | null;
+  }>;
+  comments: Array<{ id: number; entityType: string; entityId: string; authorEmail: string; body: string; createdAt: string }>;
+  messages: Array<{ id: number; authorEmail: string; topic: string; body: string; createdAt: string }>;
+  documents: Array<{ id: string; name: string; group: string; status: "draft" | "approval" | "verified"; currentVersion: number; updatedAt: string }>;
+  members: Array<{ projectId: string; email: string; role: string; createdAt: string }>;
+  events: Array<{ id: number; actorEmail: string; action: string; detail: string; createdAt: string }>;
+  siteLogs: Array<{ id: number; logDate: string; weather: string; workforce: number; summary: string; blockers: string; createdByEmail: string }>;
+  procurement: Array<{ id: string; title: string; category: string; quantity: number; unit: string; requiredBy: string; budgetAmount: number; supplierPartnerId: number | null; status: "draft" | "requested" | "ordered" | "delivered" | "cancelled" }>;
+  partners: Array<{ id: number; name: string; partnerType: string; email: string | null; location: string | null; specialties: string | null }>;
+};
 type Identity = {
   email: string;
   name: string;
@@ -100,6 +163,42 @@ type Invoice = {
   matchConfidence: number;
   crmCustomerName: string | null;
   projectTitle: string | null;
+};
+type CashflowEntry = {
+  id: string;
+  sourceType: "imported_invoice" | "manual" | "contract_schedule" | "bank";
+  direction: "inflow" | "outflow";
+  category: string;
+  counterparty: string;
+  description: string;
+  projectId: string | null;
+  amount: number;
+  currency: string;
+  status: "planned" | "due" | "paid" | "cancelled";
+  dueDate: string;
+  paidAt: string | null;
+};
+type CashflowWorkspace = {
+  period: { from: string; to: string };
+  summaries: Array<{
+    currency: string;
+    actualInflow: number;
+    actualOutflow: number;
+    forecastInflow: number;
+    forecastOutflow: number;
+    overdueOutflow: number;
+    actualBalance: number;
+    forecastBalance: number;
+  }>;
+  monthly: Array<{
+    month: string;
+    currency: string;
+    actualInflow: number;
+    actualOutflow: number;
+    forecastInflow: number;
+    forecastOutflow: number;
+  }>;
+  entries: CashflowEntry[];
 };
 type ImportStatus = {
   workspaceId: string;
@@ -128,7 +227,7 @@ type ImportStatus = {
     updatedAt: string;
   }[];
 };
-type DataState = "connecting" | "live" | "demo" | "error";
+type DataState = "connecting" | "live" | "forbidden" | "unavailable";
 
 const stages: { id: Stage; label: string; color: string }[] = [
   { id: "new", label: "Új lead", color: "#6f7f92" },
@@ -529,6 +628,11 @@ export default function Home() {
   const [view, setView] = useState<View>("today"),
     [leads, setLeads] = useState<Lead[]>([]),
     [tasks, setTasksRaw] = useState<Task[]>([]),
+    [customers, setCustomers] = useState<Customer[]>([]),
+    [contracts, setContracts] = useState<Contract[]>([]),
+    [contractMilestones, setContractMilestones] = useState<ContractMilestone[]>([]),
+    [businessProjects, setBusinessProjects] = useState<BusinessProject[]>([]),
+    [cashflow, setCashflow] = useState<CashflowWorkspace | null>(null),
     [invoices, setInvoices] = useState<Invoice[]>([]),
     [importStatus, setImportStatus] = useState<ImportStatus | null>(null),
     [intelligence, setIntelligence] = useState<IntelligenceWorkspace | null>(null);
@@ -538,6 +642,10 @@ export default function Home() {
   const [mode, setMode] = useState<"kanban" | "list">("kanban"),
     [selected, setSelected] = useState<Lead | null>(null),
     [newOpen, setNewOpen] = useState(false),
+    [newCustomerOpen, setNewCustomerOpen] = useState(false),
+    [newContractOpen, setNewContractOpen] = useState(false),
+    [milestoneContract, setMilestoneContract] = useState<Contract | null>(null),
+    [newCashflowOpen, setNewCashflowOpen] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false),
     [toast, setToast] = useState("");
   const [identity, setIdentity] = useState<Identity>({
@@ -550,11 +658,22 @@ export default function Home() {
     let active = true;
     authenticatedFetch("/api/crm", { cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error(String(response.status));
+        if (!response.ok) {
+          setDataState(
+            response.status === 401 || response.status === 403
+              ? "forbidden"
+              : "unavailable",
+          );
+          throw new Error(String(response.status));
+        }
         return response.json() as Promise<{
           identity: Identity;
           leads: Lead[];
           tasks: Task[];
+          customers: Customer[];
+          contracts: Contract[];
+          contractMilestones: ContractMilestone[];
+          projects: BusinessProject[];
           invoices: Invoice[];
           importStatus: ImportStatus;
         }>;
@@ -564,13 +683,20 @@ export default function Home() {
         setIdentity(data.identity);
         setLeads(data.leads);
         setTasksRaw(data.tasks);
+        setCustomers(data.customers);
+        setContracts(data.contracts);
+        setContractMilestones(data.contractMilestones);
+        setBusinessProjects(data.projects);
         setInvoices(data.invoices);
         setImportStatus(data.importStatus);
         setDataState("live");
       })
-      .catch(() => {
+      .catch((error) => {
         if (!active) return;
-        setDataState("error");
+        const status = error instanceof Error ? error.message : "";
+        setDataState(
+          status === "401" || status === "403" ? "forbidden" : "unavailable",
+        );
       });
     return () => {
       active = false;
@@ -597,6 +723,24 @@ export default function Home() {
     return () => {
       active = false;
     };
+  }, []);
+  const refreshCashflow = async () => {
+    const response = await authenticatedFetch("/api/crm/finance/cashflow", { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    const workspace = await response.json() as CashflowWorkspace;
+    setCashflow(workspace);
+    return workspace;
+  };
+  useEffect(() => {
+    let active = true;
+    authenticatedFetch("/api/crm/finance/cashflow", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        return response.json() as Promise<CashflowWorkspace>;
+      })
+      .then((workspace) => { if (active) setCashflow(workspace); })
+      .catch(() => { if (active) setCashflow(null); });
+    return () => { active = false; };
   }, []);
   const filtered = useMemo(
     () =>
@@ -649,7 +793,10 @@ export default function Home() {
       const completed = next.find(
         (task) => task.done && !current.find((old) => old.id === task.id)?.done,
       );
-      if (completed && dataState === "live")
+      if (completed && dataState !== "live") {
+        return current;
+      }
+      if (completed)
         authenticatedFetch(`/api/crm/tasks/${completed.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -669,17 +816,19 @@ export default function Home() {
       return next;
     });
   const moveLead = async (id: number, stage: Stage) => {
+    if (dataState !== "live") {
+      notify("Nincs élő adatkapcsolat; a státusz nem módosítható.");
+      return;
+    }
     const previous = leads.find((l) => l.id === id)?.stage;
     setLeads((c) => c.map((l) => (l.id === id ? { ...l, stage } : l)));
     try {
-      if (dataState === "live") {
-        const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ stage }),
-        });
-        if (!response.ok) throw new Error();
-      }
+      const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stage }),
+      });
+      if (!response.ok) throw new Error();
       notify(
         `Az adatlap átkerült: ${stages.find((s) => s.id === stage)?.label}.`,
       );
@@ -692,22 +841,19 @@ export default function Home() {
     }
   };
   const addLead = async (lead: Omit<Lead, "id">) => {
+    if (dataState !== "live") {
+      notify("Nincs élő adatkapcsolat; az adatlap nem hozható létre.");
+      return;
+    }
     try {
-      if (dataState === "live") {
-        const response = await authenticatedFetch("/api/crm/leads", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(lead),
-        });
-        if (!response.ok) throw new Error();
-        const data = (await response.json()) as { lead: Lead };
-        setLeads((c) => [data.lead, ...c]);
-      } else {
-        setLeads((c) => [
-          { ...lead, id: Math.max(0, ...c.map((l) => l.id)) + 1 },
-          ...c,
-        ]);
-      }
+      const response = await authenticatedFetch("/api/crm/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(lead),
+      });
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as { lead: Lead };
+      setLeads((c) => [data.lead, ...c]);
       setNewOpen(false);
       setView("records");
       notify("Az új értékesítési adatlap létrejött és elmentettük.");
@@ -716,23 +862,25 @@ export default function Home() {
     }
   };
   const saveLead = async (id: number, changes: Partial<Lead>) => {
+    if (dataState !== "live") {
+      notify("Nincs élő adatkapcsolat; az adatlap nem módosítható.");
+      return false;
+    }
     const previous = leads.find((lead) => lead.id === id);
     if (!previous) return false;
     const optimistic = { ...previous, ...changes };
     setLeads((rows) => rows.map((lead) => (lead.id === id ? optimistic : lead)));
     setSelected(optimistic);
     try {
-      if (dataState === "live") {
-        const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(changes),
-        });
-        if (!response.ok) throw new Error();
-        const data = (await response.json()) as { lead: Lead };
-        setLeads((rows) => rows.map((lead) => (lead.id === id ? data.lead : lead)));
-        setSelected(data.lead);
-      }
+      const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(changes),
+      });
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as { lead: Lead };
+      setLeads((rows) => rows.map((lead) => (lead.id === id ? data.lead : lead)));
+      setSelected(data.lead);
       notify("Az adatlap módosításait elmentettük.");
       return true;
     } catch {
@@ -743,34 +891,187 @@ export default function Home() {
     }
   };
   const addTask = async (leadId: number, task: NewTask) => {
+    if (dataState !== "live") {
+      notify("Nincs élő adatkapcsolat; a teendő nem hozható létre.");
+      return false;
+    }
     try {
-      if (dataState === "live") {
-        const response = await authenticatedFetch("/api/crm/tasks", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ...task, leadId }),
-        });
-        if (!response.ok) throw new Error();
-        const data = (await response.json()) as { task: Task };
-        setTasksRaw((rows) => [...rows, data.task]);
-      } else {
-        const lead = leads.find((row) => row.id === leadId);
-        setTasksRaw((rows) => [
-          ...rows,
-          {
-            ...task,
-            id: Math.max(0, ...rows.map((row) => row.id)) + 1,
-            leadId,
-            leadName: lead?.name ?? "Adatlap",
-            done: false,
-          },
-        ]);
-      }
+      const response = await authenticatedFetch("/api/crm/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...task, leadId }),
+      });
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as { task: Task };
+      setTasksRaw((rows) => [...rows, data.task]);
       notify("Az új teendőt rögzítettük.");
       return true;
     } catch {
       notify("A teendő mentése nem sikerült. Próbáld újra.");
       return false;
+    }
+  };
+  const addCustomer = async (customer: {
+    customerType: "person" | "company";
+    name: string;
+    email: string;
+    phone: string;
+    billingAddress: string;
+    taxNumber?: string;
+  }) => {
+    try {
+      const response = await authenticatedFetch("/api/crm/customers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(customer),
+      });
+      const payload = await response.json() as { customer?: Customer; error?: string };
+      if (!response.ok || !payload.customer) throw new Error(payload.error);
+      setCustomers((rows) => [payload.customer!, ...rows]);
+      setNewCustomerOpen(false);
+      notify("Az ügyfél bekerült az élő ügyféltörzsbe.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "Az ügyfél mentése nem sikerült.");
+      return false;
+    }
+  };
+  const addContract = async (data: {
+    customerId: string;
+    title: string;
+    contractType: Contract["contractType"];
+    netAmount: number;
+    vatRate: number;
+    effectiveDate: string;
+  }) => {
+    try {
+      const response = await authenticatedFetch("/api/crm/contracts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json() as { contract?: Contract; error?: string };
+      if (!response.ok || !payload.contract) throw new Error(payload.error);
+      setContracts((rows) => [payload.contract!, ...rows]);
+      setNewContractOpen(false);
+      notify("A szerződéstervezet létrejött és auditnaplóba került.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A szerződés mentése nem sikerült.");
+      return false;
+    }
+  };
+  const advanceContract = async (
+    contract: Contract,
+    status: "review" | "approved" | "signed" | "cancelled",
+    targetCompletion?: string,
+  ) => {
+    try {
+      const response = await authenticatedFetch(`/api/crm/contracts/${contract.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status, targetCompletion, projectTitle: contract.title }),
+      });
+      const payload = await response.json() as {
+        contract?: Contract;
+        project?: BusinessProject;
+        error?: string;
+      };
+      if (!response.ok || !payload.contract) throw new Error(payload.error);
+      setContracts((rows) => rows.map((item) => item.id === contract.id ? payload.contract! : item));
+      if (payload.project) setBusinessProjects((rows) => [payload.project!, ...rows]);
+      if (status === "signed") await refreshCashflow();
+      notify(status === "signed" ? "A szerződésből létrejött a projekt és a MyImperial hozzáférés." : "A szerződés állapota frissült.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "Az állapotváltás nem sikerült.");
+      return false;
+    }
+  };
+  const addContractMilestone = async (data: { name: string; dueDate: string; amount: number }) => {
+    if (!milestoneContract) return false;
+    try {
+      const response = await authenticatedFetch(`/api/crm/contracts/${milestoneContract.id}/milestones`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json() as { milestone?: ContractMilestone; error?: string };
+      if (!response.ok || !payload.milestone) throw new Error(payload.error);
+      setContractMilestones((rows) => [...rows, payload.milestone!]);
+      setMilestoneContract(null);
+      await refreshCashflow();
+      notify("A fizetési mérföldkő és a kapcsolódó cashflow-tétel létrejött.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A fizetési mérföldkő mentése nem sikerült.");
+      return false;
+    }
+  };
+  const advanceContractMilestone = async (
+    milestone: ContractMilestone,
+    status: "invoiced" | "paid" | "cancelled",
+  ) => {
+    try {
+      const response = await authenticatedFetch(
+        `/api/crm/contracts/${milestone.contractId}/milestones/${milestone.id}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status }),
+        },
+      );
+      const payload = await response.json() as { milestone?: ContractMilestone; error?: string };
+      if (!response.ok || !payload.milestone) throw new Error(payload.error);
+      setContractMilestones((rows) => rows.map((item) => item.id === milestone.id ? payload.milestone! : item));
+      await refreshCashflow();
+      notify(status === "paid" ? "A szerződéses részlet teljesítettként bekerült a cashflow-ba." : "A fizetési mérföldkő állapota frissült.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A fizetési mérföldkő frissítése nem sikerült.");
+      return false;
+    }
+  };
+  const addCashflowEntry = async (entry: {
+    direction: "inflow" | "outflow";
+    category: string;
+    counterparty: string;
+    description: string;
+    projectId: string;
+    amount: number;
+    dueDate: string;
+    status: "planned" | "due";
+  }) => {
+    try {
+      const response = await authenticatedFetch("/api/crm/finance/cashflow", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      const payload = await response.json() as { entry?: CashflowEntry; error?: string };
+      if (!response.ok || !payload.entry) throw new Error(payload.error);
+      await refreshCashflow();
+      setNewCashflowOpen(false);
+      notify("A cashflow-tételt auditáltan rögzítettük.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A cashflow-tétel mentése nem sikerült.");
+      return false;
+    }
+  };
+  const markCashflowPaid = async (entry: CashflowEntry) => {
+    try {
+      const response = await authenticatedFetch(`/api/crm/finance/cashflow/${entry.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "paid" }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error);
+      await refreshCashflow();
+      notify("A pénzmozgást teljesítettként rögzítettük.");
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A teljesítés mentése nem sikerült.");
     }
   };
   const initials = identity.name
@@ -786,7 +1087,7 @@ export default function Home() {
         ? "Értékesítési vezető"
         : "Értékesítő";
   const crmViews = ["pipeline", "records", "customers", "reports", "control"];
-  if (dataState === "error") return (
+  if (dataState === "forbidden") return (
     <main className={accessStyles.page}>
       <section>
         <Logo />
@@ -795,6 +1096,18 @@ export default function Home() {
         <h1>Ehhez a felülethez nincs hozzáférésed</h1>
         <p>Az ügyfél- és kapcsolattartói fiókok kizárólag a saját MyImperial projektterüket érhetik el. A CRM értékesítési és vezetői adatai belső használatúak.</p>
         <a href="/myimperial">Vissza a MyImperial projekthez</a>
+      </section>
+    </main>
+  );
+  if (dataState === "unavailable") return (
+    <main className={accessStyles.page}>
+      <section>
+        <Logo />
+        <span><Icon name="alert" /></span>
+        <small>BELSŐ IMPERIAL RENDSZER</small>
+        <h1>Az élő CRM-adatkapcsolat most nem érhető el</h1>
+        <p>Biztonsági okból a rendszer nem jelenít meg mintaadatokat, és nem enged helyi mentést. Próbáld újra később, vagy jelezd a rendszerüzemeltetőnek.</p>
+        <button onClick={() => window.location.reload()}>Újrapróbálás</button>
       </section>
     </main>
   );
@@ -915,13 +1228,7 @@ export default function Home() {
           <div className="top-actions">
             <span className={`data-pill ${dataState}`}>
               <i />
-              {dataState === "live"
-                ? "ÉLŐ ADATOK"
-                : dataState === "connecting"
-                  ? "KAPCSOLÓDÁS"
-                  : dataState === "demo"
-                    ? "BEMUTATÓ"
-                    : "KAPCSOLATI HIBA"}
+              {dataState === "live" ? "ÉLŐ ADATOK" : "KAPCSOLÓDÁS"}
             </span>
             <span className="private-pill">
               <Icon name="shield" /> BELSŐ RENDSZER
@@ -1034,11 +1341,28 @@ export default function Home() {
               onNew={() => setNewOpen(true)}
             />
           ) : view === "customers" ? (
-            <Customers leads={leads} onLead={setSelected} />
+            <Customers
+              customers={customers}
+              contracts={contracts}
+              milestones={contractMilestones}
+              projects={businessProjects}
+              identity={identity}
+              onNewCustomer={() => setNewCustomerOpen(true)}
+              onNewContract={() => setNewContractOpen(true)}
+              onNewMilestone={setMilestoneContract}
+              onAdvanceContract={advanceContract}
+              onAdvanceMilestone={advanceContractMilestone}
+            />
           ) : view === "reports" ? (
             <Reports leads={leads} />
           ) : view === "finance" ? (
-            <Finance invoices={invoices} importStatus={importStatus} />
+            <Finance
+              invoices={invoices}
+              importStatus={importStatus}
+              cashflow={cashflow}
+              onNew={() => setNewCashflowOpen(true)}
+              onPaid={markCashflowPaid}
+            />
           ) : view === "executive" ? (
             <ExecutiveDashboard
               leads={leads}
@@ -1052,9 +1376,7 @@ export default function Home() {
               ? <ModulesWorkspace data={intelligence} />
               : <IntelligenceLoading />
           ) : view === "projects" ? (
-            intelligence
-              ? <ProjectsWorkspace data={intelligence} />
-              : <IntelligenceLoading />
+            <ProjectOperations projects={businessProjects} intelligence={intelligence} notify={notify} />
           ) : view === "calendar" ? (
             intelligence
               ? <CalendarWorkspace data={intelligence} />
@@ -1098,6 +1420,23 @@ export default function Home() {
       )}{" "}
       {newOpen && (
         <NewLeadModal onClose={() => setNewOpen(false)} onSave={addLead} />
+      )}{" "}
+      {newCustomerOpen && (
+        <NewCustomerModal onClose={() => setNewCustomerOpen(false)} onSave={addCustomer} />
+      )}{" "}
+      {newContractOpen && (
+        <NewContractModal customers={customers} onClose={() => setNewContractOpen(false)} onSave={addContract} />
+      )}{" "}
+      {milestoneContract && (
+        <NewContractMilestoneModal
+          contract={milestoneContract}
+          scheduledAmount={contractMilestones.filter((item) => item.contractId === milestoneContract.id && item.status !== "cancelled").reduce((total, item) => total + item.amount, 0)}
+          onClose={() => setMilestoneContract(null)}
+          onSave={addContractMilestone}
+        />
+      )}{" "}
+      {newCashflowOpen && (
+        <NewCashflowModal projects={businessProjects} onClose={() => setNewCashflowOpen(false)} onSave={addCashflowEntry} />
       )}{" "}
       {toast && (
         <div className="toast">
@@ -1550,12 +1889,43 @@ function Records({
 }
 
 function Customers({
-  leads,
-  onLead,
+  customers,
+  contracts,
+  milestones,
+  projects,
+  identity,
+  onNewCustomer,
+  onNewContract,
+  onNewMilestone,
+  onAdvanceContract,
+  onAdvanceMilestone,
 }: {
-  leads: Lead[];
-  onLead: (l: Lead) => void;
+  customers: Customer[];
+  contracts: Contract[];
+  milestones: ContractMilestone[];
+  projects: BusinessProject[];
+  identity: Identity;
+  onNewCustomer: () => void;
+  onNewContract: () => void;
+  onNewMilestone: (contract: Contract) => void;
+  onAdvanceContract: (
+    contract: Contract,
+    status: "review" | "approved" | "signed" | "cancelled",
+    targetCompletion?: string,
+  ) => Promise<boolean>;
+  onAdvanceMilestone: (
+    milestone: ContractMilestone,
+    status: "invoiced" | "paid" | "cancelled",
+  ) => Promise<boolean>;
 }) {
+  const [targetCompletion, setTargetCompletion] = useState<Record<string, string>>({});
+  const contractStatus: Record<Contract["status"], string> = {
+    draft: "Tervezet",
+    review: "Ellenőrzés alatt",
+    approved: "Jóváhagyva",
+    signed: "Aláírva",
+    cancelled: "Megszüntetve",
+  };
   return (
     <>
       <section className="section-title">
@@ -1563,46 +1933,291 @@ function Customers({
           <p className="eyebrow">KAPCSOLATOK ÉS CÉGEK</p>
           <h2>Ügyfélközpont</h2>
           <p>
-            Az értékesítési adatlapokból egységesített ügyfél- és vállalati
-            nézet.
+            Élő ügyféltörzs, szerződés-jóváhagyás és projektindítás egy helyen.
           </p>
         </div>
-        <button className="secondary">
+        <button className="secondary" onClick={onNewCustomer}>
           <Icon name="plus" /> Új ügyfél
         </button>
       </section>
       <div className="customer-grid">
-        {leads.map((l) => (
-          <button
-            className="customer-card"
-            key={l.id}
-            onClick={() => onLead(l)}
-          >
+        {customers.map((customer) => (
+          <article className="customer-card" key={customer.id}>
             <span className="customer-avatar">
-              {l.name
+              {customer.name
                 .split(" ")
                 .map((x) => x[0])
                 .slice(0, 2)
                 .join("")}
             </span>
             <div>
-              <strong>{l.name}</strong>
-              <p>
-                {l.projectType} · {l.location}
-              </p>
-              <span>{l.email}</span>
+              <strong>{customer.name}</strong>
+              <p>{customer.customerType === "company" ? "Vállalati ügyfél" : "Magánszemély"} · {customer.billingAddress}</p>
+              <span>{customer.email} · {customer.phone}</span>
             </div>
-            <i className={`health ${l.health}`} />
+            <i className={`health ${customer.status === "active" ? "green" : customer.status === "prospect" ? "yellow" : "red"}`} />
             <footer>
-              <span>{l.brand}</span>
-              <b>{money(l.value)}</b>
+              <span>{customer.status === "active" ? "Aktív" : customer.status === "prospect" ? "Érdeklődő" : "Archivált"}</span>
+              <b>{contracts.filter((item) => item.customerId === customer.id).length} szerződés</b>
             </footer>
-          </button>
+          </article>
+        ))}
+      </div>
+      {customers.length === 0 && (
+        <section className="empty"><h2>Még nincs ügyfél az élő törzsben</h2><p>Az „Új ügyfél” gombbal rögzíthető az első ügyfél.</p></section>
+      )}
+
+      <section className="section-title">
+        <div><p className="eyebrow">SZERZŐDÉS ÉS PROJEKTINDÍTÁS</p><h2>Szerződések</h2><p>Vezetői jóváhagyás után az aláírás automatikusan létrehozza a projektet és a MyImperial tagságot.</p></div>
+        <button className="secondary" onClick={onNewContract} disabled={customers.length === 0}><Icon name="plus" /> Új szerződés</button>
+      </section>
+      <section className="panel">
+        <div className="record-table">
+          {contracts.map((contract) => {
+            const paymentMilestones = milestones.filter((item) => item.contractId === contract.id);
+            const activeMilestones = paymentMilestones.filter((item) => item.status !== "cancelled");
+            const scheduledAmount = activeMilestones.reduce((total, item) => total + item.amount, 0);
+            const scheduleComplete = activeMilestones.length > 0 && scheduledAmount === contract.grossAmount;
+            return (
+            <article key={contract.id}>
+              <div><small>{contract.contractNumber}</small><strong>{contract.title}</strong><span>{customers.find((item) => item.id === contract.customerId)?.name ?? contract.customerId}</span></div>
+              <div><small>Bruttó érték</small><strong>{money(contract.grossAmount)}</strong><span>Ütemezve: {money(scheduledAmount)} · {scheduleComplete ? "teljes" : `${money(contract.grossAmount - scheduledAmount)} hiányzik`}</span></div>
+              <div><small>Állapot</small><strong>{contractStatus[contract.status]}</strong><span>{contract.projectId ? `Projekt: ${contract.projectId}` : "Projekt még nincs"}</span></div>
+              <div><small>Fizetési mérföldkövek</small><strong>{activeMilestones.length} részlet</strong><span>{activeMilestones.map((item) => `${item.name}: ${money(item.amount)} (${item.dueDate})`).join(" · ") || "Még nincs fizetési ütem"}</span></div>
+              <div className="row-actions">
+                {["draft", "review", "approved"].includes(contract.status) && <button onClick={() => onNewMilestone(contract)}>Részlet hozzáadása</button>}
+                {contract.status === "draft" && <button onClick={() => onAdvanceContract(contract, "review")}>Ellenőrzésre</button>}
+                {contract.status === "review" && identity.role !== "sales" && <button onClick={() => onAdvanceContract(contract, "approved")}>Jóváhagyás</button>}
+                {contract.status === "approved" && identity.role !== "sales" && (
+                  <><input type="date" aria-label={`${contract.contractNumber} tervezett befejezés`} value={targetCompletion[contract.id] ?? ""} onChange={(event) => setTargetCompletion((current) => ({ ...current, [contract.id]: event.target.value }))} /><button disabled={!targetCompletion[contract.id] || !scheduleComplete} title={!scheduleComplete ? "A fizetési ütemnek pontosan le kell fednie a bruttó értéket." : undefined} onClick={() => onAdvanceContract(contract, "signed", targetCompletion[contract.id])}>Aláírás és projektindítás</button></>
+                )}
+                {paymentMilestones.filter((item) => item.status === "planned").map((item) => <button key={`${item.id}-invoice`} onClick={() => onAdvanceMilestone(item, "invoiced")}>{item.sequence}. részlet számlázva</button>)}
+                {paymentMilestones.filter((item) => item.status === "invoiced").map((item) => <button key={`${item.id}-paid`} onClick={() => onAdvanceMilestone(item, "paid")}>{item.sequence}. részlet fizetve</button>)}
+              </div>
+            </article>
+            );
+          })}
+        </div>
+        {contracts.length === 0 && <div className="empty"><h2>Még nincs szerződés</h2></div>}
+      </section>
+
+      <section className="section-title"><div><p className="eyebrow">MYIMPERIAL</p><h2>Elindított projektek</h2></div></section>
+      <div className="customer-grid">
+        {projects.map((project) => (
+          <article className="customer-card" key={project.id}>
+            <span className="customer-avatar">{project.progress}%</span>
+            <div><strong>{project.title}</strong><p>{project.portalCode} · {project.phase}</p><span>Tervezett befejezés: {project.targetCompletion}</span></div>
+            <i className="health green" />
+          </article>
         ))}
       </div>
     </>
   );
 }
+function ProjectOperations({
+  projects,
+  intelligence,
+  notify,
+}: {
+  projects: BusinessProject[];
+  intelligence: IntelligenceWorkspace | null;
+  notify: (message: string) => void;
+}) {
+  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
+  const [workspace, setWorkspace] = useState<ProjectWorkspace | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState("");
+  const [progress, setProgress] = useState("0");
+  const [targetCompletion, setTargetCompletion] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDue, setTaskDue] = useState("");
+  const [taskAction, setTaskAction] = useState("");
+  const [taskAssignee, setTaskAssignee] = useState("");
+  const [commentBody, setCommentBody] = useState("");
+  const [commentEntityId, setCommentEntityId] = useState("");
+  const [messageTopic, setMessageTopic] = useState("");
+  const [messageBody, setMessageBody] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberRole, setMemberRole] = useState("project_manager");
+  const [siteDate, setSiteDate] = useState("");
+  const [siteWeather, setSiteWeather] = useState("");
+  const [siteWorkforce, setSiteWorkforce] = useState("0");
+  const [siteSummary, setSiteSummary] = useState("");
+  const [siteBlockers, setSiteBlockers] = useState("");
+  const [procurementTitle, setProcurementTitle] = useState("");
+  const [procurementCategory, setProcurementCategory] = useState("");
+  const [procurementQuantity, setProcurementQuantity] = useState("1");
+  const [procurementUnit, setProcurementUnit] = useState("db");
+  const [procurementRequiredBy, setProcurementRequiredBy] = useState("");
+  const [procurementBudget, setProcurementBudget] = useState("0");
+  const [procurementSupplier, setProcurementSupplier] = useState("");
+  const [partnerName, setPartnerName] = useState("");
+  const [partnerType, setPartnerType] = useState("supplier");
+  const [partnerEmail, setPartnerEmail] = useState("");
+
+  const load = async (selectedId = projectId) => {
+    if (!selectedId) { setWorkspace(null); return; }
+    setLoading(true);
+    try {
+      const response = await authenticatedFetch(`/api/crm/projects/${selectedId}/workspace`, { cache: "no-store" });
+      const payload = await response.json() as ProjectWorkspace & { error?: string };
+      if (!response.ok) throw new Error(payload.error);
+      setWorkspace(payload);
+      setPhase(payload.project.phase);
+      setProgress(String(payload.project.progress));
+      setTargetCompletion(payload.project.targetCompletion);
+    } catch (error) {
+      setWorkspace(null);
+      notify(error instanceof Error && error.message ? error.message : "A projektmunkatér nem tölthető be.");
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    const defaultProjectId = projects[0]?.id;
+    if (projectId || !defaultProjectId) return;
+    const timer = window.setTimeout(() => setProjectId(defaultProjectId), 0);
+    return () => window.clearTimeout(timer);
+  }, [projectId, projects]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(projectId), 0);
+    return () => window.clearTimeout(timer);
+    // `load` intentionally remains local because action handlers reload the same workspace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  const postAction = async (body: Record<string, unknown>, success: string) => {
+    if (!projectId) return false;
+    try {
+      const response = await authenticatedFetch(`/api/crm/projects/${projectId}/workspace`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error);
+      await load();
+      notify(success);
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A projektművelet nem sikerült.");
+      return false;
+    }
+  };
+
+  const patchAction = async (body: Record<string, unknown>, success: string) => {
+    if (!projectId) return false;
+    try {
+      const response = await authenticatedFetch(`/api/crm/projects/${projectId}/workspace`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error);
+      await load();
+      notify(success);
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A projekt frissítése nem sikerült.");
+      return false;
+    }
+  };
+
+  return (
+    <>
+      <section className="section-title">
+        <div><p className="eyebrow">PROJECT 360°</p><h2>Projektmunkatér</h2><p>Fázis, készültség, felelősök, teendők, dokumentumok, megjegyzések és dokumentált belső üzenetek egy helyen.</p></div>
+        <select aria-label="Projekt kiválasztása" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+          {projects.map((project) => <option key={project.id} value={project.id}>{project.portalCode} · {project.title}</option>)}
+        </select>
+      </section>
+      {!projectId && <section className="empty"><h2>Még nincs elindított projekt</h2><p>Jóváhagyott, teljes fizetési ütemű szerződés aláírásakor jön létre.</p></section>}
+      {projectId && loading && <section className="empty"><h2>A projekt betöltése folyamatban van…</h2></section>}
+      {workspace && !loading && <>
+        <section className="kpi-grid">
+          <article><small>Készültség</small><strong>{workspace.project.progress}%</strong><span>{workspace.project.phase}</span></article>
+          <article><small>Nyitott teendő</small><strong>{workspace.tasks.filter((item) => item.status !== "completed").length}</strong><span>{workspace.tasks.filter((item) => item.severity === "high" && item.status !== "completed").length} kiemelt</span></article>
+          <article><small>Dokumentum</small><strong>{workspace.documents.length}</strong><span>{workspace.documents.filter((item) => item.status === "approval").length} jóváhagyásra vár</span></article>
+          <article><small>Projektcsapat</small><strong>{workspace.members.length}</strong><span>{workspace.comments.length} megjegyzés</span></article>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Projektállapot</h2><p>A MyImperial ügyfélnézet ugyanezt az élő készültséget mutatja.</p></div></div>
+          <div className="modal-form">
+            <div><label>Fázis<input value={phase} onChange={(event) => setPhase(event.target.value)} /></label><label>Készültség (%)<input type="number" min="0" max="100" value={progress} onChange={(event) => setProgress(event.target.value)} /></label></div>
+            <div><label>Céldátum<input type="date" value={targetCompletion} onChange={(event) => setTargetCompletion(event.target.value)} /></label><button className="primary" onClick={() => patchAction({ phase, progress: Number(progress), targetCompletion }, "A projekt állapota frissült.")}>Állapot mentése</button></div>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Teendők és felelősök</h2><p>A feladatok határidővel és projekttaghoz rendelve követhetők.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "task", title: taskTitle, due: taskDue, taskAction, assignedToEmail: taskAssignee }, "A projektfeladat létrejött.")) { setTaskTitle(""); setTaskAction(""); } }}>
+            <div><label>Feladat *<input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /></label><label>Határidő *<input type="date" value={taskDue} onChange={(event) => setTaskDue(event.target.value)} /></label></div>
+            <div><label>Végrehajtási leírás *<input value={taskAction} onChange={(event) => setTaskAction(event.target.value)} /></label><label>Felelős<select value={taskAssignee} onChange={(event) => setTaskAssignee(event.target.value)}><option value="">Nincs kijelölve</option>{workspace.members.filter((item) => !["customer", "contact"].includes(item.role)).map((member) => <option key={member.email} value={member.email}>{member.email} · {member.role}</option>)}</select></label></div>
+            <button className="primary" disabled={!taskTitle || !taskDue || !taskAction}>Feladat létrehozása</button>
+          </form>
+          <div className="record-table">
+            {workspace.tasks.map((task) => <article key={task.id}><div><small>{task.due}</small><strong>{task.title}</strong><span>{task.action}</span></div><div><small>Felelős</small><strong>{task.assignedToEmail || "Nincs kijelölve"}</strong><span>{task.status}</span></div><div className="row-actions">{task.status !== "completed" && <button onClick={() => patchAction({ action: "task_status", taskId: task.id, status: "completed" }, "A projektfeladat lezárult.")}>Lezárás</button>}<button onClick={() => setCommentEntityId(task.id)}>Megjegyzés</button></div></article>)}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Építési napló</h2><p>Napi időjárás, helyszíni létszám, elvégzett munka és akadályok auditált rögzítése.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "site_log", logDate: siteDate, weather: siteWeather, workforce: Number(siteWorkforce), summary: siteSummary, blockers: siteBlockers }, "A napi építési napló rögzítve.")) { setSiteSummary(""); setSiteBlockers(""); } }}>
+            <div><label>Nap *<input type="date" value={siteDate} onChange={(event) => setSiteDate(event.target.value)} /></label><label>Időjárás *<input value={siteWeather} onChange={(event) => setSiteWeather(event.target.value)} placeholder="pl. napos, 24 °C" /></label><label>Helyszíni létszám *<input type="number" min="0" value={siteWorkforce} onChange={(event) => setSiteWorkforce(event.target.value)} /></label></div>
+            <label>Elvégzett munkák *<textarea value={siteSummary} onChange={(event) => setSiteSummary(event.target.value)} /></label>
+            <label>Akadályok / eltérések<textarea value={siteBlockers} onChange={(event) => setSiteBlockers(event.target.value)} /></label>
+            <button className="primary" disabled={!siteDate || !siteWeather || !siteSummary.trim()}>Napi napló rögzítése</button>
+          </form>
+          <div className="record-table">{workspace.siteLogs.map((log) => <article key={log.id}><div><small>{log.logDate} · {log.weather} · {log.workforce} fő</small><strong>{log.summary}</strong><span>{log.blockers ? `Akadály: ${log.blockers}` : "Nincs rögzített akadály"} · {log.createdByEmail}</span></div></article>)}</div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Beszerzés és partnerek</h2><p>Igénytől a megrendelésen át a beérkezésig, költségkerettel és beszállítóval.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "procurement", title: procurementTitle, category: procurementCategory, quantity: Number(procurementQuantity), unit: procurementUnit, requiredBy: procurementRequiredBy, budgetAmount: Number(procurementBudget), supplierPartnerId: procurementSupplier || null }, "A beszerzési igény létrejött.")) setProcurementTitle(""); }}>
+            <div><label>Beszerzés tárgya *<input value={procurementTitle} onChange={(event) => setProcurementTitle(event.target.value)} /></label><label>Kategória *<input value={procurementCategory} onChange={(event) => setProcurementCategory(event.target.value)} /></label></div>
+            <div><label>Mennyiség *<input type="number" min="1" step="1" value={procurementQuantity} onChange={(event) => setProcurementQuantity(event.target.value)} /></label><label>Egység *<input value={procurementUnit} onChange={(event) => setProcurementUnit(event.target.value)} /></label><label>Szükséges eddig *<input type="date" value={procurementRequiredBy} onChange={(event) => setProcurementRequiredBy(event.target.value)} /></label></div>
+            <div><label>Költségkeret (HUF) *<input type="number" min="0" step="1" value={procurementBudget} onChange={(event) => setProcurementBudget(event.target.value)} /></label><label>Beszállító<select value={procurementSupplier} onChange={(event) => setProcurementSupplier(event.target.value)}><option value="">Még nincs kiválasztva</option>{workspace.partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name} · {partner.partnerType}</option>)}</select></label></div>
+            <button className="primary" disabled={!procurementTitle || !procurementCategory || !procurementRequiredBy || Number(procurementQuantity) <= 0}>Beszerzési igény létrehozása</button>
+          </form>
+          <div className="record-table">{workspace.procurement.map((request) => <article key={request.id}><div><small>{request.category} · szükséges: {request.requiredBy}</small><strong>{request.title}</strong><span>{request.quantity} {request.unit} · keret: {money(request.budgetAmount)} · {workspace.partners.find((partner) => partner.id === request.supplierPartnerId)?.name ?? "nincs beszállító"}</span></div><div><small>Állapot</small><strong>{request.status}</strong></div><div className="row-actions">{request.status === "draft" && <button onClick={() => patchAction({ action: "procurement_status", requestId: request.id, status: "requested" }, "A beszerzési igény ajánlatkérésre került.")}>Ajánlatkérés</button>}{request.status === "requested" && <button onClick={() => patchAction({ action: "procurement_status", requestId: request.id, status: "ordered" }, "A beszerzés megrendelve.")}>Megrendelve</button>}{request.status === "ordered" && <button onClick={() => patchAction({ action: "procurement_status", requestId: request.id, status: "delivered" }, "A beszerzés beérkezett.")}>Beérkezett</button>}</div></article>)}</div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "partner", name: partnerName, partnerType, email: partnerEmail }, "Az új partner bekerült a partnertörzsbe.")) setPartnerName(""); }}>
+            <div><label>Új partner neve *<input value={partnerName} onChange={(event) => setPartnerName(event.target.value)} /></label><label>Típus<select value={partnerType} onChange={(event) => setPartnerType(event.target.value)}><option value="supplier">Beszállító</option><option value="subcontractor">Alvállalkozó</option><option value="designer">Tervező</option><option value="architect">Építész</option><option value="b2b_partner">B2B partner</option></select></label><label>Email<input type="email" value={partnerEmail} onChange={(event) => setPartnerEmail(event.target.value)} /></label></div>
+            <button className="secondary" disabled={!partnerName.trim()}>Partner rögzítése</button>
+          </form>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Projektmegjegyzések</h2><p>A projekthez vagy konkrét teendőhöz fűzött belső kommentek visszakereshetők.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); const entityId = commentEntityId || projectId; if (await postAction({ action: "comment", entityType: commentEntityId ? "task" : "project", entityId, body: commentBody }, "A megjegyzés rögzítve.")) setCommentBody(""); }}>
+            <label>Kapcsolódás<select value={commentEntityId} onChange={(event) => setCommentEntityId(event.target.value)}><option value="">Teljes projekt</option>{workspace.tasks.map((task) => <option key={task.id} value={task.id}>Feladat: {task.title}</option>)}</select></label>
+            <label>Megjegyzés *<textarea value={commentBody} onChange={(event) => setCommentBody(event.target.value)} /></label>
+            <button className="primary" disabled={!commentBody.trim()}>Megjegyzés küldése</button>
+          </form>
+          <div className="record-table">{workspace.comments.map((comment) => <article key={comment.id}><div><small>{new Date(comment.createdAt).toLocaleString("hu-HU")} · {comment.authorEmail}</small><strong>{comment.entityType === "project" ? "Projekt" : `Feladat: ${workspace.tasks.find((item) => item.id === comment.entityId)?.title ?? comment.entityId}`}</strong><span>{comment.body}</span></div></article>)}</div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Belső projektüzenetek</h2><p>Dokumentált, időbélyeges kommunikáció a projektcsapat számára.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "message", topic: messageTopic, body: messageBody }, "A belső üzenet elküldve.")) { setMessageTopic(""); setMessageBody(""); } }}>
+            <div><label>Tárgy *<input value={messageTopic} onChange={(event) => setMessageTopic(event.target.value)} /></label><label>Üzenet *<input value={messageBody} onChange={(event) => setMessageBody(event.target.value)} /></label></div>
+            <button className="primary" disabled={!messageTopic.trim() || !messageBody.trim()}>Üzenet küldése</button>
+          </form>
+          <div className="record-table">{workspace.messages.map((message) => <article key={message.id}><div><small>{new Date(message.createdAt).toLocaleString("hu-HU")} · {message.authorEmail}</small><strong>{message.topic}</strong><span>{message.body}</span></div></article>)}</div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Projektcsapat és dokumentumok</h2><p>A kijelölt munkatársak hozzáférnek a projekt MyImperial dokumentumtárához is.</p></div><button onClick={() => window.location.assign(`/myimperial?projectId=${encodeURIComponent(projectId)}`)}>Dokumentumtár megnyitása</button></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "member", email: memberEmail, role: memberRole }, "A munkatárs projektszerepe rögzítve.")) setMemberEmail(""); }}>
+            <div><label>Munkatárs email *<input type="email" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} /></label><label>Projektszerep<select value={memberRole} onChange={(event) => setMemberRole(event.target.value)}><option value="project_manager">Projektmenedzser</option><option value="technical">Műszaki</option><option value="finance">Pénzügy</option><option value="warranty">Garancia</option></select></label></div>
+            <button className="primary" disabled={!memberEmail.includes("@")}>Munkatárs hozzárendelése</button>
+          </form>
+          <div className="record-table">{workspace.members.map((member) => <article key={member.email}><div><small>{member.role}</small><strong>{member.email}</strong><span>{new Date(member.createdAt).toLocaleDateString("hu-HU")}</span></div></article>)}</div>
+          <div className="record-table">{workspace.documents.map((document) => <article key={document.id}><div><small>{document.group} · v{document.currentVersion}</small><strong>{document.name}</strong><span>{document.status} · {new Date(document.updatedAt).toLocaleDateString("hu-HU")}</span></div></article>)}</div>
+        </section>
+
+        {intelligence && <section className="panel"><div className="section-title"><div><h2>Partnerkapacitás</h2><p>Az importált partnerforrásokból {intelligence.partners.length} szervezet érhető el; az adatminőség jelzése megmaradt.</p></div></div><div className="record-table">{intelligence.partners.slice(0, 20).map((partner) => <article key={partner.id}><div><small>{partner.partnerType}</small><strong>{partner.name}</strong><span>{partner.location || partner.specialties || "Adatpótlás szükséges"} · {partner.status}</span></div></article>)}</div></section>}
+      </>}
+    </>
+  );
+}
+
 function Reports({ leads }: { leads: Lead[] }) {
   const sources = [
     "Google Ads",
@@ -1707,9 +2322,15 @@ function Reports({ leads }: { leads: Lead[] }) {
 function Finance({
   invoices,
   importStatus,
+  cashflow,
+  onNew,
+  onPaid,
 }: {
   invoices: Invoice[];
   importStatus: ImportStatus | null;
+  cashflow: CashflowWorkspace | null;
+  onNew: () => void;
+  onPaid: (entry: CashflowEntry) => void;
 }) {
   const signedGross = invoices.reduce(
     (total, invoice) => total + invoice.grossAmount,
@@ -1744,11 +2365,47 @@ function Finance({
     currency: "HUF",
     maximumFractionDigits: 0,
   });
+  const hufSummary = cashflow?.summaries.find((item) => item.currency === "HUF");
   return (
     <>
       <section className="section-title">
         <div>
-          <p className="eyebrow">TÉNYADATOK · KIMENŐ SZÁMLÁK</p>
+          <p className="eyebrow">PÉNZÜGYI TÉNY ÉS ELŐREJELZÉS</p>
+          <h2>Cashflow</h2>
+          <p>A tervezett, esedékes és tényleges pénzmozgások elkülönítve; a számlaimport nem minősül automatikusan kifizetésnek.</p>
+        </div>
+        {cashflow && <button className="secondary" onClick={onNew}><Icon name="plus" /> Új cashflow-tétel</button>}
+      </section>
+      {cashflow ? (
+        <>
+          <section className="kpis finance-kpis">
+            <article><span>Tényleges egyenleg</span><strong>{huf.format(hufSummary?.actualBalance ?? 0)}</strong><small>Csak teljesített HUF pénzmozgás</small></article>
+            <article><span>Várható egyenleg</span><strong>{huf.format(hufSummary?.forecastBalance ?? 0)}</strong><small>Tervezett és esedékes HUF tételek</small></article>
+            <article><span>Várható bevétel</span><strong>{huf.format(hufSummary?.forecastInflow ?? 0)}</strong><small>A kiválasztott időszakban</small></article>
+            <article className={(hufSummary?.overdueOutflow ?? 0) > 0 ? "warning" : ""}><span>Lejárt esedékes kiadás</span><strong>{huf.format(hufSummary?.overdueOutflow ?? 0)}</strong><small>Kifizetettnek még nem jelölt tételek</small></article>
+          </section>
+          <section className="table-panel finance-panel">
+            <div className="panel-head"><div><p className="eyebrow">CASHFLOW-NAPLÓ</p><h3>Pénzmozgások</h3></div><span className="count">{cashflow.entries.length}</span></div>
+            <div className="invoice-table">
+              <div className="invoice-row invoice-head"><span>Határidő</span><span>Partner és tétel</span><span>Irány</span><span>Összeg</span><span>Állapot</span></div>
+              {cashflow.entries.slice(0, 100).map((entry) => (
+                <article className="invoice-row" key={entry.id}>
+                  <span><strong>{entry.dueDate}</strong><small>{entry.category}</small></span>
+                  <span><strong>{entry.counterparty}</strong><small>{entry.description}</small></span>
+                  <span><strong>{entry.direction === "inflow" ? "Bevétel" : "Kiadás"}</strong><small>{entry.sourceType === "imported_invoice" ? "Számlaimport" : "Kézi tétel"}</small></span>
+                  <span className={entry.direction === "outflow" ? "negative" : ""}><strong>{entry.currency === "HUF" ? huf.format(entry.amount) : `${entry.amount.toLocaleString("hu-HU")} ${entry.currency}`}</strong></span>
+                  <span className="invoice-links"><b className={entry.status === "paid" ? "matched" : "review"}>{entry.status === "planned" ? "Tervezett" : entry.status === "due" ? "Esedékes" : entry.status === "paid" ? "Teljesített" : "Törölt"}</b>{entry.status !== "paid" && entry.status !== "cancelled" && <button onClick={() => onPaid(entry)}>Teljesítve</button>}</span>
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="empty"><h2>A cashflow-hoz pénzügyi jogosultság szükséges</h2><p>A számlajegyzék ettől függetlenül csak olvasható forrásadatként látható.</p></section>
+      )}
+      <section className="section-title">
+        <div>
+          <p className="eyebrow">FORRÁSADATOK · BEJÖVŐ SZÁMLÁK</p>
           <h2>Számlapilot</h2>
           <p>
             Drive-forrással igazolt, duplikációvédett számlaadatok és
@@ -2694,6 +3351,167 @@ function NewLeadModal({
             Adatlap létrehozása <Icon name="arrow" />
           </button>
         </footer>
+      </section>
+    </div>
+  );
+}
+
+function NewCustomerModal({
+  onClose,
+  onSave,
+}: {
+  onClose: () => void;
+  onSave: (customer: {
+    customerType: "person" | "company";
+    name: string;
+    email: string;
+    phone: string;
+    billingAddress: string;
+    taxNumber?: string;
+  }) => Promise<boolean>;
+}) {
+  const [customerType, setCustomerType] = useState<"person" | "company">("person");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [billingAddress, setBillingAddress] = useState("");
+  const [taxNumber, setTaxNumber] = useState("");
+  const [busy, setBusy] = useState(false);
+  const valid = Boolean(name.trim() && email.includes("@") && phone.trim() && billingAddress.trim());
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="modal">
+        <header><div><p className="eyebrow">ÉLŐ ÜGYFÉLTÖRZS</p><h2>Új ügyfél</h2><span>A kötelező kapcsolati és számlázási adatokkal.</span></div><button onClick={onClose}><Icon name="close" /></button></header>
+        <div className="modal-form">
+          <label>Ügyféltípus<select value={customerType} onChange={(event) => setCustomerType(event.target.value as "person" | "company")}><option value="person">Magánszemély</option><option value="company">Vállalkozás</option></select></label>
+          <label>Név *<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <div><label>E-mail *<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label>Telefon *<input value={phone} onChange={(event) => setPhone(event.target.value)} /></label></div>
+          <label>Számlázási cím *<input value={billingAddress} onChange={(event) => setBillingAddress(event.target.value)} /></label>
+          {customerType === "company" && <label>Adószám<input value={taxNumber} onChange={(event) => setTaxNumber(event.target.value)} /></label>}
+        </div>
+        <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ customerType, name, email, phone, billingAddress, taxNumber }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Ügyfél létrehozása"}</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function NewContractModal({
+  customers,
+  onClose,
+  onSave,
+}: {
+  customers: Customer[];
+  onClose: () => void;
+  onSave: (contract: {
+    customerId: string;
+    title: string;
+    contractType: Contract["contractType"];
+    netAmount: number;
+    vatRate: number;
+    effectiveDate: string;
+  }) => Promise<boolean>;
+}) {
+  const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
+  const [title, setTitle] = useState("");
+  const [contractType, setContractType] = useState<Contract["contractType"]>("construction");
+  const [netAmount, setNetAmount] = useState("");
+  const [vatRate, setVatRate] = useState("27");
+  const [effectiveDate, setEffectiveDate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const valid = Boolean(customerId && title.trim() && netAmount !== "" && Number(netAmount) >= 0 && effectiveDate);
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="modal">
+        <header><div><p className="eyebrow">SZERZŐDÉSES FOLYAMAT</p><h2>Új szerződéstervezet</h2><span>A tervezet csak vezetői jóváhagyás után jelölhető aláírtnak.</span></div><button onClick={onClose}><Icon name="close" /></button></header>
+        <div className="modal-form">
+          <label>Ügyfél *<select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>
+          <label>Szerződés tárgya *<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} /></label>
+          <div><label>Típus<select value={contractType} onChange={(event) => setContractType(event.target.value as Contract["contractType"])}><option value="construction">Kivitelezés</option><option value="design">Tervezés</option><option value="consulting">Tanácsadás</option><option value="other">Egyéb</option></select></label><label>Hatály kezdete *<input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} /></label></div>
+          <div><label>Nettó összeg (Ft) *<input type="number" min="0" step="1" value={netAmount} onChange={(event) => setNetAmount(event.target.value)} /></label><label>ÁFA (%)<input type="number" min="0" max="100" value={vatRate} onChange={(event) => setVatRate(event.target.value)} /></label></div>
+        </div>
+        <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ customerId, title, contractType, netAmount: Number(netAmount), vatRate: Number(vatRate), effectiveDate }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Tervezet létrehozása"}</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function NewContractMilestoneModal({
+  contract,
+  scheduledAmount,
+  onClose,
+  onSave,
+}: {
+  contract: Contract;
+  scheduledAmount: number;
+  onClose: () => void;
+  onSave: (milestone: { name: string; dueDate: string; amount: number }) => Promise<boolean>;
+}) {
+  const [name, setName] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const remaining = contract.grossAmount - scheduledAmount;
+  const numericAmount = Math.round(Number(amount));
+  const valid = Boolean(name.trim() && dueDate && Number.isSafeInteger(numericAmount) && numericAmount > 0 && numericAmount <= remaining);
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="modal">
+        <header><div><p className="eyebrow">SZERZŐDÉSES CASHFLOW</p><h2>Új fizetési mérföldkő</h2><span>{contract.contractNumber} · még ütemezendő: {money(remaining)}</span></div><button onClick={onClose}><Icon name="close" /></button></header>
+        <div className="modal-form">
+          <label>Részlet megnevezése *<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="pl. előleg, szerkezetkész állapot" /></label>
+          <div><label>Esedékesség *<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label><label>Összeg ({contract.currency}) *<input type="number" min="1" max={remaining} step="1" value={amount} onChange={(event) => setAmount(event.target.value)} /></label></div>
+          {numericAmount > remaining && <p className="negative">Az összeg meghaladja a még ütemezhető {money(remaining)} összeget.</p>}
+        </div>
+        <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ name, dueDate, amount: numericAmount }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Mérföldkő és cashflow létrehozása"}</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function NewCashflowModal({
+  projects,
+  onClose,
+  onSave,
+}: {
+  projects: BusinessProject[];
+  onClose: () => void;
+  onSave: (entry: {
+    direction: "inflow" | "outflow";
+    category: string;
+    counterparty: string;
+    description: string;
+    projectId: string;
+    amount: number;
+    dueDate: string;
+    status: "planned" | "due";
+  }) => Promise<boolean>;
+}) {
+  const [direction, setDirection] = useState<"inflow" | "outflow">("outflow");
+  const [category, setCategory] = useState("");
+  const [counterparty, setCounterparty] = useState("");
+  const [description, setDescription] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [status, setStatus] = useState<"planned" | "due">("planned");
+  const [busy, setBusy] = useState(false);
+  const valid = Boolean(category.trim() && counterparty.trim() && description.trim() && Number(amount) > 0 && dueDate);
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="modal">
+        <header><div><p className="eyebrow">CASHFLOW</p><h2>Új pénzmozgás</h2><span>A teljesített állapot külön, utólagos művelettel rögzíthető.</span></div><button onClick={onClose}><Icon name="close" /></button></header>
+        <div className="modal-form">
+          <div><label>Irány<select value={direction} onChange={(event) => setDirection(event.target.value as "inflow" | "outflow")}><option value="inflow">Bevétel</option><option value="outflow">Kiadás</option></select></label><label>Állapot<select value={status} onChange={(event) => setStatus(event.target.value as "planned" | "due")}><option value="planned">Tervezett</option><option value="due">Esedékes</option></select></label></div>
+          <div><label>Kategória *<input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="pl. kivitelezési részszámla" /></label><label>Partner *<input value={counterparty} onChange={(event) => setCounterparty(event.target.value)} /></label></div>
+          <label>Leírás *<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+          <div><label>Összeg (HUF) *<input type="number" min="1" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} /></label><label>Esedékesség *<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label></div>
+          <label>Projekt<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Nincs projekthez kapcsolva</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.portalCode} · {project.title}</option>)}</select></label>
+        </div>
+        <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ direction, category, counterparty, description, projectId, amount: Number(amount), dueDate, status }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Cashflow-tétel rögzítése"}</button></footer>
       </section>
     </div>
   );

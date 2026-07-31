@@ -1,0 +1,13 @@
+services:
+  itep-migrate:
+    environment: &billingo-live-environment
+      BILLINGO_API_BASE_URL: https://api.billingo.hu
+      BILLINGO_CONNECTOR_ID: billingo-imperial-holding-mernoki-es-tanacsado
+      BILLINGO_EXTERNAL_ACCOUNT_ID: all
+      CONNECTOR_ACCESS_TOKEN_BILLINGO_IMPERIAL_HOLDING_MERNOKI_ES_TANACSADO: ${BILLINGO_API_KEY:?required}
+
+  itep-api:
+    environment: *billingo-live-environment
+
+  itep-worker:
+    environment: *billingo-live-environment

@@ -51,6 +51,9 @@ DEMO_USER_NAMES = {
     "owner": "Imperial Tulajdonos",
     "managing-director": "Imperial Ügyvezető",
     "marketing": "Imperial Marketing",
+    "copywriter": "Imperial Direct-response Szövegíró",
+    "language-editor": "Imperial Magyar Nyelvi Szerkesztő",
+    "creative-director": "Imperial Kreatív Igazgató",
     "technical-prep": "Imperial Műszaki Előkészítő",
     "sales": "Imperial Értékesítő",
     "finance": "Imperial Pénzügy",
@@ -332,7 +335,7 @@ def seed_commercial_integration(db: Session) -> None:
             **data, status="approved", requested_by="owner_instruction", reviewed_by="owner_instruction",
             reviewed_at=datetime.now(timezone.utc),
         ))
-    if not db.scalar(select(ProjectObjectState).where(ProjectObjectState.source_module == "change_control", ProjectObjectState.object_id == "CHG-DEMO-001")):
+    if settings.demo_runtime_enabled and not db.scalar(select(ProjectObjectState).where(ProjectObjectState.source_module == "change_control", ProjectObjectState.object_id == "CHG-DEMO-001")):
         db.add(ProjectObjectState(
             project_id="IMP-FONYOD-011", source_module="change_control", object_type="Change", object_id="CHG-DEMO-001",
             status="customer_accepted", summary="Támfal és tereprendezés módosított scope – ügyfél által elfogadva; munkakezdési engedély még szükséges.",
@@ -449,6 +452,30 @@ def seed_content_quality_sources(db: Session) -> None:
         )
 
 
+def retire_seeded_content_quality_sources(db: Session) -> None:
+    """Fail closed in production: the synthetic pilot registry is never authoritative."""
+    seeded_versions = {
+        ("imperial-brand-master", "1.0"),
+        ("imperial-brand-voice", "1.0"),
+        ("imperial-conversion-architecture", "1.5"),
+        ("imperial-full-design-system", "1.1"),
+        ("imperial-channel-rules", "1.0"),
+        ("OFF-IMP-V1", "1.0"),
+        ("PS-IMP-2026-07", "2026-07"),
+        ("TV-IMP-V1", "1.0"),
+        ("HP-IMP-126", "3"),
+        ("CLM-IMP-FIXED-SCOPE", "1.0"),
+        ("PRF-IMP-CONTRACT", "1.0"),
+        ("VIS-IMP-126-HERO", "1.0"),
+    }
+    pilot_url = "https://drive.google.com/drive/folders/0AGVzuRnGAaYZUk9PVA"
+    rows = db.scalars(select(CopySourceRecord).where(CopySourceRecord.source_url == pilot_url)).all()
+    for row in rows:
+        if (row.source_key, row.version) in seeded_versions:
+            row.status = "retired"
+            row.approved = False
+
+
 def seed_database(db: Session) -> None:
     demo_emails = {
         role.id: (
@@ -458,7 +485,7 @@ def seed_database(db: Session) -> None:
         )
         for role in ROLE_DEFINITIONS
     }
-    if settings.is_production:
+    if not settings.demo_runtime_enabled:
         for user in db.scalars(
             select(User).where(User.email.in_(tuple(demo_emails.values())))
         ).all():
@@ -492,7 +519,30 @@ def seed_database(db: Session) -> None:
             db.delete(module)
     db.flush()
     verified_at = datetime.now(timezone.utc)
+    if settings.demo_runtime_enabled:
+        module_runtime = {
+            "lifecycle_status": "test_ready",
+            "integration_status": "healthy",
+            "api_base_url": "/api/demo",
+            "last_heartbeat_at": verified_at,
+            "last_integration_test_at": verified_at,
+            "last_integration_test_status": "passed",
+            "notes": "Shared platform-core synthetic adapter; external writes disabled.",
+        }
+    else:
+        module_runtime = {
+            "lifecycle_status": "registered",
+            "integration_status": "not_connected",
+            "api_base_url": None,
+            "last_heartbeat_at": None,
+            "last_integration_test_at": None,
+            "last_integration_test_status": None,
+            "notes": "Production adapter and evidence-backed integration test required.",
+        }
     for key, name, version, owner, criticality in MODULES:
+        health_url = (
+            f"/api/demo/modules/{key}" if settings.demo_runtime_enabled else None
+        )
         module = db.scalar(select(ModuleRegistry).where(ModuleRegistry.module_key == key))
         if not module:
             db.add(ModuleRegistry(
@@ -501,31 +551,39 @@ def seed_database(db: Session) -> None:
                 version=version,
                 owner=owner,
                 criticality=criticality,
-                lifecycle_status="test_ready",
-                integration_status="healthy",
-                api_base_url="/api/demo",
-                health_url=f"/api/demo/modules/{key}",
-                last_heartbeat_at=verified_at,
-                last_integration_test_at=verified_at,
-                last_integration_test_status="passed",
-                notes="Shared platform-core synthetic adapter; external writes disabled.",
+                lifecycle_status=module_runtime["lifecycle_status"],
+                integration_status=module_runtime["integration_status"],
+                api_base_url=module_runtime["api_base_url"],
+                health_url=health_url,
+                last_heartbeat_at=module_runtime["last_heartbeat_at"],
+                last_integration_test_at=module_runtime["last_integration_test_at"],
+                last_integration_test_status=module_runtime["last_integration_test_status"],
+                notes=module_runtime["notes"],
             ))
         else:
             module.name = name
             module.version = version
             module.owner = owner
             module.criticality = criticality
-            module.lifecycle_status = "test_ready"
-            module.integration_status = "healthy"
-            module.api_base_url = "/api/demo"
-            module.health_url = f"/api/demo/modules/{key}"
-            module.last_heartbeat_at = verified_at
-            module.last_integration_test_at = verified_at
-            module.last_integration_test_status = "passed"
-            module.notes = "Shared platform-core synthetic adapter; external writes disabled."
+            module.lifecycle_status = module_runtime["lifecycle_status"]
+            module.integration_status = module_runtime["integration_status"]
+            module.api_base_url = module_runtime["api_base_url"]
+            module.health_url = health_url
+            module.last_heartbeat_at = module_runtime["last_heartbeat_at"]
+            module.last_integration_test_at = module_runtime["last_integration_test_at"]
+            module.last_integration_test_status = module_runtime["last_integration_test_status"]
+            module.notes = module_runtime["notes"]
+    current_environment = settings.environment.lower()
     for key, name in (("development", "Fejlesztés"), ("uat", "UAT"), ("production", "Production")):
-        if not db.scalar(select(EnvironmentRecord).where(EnvironmentRecord.environment_key == key)):
-            db.add(EnvironmentRecord(environment_key=key, name=name, status="active" if key == "development" else "planned"))
+        environment = db.scalar(
+            select(EnvironmentRecord).where(EnvironmentRecord.environment_key == key)
+        )
+        status = "active" if key == current_environment else "planned"
+        if not environment:
+            db.add(EnvironmentRecord(environment_key=key, name=name, status=status))
+        else:
+            environment.name = name
+            environment.status = status
     for source_key, name, source_type, domain_scope, connector_reference in IMPORT_SOURCES:
         if not db.scalar(select(ImportDataSource).where(ImportDataSource.source_key == source_key)):
             db.add(ImportDataSource(
@@ -545,7 +603,10 @@ def seed_database(db: Session) -> None:
         ))
     seed_canonical_discoveries(db, MODULES)
     seed_commercial_integration(db)
-    seed_content_quality_sources(db)
+    if settings.demo_runtime_enabled:
+        seed_content_quality_sources(db)
+    else:
+        retire_seeded_content_quality_sources(db)
     seed_workspace_demo(db)
     seed_operations_demo(db)
     db.commit()

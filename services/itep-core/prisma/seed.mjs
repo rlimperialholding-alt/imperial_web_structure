@@ -24,7 +24,7 @@ const companies = [
   ],
   [
     "imperial-holding-mernoki-es-tanacsado",
-    "Imperial Holding Mérnöki és Tanácsadó Kft.",
+    "Imperiál Holding Mérnöki és Tanácsadó Iroda Kft.",
   ],
   ["danish-fabrik", "Danish Fabrik Kft."],
   ["casa-moderna", "Casa Moderna Kft."],

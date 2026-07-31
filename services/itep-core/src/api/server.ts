@@ -57,6 +57,7 @@ import {
 } from "./whatsapp-routes.js";
 import { WhatsAppCloudApiGateway } from "../whatsapp/gateway.js";
 import { WhatsAppService } from "../whatsapp/service.js";
+import { registerFinancialRoutes } from "./financial-routes.js";
 
 export interface ServerDependencies {
   integrationExecutor?: ConnectorOperationExecutor;
@@ -197,6 +198,7 @@ export async function buildServer(
   registerReportingRoutes(app, reportingService);
   registerIngestionRoutes(app, ingestionService);
   registerIntegrationControlRoomRoutes(app, controlRoom);
+  registerFinancialRoutes(app, prisma);
   registerOrchestrationRoutes(app, prisma, service, {
     issuerId: "smart-calendar",
     escalationPersonId: config.DEFAULT_ESCALATION_PERSON_ID,

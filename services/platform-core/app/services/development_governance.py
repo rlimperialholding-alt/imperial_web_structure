@@ -66,13 +66,26 @@ def review_discovery(db: Session, discovery_id: str, data: DevelopmentDiscoveryR
     row = db.scalar(select(DevelopmentDiscoveryRecord).where(DevelopmentDiscoveryRecord.discovery_id == discovery_id))
     if not row:
         raise KeyError(discovery_id)
+    if row.status != "pending_review":
+        raise ValueError("A discovery döntése már lezárt; új döntéshez új discovery rekord szükséges.")
     if data.status not in {"approved", "rejected"}:
         raise ValueError("A review státusz approved vagy rejected lehet.")
+    reviewer = data.reviewed_by.strip().lower()
+    if actor != "api" and reviewer != actor.strip().lower():
+        raise ValueError("A reviewer az autentikált felhasználó kell legyen.")
+    if row.requested_by and reviewer == row.requested_by.strip().lower():
+        raise ValueError("A discovery kérelmezője nem dönthet a saját kérelméről.")
+    note = (data.review_note or "").strip()
+    if actor != "api" and len(note) < 10:
+        raise ValueError("A governance döntés indoklása legalább 10 karakter legyen.")
     if row.decision == "new_exception" and data.status == "approved" and not data.exception_approved:
         raise ValueError("Az új kivételes megvalósításhoz tulajdonosi kivétel-jóváhagyás szükséges.")
+    if row.decision != "new_exception" and data.exception_approved:
+        raise ValueError("Kivétel-jóváhagyás csak new_exception döntésnél rögzíthető.")
     row.status = data.status
     row.exception_approved = bool(data.exception_approved)
-    row.reviewed_by = data.reviewed_by
+    row.reviewed_by = reviewer
+    row.review_note = note or None
     row.reviewed_at = utcnow()
     audit(db, actor=actor, action="development_discovery_review", entity_type="development_discovery", entity_id=row.discovery_id, after=data.model_dump())
     db.commit(); db.refresh(row)

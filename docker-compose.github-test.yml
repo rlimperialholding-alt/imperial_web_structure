@@ -28,6 +28,7 @@ services:
       secrets: [build_ca]
     environment:
       NODE_ENV: test
+      CRM_DEMO_SEED_ENABLED: ${CRM_DEMO_SEED_ENABLED:-false}
       # Local corporate-proxy escape hatch. Keep empty in normal environments.
       NODE_TLS_REJECT_UNAUTHORIZED: ${CRM_NODE_TLS_REJECT_UNAUTHORIZED:-}
       CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-test}

@@ -22,6 +22,7 @@ __pycache__/
 *.egg-info/
 .venv/
 services/platform-core/data/contract_packages/
+services/platform-core/data/partner_evidence/
 services/platform-core/data/platform_demo_runtime.json
 services/platform-core/data/*.db
 

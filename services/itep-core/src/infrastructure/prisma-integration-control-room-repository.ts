@@ -27,6 +27,14 @@ export class PrismaIntegrationControlRoomRepository
   }
 
   async saveConnectorSnapshot(snapshot: ConnectorOperationalSnapshot) {
+    const persistedSnapshot = {
+      ...snapshot,
+      lastSuccessfulSyncAt: snapshot.lastSuccessfulSyncAt ?? null,
+      lastAttemptAt: snapshot.lastAttemptAt ?? null,
+      rateLimitedUntil: snapshot.rateLimitedUntil ?? null,
+      lastErrorCode: snapshot.lastErrorCode ?? null,
+      lastErrorMessage: snapshot.lastErrorMessage ?? null,
+    };
     await this.prisma.connectorOperationalSnapshot.upsert({
       where: {
         organizationId_connectorId: {
@@ -34,8 +42,8 @@ export class PrismaIntegrationControlRoomRepository
           connectorId: snapshot.connectorId,
         },
       },
-      create: snapshot as any,
-      update: snapshot as any,
+      create: persistedSnapshot as any,
+      update: persistedSnapshot as any,
     });
   }
 

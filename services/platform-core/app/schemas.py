@@ -146,6 +146,24 @@ class CalculationRequest(BaseModel):
     vat_rate: Decimal = Decimal("0.05")
 
 
+class TechnicalCaseIn(BaseModel):
+    module_key: str = Field(min_length=3, max_length=50)
+    project_id: str = Field(min_length=3, max_length=100)
+    title: str = Field(min_length=2, max_length=255)
+    assigned_to: str | None = Field(default=None, max_length=255)
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
+class TechnicalGateReviewIn(BaseModel):
+    status: str = Field(pattern="^(pass|fail|not_applicable)$")
+    evidence: str = Field(min_length=3, max_length=5000)
+
+
+class TechnicalDecisionIn(BaseModel):
+    decision: str = Field(pattern="^(approved|rejected)$")
+    reason: str = Field(default="", max_length=5000)
+
+
 class RenovationLineIn(BaseModel):
     item_id: str = Field(min_length=2, max_length=120)
     quantity: Decimal = Field(gt=0)
@@ -410,6 +428,7 @@ class DevelopmentDiscoveryReviewIn(BaseModel):
     status: str
     reviewed_by: str
     exception_approved: bool = False
+    review_note: str | None = None
 
 
 class ContractGenerateIn(BaseModel):

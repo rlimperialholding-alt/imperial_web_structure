@@ -55,7 +55,18 @@ export async function requireInternalCrmIdentity(
   const identity = await requireCrmIdentity(request);
   if (identity.role === "admin") return identity;
   if (!identity.permissions.some((permission) =>
-    ["customer.read", "customer.write", "customer.read.project"].includes(permission)
+    [
+      "customer.read",
+      "customer.write",
+      "customer.read.project",
+      "crm.read",
+      "finance.read",
+      "finance.write",
+      "project.read",
+      "project.write",
+      "contract.read",
+      "contract.write",
+    ].includes(permission)
   )) {
     throw new Response("A belső CRM-hez nincs jogosultságod.", { status: 403 });
   }

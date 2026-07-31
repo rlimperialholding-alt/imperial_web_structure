@@ -1,5 +1,77 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
+  "global_non_negotiables": {
+    "typehouse_focus": {
+      "full_subject_rule": "Teljes típusház-bemutatásnál a tető, a falak és minden épületsarok maradjon látható.",
+      "intentional_crop_rule": "Részletkivágás csak előre deklarált kompozíciós céllal engedélyezett; véletlen crop soha.",
+      "minimum_primary_subject_area_ratio": 0.75,
+      "copy_may_overlap_primary_subject": false,
+      "copy_background_may_overlap_primary_subject": false
+    },
+    "layout_safety": {
+      "maximum_decorative_frame_area_ratio": 0.08,
+      "text_boxes_must_remain_inside_canvas": true,
+      "patterns_behind_copy_allowed": false,
+      "minimum_text_contrast_ratio": 4.5,
+      "minimum_source_font_px_at_1080_width": 32,
+      "minimum_font_rule_excludes": [
+        "hivatalos tanúsítási és díjlogók eredeti, nem szerkeszthető belső feliratai"
+      ]
+    },
+    "copy_clarity": {
+      "plain_language_promise_required": true,
+      "promise_reason_or_mechanism_required": true,
+      "plain_language_offer_terms_required": true,
+      "plain_language_cta_next_step_required": true,
+      "floating_lifestyle_promises_allowed": false
+    },
+    "cross_brand_differentiation": {
+      "separate_generation_run_required": true,
+      "unique_copy_architecture_required": true,
+      "unique_copy_structure_signature_required": true,
+      "comparison_scope": "ALL_BRANDS_IN_SAME_CAMPAIGN_ID"
+    },
+    "brand_marks": {
+      "brand_native_logo_lockup_required": true,
+      "contrast_alone_is_sufficient": false,
+      "proof_caption_optional": true,
+      "proof_caption_must_explain_full_consumer_meaning": true
+    },
+    "date_labels": {
+      "standalone_date_range_allowed": false,
+      "required_context_examples": [
+        "Augusztusi akció",
+        "Érvényes: 2026. augusztus 1–31."
+      ]
+    },
+    "facebook_typehouse_impulse_offer": {
+      "purpose": [
+        "vágykeltés",
+        "kattintás",
+        "konverzió"
+      ],
+      "not_a_legal_or_complete_information_surface": true,
+      "single_contiguous_offer_block_required": true,
+      "required_offer_block_fields": [
+        "aktuális hónap akciója",
+        "típusház neve",
+        "bruttó alapterület egész m²-re kerekítve",
+        "eladási ár",
+        "+ ÁFA"
+      ],
+      "forbidden_on_creative": [
+        "kedvezmény százaléka",
+        "eredeti vagy listaár",
+        "nettó szó",
+        "jogi apróbetű",
+        "teljes körű ajánlati feltételrendszer"
+      ],
+      "build_time_label": "Építési idő",
+      "forbidden_build_time_qualifiers": [
+        "átlagos"
+      ]
+    }
+  },
   "benchmarks": [
     {
       "benchmark_id": "prefab-facebook-etalon-v1",
@@ -18,8 +90,50 @@
         "source_adaptation",
         "original_concept"
       ],
-      "minimum_professional_copy_quality_score": 8.5,
+      "expert_review_prompt_version": "expert-hungarian-direct-response-v2",
+      "minimum_hungarian_expert_dimension_score": 9,
+      "minimum_marketing_expert_dimension_score": 9,
+      "generator_self_scoring_allowed": false,
       "maximum_verbatim_share_per_creative_set": 0.5,
+      "new_factual_claim_policy": "human_fact_review_required"
+    },
+    {
+      "benchmark_id": "imperial-engineering-lead-carousel-v1",
+      "brand_id": "imperial",
+      "asset_type": "facebook_lead_form_carousel",
+      "status": "rejected_copy_quality",
+      "publication_allowed": false,
+      "blocking_reason": "A 2026-07-30-i szakmai felülvizsgálat a carousel szövegét száraznak, generikusnak és direct-response szinten elégtelennek minősítette.",
+      "objective": "Valódi építési szándékú és megfelelő költségkerettel rendelkező érdeklődők előminősítése.",
+      "principles": [
+        "Minden carousel-kártya külön képgenerálási futásból származik.",
+        "A szöveg és a szövegháttér nem fedheti a vizuális főtémát.",
+        "A 1080 px széles forrásképen minden szerkesztett szöveg legalább 32 px.",
+        "Kártyánként legfeljebb egy headline, egy alátámasztó mondat és egy CTA használható.",
+        "Az ív a telek, tervkészültség, költségkeret, időzítés és műszaki kérdés alapján minősít.",
+        "A form HIGHER_INTENT típusú; érvényes adatkezelési URL nélkül Meta-publikálás blokkolt.",
+        "Az ingyenes mérnöki konzultáció és a díjmentes árajánlat csak kanonikus, elővalidált forrásból használható.",
+        "A carousel nem tartalmaz havi akciót, típusházárat vagy kedvezményszázalékot."
+      ],
+      "required_lead_qualification_fields": [
+        "plot_status",
+        "plan_status",
+        "target_area",
+        "budget",
+        "start_window",
+        "primary_question"
+      ],
+      "visual_generation_policy": {
+        "separate_run_per_card": true,
+        "background_gradient_allowed": false,
+        "copy_subject_overlap_allowed": false,
+        "minimum_source_font_px": 32,
+        "mobile_preview_required": true
+      },
+      "expert_review_prompt_version": "expert-hungarian-direct-response-v2",
+      "minimum_hungarian_expert_dimension_score": 9,
+      "minimum_marketing_expert_dimension_score": 9,
+      "generator_self_scoring_allowed": false,
       "new_factual_claim_policy": "human_fact_review_required"
     }
   ]

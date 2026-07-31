@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from copy_gate_fixtures import (
+    assembly_submission,
+    campaign_package,
+    creative_director_review,
     editorial_review,
     generation_trace,
     imperial_asset,
     imperial_brief,
+    mandatory_copy_gate_review,
+    release_review,
+    strategy_review,
+    visual_submission,
 )
 
 from app.copy_gate.models import (
@@ -19,12 +26,29 @@ from app.services.commercial_prevalidation import (
     load_prevalidated_registry,
 )
 from app.services.content_quality import (
+    assemble_publication_bundle,
     create_content_asset,
     create_copy_brief,
     publish_content_asset,
+    record_campaign_package_gate,
+    record_creative_director_review,
+    record_mandatory_copy_gate_review,
+    record_release_review,
+    record_strategy_review,
     run_copy_quality,
     submit_four_gates,
+    submit_visual_production,
 )
+
+
+def _pass_mandatory_copy_gates(db, asset):
+    for gate_id in ("MARKETING", "DIRECT_RESPONSE"):
+        record_mandatory_copy_gate_review(
+            db,
+            asset.asset_id,
+            mandatory_copy_gate_review(asset, gate_id),
+            actor=f"{gate_id.lower()}-gate-verifier",
+        )
 
 
 def _fragment_evidence(
@@ -110,7 +134,7 @@ def test_current_website_price_can_be_reused_with_its_exact_source():
             "body": imperial_asset().body + " " + claim,
             "factual_claims": [claim],
             "price_mentions": [claim],
-            "condition_mentions": ["ártól"],
+            "condition_mentions": ["ártól", "+ ÁFA"],
             "visual_asset_ids": [],
             "prevalidated_source_evidence": [evidence],
         }
@@ -183,14 +207,15 @@ def test_exact_drive_calculator_price_can_publish_without_human_price_review():
             "gross_area_m2": "100",
             "vat_rate": "0.05",
         },
-        price_output_field="estimated_gross_total_huf",
+        price_output_field="estimated_net_total_huf",
         price_value_huf=68_000_000,
     )
     asset = imperial_asset().model_copy(
         update={
-            "body": imperial_asset().body + " A kalkulált bruttó ár 68 000 000 Ft.",
+            "body": imperial_asset().body + " A kalkulált ár 68 000 000 Ft + ÁFA.",
             "factual_claims": [],
-            "price_mentions": ["68 000 000 Ft"],
+            "price_mentions": ["68 000 000 Ft + ÁFA"],
+            "condition_mentions": ["+ ÁFA"],
             "visual_asset_ids": [],
             "prevalidated_source_evidence": [evidence],
         }
@@ -200,6 +225,71 @@ def test_exact_drive_calculator_price_can_publish_without_human_price_review():
 
     assert result.eligible is True
     assert result.metadata["drive_price_verified"] is True
+    assert result.metadata["price_publication_policy"] == "NET_HUF_PLUS_VAT_2026-07-31"
+
+
+def test_gross_calculator_output_never_qualifies_for_price_fast_lane():
+    registry = load_prevalidated_registry()
+    source = next(
+        item
+        for item in registry["price_sources"]
+        if item["registry_id"] == "drive-web-prices-2026-07"
+    )
+    evidence = PrevalidatedSourceEvidence(
+        evidence_id="PRICE-IMP-GROSS-PROHIBITED",
+        category="price",
+        source_type="drive_price_calculator",
+        source_ref=source["registry_id"],
+        source_version=source["source_version"],
+        source_sha256=source["sha256"],
+        price_input={
+            "technology": "Danish Fabrik",
+            "completion_level": "Kulcsrakész",
+            "package": "Alap",
+            "gross_area_m2": "100",
+            "vat_rate": "0.05",
+        },
+        price_output_field="estimated_gross_total_huf",
+        price_value_huf=71_400_000,
+    )
+    asset = imperial_asset().model_copy(
+        update={
+            "body": imperial_asset().body + " Bruttó ár 71 400 000 Ft.",
+            "factual_claims": [],
+            "price_mentions": ["Bruttó ár 71 400 000 Ft"],
+            "condition_mentions": ["5% ÁFA-val"],
+            "visual_asset_ids": [],
+            "prevalidated_source_evidence": [evidence],
+        }
+    )
+
+    result = evaluate_commercial_prevalidation("imperial", asset)
+
+    assert result.eligible is False
+    assert any("bruttó" in finding.lower() for finding in result.findings)
+
+
+def test_net_price_without_plus_vat_suffix_fails_closed():
+    evidence, claim = _fragment_evidence(
+        "imperial",
+        "már 589.000 Ft/nm ártól",
+        category="price",
+    )
+    asset = imperial_asset().model_copy(
+        update={
+            "body": imperial_asset().body + " " + claim,
+            "factual_claims": [claim],
+            "price_mentions": [claim],
+            "condition_mentions": ["ártól"],
+            "visual_asset_ids": [],
+            "prevalidated_source_evidence": [evidence],
+        }
+    )
+
+    result = evaluate_commercial_prevalidation("imperial", asset)
+
+    assert result.eligible is False
+    assert any("+ ÁFA" in finding for finding in result.findings)
 
 
 def test_changed_drive_price_fails_closed():
@@ -223,14 +313,15 @@ def test_changed_drive_price_fails_closed():
             "gross_area_m2": "100",
             "vat_rate": "0.05",
         },
-        price_output_field="estimated_gross_total_huf",
+        price_output_field="estimated_net_total_huf",
         price_value_huf=67_900_000,
     )
     asset = imperial_asset().model_copy(
         update={
-            "body": imperial_asset().body + " A kalkulált bruttó ár 67 900 000 Ft.",
+            "body": imperial_asset().body + " A kalkulált ár 67 900 000 Ft + ÁFA.",
             "factual_claims": [],
-            "price_mentions": ["67 900 000 Ft"],
+            "price_mentions": ["67 900 000 Ft + ÁFA"],
+            "condition_mentions": ["+ ÁFA"],
             "visual_asset_ids": [],
             "prevalidated_source_evidence": [evidence],
         }
@@ -263,15 +354,15 @@ def test_brand_without_active_drive_pricing_fails_closed():
             "gross_area_m2": "100",
             "vat_rate": "0.05",
         },
-        price_output_field="estimated_gross_total_huf",
+        price_output_field="estimated_net_total_huf",
         price_value_huf=68_000_000,
     )
     asset = imperial_asset().model_copy(
         update={
             "detected_brand_ids": ["casa-moderna"],
             "factual_claims": [],
-            "price_mentions": ["68 000 000 Ft"],
-            "condition_mentions": ["100 m², 5% áfa"],
+            "price_mentions": ["68 000 000 Ft + ÁFA"],
+            "condition_mentions": ["100 m²", "+ ÁFA"],
             "visual_asset_ids": [],
             "prevalidated_source_evidence": [evidence],
         }
@@ -355,6 +446,12 @@ def test_prevalidated_asset_skips_human_editorial_and_owner_approval(db):
         }
     )
     brief_row = create_copy_brief(db, brief.model_dump(mode="json"), actor="test")
+    record_strategy_review(
+        db,
+        brief_row.copy_brief_id,
+        strategy_review(),
+        actor="strategy-reviewer@imperial.local",
+    )
     asset = create_content_asset(
         db,
         asset_payload,
@@ -363,7 +460,8 @@ def test_prevalidated_asset_skips_human_editorial_and_owner_approval(db):
         generation_trace=generation_trace(),
         actor="test",
     )
-    run_copy_quality(db, asset.asset_id, editorial_review(), actor="quality-worker")
+    run_copy_quality(db, asset.asset_id, editorial_review(asset), actor="quality-worker")
+    _pass_mandatory_copy_gates(db, asset)
 
     aggregate = submit_four_gates(
         db,
@@ -375,13 +473,49 @@ def test_prevalidated_asset_skips_human_editorial_and_owner_approval(db):
         ),
         actor="gate-orchestrator",
     )
-    assert aggregate["state"] == PublicationState.SOURCE_PREVALIDATED
+    assert aggregate["state"] == PublicationState.VISUAL_PRODUCTION
+    visual = submit_visual_production(
+        db,
+        asset.asset_id,
+        visual_submission(),
+        actor="creative-producer",
+    )
+    record_creative_director_review(
+        db,
+        asset.asset_id,
+        creative_director_review(asset, visual),
+        actor="creative-director@imperial.local",
+    )
+    assembly = assembly_submission(asset.content_hash, visual.generation_run_id)
+    assemble_publication_bundle(
+        db,
+        asset.asset_id,
+        assembly,
+        actor="production-designer",
+    )
+    record_campaign_package_gate(
+        db,
+        asset.asset_id,
+        campaign_package(
+            asset,
+            visual,
+            assembly,
+            brand_guardian="campaign-package-gate@imperial.local",
+        ),
+        actor="campaign-package-gate@imperial.local",
+    )
+    record_release_review(
+        db,
+        asset.asset_id,
+        release_review(),
+        actor="marketing-manager@imperial.local",
+    )
 
-    proof = publish_content_asset(db, asset.asset_id, actor="publication-worker")
+    proof = publish_content_asset(db, asset.asset_id, actor="owner@imperial.local")
 
     assert proof["approval_mode"] == "SOURCE_PREVALIDATED"
     assert proof["human_editorial_actor"] is None
-    assert proof["owner_actor"] is None
+    assert proof["owner_actor"] == "owner@imperial.local"
 
 
 def test_adapted_copy_cannot_use_source_prevalidated_fast_lane(db):
@@ -413,6 +547,12 @@ def test_adapted_copy_cannot_use_source_prevalidated_fast_lane(db):
         }
     )
     brief_row = create_copy_brief(db, brief.model_dump(mode="json"), actor="test")
+    record_strategy_review(
+        db,
+        brief_row.copy_brief_id,
+        strategy_review(),
+        actor="strategy-reviewer@imperial.local",
+    )
     asset = create_content_asset(
         db,
         asset_payload,
@@ -421,7 +561,8 @@ def test_adapted_copy_cannot_use_source_prevalidated_fast_lane(db):
         generation_trace=adapted_trace,
         actor="test",
     )
-    run_copy_quality(db, asset.asset_id, editorial_review(), actor="quality-worker")
+    run_copy_quality(db, asset.asset_id, editorial_review(asset), actor="quality-worker")
+    _pass_mandatory_copy_gates(db, asset)
 
     aggregate = submit_four_gates(
         db,

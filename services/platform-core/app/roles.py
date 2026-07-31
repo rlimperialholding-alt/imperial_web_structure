@@ -26,13 +26,16 @@ def _role(
 
 
 ROLE_DEFINITIONS = (
-    _role("owner", "Tulajdonos", "TU", "workspace executive-dashboard control-center integration-control-room completion-audit financial-control finance-intelligence crm project-control digital-project-managers pm-cockpit operations-workspace"),
-    _role("managing-director", "Ügyvezető", "ÜV", "workspace executive-dashboard control-center crm project-control digital-project-managers pm-cockpit operations-workspace smart-calendar financial-control finance-intelligence procurement document-evidence workflow-center"),
+    _role("owner", "Tulajdonos", "TU", "workspace executive-dashboard control-center integration-control-room completion-audit admin financial-control finance-intelligence crm project-control digital-project-managers pm-cockpit operations-workspace housebuild-agent plotcheck buildconfig plancheck marketing-control campaign-factory content-factory claim-registry website-content-control"),
+    _role("managing-director", "Ügyvezető", "ÜV", "workspace executive-dashboard control-center crm project-control digital-project-managers pm-cockpit operations-workspace smart-calendar financial-control finance-intelligence procurement document-evidence workflow-center housebuild-agent plotcheck buildconfig plancheck marketing-control campaign-factory content-factory claim-registry website-content-control"),
     _role("marketing", "Marketing", "MK", "workspace marketing-control campaign-factory content-factory claim-registry website-content-control lead-intelligence b2b-project-intake housematch housevision crm answer-center"),
+    _role("copywriter", "Direct-response szövegíró", "SZ", "workspace marketing-control campaign-factory content-factory claim-registry website-content-control"),
+    _role("language-editor", "Magyar nyelvi szerkesztő", "NY", "workspace marketing-control content-factory website-content-control"),
+    _role("creative-director", "Kreatív igazgató", "KI", "workspace marketing-control content-factory website-content-control housevision"),
     _role("technical-prep", "Műszaki előkészítő", "ME", "workspace house-catalog housebuild-agent housematch plotcheck buildconfig plancheck engineering-workspace document-evidence project-control"),
     _role("sales", "Értékesítő", "ÉR", "workspace crm sales housematch plotcheck buildconfig booking-engine reservation-engine contract-generator my-imperial"),
-    _role("finance", "Pénzügy", "PÜ", "workspace financial-control finance-intelligence procurement import-center tendermail project-control change-control document-evidence executive-dashboard"),
-    _role("project-manager", "Projektmenedzser", "PM", "workspace project-control digital-project-managers pm-cockpit operations-workspace smart-calendar procurement change-control my-imperial document-evidence partner-connect partner-field field-pwa imperial-care"),
+    _role("finance", "Pénzügy", "PÜ", "workspace financial-control finance-intelligence procurement import-center tendermail project-control change-control document-evidence executive-dashboard buildconfig"),
+    _role("project-manager", "Projektmenedzser", "PM", "workspace project-control digital-project-managers pm-cockpit operations-workspace smart-calendar procurement change-control my-imperial document-evidence partner-connect partner-field field-pwa imperial-care plotcheck plancheck"),
     _role("designer", "Tervező partner", "TP", "workspace engineering-workspace plancheck plotcheck buildconfig my-imperial document-evidence"),
     _role("subcontractor", "Alvállalkozó", "AV", "workspace partner-connect partner-field field-pwa operations-workspace procurement document-evidence imperial-care"),
     _role("customer", "Ügyfél", "ÜF", "workspace my-imperial housematch plotcheck buildconfig booking-engine reservation-engine change-control imperial-care"),
@@ -43,8 +46,10 @@ ROLE_DEFINITIONS = (
 ROLES = {role.id: role for role in ROLE_DEFINITIONS}
 
 PAGE_ACCESS = (
+    ("/financial", ("financial-control", "finance-intelligence")),
     ("/executive", ("executive-dashboard",)),
     ("/tasks", ("workflow-center", "workspace")),
+    ("/communications", ("workspace",)),
     ("/projects", ("project-control",)),
     ("/operations", ("operations-workspace", "pm-cockpit")),
     ("/field", ("field-pwa", "partner-field")),
@@ -53,6 +58,8 @@ PAGE_ACCESS = (
     ("/search", ("workspace",)),
     ("/imports", ("import-center",)),
     ("/experience", ("housematch", "buildconfig")),
+    ("/technical", ("housebuild-agent", "plotcheck", "buildconfig", "plancheck")),
+    ("/marketing", ("marketing-control", "campaign-factory", "content-factory")),
     ("/tendermail", ("tendermail",)),
     ("/commercial", ("contract-generator", "change-control")),
     ("/exceptions", ("control-center", "executive-dashboard")),

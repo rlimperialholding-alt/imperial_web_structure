@@ -18,7 +18,20 @@
 <div class="span-2 form-actions"><button class="button primary">Discovery rögzítése</button></div>
 </form>
 </section>
-<section class="panel"><div class="panel-head"><div><h2>Discovery napló</h2><p>Forrás, döntés és jóváhagyás egy helyen.</p></div></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Képesség</th><th>Kanonikus modul</th><th>Döntés</th><th>Státusz</th><th>Hiány</th></tr></thead><tbody>
-{% for row in rows %}<tr><td class="mono small">{{ row.discovery_id }}</td><td>{{ row.requested_capability }}</td><td>{{ row.canonical_module_key or '—' }}<small>{{ row.source_version or '' }}</small></td><td>{{ row.decision }}</td><td><span class="status-pill {{ 'ok' if row.status=='approved' else '' }}">{{ row.status }}</span></td><td>{{ row.implementation_gap }}</td></tr>{% endfor %}
-</tbody></table></div></section>
+<section class="panel"><div class="panel-head"><div><h2>Discovery napló és döntési sor</h2><p>A kérelmező és a döntéshozó külön személy; minden döntés indoklással és auditnaplóval zárul.</p></div></div>
+{% for row in rows %}<article class="record-card" id="discovery-{{ row.discovery_id }}">
+  <div class="record-top"><strong class="mono small">{{ row.discovery_id }}</strong><span class="status-pill {{ 'ok' if row.status=='approved' else '' }}">{{ row.status }}</span></div>
+  <h3>{{ row.requested_capability }}</h3><p>{{ row.implementation_gap }}</p>
+  <dl><div><dt>Döntés</dt><dd>{{ row.decision }}</dd></div><div><dt>Kanonikus modul</dt><dd>{{ row.canonical_module_key or '—' }} {{ row.source_version or '' }}</dd></div><div><dt>Kérelmező</dt><dd>{{ row.requested_by or '—' }}</dd></div><div><dt>Döntéshozó</dt><dd>{{ row.reviewed_by or '—' }}</dd></div></dl>
+  {% if row.exception_reason %}<div class="validation warn"><strong>Kivétel indoka:</strong> {{ row.exception_reason }}</div>{% endif %}
+  {% if row.review_note %}<div class="validation"><strong>Döntési indoklás:</strong> {{ row.review_note }}</div>{% endif %}
+  {% if row.status=='pending_review' %}{% if row.requested_by and row.requested_by|lower == user.email|lower %}<div class="validation warn">A négy szem elve miatt erről a kérelemről másik tulajdonos vagy platformadmin dönthet.</div>{% else %}
+  <form method="post" action="/development-governance/{{ row.discovery_id }}/review" class="form-grid">
+    <label>Döntés<select name="status"><option value="approved">Jóváhagyás</option><option value="rejected">Elutasítás</option></select></label>
+    {% if row.decision=='new_exception' %}<label class="checkbox"><input type="checkbox" name="exception_approved">Tulajdonosi kivétel kifejezetten jóváhagyva</label>{% endif %}
+    <label class="span-2">Döntési indoklás *<textarea name="review_note" minlength="10" required></textarea></label>
+    <div class="span-2 form-actions"><button class="button primary">Governance döntés rögzítése</button></div>
+  </form>{% endif %}{% endif %}
+</article>{% else %}<p class="empty">Nincs discovery rekord.</p>{% endfor %}
+</section>
 {% endblock %}

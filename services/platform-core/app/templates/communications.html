@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Belső kommunikáció | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">INTERNAL COMMUNICATIONS</span><h1>Üzenetek, projekt- és feladatmegjegyzések</h1><p>Közvetlen és csoportos beszélgetések, kontextushoz kötött egyeztetések, olvasatlan értesítések és teljes auditnyom.</p></div></div>
+<div class="metric-grid three"><article class="metric-card"><span>Beszélgetések</span><strong>{{ threads|length }}</strong></article><article class="metric-card"><span>Olvasatlan</span><strong>{{ unread_notifications }}</strong></article><article class="metric-card"><span>Aktív felhasználók</span><strong>{{ users|length + 1 }}</strong></article></div>
+
+<details class="panel" {% if not threads %}open{% endif %}><summary><strong>Új beszélgetés indítása</strong> — közvetlen, csoportos, projekt- vagy feladatkontextusban</summary>
+<form method="post" action="/communications/threads" class="form-grid">
+  <label>Típus<select name="thread_type" id="communication-thread-type"><option value="direct">Közvetlen üzenet</option><option value="general">Csoportos beszélgetés</option><option value="project">Projektmegjegyzés</option><option value="task">Feladatmegjegyzés</option></select></label>
+  <label>Tárgy *<input name="subject" minlength="3" maxlength="255" required></label>
+  <label class="span-2">Résztvevők *<select name="participant_user_ids" multiple required size="6">{% for person in users %}<option value="{{ person.id }}">{{ person.name }} · {{ person.role }} · {{ person.email }}</option>{% endfor %}</select><small>Közvetlen üzenetnél egy, csoportos beszélgetésnél több címzett választható.</small></label>
+  <label>Projekt<select name="project_id"><option value="">— nincs —</option>{% for project in projects %}<option value="{{ project.project_id }}">{{ project.name }} · {{ project.project_id }}</option>{% endfor %}</select></label>
+  <label>Feladat<select name="task_id"><option value="">— nincs —</option>{% for task in tasks %}<option value="{{ task.task_id }}">{{ task.project_id }} · {{ task.title }}</option>{% endfor %}</select></label>
+  <label class="span-2">Első üzenet<textarea name="initial_message" maxlength="5000" rows="3"></textarea></label><div class="span-2 form-actions"><button class="button primary">Beszélgetés létrehozása</button></div>
+</form></details>
+
+<div class="two-column">
+<section class="panel"><div class="panel-head"><div><h2>Beszélgetéseim</h2><p>A félkövér számláló az olvasatlan üzeneteket mutatja.</p></div></div>
+{% for item in threads %}<a class="record-card" href="/communications?thread_id={{ item.row.thread_id }}"><div class="record-top"><strong>{{ item.row.subject }}</strong>{% if item.unread %}<span class="status-pill critical">{{ item.unread }} új</span>{% endif %}</div><p>{{ item.row.thread_type }}{% if item.row.project_id %} · {{ item.row.project_id }}{% endif %}{% if item.row.task_id %} · {{ item.row.task_id }}{% endif %}</p><small>{% for person in item.participants %}{{ person.name }}{% if not loop.last %}, {% endif %}{% endfor %}</small>{% if item.latest %}<p>{{ item.latest.body[:160] }}</p><small>{{ item.latest.created_at|dt }}</small>{% endif %}</a>{% else %}<p class="empty">Még nincs beszélgetése.</p>{% endfor %}
+</section>
+
+<section class="panel">{% if active_thread %}<div class="panel-head"><div><h2>{{ active_thread.row.subject }}</h2><p>{{ active_thread.row.thread_type }}{% if active_thread.row.project_id %} · <a href="/projects/{{ active_thread.row.project_id }}">{{ active_thread.row.project_id }}</a>{% endif %}{% if active_thread.row.task_id %} · {{ active_thread.row.task_id }}{% endif %}</p></div></div><p><strong>Résztvevők:</strong> {% for person in active_thread.participants %}{{ person.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+<div class="message-list">{% for message in active_thread.messages %}<article class="record-card"><div class="record-top"><strong>{{ message.sender.name if message.sender else 'Ismeretlen felhasználó' }}</strong><small>{{ message.row.created_at|dt }}</small></div><p>{{ message.row.body }}</p></article>{% else %}<p class="empty">Még nincs üzenet.</p>{% endfor %}</div>
+<form method="post" action="/communications/{{ active_thread.row.thread_id }}/messages" class="form-grid"><label class="span-2">Új üzenet *<textarea name="body" maxlength="5000" required rows="4"></textarea></label><div class="span-2 form-actions"><button class="button primary">Üzenet küldése</button></div></form>
+{% else %}<h2>Beszélgetés megnyitása</h2><p class="empty">Válasszon egy beszélgetést a bal oldali listából, vagy indítson újat.</p>{% endif %}</section>
+</div>
+
+<section class="panel" id="notifications"><div class="panel-head"><div><h2>Értesítések</h2><p>Új beszélgetés és üzenet esetén automatikusan létrejön.</p></div>{% if unread_notifications %}<form method="post" action="/communications/notifications/read-all"><button>Összes megjelölése olvasottként</button></form>{% endif %}</div>
+<div class="table-wrap"><table><thead><tr><th>Állapot</th><th>Értesítés</th><th>Feladó</th><th>Időpont</th></tr></thead><tbody>{% for notification in notifications %}<tr><td><span class="status-pill {{ 'ok' if notification.read_at else 'critical' }}">{{ 'olvasott' if notification.read_at else 'új' }}</span></td><td><a href="{{ notification.target_url }}"><strong>{{ notification.title }}</strong><small>{{ notification.body or '' }}</small></a></td><td>{{ notification.actor_email or 'rendszer' }}</td><td>{{ notification.created_at|dt }}</td></tr>{% else %}<tr><td colspan="4" class="empty">Nincs értesítés.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% endblock %}
