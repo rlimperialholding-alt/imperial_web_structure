@@ -12,6 +12,7 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
     notificationMigration,
     itepMigration,
     liveSourceMigration,
+    businessWorkflowMigration,
     server,
   ] = await Promise.all([
     readFile("dist/.openai/hosting.json", "utf8"),
@@ -22,6 +23,7 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
     readFile("dist/.openai/drizzle/0004_myimperial_notifications.sql", "utf8"),
     readFile("dist/.openai/drizzle/0005_itep_migration_contract.sql", "utf8"),
     readFile("dist/.openai/drizzle/0008_live_source_registry.sql", "utf8"),
+    readFile("dist/.openai/drizzle/0009_customer_contract_project.sql", "utf8"),
     readFile("dist/server/index.js", "utf8"),
   ]);
   assert.deepEqual(JSON.parse(hosting), {
@@ -39,6 +41,8 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
   assert.match(itepMigration, /CREATE TABLE `crm_migration_batches`/);
   assert.match(itepMigration, /CREATE TABLE `crm_migration_documents`/);
   assert.match(liveSourceMigration, /CREATE TABLE `crm_source_records`/);
+  assert.match(businessWorkflowMigration, /CREATE TABLE `crm_customers`/);
+  assert.match(businessWorkflowMigration, /CREATE TABLE `crm_contracts`/);
   assert.match(server, /crm_source_records/);
 });
 

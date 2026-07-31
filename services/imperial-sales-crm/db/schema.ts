@@ -38,6 +38,38 @@ export const leads = sqliteTable("leads", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const customers = sqliteTable("crm_customers", {
+  id: text("id").primaryKey(),
+  customerType: text("customer_type", { enum: ["person", "company"] }).notNull(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone").notNull(),
+  billingAddress: text("billing_address").notNull(),
+  taxNumber: text("tax_number"),
+  companyRegistrationNumber: text("company_registration_number"),
+  sourceLeadId: integer("source_lead_id").references(() => leads.id, { onDelete: "set null" }),
+  status: text("status", { enum: ["prospect", "active", "archived"] }).notNull(),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("crm_customers_email_idx").on(table.email),
+  uniqueIndex("crm_customers_source_lead_idx").on(table.sourceLeadId),
+  index("crm_customers_status_idx").on(table.status, table.name),
+]);
+
+export const businessAuditEvents = sqliteTable("crm_business_audit_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  actorEmail: text("actor_email").notNull(),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  detail: text("detail").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("crm_business_audit_entity_idx").on(table.entityType, table.entityId, table.createdAt),
+]);
+
 export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),
@@ -132,6 +164,8 @@ export const projects = sqliteTable("projects", {
   portalCode: text("portal_code").notNull().unique(),
   customerName: text("customer_name").notNull(),
   customerEmail: text("customer_email").notNull(),
+  customerId: text("customer_id").references(() => customers.id, { onDelete: "set null" }),
+  contractId: text("contract_id"),
   title: text("title").notNull(),
   status: text("status", { enum: ["planning", "construction", "handover", "care"] }).notNull(),
   phase: text("phase").notNull(),
@@ -141,6 +175,30 @@ export const projects = sqliteTable("projects", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const contracts = sqliteTable("crm_contracts", {
+  id: text("id").primaryKey(),
+  contractNumber: text("contract_number").notNull().unique(),
+  customerId: text("customer_id").notNull().references(() => customers.id, { onDelete: "restrict" }),
+  leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  contractType: text("contract_type", { enum: ["construction", "design", "consulting", "other"] }).notNull(),
+  netAmount: integer("net_amount").notNull(),
+  vatRate: integer("vat_rate").notNull(),
+  grossAmount: integer("gross_amount").notNull(),
+  currency: text("currency").notNull(),
+  status: text("status", { enum: ["draft", "review", "approved", "signed", "cancelled"] }).notNull(),
+  effectiveDate: text("effective_date").notNull(),
+  signedAt: text("signed_at"),
+  sourceUrl: text("source_url"),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("crm_contracts_customer_idx").on(table.customerId, table.status),
+  index("crm_contracts_project_idx").on(table.projectId),
+]);
 
 export const financeInvoiceImports = sqliteTable("finance_invoice_imports", {
   id: integer("id").primaryKey({ autoIncrement: true }),

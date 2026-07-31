@@ -9,6 +9,11 @@ test("every internal CRM endpoint uses the internal-only identity guard", async 
     "app/api/crm/leads/[id]/route.ts",
     "app/api/crm/tasks/route.ts",
     "app/api/crm/tasks/[id]/route.ts",
+    "app/api/crm/customers/route.ts",
+    "app/api/crm/customers/[id]/route.ts",
+    "app/api/crm/contracts/route.ts",
+    "app/api/crm/contracts/[id]/route.ts",
+    "app/api/crm/projects/route.ts",
     "app/api/intelligence/route.ts",
     "app/api/intelligence/reviews/[id]/route.ts",
   ];
@@ -17,6 +22,15 @@ test("every internal CRM endpoint uses the internal-only identity guard", async 
     assert.match(source, /requireInternalCrmIdentity/);
     assert.doesNotMatch(source, /requireCrmIdentity\(request\)/);
   }
+});
+
+test("signed contracts atomically create a project and MyImperial customer membership", async () => {
+  const source = await readFile("app/api/crm/contracts/[id]/route.ts", "utf8");
+  assert.match(source, /db\.batch/);
+  assert.match(source, /db\.insert\(projects\)/);
+  assert.match(source, /db\.insert\(projectMembers\)/);
+  assert.match(source, /contract\.signed_project\.created/);
+  assert.match(source, /identity\.role === "sales"/);
 });
 
 test("the formerly placeholder Intelligence navigation opens persisted workspaces", async () => {

@@ -74,6 +74,44 @@ type Task = {
   ai?: boolean;
 };
 type NewTask = Pick<Task, "title" | "type" | "due" | "priority">;
+type Customer = {
+  id: string;
+  customerType: "person" | "company";
+  name: string;
+  email: string;
+  phone: string;
+  billingAddress: string;
+  taxNumber: string | null;
+  sourceLeadId: number | null;
+  status: "prospect" | "active" | "archived";
+};
+type Contract = {
+  id: string;
+  contractNumber: string;
+  customerId: string;
+  leadId: number | null;
+  projectId: string | null;
+  title: string;
+  contractType: "construction" | "design" | "consulting" | "other";
+  netAmount: number;
+  vatRate: number;
+  grossAmount: number;
+  currency: string;
+  status: "draft" | "review" | "approved" | "signed" | "cancelled";
+  effectiveDate: string;
+  signedAt: string | null;
+};
+type BusinessProject = {
+  id: string;
+  portalCode: string;
+  customerId: string | null;
+  contractId: string | null;
+  title: string;
+  status: "planning" | "construction" | "handover" | "care";
+  phase: string;
+  progress: number;
+  targetCompletion: string;
+};
 type Identity = {
   email: string;
   name: string;
@@ -529,6 +567,9 @@ export default function Home() {
   const [view, setView] = useState<View>("today"),
     [leads, setLeads] = useState<Lead[]>([]),
     [tasks, setTasksRaw] = useState<Task[]>([]),
+    [customers, setCustomers] = useState<Customer[]>([]),
+    [contracts, setContracts] = useState<Contract[]>([]),
+    [businessProjects, setBusinessProjects] = useState<BusinessProject[]>([]),
     [invoices, setInvoices] = useState<Invoice[]>([]),
     [importStatus, setImportStatus] = useState<ImportStatus | null>(null),
     [intelligence, setIntelligence] = useState<IntelligenceWorkspace | null>(null);
@@ -538,6 +579,8 @@ export default function Home() {
   const [mode, setMode] = useState<"kanban" | "list">("kanban"),
     [selected, setSelected] = useState<Lead | null>(null),
     [newOpen, setNewOpen] = useState(false),
+    [newCustomerOpen, setNewCustomerOpen] = useState(false),
+    [newContractOpen, setNewContractOpen] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false),
     [toast, setToast] = useState("");
   const [identity, setIdentity] = useState<Identity>({
@@ -562,6 +605,9 @@ export default function Home() {
           identity: Identity;
           leads: Lead[];
           tasks: Task[];
+          customers: Customer[];
+          contracts: Contract[];
+          projects: BusinessProject[];
           invoices: Invoice[];
           importStatus: ImportStatus;
         }>;
@@ -571,6 +617,9 @@ export default function Home() {
         setIdentity(data.identity);
         setLeads(data.leads);
         setTasksRaw(data.tasks);
+        setCustomers(data.customers);
+        setContracts(data.contracts);
+        setBusinessProjects(data.projects);
         setInvoices(data.invoices);
         setImportStatus(data.importStatus);
         setDataState("live");
@@ -774,6 +823,82 @@ export default function Home() {
       return true;
     } catch {
       notify("A teendő mentése nem sikerült. Próbáld újra.");
+      return false;
+    }
+  };
+  const addCustomer = async (customer: {
+    customerType: "person" | "company";
+    name: string;
+    email: string;
+    phone: string;
+    billingAddress: string;
+    taxNumber?: string;
+  }) => {
+    try {
+      const response = await authenticatedFetch("/api/crm/customers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(customer),
+      });
+      const payload = await response.json() as { customer?: Customer; error?: string };
+      if (!response.ok || !payload.customer) throw new Error(payload.error);
+      setCustomers((rows) => [payload.customer!, ...rows]);
+      setNewCustomerOpen(false);
+      notify("Az ügyfél bekerült az élő ügyféltörzsbe.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "Az ügyfél mentése nem sikerült.");
+      return false;
+    }
+  };
+  const addContract = async (data: {
+    customerId: string;
+    title: string;
+    contractType: Contract["contractType"];
+    netAmount: number;
+    vatRate: number;
+    effectiveDate: string;
+  }) => {
+    try {
+      const response = await authenticatedFetch("/api/crm/contracts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json() as { contract?: Contract; error?: string };
+      if (!response.ok || !payload.contract) throw new Error(payload.error);
+      setContracts((rows) => [payload.contract!, ...rows]);
+      setNewContractOpen(false);
+      notify("A szerződéstervezet létrejött és auditnaplóba került.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "A szerződés mentése nem sikerült.");
+      return false;
+    }
+  };
+  const advanceContract = async (
+    contract: Contract,
+    status: "review" | "approved" | "signed" | "cancelled",
+    targetCompletion?: string,
+  ) => {
+    try {
+      const response = await authenticatedFetch(`/api/crm/contracts/${contract.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status, targetCompletion, projectTitle: contract.title }),
+      });
+      const payload = await response.json() as {
+        contract?: Contract;
+        project?: BusinessProject;
+        error?: string;
+      };
+      if (!response.ok || !payload.contract) throw new Error(payload.error);
+      setContracts((rows) => rows.map((item) => item.id === contract.id ? payload.contract! : item));
+      if (payload.project) setBusinessProjects((rows) => [payload.project!, ...rows]);
+      notify(status === "signed" ? "A szerződésből létrejött a projekt és a MyImperial hozzáférés." : "A szerződés állapota frissült.");
+      return true;
+    } catch (error) {
+      notify(error instanceof Error && error.message ? error.message : "Az állapotváltás nem sikerült.");
       return false;
     }
   };
@@ -1044,7 +1169,15 @@ export default function Home() {
               onNew={() => setNewOpen(true)}
             />
           ) : view === "customers" ? (
-            <Customers leads={leads} onLead={setSelected} />
+            <Customers
+              customers={customers}
+              contracts={contracts}
+              projects={businessProjects}
+              identity={identity}
+              onNewCustomer={() => setNewCustomerOpen(true)}
+              onNewContract={() => setNewContractOpen(true)}
+              onAdvanceContract={advanceContract}
+            />
           ) : view === "reports" ? (
             <Reports leads={leads} />
           ) : view === "finance" ? (
@@ -1108,6 +1241,12 @@ export default function Home() {
       )}{" "}
       {newOpen && (
         <NewLeadModal onClose={() => setNewOpen(false)} onSave={addLead} />
+      )}{" "}
+      {newCustomerOpen && (
+        <NewCustomerModal onClose={() => setNewCustomerOpen(false)} onSave={addCustomer} />
+      )}{" "}
+      {newContractOpen && (
+        <NewContractModal customers={customers} onClose={() => setNewContractOpen(false)} onSave={addContract} />
       )}{" "}
       {toast && (
         <div className="toast">
@@ -1560,12 +1699,34 @@ function Records({
 }
 
 function Customers({
-  leads,
-  onLead,
+  customers,
+  contracts,
+  projects,
+  identity,
+  onNewCustomer,
+  onNewContract,
+  onAdvanceContract,
 }: {
-  leads: Lead[];
-  onLead: (l: Lead) => void;
+  customers: Customer[];
+  contracts: Contract[];
+  projects: BusinessProject[];
+  identity: Identity;
+  onNewCustomer: () => void;
+  onNewContract: () => void;
+  onAdvanceContract: (
+    contract: Contract,
+    status: "review" | "approved" | "signed" | "cancelled",
+    targetCompletion?: string,
+  ) => Promise<boolean>;
 }) {
+  const [targetCompletion, setTargetCompletion] = useState<Record<string, string>>({});
+  const contractStatus: Record<Contract["status"], string> = {
+    draft: "Tervezet",
+    review: "Ellenőrzés alatt",
+    approved: "Jóváhagyva",
+    signed: "Aláírva",
+    cancelled: "Megszüntetve",
+  };
   return (
     <>
       <section className="section-title">
@@ -1573,41 +1734,72 @@ function Customers({
           <p className="eyebrow">KAPCSOLATOK ÉS CÉGEK</p>
           <h2>Ügyfélközpont</h2>
           <p>
-            Az értékesítési adatlapokból egységesített ügyfél- és vállalati
-            nézet.
+            Élő ügyféltörzs, szerződés-jóváhagyás és projektindítás egy helyen.
           </p>
         </div>
-        <button className="secondary">
+        <button className="secondary" onClick={onNewCustomer}>
           <Icon name="plus" /> Új ügyfél
         </button>
       </section>
       <div className="customer-grid">
-        {leads.map((l) => (
-          <button
-            className="customer-card"
-            key={l.id}
-            onClick={() => onLead(l)}
-          >
+        {customers.map((customer) => (
+          <article className="customer-card" key={customer.id}>
             <span className="customer-avatar">
-              {l.name
+              {customer.name
                 .split(" ")
                 .map((x) => x[0])
                 .slice(0, 2)
                 .join("")}
             </span>
             <div>
-              <strong>{l.name}</strong>
-              <p>
-                {l.projectType} · {l.location}
-              </p>
-              <span>{l.email}</span>
+              <strong>{customer.name}</strong>
+              <p>{customer.customerType === "company" ? "Vállalati ügyfél" : "Magánszemély"} · {customer.billingAddress}</p>
+              <span>{customer.email} · {customer.phone}</span>
             </div>
-            <i className={`health ${l.health}`} />
+            <i className={`health ${customer.status === "active" ? "green" : customer.status === "prospect" ? "yellow" : "red"}`} />
             <footer>
-              <span>{l.brand}</span>
-              <b>{money(l.value)}</b>
+              <span>{customer.status === "active" ? "Aktív" : customer.status === "prospect" ? "Érdeklődő" : "Archivált"}</span>
+              <b>{contracts.filter((item) => item.customerId === customer.id).length} szerződés</b>
             </footer>
-          </button>
+          </article>
+        ))}
+      </div>
+      {customers.length === 0 && (
+        <section className="empty"><h2>Még nincs ügyfél az élő törzsben</h2><p>Az „Új ügyfél” gombbal rögzíthető az első ügyfél.</p></section>
+      )}
+
+      <section className="section-title">
+        <div><p className="eyebrow">SZERZŐDÉS ÉS PROJEKTINDÍTÁS</p><h2>Szerződések</h2><p>Vezetői jóváhagyás után az aláírás automatikusan létrehozza a projektet és a MyImperial tagságot.</p></div>
+        <button className="secondary" onClick={onNewContract} disabled={customers.length === 0}><Icon name="plus" /> Új szerződés</button>
+      </section>
+      <section className="panel">
+        <div className="record-table">
+          {contracts.map((contract) => (
+            <article key={contract.id}>
+              <div><small>{contract.contractNumber}</small><strong>{contract.title}</strong><span>{customers.find((item) => item.id === contract.customerId)?.name ?? contract.customerId}</span></div>
+              <div><small>Bruttó érték</small><strong>{money(contract.grossAmount)}</strong><span>{contract.effectiveDate}</span></div>
+              <div><small>Állapot</small><strong>{contractStatus[contract.status]}</strong><span>{contract.projectId ? `Projekt: ${contract.projectId}` : "Projekt még nincs"}</span></div>
+              <div className="row-actions">
+                {contract.status === "draft" && <button onClick={() => onAdvanceContract(contract, "review")}>Ellenőrzésre</button>}
+                {contract.status === "review" && identity.role !== "sales" && <button onClick={() => onAdvanceContract(contract, "approved")}>Jóváhagyás</button>}
+                {contract.status === "approved" && identity.role !== "sales" && (
+                  <><input type="date" aria-label={`${contract.contractNumber} tervezett befejezés`} value={targetCompletion[contract.id] ?? ""} onChange={(event) => setTargetCompletion((current) => ({ ...current, [contract.id]: event.target.value }))} /><button disabled={!targetCompletion[contract.id]} onClick={() => onAdvanceContract(contract, "signed", targetCompletion[contract.id])}>Aláírás és projektindítás</button></>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+        {contracts.length === 0 && <div className="empty"><h2>Még nincs szerződés</h2></div>}
+      </section>
+
+      <section className="section-title"><div><p className="eyebrow">MYIMPERIAL</p><h2>Elindított projektek</h2></div></section>
+      <div className="customer-grid">
+        {projects.map((project) => (
+          <article className="customer-card" key={project.id}>
+            <span className="customer-avatar">{project.progress}%</span>
+            <div><strong>{project.title}</strong><p>{project.portalCode} · {project.phase}</p><span>Tervezett befejezés: {project.targetCompletion}</span></div>
+            <i className="health green" />
+          </article>
         ))}
       </div>
     </>
@@ -2704,6 +2896,87 @@ function NewLeadModal({
             Adatlap létrehozása <Icon name="arrow" />
           </button>
         </footer>
+      </section>
+    </div>
+  );
+}
+
+function NewCustomerModal({
+  onClose,
+  onSave,
+}: {
+  onClose: () => void;
+  onSave: (customer: {
+    customerType: "person" | "company";
+    name: string;
+    email: string;
+    phone: string;
+    billingAddress: string;
+    taxNumber?: string;
+  }) => Promise<boolean>;
+}) {
+  const [customerType, setCustomerType] = useState<"person" | "company">("person");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [billingAddress, setBillingAddress] = useState("");
+  const [taxNumber, setTaxNumber] = useState("");
+  const [busy, setBusy] = useState(false);
+  const valid = Boolean(name.trim() && email.includes("@") && phone.trim() && billingAddress.trim());
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="modal">
+        <header><div><p className="eyebrow">ÉLŐ ÜGYFÉLTÖRZS</p><h2>Új ügyfél</h2><span>A kötelező kapcsolati és számlázási adatokkal.</span></div><button onClick={onClose}><Icon name="close" /></button></header>
+        <div className="modal-form">
+          <label>Ügyféltípus<select value={customerType} onChange={(event) => setCustomerType(event.target.value as "person" | "company")}><option value="person">Magánszemély</option><option value="company">Vállalkozás</option></select></label>
+          <label>Név *<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <div><label>E-mail *<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label>Telefon *<input value={phone} onChange={(event) => setPhone(event.target.value)} /></label></div>
+          <label>Számlázási cím *<input value={billingAddress} onChange={(event) => setBillingAddress(event.target.value)} /></label>
+          {customerType === "company" && <label>Adószám<input value={taxNumber} onChange={(event) => setTaxNumber(event.target.value)} /></label>}
+        </div>
+        <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ customerType, name, email, phone, billingAddress, taxNumber }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Ügyfél létrehozása"}</button></footer>
+      </section>
+    </div>
+  );
+}
+
+function NewContractModal({
+  customers,
+  onClose,
+  onSave,
+}: {
+  customers: Customer[];
+  onClose: () => void;
+  onSave: (contract: {
+    customerId: string;
+    title: string;
+    contractType: Contract["contractType"];
+    netAmount: number;
+    vatRate: number;
+    effectiveDate: string;
+  }) => Promise<boolean>;
+}) {
+  const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
+  const [title, setTitle] = useState("");
+  const [contractType, setContractType] = useState<Contract["contractType"]>("construction");
+  const [netAmount, setNetAmount] = useState("");
+  const [vatRate, setVatRate] = useState("27");
+  const [effectiveDate, setEffectiveDate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const valid = Boolean(customerId && title.trim() && netAmount !== "" && Number(netAmount) >= 0 && effectiveDate);
+  return (
+    <div className="modal-layer">
+      <button className="modal-scrim" onClick={onClose} />
+      <section className="modal">
+        <header><div><p className="eyebrow">SZERZŐDÉSES FOLYAMAT</p><h2>Új szerződéstervezet</h2><span>A tervezet csak vezetői jóváhagyás után jelölhető aláírtnak.</span></div><button onClick={onClose}><Icon name="close" /></button></header>
+        <div className="modal-form">
+          <label>Ügyfél *<select value={customerId} onChange={(event) => setCustomerId(event.target.value)}>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}</select></label>
+          <label>Szerződés tárgya *<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} /></label>
+          <div><label>Típus<select value={contractType} onChange={(event) => setContractType(event.target.value as Contract["contractType"])}><option value="construction">Kivitelezés</option><option value="design">Tervezés</option><option value="consulting">Tanácsadás</option><option value="other">Egyéb</option></select></label><label>Hatály kezdete *<input type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} /></label></div>
+          <div><label>Nettó összeg (Ft) *<input type="number" min="0" step="1" value={netAmount} onChange={(event) => setNetAmount(event.target.value)} /></label><label>ÁFA (%)<input type="number" min="0" max="100" value={vatRate} onChange={(event) => setVatRate(event.target.value)} /></label></div>
+        </div>
+        <footer><button className="ghost" onClick={onClose}>Mégse</button><button className="primary" disabled={!valid || busy} onClick={async () => { setBusy(true); const saved = await onSave({ customerId, title, contractType, netAmount: Number(netAmount), vatRate: Number(vatRate), effectiveDate }); if (!saved) setBusy(false); }}>{busy ? "Mentés…" : "Tervezet létrehozása"}</button></footer>
       </section>
     </div>
   );
