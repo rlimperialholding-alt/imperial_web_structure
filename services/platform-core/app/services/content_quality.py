@@ -28,6 +28,7 @@ from ..copy_gate.models import (
     FourGateSubmission,
     GateResult,
     LiveReviewSubmission,
+    MANDATORY_COPY_GATE_DIMENSIONS,
     MandatoryCopyGateReviewSubmission,
     PerformanceMetricIn,
     PublicationState,
@@ -96,6 +97,118 @@ def _json(value: Any) -> str:
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+def _signed_submission(payload: Any, secret: str) -> Any:
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        _json(payload.model_dump(mode="json", exclude={"attestation_sha256"})).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return payload.model_copy(update={"attestation_sha256": signature})
+
+
+def build_human_editorial_review(
+    asset: ContentAssetRecord,
+    *,
+    reviewer_identity: str,
+    decision: str,
+    scores: dict[str, int],
+    consumer_interpretation: str,
+    offer_interpretation: str,
+    cta_interpretation: str,
+    findings: list[str],
+    required_repairs: list[str],
+) -> EditorialReview:
+    if asset.created_by.strip().lower() == reviewer_identity.strip().lower():
+        raise ValueError("A négy szem elve miatt az asset létrehozója nem végezheti a Copy QA-t.")
+    trace = json.loads(asset.generation_trace_json or "{}")
+    score_fields = {
+        "idiomatic_hungarian_score", "grammar_score", "semantic_clarity_score",
+        "terminology_score", "hook_strength_score", "offer_clarity_score",
+        "specificity_score", "persuasion_score", "brand_voice_score",
+        "conversion_path_score",
+    }
+    if set(scores) != score_fields:
+        raise ValueError("A Copy QA pontozási dimenziói hiányosak.")
+    draft = EditorialReview(
+        decision=decision,
+        reviewed_asset_id=asset.asset_id,
+        reviewed_content_sha256=asset.content_hash,
+        reviewer_run_id=f"HUMAN-COPY-QA-{uuid.uuid4().hex[:12].upper()}",
+        generation_run_id=str(trace.get("generation_run_id") or ""),
+        reviewer_identity=reviewer_identity,
+        reviewer_type="human_expert",
+        attestation_key_id=settings.content_expert_review_key_id,
+        attestation_sha256="0" * 64,
+        model_version="authenticated-human-copy-expert-v1",
+        prompt_version=EXPERT_REVIEW_PROMPT_VERSION,
+        consumer_interpretation=consumer_interpretation,
+        offer_interpretation=offer_interpretation,
+        cta_interpretation=cta_interpretation,
+        ambiguous_phrases=findings,
+        unnatural_phrases=[],
+        unsupported_claims=[],
+        required_repairs=required_repairs,
+        findings=[],
+        **scores,
+    )
+    return _signed_submission(draft, settings.content_expert_review_secret)
+
+
+def build_human_mandatory_gate_review(
+    asset: ContentAssetRecord,
+    *,
+    gate_id: str,
+    reviewer_identity: str,
+    decision: str,
+    dimension_scores: dict[str, int],
+    consumer_readback: str,
+    conversion_rationale: str,
+    strongest_objection: str,
+    dry_copy_detected: bool,
+    generic_copy_detected: bool,
+    brand_voice_violation_detected: bool,
+    findings: list[str],
+    required_repairs: list[str],
+) -> MandatoryCopyGateReviewSubmission:
+    if gate_id not in MANDATORY_COPY_GATE_DIMENSIONS:
+        raise ValueError("Ismeretlen kötelező tartalomkapu.")
+    if asset.created_by.strip().lower() == reviewer_identity.strip().lower():
+        raise ValueError("A négy szem elve miatt az asset létrehozója nem értékelheti a saját tartalmát.")
+    trace = json.loads(asset.generation_trace_json or "{}")
+    draft = MandatoryCopyGateReviewSubmission(
+        gate_id=gate_id,
+        decision=decision,
+        reviewed_asset_id=asset.asset_id,
+        reviewed_content_sha256=asset.content_hash,
+        generation_run_id=str(trace.get("generation_run_id") or ""),
+        reviewer_run_id=f"HUMAN-{gate_id}-{uuid.uuid4().hex[:12].upper()}",
+        reviewer_identity=reviewer_identity,
+        reviewer_model_version=f"authenticated-human-{gate_id.lower()}-v1",
+        prompt_version=MANDATORY_COPY_GATE_PROMPT_VERSIONS[gate_id],
+        attestation_key_id=(
+            settings.content_marketing_review_key_id
+            if gate_id == "MARKETING"
+            else settings.content_copywriter_review_key_id
+        ),
+        attestation_sha256="0" * 64,
+        dimension_scores=dimension_scores,
+        consumer_readback=consumer_readback,
+        conversion_rationale=conversion_rationale,
+        strongest_objection=strongest_objection,
+        dry_copy_detected=dry_copy_detected,
+        generic_copy_detected=generic_copy_detected,
+        brand_voice_violation_detected=brand_voice_violation_detected,
+        findings=findings,
+        required_repairs=required_repairs,
+    )
+    secret = (
+        settings.content_marketing_review_secret
+        if gate_id == "MARKETING"
+        else settings.content_copywriter_review_secret
+    )
+    return _signed_submission(draft, secret)
 
 
 def _verify_expert_review_attestation(editorial_review: EditorialReview) -> None:

@@ -123,7 +123,7 @@ from .services.tender_mail import add_canonical_partner_recipients, add_recipien
 from .services.pilots import run_all_pilots, run_pilot_scenario
 from .services.itep_finance import ItepFinanceError, incoming_invoices
 from .services.releases import add_artifact, create_release, release_gate
-from .services.content_quality import assemble_publication_bundle, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
+from .services.content_quality import assemble_publication_bundle, build_human_editorial_review, build_human_mandatory_gate_review, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
 from .services.technical_products import create_case, decide_case, get_case, list_cases, review_gate, submit_case
 from .demo_runtime import DemoRuntimeError, demo_runtime
 
@@ -700,6 +700,84 @@ async def marketing_asset_create(request: Request, db: Session = Depends(get_db)
     except (TypeError, ValueError) as exc:
         raise HTTPException(409, str(exc)) from exc
     return RedirectResponse(f"/marketing#asset-{row.asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/copy-qa")
+async def marketing_asset_copy_qa(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in {"copywriter", "owner", "managing-director", "platform-admin"}:
+        raise HTTPException(403, "Copy QA-hoz független szövegírói vagy vezetői jogosultság szükséges.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise HTTPException(404, "A tartalomasset nem található.")
+    form = await request.form()
+    score_keys = (
+        "idiomatic_hungarian_score", "grammar_score", "semantic_clarity_score",
+        "terminology_score", "hook_strength_score", "offer_clarity_score",
+        "specificity_score", "persuasion_score", "brand_voice_score",
+        "conversion_path_score",
+    )
+    try:
+        review = build_human_editorial_review(
+            asset,
+            reviewer_identity=user.email,
+            decision=str(form.get("decision") or ""),
+            scores={key: int(str(form.get(key) or "0")) for key in score_keys},
+            consumer_interpretation=str(form.get("consumer_interpretation") or ""),
+            offer_interpretation=str(form.get("offer_interpretation") or ""),
+            cta_interpretation=str(form.get("cta_interpretation") or ""),
+            findings=_form_values(form.get("findings")),
+            required_repairs=_form_values(form.get("required_repairs")),
+        )
+        run_copy_quality(db, asset_id, review, actor=user.email)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
+
+
+@app.post("/marketing/assets/{asset_id}/mandatory-gates/{gate_id}")
+async def marketing_asset_mandatory_gate(asset_id: str, gate_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    allowed = {
+        "MARKETING": {"marketing", "owner", "managing-director", "platform-admin"},
+        "DIRECT_RESPONSE": {"copywriter", "owner", "managing-director", "platform-admin"},
+    }
+    if gate_id not in allowed or user.role not in allowed[gate_id]:
+        raise HTTPException(403, "Ehhez a kötelező tartalomkapuhoz nincs jogosultság.")
+    asset = db.scalar(select(ContentAssetRecord).where(ContentAssetRecord.asset_id == asset_id))
+    if not asset:
+        raise HTTPException(404, "A tartalomasset nem található.")
+    form = await request.form()
+    dimensions = {
+        "MARKETING": (
+            "objective_fit", "audience_fit", "offer_strength", "message_architecture",
+            "conversion_path", "qualification_quality", "brand_specificity",
+        ),
+        "DIRECT_RESPONSE": (
+            "hook_strength", "emotional_tension", "specificity", "natural_hungarian",
+            "direct_response_persuasion", "clarity", "cta_strength", "brand_voice",
+        ),
+    }
+    try:
+        review = build_human_mandatory_gate_review(
+            asset,
+            gate_id=gate_id,
+            reviewer_identity=user.email,
+            decision=str(form.get("decision") or ""),
+            dimension_scores={key: int(str(form.get(key) or "0")) for key in dimensions[gate_id]},
+            consumer_readback=str(form.get("consumer_readback") or ""),
+            conversion_rationale=str(form.get("conversion_rationale") or ""),
+            strongest_objection=str(form.get("strongest_objection") or ""),
+            dry_copy_detected=form.get("dry_copy_detected") is not None,
+            generic_copy_detected=form.get("generic_copy_detected") is not None,
+            brand_voice_violation_detected=form.get("brand_voice_violation_detected") is not None,
+            findings=_form_values(form.get("findings")),
+            required_repairs=_form_values(form.get("required_repairs")),
+        )
+        record_mandatory_copy_gate_review(db, asset_id, review, actor=user.email)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{asset_id}", status_code=303)
 
 
 @app.get("/health/live")

@@ -1,11 +1,12 @@
 from types import SimpleNamespace
 
-from copy_gate_fixtures import generation_trace, imperial_asset, imperial_brief
+from copy_gate_fixtures import generation_trace, imperial_asset, imperial_brief, strategy_review
 from sqlalchemy import select
 
 from app.models import ContentAssetRecord, CopyBriefRecord, CopySourceRecord
 from app.models import User
 from app.seed import retire_seeded_content_quality_sources, seed_database
+from app.services.content_quality import create_content_asset, create_copy_brief, record_strategy_review
 
 
 PASSWORD = "Imperial2026!"
@@ -160,3 +161,85 @@ def test_demo_disabled_deactivates_seed_accounts(monkeypatch, db):
     seed_database(db)
     owner = db.scalar(select(User).where(User.email == "owner@imperial.local"))
     assert owner.active is False
+
+
+def test_authenticated_human_copy_and_mandatory_gates_are_role_separated(client, db):
+    brief = imperial_brief(copy_brief_id="CB-HUMAN-QA")
+    brief_row = create_copy_brief(db, brief.model_dump(mode="json"), actor="strategist@author.example")
+    review = strategy_review(reviewer_identity="owner@imperial.local")
+    record_strategy_review(db, brief_row.copy_brief_id, review, actor="owner@imperial.local")
+    asset_payload = imperial_asset(asset_id="ASSET-HUMAN-QA")
+    asset = create_content_asset(
+        db,
+        asset_payload,
+        copy_brief_id=brief_row.copy_brief_id,
+        project_id="PRJ-HUMAN-QA",
+        generation_trace=generation_trace(),
+        actor="content.author@example.com",
+    )
+
+    login(client, "copywriter")
+    copy_scores = {
+        key: "9"
+        for key in (
+            "idiomatic_hungarian_score", "grammar_score", "semantic_clarity_score",
+            "terminology_score", "hook_strength_score", "offer_clarity_score",
+            "specificity_score", "persuasion_score", "brand_voice_score",
+            "conversion_path_score",
+        )
+    }
+    copy_qa = client.post(
+        f"/marketing/assets/{asset.asset_id}/copy-qa",
+        data=copy_scores | {
+            "decision": "APPROVED",
+            "consumer_interpretation": "A fogyasztó pontosan érti a rögzített műszaki tartalom és ajánlat lényegét.",
+            "offer_interpretation": "Az ajánlat fix hatókörét, árát és feltételeit egyértelműen olvassa.",
+            "cta_interpretation": "A következő lépés egy minősített érdeklődői kapcsolatfelvétel elindítása.",
+            "findings": "",
+            "required_repairs": "",
+        },
+        follow_redirects=False,
+    )
+    assert copy_qa.status_code == 303, copy_qa.text
+    db.refresh(asset)
+    assert asset.state == "SPECIALIST_QA"
+
+    logout(client)
+    login(client, "marketing")
+    marketing_scores = {key: "9" for key in (
+        "objective_fit", "audience_fit", "offer_strength", "message_architecture",
+        "conversion_path", "qualification_quality", "brand_specificity",
+    )}
+    marketing_gate = client.post(
+        f"/marketing/assets/{asset.asset_id}/mandatory-gates/MARKETING",
+        data=marketing_scores | {
+            "decision": "APPROVED",
+            "consumer_readback": "A célközönség az ajánlatot világos, konkrét és Imperial-specifikus megoldásként értelmezi.",
+            "conversion_rationale": "A probléma, az ígéret, a bizonyíték és a következő lépés egy összefüggő konverziós utat alkot.",
+            "strongest_objection": "A beruházó elsődleges kifogása a teljes költség és a vállalt határidő bizonyíthatósága.",
+        },
+        follow_redirects=False,
+    )
+    assert marketing_gate.status_code == 303, marketing_gate.text
+
+    logout(client)
+    login(client, "copywriter")
+    direct_scores = {key: "9" for key in (
+        "hook_strength", "emotional_tension", "specificity", "natural_hungarian",
+        "direct_response_persuasion", "clarity", "cta_strength", "brand_voice",
+    )}
+    direct_gate = client.post(
+        f"/marketing/assets/{asset.asset_id}/mandatory-gates/DIRECT_RESPONSE",
+        data=direct_scores | {
+            "decision": "APPROVED",
+            "consumer_readback": "A szöveg természetes magyar nyelven mutatja be a problémát, az ígéretet és a konkrét ajánlatot.",
+            "conversion_rationale": "A hooktól a bizonyítékon át a CTA-ig minden elem a minősített kapcsolatfelvételt támogatja.",
+            "strongest_objection": "A legerősebb kifogás az, hogy a vállalt ár és határidő a szerződésben hogyan rögzíthető.",
+        },
+        follow_redirects=False,
+    )
+    assert direct_gate.status_code == 303, direct_gate.text
+    db.refresh(asset)
+    assert asset.expert_marketing_approved is True
+    assert asset.copywriter_approved is True
+    assert asset.state == "FOUR_GATE_QA"

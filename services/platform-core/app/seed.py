@@ -51,6 +51,8 @@ DEMO_USER_NAMES = {
     "owner": "Imperial Tulajdonos",
     "managing-director": "Imperial Ügyvezető",
     "marketing": "Imperial Marketing",
+    "copywriter": "Imperial Direct-response Szövegíró",
+    "creative-director": "Imperial Kreatív Igazgató",
     "technical-prep": "Imperial Műszaki Előkészítő",
     "sales": "Imperial Értékesítő",
     "finance": "Imperial Pénzügy",
