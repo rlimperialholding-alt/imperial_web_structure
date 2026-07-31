@@ -2,11 +2,14 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   businessAuditEvents,
+  businessPartners,
+  procurementRequests,
   projectComments,
   projectDocuments,
   projectEvents,
   projectMembers,
   projectMessages,
+  projectSiteLogs,
   projects,
   projectTasks,
 } from "@/db/schema";
@@ -40,15 +43,18 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     const { id } = await context.params;
     const { identity, db, project, membership } = await authorizeProject(request, id);
-    const [tasks, comments, messages, documents, members, events] = await Promise.all([
+    const [tasks, comments, messages, documents, members, events, siteLogs, procurement, partners] = await Promise.all([
       db.select().from(projectTasks).where(eq(projectTasks.projectId, id)).orderBy(asc(projectTasks.due)),
       db.select().from(projectComments).where(eq(projectComments.projectId, id)).orderBy(desc(projectComments.createdAt)),
       db.select().from(projectMessages).where(eq(projectMessages.projectId, id)).orderBy(desc(projectMessages.createdAt)),
       db.select().from(projectDocuments).where(eq(projectDocuments.projectId, id)).orderBy(desc(projectDocuments.updatedAt)),
       db.select().from(projectMembers).where(eq(projectMembers.projectId, id)).orderBy(asc(projectMembers.role)),
       db.select().from(projectEvents).where(eq(projectEvents.projectId, id)).orderBy(desc(projectEvents.createdAt)).limit(100),
+      db.select().from(projectSiteLogs).where(eq(projectSiteLogs.projectId, id)).orderBy(desc(projectSiteLogs.logDate)).limit(100),
+      db.select().from(procurementRequests).where(eq(procurementRequests.projectId, id)).orderBy(asc(procurementRequests.requiredBy)),
+      db.select().from(businessPartners).where(eq(businessPartners.workspaceId, process.env.CRM_WORKSPACE_ID ?? "imperial-live")).orderBy(asc(businessPartners.name)).limit(500),
     ]);
-    return Response.json({ identity, membership, project, tasks, comments, messages, documents, members, events });
+    return Response.json({ identity, membership, project, tasks, comments, messages, documents, members, events, siteLogs, procurement, partners });
   } catch (error) { return jsonError(error); }
 }
 
@@ -73,6 +79,23 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         .where(eq(projectTasks.id, taskId)).returning();
       await db.insert(projectEvents).values({ projectId: id, actorEmail: identity.email, action: `task.${status}`, entityType: "task", entityId: taskId, detail: task.title, createdAt: now });
       return Response.json({ task: updatedTask });
+    }
+    if (body.action === "procurement_status") {
+      const requestId = String(body.requestId ?? "");
+      const nextStatus = String(body.status ?? "") as "requested" | "ordered" | "delivered" | "cancelled";
+      const transitions = { draft: ["requested", "cancelled"], requested: ["ordered", "cancelled"], ordered: ["delivered", "cancelled"], delivered: [], cancelled: [] } as const;
+      const procurement = (await db.select().from(procurementRequests).where(and(
+        eq(procurementRequests.id, requestId), eq(procurementRequests.projectId, id),
+      )).limit(1))[0];
+      if (!procurement) return Response.json({ error: "A beszerzési igény nem található." }, { status: 404 });
+      if (!(transitions[procurement.status] as readonly string[]).includes(nextStatus)) return Response.json({ error: "Ez a beszerzési állapotváltás nem engedélyezett." }, { status: 409 });
+      if (!hasProjectPermission(identity, true) && !["project_manager", "technical"].includes(membership?.role ?? "")) {
+        return Response.json({ error: "A beszerzés állapotát csak projektvezető vagy műszaki munkatárs módosíthatja." }, { status: 403 });
+      }
+      const now = new Date().toISOString();
+      const [updatedRequest] = await db.update(procurementRequests).set({ status: nextStatus, updatedAt: now }).where(eq(procurementRequests.id, requestId)).returning();
+      await db.insert(projectEvents).values({ projectId: id, actorEmail: identity.email, action: `procurement.${nextStatus}`, entityType: "procurement", entityId: requestId, detail: procurement.title, createdAt: now });
+      return Response.json({ procurement: updatedRequest });
     }
     if (!hasProjectPermission(identity, true) && membership?.role !== "project_manager") {
       return Response.json({ error: "A projekt állapotát csak a projektmenedzser módosíthatja." }, { status: 403 });
@@ -175,6 +198,73 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       });
       await db.insert(projectEvents).values({ projectId: id, actorEmail: identity.email, action: "member.assigned", entityType: "member", entityId: email, detail: role, createdAt: now });
       return Response.json({ member: { projectId: id, email, role, createdAt: now } }, { status: 201 });
+    }
+
+    if (action === "site_log") {
+      if (!hasProjectPermission(identity, true) && !["project_manager", "technical"].includes(membership?.role ?? "")) {
+        return Response.json({ error: "Építési naplót csak projektvezető vagy műszaki munkatárs rögzíthet." }, { status: 403 });
+      }
+      const logDate = String(body.logDate ?? "").trim();
+      const weather = String(body.weather ?? "").trim();
+      const workforce = Math.round(Number(body.workforce ?? -1));
+      const summary = String(body.summary ?? "").trim();
+      const blockers = String(body.blockers ?? "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(logDate) || !weather || !Number.isSafeInteger(workforce) || workforce < 0 || !summary) {
+        return Response.json({ error: "A nap, időjárás, létszám és elvégzett munka kötelező." }, { status: 400 });
+      }
+      if ((await db.select({ id: projectSiteLogs.id }).from(projectSiteLogs).where(and(
+        eq(projectSiteLogs.projectId, id), eq(projectSiteLogs.logDate, logDate),
+      )).limit(1))[0]) return Response.json({ error: "Erre a napra már készült építési napló." }, { status: 409 });
+      const [siteLog] = await db.insert(projectSiteLogs).values({ projectId: id, logDate, weather, workforce, summary, blockers, createdByEmail: identity.email, createdAt: now }).returning();
+      await db.insert(projectEvents).values({ projectId: id, actorEmail: identity.email, action: "site_log.created", entityType: "site_log", entityId: String(siteLog.id), detail: `${logDate} · ${summary}`, createdAt: now });
+      return Response.json({ siteLog }, { status: 201 });
+    }
+
+    if (action === "procurement") {
+      if (!hasProjectPermission(identity, true) && !["project_manager", "technical"].includes(membership?.role ?? "")) {
+        return Response.json({ error: "Beszerzési igényt csak projektvezető vagy műszaki munkatárs hozhat létre." }, { status: 403 });
+      }
+      const title = String(body.title ?? "").trim();
+      const category = String(body.category ?? "").trim();
+      const quantity = Math.round(Number(body.quantity ?? 0));
+      const unit = String(body.unit ?? "").trim();
+      const requiredBy = String(body.requiredBy ?? "").trim();
+      const budgetAmount = Math.round(Number(body.budgetAmount ?? 0));
+      const supplierPartnerId = body.supplierPartnerId ? Number(body.supplierPartnerId) : null;
+      if (!title || !category || !Number.isSafeInteger(quantity) || quantity <= 0 || !unit || !/^\d{4}-\d{2}-\d{2}$/.test(requiredBy)
+        || !Number.isSafeInteger(budgetAmount) || budgetAmount < 0) {
+        return Response.json({ error: "A megnevezés, kategória, pozitív mennyiség, egység, határidő és költségkeret kötelező." }, { status: 400 });
+      }
+      if (supplierPartnerId && !(await db.select().from(businessPartners).where(and(
+        eq(businessPartners.id, supplierPartnerId),
+        eq(businessPartners.workspaceId, process.env.CRM_WORKSPACE_ID ?? "imperial-live"),
+      )).limit(1))[0]) {
+        return Response.json({ error: "A kiválasztott beszállító nem található." }, { status: 404 });
+      }
+      const procurement = { id: `PO-${crypto.randomUUID().toUpperCase()}`, projectId: id, title, category, quantity, unit, requiredBy, budgetAmount, currency: "HUF", supplierPartnerId, status: "draft" as const, createdByEmail: identity.email, createdAt: now, updatedAt: now };
+      await db.batch([
+        db.insert(procurementRequests).values(procurement),
+        db.insert(projectEvents).values({ projectId: id, actorEmail: identity.email, action: "procurement.created", entityType: "procurement", entityId: procurement.id, detail: `${title} · ${quantity} ${unit} · ${budgetAmount} HUF`, createdAt: now }),
+      ]);
+      return Response.json({ procurement }, { status: 201 });
+    }
+
+    if (action === "partner") {
+      if (!hasProjectPermission(identity, true) && membership?.role !== "project_manager") return Response.json({ error: "Partnert csak a projektmenedzser rögzíthet." }, { status: 403 });
+      const name = String(body.name ?? "").trim();
+      const partnerType = String(body.partnerType ?? "supplier") as "subcontractor" | "supplier" | "designer" | "architect" | "b2b_partner";
+      const email = String(body.email ?? "").trim().toLowerCase() || null;
+      if (!name || !["subcontractor", "supplier", "designer", "architect", "b2b_partner"].includes(partnerType) || (email && !email.includes("@"))) {
+        return Response.json({ error: "A partner neve, típusa és érvényes email-címe szükséges." }, { status: 400 });
+      }
+      const identityKey = `${partnerType}:${name.toLocaleLowerCase("hu-HU").replace(/[^a-z0-9áéíóöőúüű]+/gi, "-")}`;
+      if ((await db.select({ id: businessPartners.id }).from(businessPartners).where(and(
+        eq(businessPartners.workspaceId, process.env.CRM_WORKSPACE_ID ?? "imperial-live"),
+        eq(businessPartners.identityKey, identityKey),
+      )).limit(1))[0]) return Response.json({ error: "Ez a partner már szerepel a partnertörzsben." }, { status: 409 });
+      const [partner] = await db.insert(businessPartners).values({ workspaceId: process.env.CRM_WORKSPACE_ID ?? "imperial-live", identityKey, partnerType, name, email, phone: String(body.phone ?? "").trim() || null, location: String(body.location ?? "").trim() || null, specialties: String(body.specialties ?? "").trim() || null, recordStatus: "prospect", matchConfidence: 100, metadataJson: JSON.stringify({ source: "manual", createdBy: identity.email }), createdAt: now, updatedAt: now }).returning();
+      await db.insert(businessAuditEvents).values({ actorEmail: identity.email, action: "business_partner.created", entityType: "business_partner", entityId: String(partner.id), detail: `${partnerType} · ${name}`, createdAt: now });
+      return Response.json({ partner }, { status: 201 });
     }
 
     return Response.json({ error: "Ismeretlen projektművelet." }, { status: 400 });

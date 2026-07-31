@@ -511,6 +511,40 @@ export const projectComments = sqliteTable("project_comments", {
   index("project_comments_created_idx").on(table.projectId, table.createdAt),
 ]);
 
+export const projectSiteLogs = sqliteTable("project_site_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  logDate: text("log_date").notNull(),
+  weather: text("weather").notNull(),
+  workforce: integer("workforce").notNull(),
+  summary: text("summary").notNull(),
+  blockers: text("blockers").notNull(),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("project_site_logs_date_idx").on(table.projectId, table.logDate),
+]);
+
+export const procurementRequests = sqliteTable("procurement_requests", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  category: text("category").notNull(),
+  quantity: integer("quantity").notNull(),
+  unit: text("unit").notNull(),
+  requiredBy: text("required_by").notNull(),
+  budgetAmount: integer("budget_amount").notNull(),
+  currency: text("currency").notNull(),
+  supplierPartnerId: integer("supplier_partner_id").references(() => businessPartners.id, { onDelete: "set null" }),
+  status: text("status", { enum: ["draft", "requested", "ordered", "delivered", "cancelled"] }).notNull(),
+  createdByEmail: text("created_by_email").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("procurement_requests_project_idx").on(table.projectId, table.status, table.requiredBy),
+  index("procurement_requests_supplier_idx").on(table.supplierPartnerId),
+]);
+
 export const projectChanges = sqliteTable("project_changes", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),

@@ -133,6 +133,9 @@ type ProjectWorkspace = {
   documents: Array<{ id: string; name: string; group: string; status: "draft" | "approval" | "verified"; currentVersion: number; updatedAt: string }>;
   members: Array<{ projectId: string; email: string; role: string; createdAt: string }>;
   events: Array<{ id: number; actorEmail: string; action: string; detail: string; createdAt: string }>;
+  siteLogs: Array<{ id: number; logDate: string; weather: string; workforce: number; summary: string; blockers: string; createdByEmail: string }>;
+  procurement: Array<{ id: string; title: string; category: string; quantity: number; unit: string; requiredBy: string; budgetAmount: number; supplierPartnerId: number | null; status: "draft" | "requested" | "ordered" | "delivered" | "cancelled" }>;
+  partners: Array<{ id: number; name: string; partnerType: string; email: string | null; location: string | null; specialties: string | null }>;
 };
 type Identity = {
   email: string;
@@ -2036,6 +2039,21 @@ function ProjectOperations({
   const [messageBody, setMessageBody] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState("project_manager");
+  const [siteDate, setSiteDate] = useState("");
+  const [siteWeather, setSiteWeather] = useState("");
+  const [siteWorkforce, setSiteWorkforce] = useState("0");
+  const [siteSummary, setSiteSummary] = useState("");
+  const [siteBlockers, setSiteBlockers] = useState("");
+  const [procurementTitle, setProcurementTitle] = useState("");
+  const [procurementCategory, setProcurementCategory] = useState("");
+  const [procurementQuantity, setProcurementQuantity] = useState("1");
+  const [procurementUnit, setProcurementUnit] = useState("db");
+  const [procurementRequiredBy, setProcurementRequiredBy] = useState("");
+  const [procurementBudget, setProcurementBudget] = useState("0");
+  const [procurementSupplier, setProcurementSupplier] = useState("");
+  const [partnerName, setPartnerName] = useState("");
+  const [partnerType, setPartnerType] = useState("supplier");
+  const [partnerEmail, setPartnerEmail] = useState("");
 
   const load = async (selectedId = projectId) => {
     if (!selectedId) { setWorkspace(null); return; }
@@ -2129,6 +2147,32 @@ function ProjectOperations({
           <div className="record-table">
             {workspace.tasks.map((task) => <article key={task.id}><div><small>{task.due}</small><strong>{task.title}</strong><span>{task.action}</span></div><div><small>Felelős</small><strong>{task.assignedToEmail || "Nincs kijelölve"}</strong><span>{task.status}</span></div><div className="row-actions">{task.status !== "completed" && <button onClick={() => patchAction({ action: "task_status", taskId: task.id, status: "completed" }, "A projektfeladat lezárult.")}>Lezárás</button>}<button onClick={() => setCommentEntityId(task.id)}>Megjegyzés</button></div></article>)}
           </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Építési napló</h2><p>Napi időjárás, helyszíni létszám, elvégzett munka és akadályok auditált rögzítése.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "site_log", logDate: siteDate, weather: siteWeather, workforce: Number(siteWorkforce), summary: siteSummary, blockers: siteBlockers }, "A napi építési napló rögzítve.")) { setSiteSummary(""); setSiteBlockers(""); } }}>
+            <div><label>Nap *<input type="date" value={siteDate} onChange={(event) => setSiteDate(event.target.value)} /></label><label>Időjárás *<input value={siteWeather} onChange={(event) => setSiteWeather(event.target.value)} placeholder="pl. napos, 24 °C" /></label><label>Helyszíni létszám *<input type="number" min="0" value={siteWorkforce} onChange={(event) => setSiteWorkforce(event.target.value)} /></label></div>
+            <label>Elvégzett munkák *<textarea value={siteSummary} onChange={(event) => setSiteSummary(event.target.value)} /></label>
+            <label>Akadályok / eltérések<textarea value={siteBlockers} onChange={(event) => setSiteBlockers(event.target.value)} /></label>
+            <button className="primary" disabled={!siteDate || !siteWeather || !siteSummary.trim()}>Napi napló rögzítése</button>
+          </form>
+          <div className="record-table">{workspace.siteLogs.map((log) => <article key={log.id}><div><small>{log.logDate} · {log.weather} · {log.workforce} fő</small><strong>{log.summary}</strong><span>{log.blockers ? `Akadály: ${log.blockers}` : "Nincs rögzített akadály"} · {log.createdByEmail}</span></div></article>)}</div>
+        </section>
+
+        <section className="panel">
+          <div className="section-title"><div><h2>Beszerzés és partnerek</h2><p>Igénytől a megrendelésen át a beérkezésig, költségkerettel és beszállítóval.</p></div></div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "procurement", title: procurementTitle, category: procurementCategory, quantity: Number(procurementQuantity), unit: procurementUnit, requiredBy: procurementRequiredBy, budgetAmount: Number(procurementBudget), supplierPartnerId: procurementSupplier || null }, "A beszerzési igény létrejött.")) setProcurementTitle(""); }}>
+            <div><label>Beszerzés tárgya *<input value={procurementTitle} onChange={(event) => setProcurementTitle(event.target.value)} /></label><label>Kategória *<input value={procurementCategory} onChange={(event) => setProcurementCategory(event.target.value)} /></label></div>
+            <div><label>Mennyiség *<input type="number" min="1" step="1" value={procurementQuantity} onChange={(event) => setProcurementQuantity(event.target.value)} /></label><label>Egység *<input value={procurementUnit} onChange={(event) => setProcurementUnit(event.target.value)} /></label><label>Szükséges eddig *<input type="date" value={procurementRequiredBy} onChange={(event) => setProcurementRequiredBy(event.target.value)} /></label></div>
+            <div><label>Költségkeret (HUF) *<input type="number" min="0" step="1" value={procurementBudget} onChange={(event) => setProcurementBudget(event.target.value)} /></label><label>Beszállító<select value={procurementSupplier} onChange={(event) => setProcurementSupplier(event.target.value)}><option value="">Még nincs kiválasztva</option>{workspace.partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name} · {partner.partnerType}</option>)}</select></label></div>
+            <button className="primary" disabled={!procurementTitle || !procurementCategory || !procurementRequiredBy || Number(procurementQuantity) <= 0}>Beszerzési igény létrehozása</button>
+          </form>
+          <div className="record-table">{workspace.procurement.map((request) => <article key={request.id}><div><small>{request.category} · szükséges: {request.requiredBy}</small><strong>{request.title}</strong><span>{request.quantity} {request.unit} · keret: {money(request.budgetAmount)} · {workspace.partners.find((partner) => partner.id === request.supplierPartnerId)?.name ?? "nincs beszállító"}</span></div><div><small>Állapot</small><strong>{request.status}</strong></div><div className="row-actions">{request.status === "draft" && <button onClick={() => patchAction({ action: "procurement_status", requestId: request.id, status: "requested" }, "A beszerzési igény ajánlatkérésre került.")}>Ajánlatkérés</button>}{request.status === "requested" && <button onClick={() => patchAction({ action: "procurement_status", requestId: request.id, status: "ordered" }, "A beszerzés megrendelve.")}>Megrendelve</button>}{request.status === "ordered" && <button onClick={() => patchAction({ action: "procurement_status", requestId: request.id, status: "delivered" }, "A beszerzés beérkezett.")}>Beérkezett</button>}</div></article>)}</div>
+          <form className="modal-form" onSubmit={async (event) => { event.preventDefault(); if (await postAction({ action: "partner", name: partnerName, partnerType, email: partnerEmail }, "Az új partner bekerült a partnertörzsbe.")) setPartnerName(""); }}>
+            <div><label>Új partner neve *<input value={partnerName} onChange={(event) => setPartnerName(event.target.value)} /></label><label>Típus<select value={partnerType} onChange={(event) => setPartnerType(event.target.value)}><option value="supplier">Beszállító</option><option value="subcontractor">Alvállalkozó</option><option value="designer">Tervező</option><option value="architect">Építész</option><option value="b2b_partner">B2B partner</option></select></label><label>Email<input type="email" value={partnerEmail} onChange={(event) => setPartnerEmail(event.target.value)} /></label></div>
+            <button className="secondary" disabled={!partnerName.trim()}>Partner rögzítése</button>
+          </form>
         </section>
 
         <section className="panel">

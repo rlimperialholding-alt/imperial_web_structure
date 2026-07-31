@@ -65,10 +65,19 @@ test("the internal project workspace persists assignments, tasks, comments and m
   assert.match(source, /action === "comment"/);
   assert.match(source, /action === "message"/);
   assert.match(source, /action === "member"/);
+  assert.match(source, /action === "site_log"/);
+  assert.match(source, /action === "procurement"/);
+  assert.match(source, /body\.action === "procurement_status"/);
+  assert.match(source, /action === "partner"/);
   assert.match(source, /Csak a felelős vagy a projektmenedzser/);
   assert.match(page, /Projektmunkatér/);
   assert.match(page, /Belső projektüzenetek/);
+  assert.match(page, /Építési napló/);
+  assert.match(page, /Beszerzés és partnerek/);
   assert.match(migration, /CREATE TABLE `project_comments`/);
+  const fieldMigration = await readFile("drizzle/0014_field_and_procurement.sql", "utf8");
+  assert.match(fieldMigration, /CREATE TABLE `project_site_logs`/);
+  assert.match(fieldMigration, /CREATE TABLE `procurement_requests`/);
 });
 
 test("imported customers are backfilled without inventing verified billing data", async () => {
