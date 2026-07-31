@@ -2073,9 +2073,17 @@ function ProjectOperations({
   };
 
   useEffect(() => {
-    if (!projectId && projects[0]?.id) setProjectId(projects[0].id);
+    const defaultProjectId = projects[0]?.id;
+    if (projectId || !defaultProjectId) return;
+    const timer = window.setTimeout(() => setProjectId(defaultProjectId), 0);
+    return () => window.clearTimeout(timer);
   }, [projectId, projects]);
-  useEffect(() => { void load(projectId); }, [projectId]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(projectId), 0);
+    return () => window.clearTimeout(timer);
+    // `load` intentionally remains local because action handlers reload the same workspace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   const postAction = async (body: Record<string, unknown>, success: string) => {
     if (!projectId) return false;
