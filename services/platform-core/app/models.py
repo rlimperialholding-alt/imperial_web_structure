@@ -1154,6 +1154,7 @@ class DevelopmentDiscoveryRecord(Base):
     status: Mapped[str] = mapped_column(String(40), default="pending_review", index=True)
     requested_by: Mapped[str | None] = mapped_column(String(255))
     reviewed_by: Mapped[str | None] = mapped_column(String(255))
+    review_note: Mapped[str | None] = mapped_column(Text)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

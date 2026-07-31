@@ -428,6 +428,7 @@ class DevelopmentDiscoveryReviewIn(BaseModel):
     status: str
     reviewed_by: str
     exception_approved: bool = False
+    review_note: str | None = None
 
 
 class ContractGenerateIn(BaseModel):

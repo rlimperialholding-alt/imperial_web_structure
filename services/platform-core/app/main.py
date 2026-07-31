@@ -1695,6 +1695,38 @@ def development_governance_create(
     return RedirectResponse("/development-governance", status_code=303)
 
 
+@app.post("/development-governance/{discovery_id}/review")
+async def development_governance_review(
+    discovery_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    form = await request.form()
+    exception_approved = form.get("exception_approved") is not None
+    if exception_approved and user.role != "owner":
+        raise HTTPException(403, "Új fejlesztési kivételt csak tulajdonos hagyhat jóvá.")
+    try:
+        review_discovery(
+            db,
+            discovery_id,
+            DevelopmentDiscoveryReviewIn(
+                status=str(form.get("status") or ""),
+                reviewed_by=user.email,
+                exception_approved=exception_approved,
+                review_note=str(form.get("review_note") or ""),
+            ),
+            actor=user.email,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "A discovery rekord nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/development-governance#discovery-{discovery_id}", status_code=303)
+
+
 @app.get("/api/development-discoveries", dependencies=[Depends(require_api_token)])
 def api_development_discoveries(db: Session = Depends(get_db)):
     return list_discoveries(db)
