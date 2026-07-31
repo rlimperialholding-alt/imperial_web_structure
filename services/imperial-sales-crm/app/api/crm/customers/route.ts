@@ -34,7 +34,8 @@ export async function POST(request: Request) {
     const email = normalizeEmail(body.email ?? lead?.email);
     const phone = String(body.phone ?? lead?.phone ?? "").trim();
     const billingAddress = String(body.billingAddress ?? "").trim();
-    const customerType = body.customerType === "company" ? "company" : "person";
+    const customerType: "company" | "person" =
+      body.customerType === "company" ? "company" : "person";
     if (!name || !email || !email.includes("@") || !phone || !billingAddress) {
       return Response.json(
         { error: "A név, érvényes e-mail, telefonszám és számlázási cím kötelező." },
