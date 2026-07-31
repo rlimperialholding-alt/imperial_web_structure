@@ -101,8 +101,9 @@ export async function POST(request: Request) {
     const identity = await requireInternalCrmIdentity(request);
     if (!canWriteFinance(identity)) return Response.json({ error: "Nincs pénzügyi írási jogosultságod." }, { status: 403 });
     const body = await request.json() as Record<string, unknown>;
-    const direction = body.direction === "inflow" ? "inflow" : body.direction === "outflow" ? "outflow" : null;
-    const status = body.status === "due" ? "due" : "planned";
+    const direction: "inflow" | "outflow" | null =
+      body.direction === "inflow" ? "inflow" : body.direction === "outflow" ? "outflow" : null;
+    const status: "due" | "planned" = body.status === "due" ? "due" : "planned";
     const amount = Math.round(Number(body.amount ?? 0));
     const dueDate = String(body.dueDate ?? "").trim();
     const category = String(body.category ?? "").trim();
