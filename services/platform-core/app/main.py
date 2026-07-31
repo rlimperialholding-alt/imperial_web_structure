@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -51,8 +53,13 @@ from .models import (
     WorkspaceDocument,
     PartnerEvidence,
     PartnerFieldAccess,
+    CampaignStrategyReviewRecord,
+    ContentAssetRecord,
+    CopyBriefRecord,
+    CopySourceRecord,
 )
-from .copy_gate.models import ApprovalSubmission, AssemblySubmission, ContentAssetCreateRequest, CopyQualityRequest, CopySourceIn, CreativeDirectorReviewSubmission, FourGateSubmission, LiveReviewSubmission, PerformanceSubmission, MandatoryCopyGateReviewSubmission, ReleaseReviewSubmission, StrategyReviewSubmission, VisualProductionSubmission
+from .copy_gate.models import ApprovalSubmission, AssemblySubmission, ContentAsset, ContentAssetCreateRequest, CopyBrief, CopyQualityRequest, CopySourceIn, CreativeDirectorReviewSubmission, FourGateSubmission, LiveReviewSubmission, PerformanceSubmission, MandatoryCopyGateReviewSubmission, ReleaseReviewSubmission, StrategyReviewSubmission, VisualProductionSubmission
+from .copy_gate.orchestrator import GENERATION_STAGES
 from .schemas import (
     ArtifactIn,
     CalculationRequest,
@@ -116,7 +123,7 @@ from .services.tender_mail import add_canonical_partner_recipients, add_recipien
 from .services.pilots import run_all_pilots, run_pilot_scenario
 from .services.itep_finance import ItepFinanceError, incoming_invoices
 from .services.releases import add_artifact, create_release, release_gate
-from .services.content_quality import assemble_publication_bundle, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
+from .services.content_quality import assemble_publication_bundle, create_content_asset, create_copy_brief, publish_content_asset, record_approval, record_creative_director_review, record_mandatory_copy_gate_review, record_live_publication_review, record_performance_metric, record_release_review, record_strategy_review, register_copy_source, review_copy_source, rollback_content_asset, run_copy_quality, submit_four_gates, submit_visual_production, validate_copy_brief
 from .services.technical_products import create_case, decide_case, get_case, list_cases, review_gate, submit_case
 from .demo_runtime import DemoRuntimeError, demo_runtime
 
@@ -252,7 +259,7 @@ def api_content_quality_brief_create(payload: dict, db: Session = Depends(get_db
 
 
 @app.post("/api/content-quality/briefs/{copy_brief_id}/strategy-review")
-def api_content_quality_strategy_review(copy_brief_id: str, payload: StrategyReviewSubmission, user: User = Depends(require_role("owner", "admin", "marketing_editor")), db: Session = Depends(get_db)):
+def api_content_quality_strategy_review(copy_brief_id: str, payload: StrategyReviewSubmission, user: User = Depends(require_role("owner", "managing-director", "marketing", "platform-admin")), db: Session = Depends(get_db)):
     try:
         row = record_strategy_review(db, copy_brief_id, payload, actor=user.email)
     except KeyError as exc:
@@ -315,7 +322,7 @@ def api_content_quality_four_gates(asset_id: str, payload: FourGateSubmission, d
 
 
 @app.post("/api/content-quality/assets/{asset_id}/editorial-approval")
-def api_content_quality_editorial_approval(asset_id: str, payload: ApprovalSubmission, user: User = Depends(require_role("owner", "admin", "marketing_editor")), db: Session = Depends(get_db)):
+def api_content_quality_editorial_approval(asset_id: str, payload: ApprovalSubmission, user: User = Depends(require_role("owner", "managing-director", "marketing", "platform-admin")), db: Session = Depends(get_db)):
     try:
         row = record_approval(db, asset_id, "HUMAN_EDITORIAL", payload, actor=user.email)
     except KeyError as exc:
@@ -370,7 +377,7 @@ def api_content_quality_assembly(asset_id: str, payload: AssemblySubmission, db:
 
 
 @app.post("/api/content-quality/assets/{asset_id}/release-review")
-def api_content_quality_release_review(asset_id: str, payload: ReleaseReviewSubmission, user: User = Depends(require_role("owner", "admin", "marketing_editor")), db: Session = Depends(get_db)):
+def api_content_quality_release_review(asset_id: str, payload: ReleaseReviewSubmission, user: User = Depends(require_role("owner", "managing-director", "marketing", "platform-admin")), db: Session = Depends(get_db)):
     try:
         row = record_release_review(db, asset_id, payload, actor=user.email)
     except KeyError as exc:
@@ -391,7 +398,7 @@ def api_content_quality_publish(asset_id: str, user: User = Depends(require_role
 
 
 @app.post("/api/content-quality/assets/{asset_id}/live-review")
-def api_content_quality_live_review(asset_id: str, payload: LiveReviewSubmission, user: User = Depends(require_role("owner", "admin", "marketing_editor")), db: Session = Depends(get_db)):
+def api_content_quality_live_review(asset_id: str, payload: LiveReviewSubmission, user: User = Depends(require_role("owner", "managing-director", "marketing", "designer", "platform-admin")), db: Session = Depends(get_db)):
     try:
         return record_live_publication_review(db, asset_id, payload, actor=user.email)
     except KeyError as exc:
@@ -418,6 +425,279 @@ def api_content_quality_performance(asset_id: str, payload: PerformanceSubmissio
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"metric_id": row.metric_id, "asset_id": row.asset_id}
+
+
+_MARKETING_OPERATORS = {"marketing", "owner", "managing-director", "platform-admin"}
+_MARKETING_APPROVERS = {"owner", "managing-director", "platform-admin"}
+_COPY_SOURCE_TYPES = (
+    "brand_master", "brand_voice_profile", "conversion_guide", "design_system",
+    "offer_version", "price_snapshot", "terms_version", "channel_rules",
+    "product", "house_plan", "claim", "proof", "visual_rights",
+)
+
+
+def _form_values(value: object) -> list[str]:
+    return [item.strip() for item in str(value or "").replace(",", "\n").splitlines() if item.strip()]
+
+
+def _marketing_payload(value: str) -> dict:
+    try:
+        payload = json.loads(value or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "A kiegészítő forrásadat nem érvényes JSON.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "A kiegészítő forrásadatnak objektumnak kell lennie.")
+    return payload
+
+
+@app.get("/marketing", response_class=HTMLResponse)
+def marketing_workspace(request: Request, db: Session = Depends(get_db)):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    sources = list(db.scalars(select(CopySourceRecord).order_by(CopySourceRecord.id.desc()).limit(250)))
+    brief_rows = list(db.scalars(select(CopyBriefRecord).order_by(CopyBriefRecord.created_at.desc()).limit(150)))
+    asset_rows = list(db.scalars(select(ContentAssetRecord).order_by(ContentAssetRecord.updated_at.desc()).limit(150)))
+    briefs = []
+    for row in brief_rows:
+        data = json.loads(row.brief_json or "{}")
+        briefs.append({"row": row, "data": data})
+    assets = []
+    for row in asset_rows:
+        data = json.loads(row.content_json or "{}")
+        trace = json.loads(row.generation_trace_json or "{}")
+        assets.append({"row": row, "data": data, "trace": trace})
+    return templates.TemplateResponse(
+        request=request,
+        name="marketing.html",
+        context={
+            "user": user,
+            "active": "marketing",
+            "sources": sources,
+            "briefs": briefs,
+            "assets": assets,
+            "source_types": _COPY_SOURCE_TYPES,
+            "can_operate": user.role in _MARKETING_OPERATORS,
+            "can_approve_source": user.role in _MARKETING_APPROVERS,
+        },
+    )
+
+
+@app.post("/marketing/sources")
+async def marketing_source_create(request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in _MARKETING_OPERATORS:
+        raise HTTPException(403, "Nincs marketing forráskezelési jogosultság.")
+    form = await request.form()
+    payload = _marketing_payload(str(form.get("payload_json") or "{}"))
+    record_id = str(form.get("record_id") or "").strip()
+    if record_id:
+        payload.setdefault("record_id", record_id)
+    addressing = str(form.get("addressing") or "").strip()
+    if addressing:
+        payload.setdefault("addressing", addressing)
+    try:
+        source = CopySourceIn(
+            source_key=str(form.get("source_key") or ""),
+            source_type=str(form.get("source_type") or ""),
+            brand_id=str(form.get("brand_id") or ""),
+            page_id=str(form.get("page_id") or "") or None,
+            campaign_id=str(form.get("campaign_id") or "") or None,
+            asset_type=str(form.get("asset_type") or "") or None,
+            version=str(form.get("version") or ""),
+            priority=int(str(form.get("priority") or "100")),
+            status="draft",
+            approved=False,
+            valid_from=str(form.get("valid_from") or "") or None,
+            valid_until=str(form.get("valid_until") or "") or None,
+            source_url=str(form.get("source_url") or "") or None,
+            payload=payload,
+        )
+        row = register_copy_source(db, source, actor=user.email)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return RedirectResponse(f"/marketing#source-{row.id}", status_code=303)
+
+
+@app.post("/marketing/sources/{source_id}/review")
+async def marketing_source_review(source_id: int, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in _MARKETING_APPROVERS:
+        raise HTTPException(403, "Forrás jóváhagyásához vezetői jogosultság szükséges.")
+    form = await request.form()
+    try:
+        row = review_copy_source(
+            db,
+            source_id,
+            str(form.get("decision") or ""),
+            str(form.get("note") or ""),
+            actor=user.email,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, "A forrásverzió nem található.") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#source-{row.id}", status_code=303)
+
+
+@app.post("/marketing/briefs")
+async def marketing_brief_create(request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in _MARKETING_OPERATORS:
+        raise HTTPException(403, "Nincs kampánybrief-kezelési jogosultság.")
+    form = await request.form()
+    payload = {
+        "copy_brief_id": str(form.get("copy_brief_id") or ""),
+        "brand_id": str(form.get("brand_id") or ""),
+        "asset_type": str(form.get("asset_type") or ""),
+        "channel": str(form.get("channel") or ""),
+        "page_id": str(form.get("page_id") or "") or None,
+        "campaign_id": str(form.get("campaign_id") or "") or None,
+        "campaign_objective": str(form.get("campaign_objective") or ""),
+        "primary_conversion": str(form.get("primary_conversion") or ""),
+        "target_persona_id": str(form.get("target_persona_id") or ""),
+        "awareness_level": str(form.get("awareness_level") or ""),
+        "market_sophistication_level": str(form.get("market_sophistication_level") or ""),
+        "core_problem": str(form.get("core_problem") or ""),
+        "desired_outcome": str(form.get("desired_outcome") or ""),
+        "primary_promise": str(form.get("primary_promise") or ""),
+        "unique_mechanism": str(form.get("unique_mechanism") or ""),
+        "offer_version_id": str(form.get("offer_version_id") or ""),
+        "price_snapshot_id": str(form.get("price_snapshot_id") or ""),
+        "terms_version_id": str(form.get("terms_version_id") or ""),
+        "claim_ids": _form_values(form.get("claim_ids")),
+        "proof_ids": _form_values(form.get("proof_ids")),
+        "product_id": str(form.get("product_id") or "") or None,
+        "house_plan_id": str(form.get("house_plan_id") or "") or None,
+        "primary_objection_ids": _form_values(form.get("primary_objection_ids")),
+        "secondary_objection_ids": _form_values(form.get("secondary_objection_ids")),
+        "risk_reversal": str(form.get("risk_reversal") or ""),
+        "urgency_reason": str(form.get("urgency_reason") or "") or None,
+        "scarcity_reason": str(form.get("scarcity_reason") or "") or None,
+        "primary_cta_type": str(form.get("primary_cta_type") or ""),
+        "secondary_cta_type": str(form.get("secondary_cta_type") or "") or None,
+        "brand_voice_profile": str(form.get("brand_voice_profile") or ""),
+        "required_slogan": str(form.get("required_slogan") or ""),
+        "required_slogan_version": str(form.get("required_slogan_version") or ""),
+        "forbidden_phrases": _form_values(form.get("forbidden_phrases")),
+        "required_keywords": _form_values(form.get("required_keywords")),
+        "landing_message_match_id": str(form.get("landing_message_match_id") or ""),
+        "monthly_promotion_id": str(form.get("monthly_promotion_id") or "") or None,
+        "monthly_promotion_copy_required": form.get("monthly_promotion_copy_required") is not None,
+        "valid_from": str(form.get("valid_from") or ""),
+        "valid_until": str(form.get("valid_until") or ""),
+    }
+    try:
+        row = create_copy_brief(db, payload, actor=user.email)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#brief-{row.copy_brief_id}", status_code=303)
+
+
+@app.post("/marketing/briefs/{copy_brief_id}/strategy-review")
+async def marketing_strategy_review(copy_brief_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in _MARKETING_OPERATORS:
+        raise HTTPException(403, "Nincs stratégiai review jogosultság.")
+    form = await request.form()
+    try:
+        payload = StrategyReviewSubmission(
+            decision=str(form.get("decision") or ""),
+            strategist_run_id=str(form.get("strategist_run_id") or ""),
+            reviewer_run_id=f"STR-REV-{uuid4().hex[:12].upper()}",
+            reviewer_identity=user.email,
+            objective_score=int(str(form.get("objective_score") or "0")),
+            audience_score=int(str(form.get("audience_score") or "0")),
+            offer_score=int(str(form.get("offer_score") or "0")),
+            message_architecture_score=int(str(form.get("message_architecture_score") or "0")),
+            channel_plan_score=int(str(form.get("channel_plan_score") or "0")),
+            brand_fit_score=int(str(form.get("brand_fit_score") or "0")),
+            feasibility_score=int(str(form.get("feasibility_score") or "0")),
+            tactical_plan=str(form.get("tactical_plan") or ""),
+            asset_plan=_form_values(form.get("asset_plan")),
+            findings=_form_values(form.get("findings")),
+        )
+        record_strategy_review(db, copy_brief_id, payload, actor=user.email)
+    except KeyError as exc:
+        raise HTTPException(404, "A CopyBrief nem található.") from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#brief-{copy_brief_id}", status_code=303)
+
+
+@app.post("/marketing/assets")
+async def marketing_asset_create(request: Request, db: Session = Depends(get_db)):
+    user = require_session_user(request, db)
+    if user.role not in _MARKETING_OPERATORS:
+        raise HTTPException(403, "Nincs tartalom-előállítási jogosultság.")
+    form = await request.form()
+    copy_brief_id = str(form.get("copy_brief_id") or "")
+    brief_row = db.get(CopyBriefRecord, copy_brief_id)
+    if not brief_row:
+        raise HTTPException(404, "A CopyBrief nem található.")
+    try:
+        brief = CopyBrief.model_validate_json(brief_row.brief_json)
+        title = str(form.get("title") or "")
+        body = str(form.get("body") or "")
+        cta = str(form.get("cta") or "")
+        asset = ContentAsset(
+            asset_id=str(form.get("asset_id") or ""),
+            title=title,
+            body=body,
+            cta=cta,
+            cta_type_used=brief.primary_cta_type,
+            slogan=str(form.get("slogan") or brief.required_slogan),
+            slogan_version_used=brief.required_slogan_version,
+            detected_brand_ids=[brief.brand_id],
+            claim_ids_used=_form_values(form.get("claim_ids_used")) or brief.claim_ids,
+            proof_ids_used=_form_values(form.get("proof_ids_used")) or brief.proof_ids,
+            objection_ids_handled=_form_values(form.get("objection_ids_handled")) or brief.primary_objection_ids,
+            required_keywords_used=_form_values(form.get("required_keywords_used")) or brief.required_keywords,
+            offer_version_id_used=brief.offer_version_id,
+            price_snapshot_id_used=brief.price_snapshot_id,
+            terms_version_id_used=brief.terms_version_id,
+            landing_message_match_id_used=brief.landing_message_match_id,
+            monthly_promotion_id_used=brief.monthly_promotion_id,
+            monthly_promotion_copy_text=str(form.get("monthly_promotion_copy_text") or "") or None,
+            factual_claims=_form_values(form.get("factual_claims")),
+            price_mentions=_form_values(form.get("price_mentions")),
+            deadline_mentions=_form_values(form.get("deadline_mentions")),
+            condition_mentions=_form_values(form.get("condition_mentions")),
+            action_risk_level=int(str(form.get("action_risk_level") or "0")),
+        )
+        copy_mode = str(form.get("copy_mode") or "original_concept")
+        trace = {
+            "stages": list(GENERATION_STAGES),
+            "brand_id": brief.brand_id,
+            "generation_run_id": f"GEN-{uuid4().hex[:16].upper()}",
+            "copy_mode": copy_mode,
+            "copy_fingerprint": hashlib.sha256(f"{title}\n{body}\n{cta}".encode("utf-8")).hexdigest(),
+            "copy_concept_id": str(form.get("copy_concept_id") or ""),
+            "copy_architecture_id": str(form.get("copy_architecture_id") or ""),
+            "copy_structure_signature": str(form.get("copy_structure_signature") or ""),
+            "source_text_usage_ratio": float(str(form.get("source_text_usage_ratio") or "0")),
+            "creative_quality_benchmark_id": "prefab-facebook-etalon-v1",
+            "creative_rationale": str(form.get("creative_rationale") or ""),
+            "introduces_new_factual_claims": form.get("introduces_new_factual_claims") is not None,
+            "human_fact_review_required": form.get("human_fact_review_required") is not None,
+            "meaning_preservation_checked": form.get("meaning_preservation_checked") is not None,
+            "source_prevalidation_requested": False,
+            "consumer_promise_plain_language": brief.primary_promise,
+            "promise_reason_or_mechanism": brief.unique_mechanism,
+            "offer_terms_plain_language": brief.risk_reversal,
+            "cta_next_step_plain_language": cta,
+        }
+        row = create_content_asset(
+            db,
+            asset,
+            copy_brief_id=copy_brief_id,
+            project_id=str(form.get("project_id") or "") or None,
+            generation_trace=trace,
+            actor=user.email,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return RedirectResponse(f"/marketing#asset-{row.asset_id}", status_code=303)
 
 
 @app.get("/health/live")

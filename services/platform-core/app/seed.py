@@ -449,6 +449,30 @@ def seed_content_quality_sources(db: Session) -> None:
         )
 
 
+def retire_seeded_content_quality_sources(db: Session) -> None:
+    """Fail closed in production: the synthetic pilot registry is never authoritative."""
+    seeded_versions = {
+        ("imperial-brand-master", "1.0"),
+        ("imperial-brand-voice", "1.0"),
+        ("imperial-conversion-architecture", "1.5"),
+        ("imperial-full-design-system", "1.1"),
+        ("imperial-channel-rules", "1.0"),
+        ("OFF-IMP-V1", "1.0"),
+        ("PS-IMP-2026-07", "2026-07"),
+        ("TV-IMP-V1", "1.0"),
+        ("HP-IMP-126", "3"),
+        ("CLM-IMP-FIXED-SCOPE", "1.0"),
+        ("PRF-IMP-CONTRACT", "1.0"),
+        ("VIS-IMP-126-HERO", "1.0"),
+    }
+    pilot_url = "https://drive.google.com/drive/folders/0AGVzuRnGAaYZUk9PVA"
+    rows = db.scalars(select(CopySourceRecord).where(CopySourceRecord.source_url == pilot_url)).all()
+    for row in rows:
+        if (row.source_key, row.version) in seeded_versions:
+            row.status = "retired"
+            row.approved = False
+
+
 def seed_database(db: Session) -> None:
     demo_emails = {
         role.id: (
@@ -576,7 +600,10 @@ def seed_database(db: Session) -> None:
         ))
     seed_canonical_discoveries(db, MODULES)
     seed_commercial_integration(db)
-    seed_content_quality_sources(db)
+    if settings.demo_runtime_enabled:
+        seed_content_quality_sources(db)
+    else:
+        retire_seeded_content_quality_sources(db)
     seed_workspace_demo(db)
     seed_operations_demo(db)
     db.commit()

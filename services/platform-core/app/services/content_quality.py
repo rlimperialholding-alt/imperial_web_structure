@@ -253,6 +253,38 @@ def register_copy_source(db: Session, source: CopySourceIn, *, actor: str) -> Co
     return row
 
 
+def review_copy_source(
+    db: Session,
+    source_id: int,
+    decision: str,
+    note: str,
+    *,
+    actor: str,
+) -> CopySourceRecord:
+    row = db.get(CopySourceRecord, source_id)
+    if not row:
+        raise KeyError(source_id)
+    if decision not in {"approved", "retired"}:
+        raise ValueError("A forrásdöntés csak approved vagy retired lehet.")
+    if decision == "retired" and len(note.strip()) < 5:
+        raise ValueError("A forrás visszavonásának indoklása kötelező.")
+    before = {"status": row.status, "approved": row.approved}
+    row.status = decision
+    row.approved = decision == "approved"
+    audit(
+        db,
+        actor=actor,
+        action=f"copy_source_{decision}",
+        entity_type="copy_source",
+        entity_id=f"{row.source_key}@{row.version}",
+        before=before,
+        after={"status": row.status, "approved": row.approved, "note": note.strip()},
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def _active(record: CopySourceRecord, now: datetime) -> bool:
     valid_from = (
         record.valid_from.replace(tzinfo=UTC)
@@ -490,6 +522,8 @@ def record_strategy_review(
         raise ValueError(
             f"Stratégiai review nem rögzíthető ebből az állapotból: {brief_row.status}"
         )
+    if brief_row.created_by.strip().lower() == actor.strip().lower():
+        raise ValueError("A négy szem elve miatt a brief létrehozója nem végezheti a stratégiai jóváhagyást.")
     if db.scalar(
         select(CampaignStrategyReviewRecord).where(
             CampaignStrategyReviewRecord.copy_brief_id == copy_brief_id

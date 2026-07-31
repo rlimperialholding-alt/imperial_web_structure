@@ -26,8 +26,8 @@ def _role(
 
 
 ROLE_DEFINITIONS = (
-    _role("owner", "Tulajdonos", "TU", "workspace executive-dashboard control-center integration-control-room completion-audit financial-control finance-intelligence crm project-control digital-project-managers pm-cockpit operations-workspace housebuild-agent plotcheck buildconfig plancheck"),
-    _role("managing-director", "Ügyvezető", "ÜV", "workspace executive-dashboard control-center crm project-control digital-project-managers pm-cockpit operations-workspace smart-calendar financial-control finance-intelligence procurement document-evidence workflow-center housebuild-agent plotcheck buildconfig plancheck"),
+    _role("owner", "Tulajdonos", "TU", "workspace executive-dashboard control-center integration-control-room completion-audit financial-control finance-intelligence crm project-control digital-project-managers pm-cockpit operations-workspace housebuild-agent plotcheck buildconfig plancheck marketing-control campaign-factory content-factory claim-registry website-content-control"),
+    _role("managing-director", "Ügyvezető", "ÜV", "workspace executive-dashboard control-center crm project-control digital-project-managers pm-cockpit operations-workspace smart-calendar financial-control finance-intelligence procurement document-evidence workflow-center housebuild-agent plotcheck buildconfig plancheck marketing-control campaign-factory content-factory claim-registry website-content-control"),
     _role("marketing", "Marketing", "MK", "workspace marketing-control campaign-factory content-factory claim-registry website-content-control lead-intelligence b2b-project-intake housematch housevision crm answer-center"),
     _role("technical-prep", "Műszaki előkészítő", "ME", "workspace house-catalog housebuild-agent housematch plotcheck buildconfig plancheck engineering-workspace document-evidence project-control"),
     _role("sales", "Értékesítő", "ÉR", "workspace crm sales housematch plotcheck buildconfig booking-engine reservation-engine contract-generator my-imperial"),
@@ -55,6 +55,7 @@ PAGE_ACCESS = (
     ("/imports", ("import-center",)),
     ("/experience", ("housematch", "buildconfig")),
     ("/technical", ("housebuild-agent", "plotcheck", "buildconfig", "plancheck")),
+    ("/marketing", ("marketing-control", "campaign-factory", "content-factory")),
     ("/tendermail", ("tendermail",)),
     ("/commercial", ("contract-generator", "change-control")),
     ("/exceptions", ("control-center", "executive-dashboard")),
