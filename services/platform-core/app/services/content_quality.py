@@ -41,6 +41,7 @@ from ..copy_gate.orchestrator import (
     validate_copy_variation_trace,
     validate_visual_variant_trace,
 )
+from ..copy_gate.promotions import resolve_monthly_promotion
 from ..models import (
     CampaignStrategyReviewRecord,
     ContentApprovalRecord,
@@ -395,6 +396,29 @@ def resolve_canonical_sources(
     )
 
 
+def _enrich_monthly_promotion_sources(
+    sources: CanonicalSources,
+    brief: CopyBrief,
+    *,
+    evaluated_on: date,
+) -> tuple[CanonicalSources, str]:
+    requirement = resolve_monthly_promotion(brief.brand_id, on_date=evaluated_on)
+    source_versions = dict(sources.source_versions)
+    source_versions["monthly_promotion"] = (
+        f"{requirement.promotion_id or 'none'}@{evaluated_on.isoformat()}"
+        f"#{requirement.status.value}"
+    )
+    enriched = sources.model_copy(
+        update={
+            "source_versions": source_versions,
+            "monthly_promotion_id": requirement.promotion_id,
+            "monthly_promotion_copy_required": requirement.copy_required,
+            "monthly_promotion_publication_allowed": requirement.publication_allowed,
+        }
+    )
+    return enriched, _hash(source_versions)
+
+
 def create_copy_brief(db: Session, payload: dict[str, Any], *, actor: str) -> CopyBriefRecord:
     validation = validate_copy_brief(payload)
     if not validation["valid"]:
@@ -598,8 +622,14 @@ def run_copy_quality(
         raise ValueError("A CopyBrief rekord hiányzik.")
     brief = CopyBrief.model_validate_json(brief_row.brief_json)
     content = ContentAsset.model_validate_json(asset_row.content_json)
+    review_date = evaluated_on or utcnow().date()
     sources, snapshot_hash = resolve_canonical_sources(
         db, brief, visual_asset_ids=content.visual_asset_ids
+    )
+    sources, snapshot_hash = _enrich_monthly_promotion_sources(
+        sources,
+        brief,
+        evaluated_on=review_date,
     )
     generation_trace = json.loads(asset_row.generation_trace_json or "{}")
     if editorial_review.generation_run_id != generation_trace.get("generation_run_id"):
@@ -621,7 +651,7 @@ def run_copy_quality(
             sources=sources,
             asset=content,
             editorial_review=editorial_review,
-            evaluated_on=evaluated_on or utcnow().date(),
+            evaluated_on=review_date,
         )
     )
     run_id = f"CQR-{uuid.uuid4().hex[:16].upper()}"

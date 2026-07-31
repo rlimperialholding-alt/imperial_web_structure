@@ -16,6 +16,7 @@ from app.copy_gate.promotions import (
     load_monthly_promotion_registry,
     resolve_monthly_promotion,
 )
+from app.services.content_quality import _enrich_monthly_promotion_sources
 
 
 def finding_codes(result) -> set[str]:
@@ -125,6 +126,30 @@ def test_approved_promotions_are_publishable_only_inside_the_august_window():
         assert inside_window.copy_required is True
         assert inside_window.publication_allowed is True
         assert inside_window.blocking_reasons == []
+
+
+def test_quality_source_snapshot_includes_active_monthly_promotion():
+    brief = imperial_brief().model_copy(
+        update={
+            "brand_id": "prefab",
+            "monthly_promotion_id": "PROMO-PREFAB-2026-08",
+            "monthly_promotion_copy_required": True,
+        }
+    )
+
+    sources, snapshot_hash = _enrich_monthly_promotion_sources(
+        canonical_sources(),
+        brief,
+        evaluated_on=date(2026, 8, 1),
+    )
+
+    assert sources.monthly_promotion_id == "PROMO-PREFAB-2026-08"
+    assert sources.monthly_promotion_copy_required is True
+    assert sources.monthly_promotion_publication_allowed is True
+    assert sources.source_versions["monthly_promotion"].startswith(
+        "PROMO-PREFAB-2026-08@2026-08-01#"
+    )
+    assert len(snapshot_hash) == 64
 
 
 def test_copy_gate_accepts_first_block_placement_when_approvals_are_active():
