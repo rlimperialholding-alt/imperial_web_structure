@@ -54,3 +54,12 @@ test("the customer ChangeControl view does not expose an internal margin percent
   assert.match(source, /BELSŐ KONTROLL/);
   assert.match(source, /jóváhagyás nélkül nincs végrehajtás/i);
 });
+
+test("MyImperial fails closed instead of showing pilot data after an API error", async () => {
+  const source = await readFile("app/myimperial/page.tsx", "utf8");
+  assert.match(source, /setLiveData\("error"\)/);
+  assert.match(source, /liveData !== "live"/);
+  assert.match(source, /nem jelenítünk meg mintaadatokat/);
+  assert.doesNotMatch(source, /setLiveData\("demo"\)/);
+  assert.doesNotMatch(source, /PILOT \/ BEMUTATÓ/);
+});

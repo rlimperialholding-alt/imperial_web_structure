@@ -446,7 +446,13 @@ def api_auth_session(user: User = Depends(require_session_user)):
     }
 
 
+def require_demo_runtime() -> None:
+    if not settings.demo_runtime_enabled:
+        raise HTTPException(404, "Demo runtime is disabled in this environment.")
+
+
 def _demo_state_for(user: User):
+    require_demo_runtime()
     state = demo_runtime.state()
     role = role_definition(user.role)
     if not role:
@@ -482,6 +488,7 @@ def api_demo_module(
     module_id: str,
     user: User = Depends(require_session_user),
 ):
+    require_demo_runtime()
     if not can_access(user, module_id):
         raise HTTPException(403, "Ehhez a modulhoz nincs jogosultság.")
     try:
@@ -495,6 +502,7 @@ def api_demo_action(
     data: DemoActionIn,
     user: User = Depends(require_session_user),
 ):
+    require_demo_runtime()
     if not can_access(user, data.module_id):
         raise HTTPException(403, "Ehhez a modulművelethez nincs jogosultság.")
     try:
@@ -517,6 +525,7 @@ def api_demo_journey(
     data: DemoJourneyIn,
     user: User = Depends(require_session_user),
 ):
+    require_demo_runtime()
     if user.role not in {"owner", "managing-director", "platform-admin"}:
         raise HTTPException(403, "Teljes tesztutat csak vezetői szerepkör indíthat.")
     try:
@@ -530,6 +539,7 @@ def api_demo_failure(
     data: DemoFailureIn,
     user: User = Depends(require_session_user),
 ):
+    require_demo_runtime()
     if user.role != "platform-admin":
         raise HTTPException(403, "Hibainjektálást csak platform admin indíthat.")
     try:
@@ -543,6 +553,7 @@ def api_demo_retry(
     outbox_id: str,
     user: User = Depends(require_session_user),
 ):
+    require_demo_runtime()
     if user.role != "platform-admin":
         raise HTTPException(403, "Outbox újrapróbálást csak platform admin indíthat.")
     try:
@@ -553,6 +564,7 @@ def api_demo_retry(
 
 @app.post("/api/demo/reset")
 def api_demo_reset(user: User = Depends(require_session_user)):
+    require_demo_runtime()
     if user.role != "platform-admin":
         raise HTTPException(403, "Demo-visszaállítást csak platform admin indíthat.")
     return demo_runtime.reset()

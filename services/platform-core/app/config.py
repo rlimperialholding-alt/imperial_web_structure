@@ -33,6 +33,13 @@ def _secret_value(name: str) -> str:
     return Path(secret_file).read_text(encoding="utf-8").strip()
 
 
+def _optional_bool(name: str) -> bool | None:
+    value = os.getenv(name, "").strip().lower()
+    if not value:
+        return None
+    return value == "true"
+
+
 @dataclass(frozen=True)
 class Settings:
     environment: str = os.getenv("ENVIRONMENT", "development")
@@ -68,6 +75,7 @@ class Settings:
         os.getenv("CONTENT_EXTERNAL_PUBLISHING_ENABLED", "false").lower() == "true"
     )
     require_https: bool = os.getenv("REQUIRE_HTTPS", "false").lower() == "true"
+    demo_features_enabled: bool | None = _optional_bool("DEMO_FEATURES_ENABLED")
     ai_external_calls_enabled: bool = os.getenv(
         "AI_EXTERNAL_CALLS_ENABLED", "false"
     ).lower() == "true"
@@ -90,6 +98,12 @@ class Settings:
     def is_production(self) -> bool:
         return self.environment.lower() == "production"
 
+    @property
+    def demo_runtime_enabled(self) -> bool:
+        if self.demo_features_enabled is not None:
+            return self.demo_features_enabled
+        return not self.is_production
+
     def validate(self) -> list[str]:
         errors: list[str] = []
         if not self.database_url:
@@ -108,6 +122,10 @@ class Settings:
                 errors.append("Production környezetben CONTROL_CENTER_API_TOKEN kötelező.")
             if not self.require_https:
                 errors.append("Production környezetben REQUIRE_HTTPS=true kötelező.")
+            if self.demo_runtime_enabled:
+                errors.append(
+                    "Production environment must not enable DEMO_FEATURES_ENABLED."
+                )
             if "*" in self.allowed_hosts:
                 errors.append("Production környezetben az ALLOWED_HOSTS nem tartalmazhat helyettesítő karaktert.")
             if self.content_external_publishing_enabled and not self.internal_job_token:

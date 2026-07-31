@@ -13,6 +13,25 @@ def test_production_validation_blocks_unsafe_defaults(monkeypatch):
     assert len(errors) == 4
 
 
+def test_production_disables_demo_runtime_by_default():
+    production = Settings(environment="production")
+
+    assert production.demo_runtime_enabled is False
+
+
+def test_production_rejects_explicit_demo_runtime():
+    production = Settings(
+        environment="production",
+        database_url="postgresql+psycopg://platform@postgres/platform",
+        session_secret="s" * 32,
+        api_token="api-token",
+        require_https=True,
+        demo_features_enabled=True,
+    )
+
+    assert any("DEMO_FEATURES_ENABLED" in error for error in production.validate())
+
+
 def test_live_ai_routing_requires_provider_key_and_budget():
     unsafe = Settings(
         ai_external_calls_enabled=True,

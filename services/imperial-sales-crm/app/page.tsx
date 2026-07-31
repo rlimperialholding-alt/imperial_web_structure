@@ -128,7 +128,7 @@ type ImportStatus = {
     updatedAt: string;
   }[];
 };
-type DataState = "connecting" | "live" | "demo" | "error";
+type DataState = "connecting" | "live" | "forbidden" | "unavailable";
 
 const stages: { id: Stage; label: string; color: string }[] = [
   { id: "new", label: "Új lead", color: "#6f7f92" },
@@ -550,7 +550,14 @@ export default function Home() {
     let active = true;
     authenticatedFetch("/api/crm", { cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error(String(response.status));
+        if (!response.ok) {
+          setDataState(
+            response.status === 401 || response.status === 403
+              ? "forbidden"
+              : "unavailable",
+          );
+          throw new Error(String(response.status));
+        }
         return response.json() as Promise<{
           identity: Identity;
           leads: Lead[];
@@ -568,9 +575,12 @@ export default function Home() {
         setImportStatus(data.importStatus);
         setDataState("live");
       })
-      .catch(() => {
+      .catch((error) => {
         if (!active) return;
-        setDataState("error");
+        const status = error instanceof Error ? error.message : "";
+        setDataState(
+          status === "401" || status === "403" ? "forbidden" : "unavailable",
+        );
       });
     return () => {
       active = false;
@@ -649,7 +659,10 @@ export default function Home() {
       const completed = next.find(
         (task) => task.done && !current.find((old) => old.id === task.id)?.done,
       );
-      if (completed && dataState === "live")
+      if (completed && dataState !== "live") {
+        return current;
+      }
+      if (completed)
         authenticatedFetch(`/api/crm/tasks/${completed.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -669,17 +682,19 @@ export default function Home() {
       return next;
     });
   const moveLead = async (id: number, stage: Stage) => {
+    if (dataState !== "live") {
+      notify("Nincs élő adatkapcsolat; a státusz nem módosítható.");
+      return;
+    }
     const previous = leads.find((l) => l.id === id)?.stage;
     setLeads((c) => c.map((l) => (l.id === id ? { ...l, stage } : l)));
     try {
-      if (dataState === "live") {
-        const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ stage }),
-        });
-        if (!response.ok) throw new Error();
-      }
+      const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stage }),
+      });
+      if (!response.ok) throw new Error();
       notify(
         `Az adatlap átkerült: ${stages.find((s) => s.id === stage)?.label}.`,
       );
@@ -692,22 +707,19 @@ export default function Home() {
     }
   };
   const addLead = async (lead: Omit<Lead, "id">) => {
+    if (dataState !== "live") {
+      notify("Nincs élő adatkapcsolat; az adatlap nem hozható létre.");
+      return;
+    }
     try {
-      if (dataState === "live") {
-        const response = await authenticatedFetch("/api/crm/leads", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(lead),
-        });
-        if (!response.ok) throw new Error();
-        const data = (await response.json()) as { lead: Lead };
-        setLeads((c) => [data.lead, ...c]);
-      } else {
-        setLeads((c) => [
-          { ...lead, id: Math.max(0, ...c.map((l) => l.id)) + 1 },
-          ...c,
-        ]);
-      }
+      const response = await authenticatedFetch("/api/crm/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(lead),
+      });
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as { lead: Lead };
+      setLeads((c) => [data.lead, ...c]);
       setNewOpen(false);
       setView("records");
       notify("Az új értékesítési adatlap létrejött és elmentettük.");
@@ -716,23 +728,25 @@ export default function Home() {
     }
   };
   const saveLead = async (id: number, changes: Partial<Lead>) => {
+    if (dataState !== "live") {
+      notify("Nincs élő adatkapcsolat; az adatlap nem módosítható.");
+      return false;
+    }
     const previous = leads.find((lead) => lead.id === id);
     if (!previous) return false;
     const optimistic = { ...previous, ...changes };
     setLeads((rows) => rows.map((lead) => (lead.id === id ? optimistic : lead)));
     setSelected(optimistic);
     try {
-      if (dataState === "live") {
-        const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(changes),
-        });
-        if (!response.ok) throw new Error();
-        const data = (await response.json()) as { lead: Lead };
-        setLeads((rows) => rows.map((lead) => (lead.id === id ? data.lead : lead)));
-        setSelected(data.lead);
-      }
+      const response = await authenticatedFetch(`/api/crm/leads/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(changes),
+      });
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as { lead: Lead };
+      setLeads((rows) => rows.map((lead) => (lead.id === id ? data.lead : lead)));
+      setSelected(data.lead);
       notify("Az adatlap módosításait elmentettük.");
       return true;
     } catch {
@@ -743,29 +757,19 @@ export default function Home() {
     }
   };
   const addTask = async (leadId: number, task: NewTask) => {
+    if (dataState !== "live") {
+      notify("Nincs élő adatkapcsolat; a teendő nem hozható létre.");
+      return false;
+    }
     try {
-      if (dataState === "live") {
-        const response = await authenticatedFetch("/api/crm/tasks", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ...task, leadId }),
-        });
-        if (!response.ok) throw new Error();
-        const data = (await response.json()) as { task: Task };
-        setTasksRaw((rows) => [...rows, data.task]);
-      } else {
-        const lead = leads.find((row) => row.id === leadId);
-        setTasksRaw((rows) => [
-          ...rows,
-          {
-            ...task,
-            id: Math.max(0, ...rows.map((row) => row.id)) + 1,
-            leadId,
-            leadName: lead?.name ?? "Adatlap",
-            done: false,
-          },
-        ]);
-      }
+      const response = await authenticatedFetch("/api/crm/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...task, leadId }),
+      });
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as { task: Task };
+      setTasksRaw((rows) => [...rows, data.task]);
       notify("Az új teendőt rögzítettük.");
       return true;
     } catch {
@@ -786,7 +790,7 @@ export default function Home() {
         ? "Értékesítési vezető"
         : "Értékesítő";
   const crmViews = ["pipeline", "records", "customers", "reports", "control"];
-  if (dataState === "error") return (
+  if (dataState === "forbidden") return (
     <main className={accessStyles.page}>
       <section>
         <Logo />
@@ -795,6 +799,18 @@ export default function Home() {
         <h1>Ehhez a felülethez nincs hozzáférésed</h1>
         <p>Az ügyfél- és kapcsolattartói fiókok kizárólag a saját MyImperial projektterüket érhetik el. A CRM értékesítési és vezetői adatai belső használatúak.</p>
         <a href="/myimperial">Vissza a MyImperial projekthez</a>
+      </section>
+    </main>
+  );
+  if (dataState === "unavailable") return (
+    <main className={accessStyles.page}>
+      <section>
+        <Logo />
+        <span><Icon name="alert" /></span>
+        <small>BELSŐ IMPERIAL RENDSZER</small>
+        <h1>Az élő CRM-adatkapcsolat most nem érhető el</h1>
+        <p>Biztonsági okból a rendszer nem jelenít meg mintaadatokat, és nem enged helyi mentést. Próbáld újra később, vagy jelezd a rendszerüzemeltetőnek.</p>
+        <button onClick={() => window.location.reload()}>Újrapróbálás</button>
       </section>
     </main>
   );
@@ -915,13 +931,7 @@ export default function Home() {
           <div className="top-actions">
             <span className={`data-pill ${dataState}`}>
               <i />
-              {dataState === "live"
-                ? "ÉLŐ ADATOK"
-                : dataState === "connecting"
-                  ? "KAPCSOLÓDÁS"
-                  : dataState === "demo"
-                    ? "BEMUTATÓ"
-                    : "KAPCSOLATI HIBA"}
+              {dataState === "live" ? "ÉLŐ ADATOK" : "KAPCSOLÓDÁS"}
             </span>
             <span className="private-pill">
               <Icon name="shield" /> BELSŐ RENDSZER

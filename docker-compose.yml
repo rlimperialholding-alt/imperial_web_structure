@@ -103,6 +103,7 @@ services:
       CONTENT_VISUAL_REVIEW_SECRET_FILE: /run/secrets/platform_visual_review_secret
       CONTENT_VISUAL_REVIEW_KEY_ID: ${PLATFORM_VISUAL_REVIEW_KEY_ID:-content-visual-review-v1}
       DEMO_RUNTIME_PATH: /app/runtime/platform_demo_runtime.json
+      DEMO_FEATURES_ENABLED: ${PLATFORM_DEMO_FEATURES_ENABLED:-}
       SESSION_SECRET: ${PLATFORM_SESSION_SECRET:-local-demo-session-key-not-for-production}
       CONTROL_CENTER_API_TOKEN: ${PLATFORM_CONTROL_CENTER_API_TOKEN:-}
       INTERNAL_JOB_TOKEN: ${PLATFORM_INTERNAL_JOB_TOKEN:-}

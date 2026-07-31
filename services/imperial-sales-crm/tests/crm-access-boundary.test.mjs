@@ -46,7 +46,9 @@ test("the CRM does not server-render fallback lead data before authorization", a
   const source = await readFile("app/page.tsx", "utf8");
   assert.match(source, /useState<Lead\[\]>\(\[\]\)/);
   assert.match(source, /useState<Task\[\]>\(\[\]\)/);
-  assert.match(source, /dataState === "error"/);
+  assert.match(source, /dataState === "forbidden"/);
+  assert.match(source, /dataState === "unavailable"/);
+  assert.doesNotMatch(source, /dataState === "demo"/);
   assert.doesNotMatch(source, /location\.hostname === "localhost"/);
 });
 

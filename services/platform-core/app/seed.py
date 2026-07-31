@@ -332,7 +332,7 @@ def seed_commercial_integration(db: Session) -> None:
             **data, status="approved", requested_by="owner_instruction", reviewed_by="owner_instruction",
             reviewed_at=datetime.now(timezone.utc),
         ))
-    if not db.scalar(select(ProjectObjectState).where(ProjectObjectState.source_module == "change_control", ProjectObjectState.object_id == "CHG-DEMO-001")):
+    if settings.demo_runtime_enabled and not db.scalar(select(ProjectObjectState).where(ProjectObjectState.source_module == "change_control", ProjectObjectState.object_id == "CHG-DEMO-001")):
         db.add(ProjectObjectState(
             project_id="IMP-FONYOD-011", source_module="change_control", object_type="Change", object_id="CHG-DEMO-001",
             status="customer_accepted", summary="Támfal és tereprendezés módosított scope – ügyfél által elfogadva; munkakezdési engedély még szükséges.",
@@ -492,7 +492,30 @@ def seed_database(db: Session) -> None:
             db.delete(module)
     db.flush()
     verified_at = datetime.now(timezone.utc)
+    if settings.demo_runtime_enabled:
+        module_runtime = {
+            "lifecycle_status": "test_ready",
+            "integration_status": "healthy",
+            "api_base_url": "/api/demo",
+            "last_heartbeat_at": verified_at,
+            "last_integration_test_at": verified_at,
+            "last_integration_test_status": "passed",
+            "notes": "Shared platform-core synthetic adapter; external writes disabled.",
+        }
+    else:
+        module_runtime = {
+            "lifecycle_status": "registered",
+            "integration_status": "not_connected",
+            "api_base_url": None,
+            "last_heartbeat_at": None,
+            "last_integration_test_at": None,
+            "last_integration_test_status": None,
+            "notes": "Production adapter and evidence-backed integration test required.",
+        }
     for key, name, version, owner, criticality in MODULES:
+        health_url = (
+            f"/api/demo/modules/{key}" if settings.demo_runtime_enabled else None
+        )
         module = db.scalar(select(ModuleRegistry).where(ModuleRegistry.module_key == key))
         if not module:
             db.add(ModuleRegistry(
@@ -501,31 +524,39 @@ def seed_database(db: Session) -> None:
                 version=version,
                 owner=owner,
                 criticality=criticality,
-                lifecycle_status="test_ready",
-                integration_status="healthy",
-                api_base_url="/api/demo",
-                health_url=f"/api/demo/modules/{key}",
-                last_heartbeat_at=verified_at,
-                last_integration_test_at=verified_at,
-                last_integration_test_status="passed",
-                notes="Shared platform-core synthetic adapter; external writes disabled.",
+                lifecycle_status=module_runtime["lifecycle_status"],
+                integration_status=module_runtime["integration_status"],
+                api_base_url=module_runtime["api_base_url"],
+                health_url=health_url,
+                last_heartbeat_at=module_runtime["last_heartbeat_at"],
+                last_integration_test_at=module_runtime["last_integration_test_at"],
+                last_integration_test_status=module_runtime["last_integration_test_status"],
+                notes=module_runtime["notes"],
             ))
         else:
             module.name = name
             module.version = version
             module.owner = owner
             module.criticality = criticality
-            module.lifecycle_status = "test_ready"
-            module.integration_status = "healthy"
-            module.api_base_url = "/api/demo"
-            module.health_url = f"/api/demo/modules/{key}"
-            module.last_heartbeat_at = verified_at
-            module.last_integration_test_at = verified_at
-            module.last_integration_test_status = "passed"
-            module.notes = "Shared platform-core synthetic adapter; external writes disabled."
+            module.lifecycle_status = module_runtime["lifecycle_status"]
+            module.integration_status = module_runtime["integration_status"]
+            module.api_base_url = module_runtime["api_base_url"]
+            module.health_url = health_url
+            module.last_heartbeat_at = module_runtime["last_heartbeat_at"]
+            module.last_integration_test_at = module_runtime["last_integration_test_at"]
+            module.last_integration_test_status = module_runtime["last_integration_test_status"]
+            module.notes = module_runtime["notes"]
+    current_environment = settings.environment.lower()
     for key, name in (("development", "Fejlesztés"), ("uat", "UAT"), ("production", "Production")):
-        if not db.scalar(select(EnvironmentRecord).where(EnvironmentRecord.environment_key == key)):
-            db.add(EnvironmentRecord(environment_key=key, name=name, status="active" if key == "development" else "planned"))
+        environment = db.scalar(
+            select(EnvironmentRecord).where(EnvironmentRecord.environment_key == key)
+        )
+        status = "active" if key == current_environment else "planned"
+        if not environment:
+            db.add(EnvironmentRecord(environment_key=key, name=name, status=status))
+        else:
+            environment.name = name
+            environment.status = status
     for source_key, name, source_type, domain_scope, connector_reference in IMPORT_SOURCES:
         if not db.scalar(select(ImportDataSource).where(ImportDataSource.source_key == source_key)):
             db.add(ImportDataSource(

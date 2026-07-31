@@ -7,6 +7,7 @@ import styles from "./myimperial.module.css";
 import docStyles from "./documents.module.css";
 import teamStyles from "./team.module.css";
 import notificationStyles from "./notifications.module.css";
+import runtimeStyles from "./runtime-state.module.css";
 
 type Tab =
   | "overview"
@@ -547,7 +548,7 @@ export default function MyImperialPage() {
     id: "PRJ-2026-014", portalCode: "MI-2026-014", customerName: "Minta Péter",
     title: "Ürömi családi ház", phase: "Tervezési szakasz", progress: 42, handoverDate: null,
   });
-  const [liveData, setLiveData] = useState<"loading" | "live" | "demo">("loading");
+  const [liveData, setLiveData] = useState<"loading" | "live" | "error">("loading");
   const notify = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 3200);
@@ -584,7 +585,7 @@ export default function MyImperialPage() {
         })));
         setLiveData("live");
       })
-      .catch(() => active && setLiveData("demo"));
+      .catch(() => active && setLiveData("error"));
     portalRequest<{ documents: DocumentRecord[] }>("/api/myimperial/documents")
       .then(({ documents }) => {
         if (!active) return;
@@ -711,6 +712,30 @@ export default function MyImperialPage() {
     notify(`${id}: a meghívást visszavontuk.`);
   });
 
+  if (liveData !== "live") {
+    return (
+      <main className={runtimeStyles.runtimeState}>
+        <section>
+          <span className={styles.logoMark}><i /><b /></span>
+          <small>MYIMPERIAL ÜGYFÉLPORTÁL</small>
+          <h1>
+            {liveData === "loading"
+              ? "Kapcsolódás a projektadatokhoz…"
+              : "A projektadatok most nem érhetők el"}
+          </h1>
+          <p>
+            {liveData === "loading"
+              ? "A jogosultság és az élő projektkapcsolat ellenőrzése folyamatban van."
+              : "Biztonsági okból nem jelenítünk meg mintaadatokat. Próbáld újra később, vagy jelezd a projektcsapatnak."}
+          </p>
+          {liveData === "error" && (
+            <button onClick={() => window.location.reload()}>Újrapróbálás</button>
+          )}
+        </section>
+      </main>
+    );
+  }
+
   const initials = project.customerName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
   return (
@@ -763,7 +788,7 @@ export default function MyImperialPage() {
       <section className={styles.main}>
         <header className={styles.topbar}>
           <div>
-            <span>MYIMPERIAL ÜGYFÉLPORTÁL · {liveData === "live" ? "ÉLŐ PROJEKTADATOK" : liveData === "loading" ? "ADATKAPCSOLAT…" : "PILOT / BEMUTATÓ"}</span>
+            <span>MYIMPERIAL ÜGYFÉLPORTÁL · ÉLŐ PROJEKTADATOK</span>
             <h1>{tabs.find((item) => item.id === tab)?.label}</h1>
           </div>
           <div className={styles.topActions}>
