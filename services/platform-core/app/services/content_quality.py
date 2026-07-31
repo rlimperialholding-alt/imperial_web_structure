@@ -419,6 +419,18 @@ def _enrich_monthly_promotion_sources(
     return enriched, _hash(source_versions)
 
 
+def _monthly_promotion_snapshot_date(run: CopyReviewRun) -> date | None:
+    source_versions = json.loads(run.source_versions_json or "{}")
+    version = source_versions.get("monthly_promotion")
+    if not isinstance(version, str) or "@" not in version or "#" not in version:
+        return None
+    raw_date = version.split("@", 1)[1].split("#", 1)[0]
+    try:
+        return date.fromisoformat(raw_date)
+    except ValueError:
+        return None
+
+
 def create_copy_brief(db: Session, payload: dict[str, Any], *, actor: str) -> CopyBriefRecord:
     validation = validate_copy_brief(payload)
     if not validation["valid"]:
@@ -684,6 +696,10 @@ def run_copy_quality(
         created_by=actor,
     )
     db.add(run)
+    # Persist the parent review row before inserting gate decisions. PostgreSQL
+    # enforces the FK immediately and SQLAlchemy cannot infer the dependency
+    # without an ORM relationship between these two record types.
+    db.flush()
     db.add(
         ContentGateDecision(
             run_id=run_id,
@@ -1749,6 +1765,13 @@ def publish_content_asset(db: Session, asset_id: str, *, actor: str) -> dict[str
     sources, snapshot_hash = resolve_canonical_sources(
         db, brief, visual_asset_ids=content.visual_asset_ids
     )
+    promotion_snapshot_date = _monthly_promotion_snapshot_date(run)
+    if promotion_snapshot_date is not None:
+        sources, snapshot_hash = _enrich_monthly_promotion_sources(
+            sources,
+            brief,
+            evaluated_on=promotion_snapshot_date,
+        )
     if not sources.source_resolution_pass or snapshot_hash != run.source_snapshot_hash:
         raise ValueError("A kanonikus források hiányoznak vagy a review óta megváltoztak.")
     bundle = db.get(PublicationBundleRecord, asset.active_bundle_id)
