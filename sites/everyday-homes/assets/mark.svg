@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Everyday Homes – házikós márkajel</title>
+  <desc id="desc">Türkiz körbe zárt világos, lekerekített házikó négyzetes nyílással.</desc>
+  <metadata>Reconstructed from owner-provided raster brand reference on 2026-08-01. Editable vector master.</metadata>
+  <circle cx="128" cy="128" r="124" fill="#376C76"/>
+  <path id="house" d="M128 56c4 0 8 2 11 5l60 55c5 5 7 10 7 17l-4 72c0 9-7 15-15 15H69c-8 0-15-6-15-15l-4-72c0-7 2-12 7-17l60-55c3-3 7-5 11-5Z" fill="#F6F3EA"/>
+  <rect id="window" x="105" y="148" width="46" height="46" rx="5" fill="#376C76"/>
+</svg>
