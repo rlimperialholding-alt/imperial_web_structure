@@ -17,7 +17,7 @@ assert len(pages) == 66, len(pages)
 assert len({page[0] for page in pages}) == 66
 assert len({page[1] for page in pages}) == 66
 
-assert 'noindex,nofollow,noarchive' in INDEX
+assert 'name="robots" content="noindex,nofollow"' in INDEX
 assert 'publication_allowed = true' not in (INDEX + CSS + JS)
 assert not re.search(r'https?://', INDEX + CSS + JS), "External runtime dependency found"
 assert '#ff0000' not in CSS.lower() and '#e41' not in CSS.lower(), "Forbidden red palette"
