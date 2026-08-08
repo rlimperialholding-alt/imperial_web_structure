@@ -58,7 +58,7 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .section-heading p { max-width: 650px; margin: 0; color: var(--muted); font-size: 1.12rem; }
 .section--teal .section-heading p, .section--dark .section-heading p { color: rgba(255,255,255,.76); }
 .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; }
-.card { min-height: 260px; padding: clamp(1.35rem, 2.5vw, 2.2rem); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: 0 8px 30px rgba(37,56,60,.05); }
+.card { min-height: 190px; padding: clamp(1.35rem, 2.5vw, 2.2rem); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: 0 8px 30px rgba(37,56,60,.05); }
 .card:nth-child(3n + 2) { transform: translateY(1.8rem); }
 .card__number { display: block; margin-bottom: 2.4rem; color: var(--orange); font-size: 1.65rem; font-weight: 900; }
 .card p { margin: 0; color: var(--muted); }

@@ -5,8 +5,8 @@
 - Környezet: elkülönített teszt, keresőmotorok számára tiltva.
 - Publikálás: `TILOS`, amíg a tartalmi és vizuális jóváhagyások nem teljesek.
 - Kanonikus oldalterv: 66 oldal.
-- Ténylegesen kidolgozott oldalak: 39.
-- A további 27 útvonal regisztrált, de tartalmilag még nincs kiadásra kész állapotban.
+- Ténylegesen kidolgozott oldalak: 66.
+- Mind a 66 kanonikus útvonal saját tartalmi oldalt kapott; a teljes csomag továbbra is szerkesztési előnézet, nem éles kiadás.
 
 ## Technikai felépítés
 
