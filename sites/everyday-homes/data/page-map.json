@@ -1,0 +1,35 @@
+{
+  "brand": "Everyday Homes",
+  "canonical_page_count": 66,
+  "publication_allowed": false,
+  "release_state": "REVIEW_REQUIRED",
+  "groups": [
+    {"name":"Alap és vállalati oldalak","pages":[
+      ["EH-HU-001","/","Kezdőlap"],["EH-HU-002","/otthonvalaszto","Otthonválasztó"],["EH-HU-003","/otthonok/minta","Típusház-adatlap sablon"],["EH-HU-004","/keretbol-otthon","Keretből otthon"],["EH-HU-005","/igy-lesz-egyszeru","Így lesz egyszerű"],["EH-HU-006","/kozelrol","Nézd meg élőben"],["EH-HU-007","/elso-lepesek","Kérdésből döntés"],["EH-HU-008","/a-fontos-kerdesek","A fontos kérdések"],["EH-HU-009","/kezdjuk-egyutt","Kezdjük ott, ahol tartotok"],["EH-HU-010","/kell-egy-otthon-mindenkinek","Küldetésünk"],["EH-HU-011","/garanciak-es-utogondozas","Garanciák és gondoskodás"],["EH-HU-012","/elso-lepesek-hirlevel","A következő jó döntés"],["EH-HU-013","/karrier","Karrier"],["EH-HU-014","/sajto","Sajtó és médiakapcsolat"]
+    ]},
+    {"name":"Élethelyzetek","pages":[
+      ["EH-HU-101","/elso-sajat-otthon","Első saját otthon"],["EH-HU-102","/most-leszunk-csalad","Most lesztek család"],["EH-HU-103","/tobb-hely-a-csaladnak","Több hely kell a gyerekeknek"],["EH-HU-104","/otthon-es-munka","Dolgozni is jó legyen otthon"],["EH-HU-105","/kisebb-haz-konnyebb-elet","Kisebb ház, könnyebb mindennapok"],["EH-HU-106","/ket-generacio-egy-otthon","Két generáció"],["EH-HU-107","/kesobb-bovitheto-otthon","Később bővíthető"]
+    ]},
+    {"name":"Nekünk való házak","pages":[
+      ["EH-HU-201","/otthonok/30-69","Induló otthonok 30–69 m²"],["EH-HU-202","/otthonok/70-99","Családi otthonok 70–99 m²"],["EH-HU-203","/otthonok/100-130","Tágasabb otthonok 100–130 m²"],["EH-HU-204","/otthonok/keskenyebb-telekre","Keskenyebb telekre"],["EH-HU-205","/otthonok/konnyebb-hasznalat","Könnyebben használható otthonok"],["EH-HU-206","/otthonok/bovitheto","Később bővíthető házak"]
+    ]},
+    {"name":"Számolók","pages":[
+      ["EH-HU-301","/szamolok/hazkoltseg","Mennyibe kerülhet a házunk?"],["EH-HU-302","/szamolok/havi-teher","Mekkora havi teher férhet bele?"],["EH-HU-303","/szamolok/teljes-projektkeret","Teljes projektkeret"],["EH-HU-304","/szamolok/utemterv","Mikor költözhetünk?"],["EH-HU-305","/szamolok/felujitas-vagy-uj","Felújítás, bővítés vagy új ház?"],["EH-HU-306","/szamolok/energia-es-koltseg","Építési és fenntartási költség"],["EH-HU-307","/szamolok/gyors-hazellenorzes","Melyik ház illik hozzánk?"]
+    ]},
+    {"name":"Technológiák","pages":[
+      ["EH-HU-401","/mibol-epuljon","Miből épüljön?"],["EH-HU-402","/technologiak/favazas","Favázas könnyűszerkezet"],["EH-HU-403","/technologiak/tegla","Téglaépítés"],["EH-HU-404","/technologiak/liapor","Liapor rendszer"],["EH-HU-405","/technologiak/acelszerkezet","Acélszerkezetes megoldás"],["EH-HU-406","/muszaki-adatok","Rétegrendek és műszaki adatok"]
+    ]},
+    {"name":"Szolgáltatások","pages":[
+      ["EH-HU-501","/mi-intezzuk/tervezes","Tervezés a család életére"],["EH-HU-502","/mi-intezzuk/general-kivitelezes","Generálkivitelezés"],["EH-HU-503","/mi-intezzuk/finanszirozas","Finanszírozási segítség"],["EH-HU-504","/mi-intezzuk/felujitas","Felújítás"],["EH-HU-505","/mi-intezzuk/tetoter","Tetőtér-beépítés"],["EH-HU-506","/mi-intezzuk/telek-ellenorzes","Telekellenőrzés"],["EH-HU-507","/mi-intezzuk/szemelyes-hazajanlas","Személyes házajánlás"]
+    ]},
+    {"name":"Bizalom","pages":[
+      ["EH-HU-601","/biztonsag/vallalasaink","Mit vállalunk?"],["EH-HU-602","/biztonsag/atlathato-ar","Átlátható ár"],["EH-HU-603","/biztonsag/szerzodes","Érthető szerződés"],["EH-HU-604","/biztonsag/projektkovetes","Kövessétek az építkezést"],["EH-HU-605","/kozelrol/elkeszult-otthonok","Elkészült otthonok"],["EH-HU-606","/kozelrol/csaladok-tortenetei","Családok történetei"],["EH-HU-607","/biztonsag/atadas-utan","Átadás után"]
+    ]},
+    {"name":"Első lépések","pages":[
+      ["EH-HU-701","/elso-lepesek/mekkora-haz","Mekkora házra van szükségetek?"],["EH-HU-702","/elso-lepesek/jo-alaprajz","Hogyan spórol egy jó alaprajz?"],["EH-HU-703","/elso-lepesek/telekvasarlas","Telekvásárlás"],["EH-HU-704","/elso-lepesek/teljes-koltseg","Költségek a ház árán túl"],["EH-HU-705","/elso-lepesek/technologia-valasztas","Technológiaválasztás"],["EH-HU-706","/elso-lepesek/finanszirozas-menete","Önerő, hitel és folyósítás"],["EH-HU-707","/elso-lepesek/tarthato-utemterv","Tartható ütemterv"],["EH-HU-708","/elso-lepesek/energia","Szigetelés és gépészet"]
+    ]},
+    {"name":"Jogi minimum","pages":[
+      ["EH-HU-901","/adatkezeles","Adatkezelési tájékoztató"],["EH-HU-902","/impresszum","Impresszum"],["EH-HU-903","/sutik","Süti- és hozzájárulás-kezelés"],["EH-HU-904","/akadalymentesseg","Akadálymentességi nyilatkozat"]
+    ]}
+  ]
+}
