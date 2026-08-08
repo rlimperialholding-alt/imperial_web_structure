@@ -32,7 +32,7 @@ for asset in re.findall(r'(?:src|href)="([^"]+)"', INDEX):
 implemented_ids = set(re.findall(r'"(EH-HU-\d{3})"', JS))
 canonical_ids = {page[0] for page in pages}
 assert implemented_ids <= canonical_ids
-assert len(implemented_ids) >= 35, len(implemented_ids)
+assert implemented_ids == canonical_ids, sorted(canonical_ids - implemented_ids)
 
 for forbidden in ("Kattints és költözz", "Építőipar 2.0", "Az építés tudománya", "Nem érdemes másból építeni"):
     assert forbidden not in JS, f"Cross-brand phrase found: {forbidden}"
