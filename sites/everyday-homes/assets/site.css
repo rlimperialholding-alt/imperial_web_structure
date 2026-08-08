@@ -103,7 +103,8 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 }
 
 @media (max-width: 640px) {
-  .review-bar { justify-content: flex-start; overflow: hidden; white-space: nowrap; font-size: .62rem; }
+  .review-bar { justify-content: center; overflow: visible; white-space: normal; text-align: center; font-size: .62rem; }
+  .review-bar span:first-child { display: none; }
   .brand img { width: 155px; }
   h1 { font-size: clamp(2.65rem, 14vw, 4.2rem); }
   .hero__media { min-height: 350px; }
