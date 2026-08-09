@@ -11,7 +11,7 @@
     "nim_managed_routes": 7,
     "source_imported_routes": 18,
     "route_shells": 41,
-    "complete_routes": 9
+    "complete_routes": 10
   },
   "pages": [
     {
@@ -271,13 +271,13 @@
       "route": "/kisebb-haz-konnyebb-elet",
       "title": "Kisebb ház, könnyebb mindennapok",
       "group": "Élethelyzetek",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/105-kisebb-haz-konnyebb-elet.md",
       "visible_body_characters": 13265,
       "faq_questions": 14,
       "visual_assets": 3,
       "layout_signature": "lighter-life-balance",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
