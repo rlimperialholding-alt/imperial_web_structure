@@ -404,6 +404,33 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .secondary-visual--family-agreement b { font-size: clamp(2.6rem,5vw,5.4rem); line-height: .8; opacity: .45; }
 .secondary-visual--family-agreement span { font-size: 1.08rem; font-weight: 800; }
 
+/* Phased home: open blueprint field, with the finished house left unobscured. */
+.rich-page--phased-home-blueprint { --accent: #f1b65e; background: #eef3f2; }
+.rich-page--phased-home-blueprint .rich-hero { position: relative; min-height: 820px; display: block; overflow: hidden; background: #cfe2ef; }
+.rich-page--phased-home-blueprint .rich-hero__image { position: absolute; inset: 0; min-height: 100%; background-position: center; }
+.rich-page--phased-home-blueprint .rich-hero__copy { position: absolute; inset: 0 auto auto 0; z-index: 1; width: 48%; min-height: 100%; justify-content: center; padding: clamp(3rem,7vw,7rem); color: #17383d; background: linear-gradient(90deg,rgba(244,249,248,.94) 0%,rgba(244,249,248,.76) 72%,rgba(244,249,248,0) 100%); }
+.rich-page--phased-home-blueprint .rich-hero h1 { max-width: 650px; overflow-wrap: normal; word-break: normal; hyphens: none; font-size: clamp(2.75rem,4.3vw,5rem); line-height: .98; }
+.rich-page--phased-home-blueprint .rich-hero .lede { max-width: 610px; color: #35575c; }
+.rich-page--phased-home-blueprint .rich-hero .hero__tag { color: #17383d; background: rgba(255,255,255,.78); border: 1px solid #72a0a7; }
+.rich-page--phased-home-blueprint .rich-sections { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1.5rem; padding: clamp(2rem,5vw,5rem) 0; }
+.rich-page--phased-home-blueprint .rich-section { min-width: 0; grid-template-columns: 72px minmax(0,1fr); align-content: start; margin: 0; padding: clamp(2rem,4vw,3.6rem); border: 1px dashed #72a0a7; border-radius: 4px; background: rgba(255,255,255,.72); }
+.rich-page--phased-home-blueprint .rich-section:nth-child(3n+2) { transform: translateY(2.5rem); background: #fffdf8; }
+.rich-page--phased-home-blueprint .rich-section__number { color: #3d7178; font: 800 1.1rem/1 ui-monospace,monospace; letter-spacing: .08em; }
+.rich-page--phased-home-blueprint .rich-section__number::after { content: ''; display: block; width: 34px; height: 34px; margin-top: .7rem; border-left: 2px solid #f1b65e; border-bottom: 2px solid #f1b65e; }
+.phase-track { position: relative; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 1.2rem; margin: 0; padding: 2.2rem 0 0; list-style: none; }
+.phase-track::before { content: ''; position: absolute; top: 66px; left: 8%; right: 8%; height: 4px; background: #72a0a7; }
+.phase-track li { position: relative; z-index: 1; min-width: 0; display: grid; align-content: start; gap: .8rem; padding: 0 1rem 1.4rem; text-align: center; }
+.phase-track b { width: 86px; aspect-ratio: 1; display: grid; place-items: center; margin: 0 auto .6rem; border: 8px solid #fffdf8; border-radius: 50%; color: #fff; background: #254042; font-size: 1.5rem; }
+.phase-track li:nth-child(even) b { color: #254042; background: #f1b65e; }
+.phase-track strong { font-size: 1.18rem; }
+.phase-track span { color: #52676a; }
+.secondary-visual--future-layers > div { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+.secondary-visual--future-layers section { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; padding: 1.5rem; border: 2px solid #254042; background-image: linear-gradient(rgba(114,160,167,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(114,160,167,.14) 1px,transparent 1px); background-size: 24px 24px; }
+.secondary-visual--future-layers section:last-child { border-style: dashed; border-color: #d7a45a; }
+.secondary-visual--future-layers small { grid-column: 1/-1; padding: 1rem; color: #fff; background: #254042; text-align: center; font-weight: 900; letter-spacing: .08em; }
+.secondary-visual--future-layers section:last-child small { color: #254042; background: #f1b65e; }
+.secondary-visual--future-layers span { min-height: 78px; display: grid; place-items: center; padding: .8rem; border: 1px solid rgba(37,64,66,.25); background: rgba(255,255,255,.88); text-align: center; }
+
 .secondary-visual { width: min(1080px, calc(100% - 2rem)); margin: 0 auto clamp(4rem, 8vw, 8rem); padding: clamp(1.5rem, 5vw, 4rem); overflow: hidden; border-radius: 32px; background: var(--paper); box-shadow: var(--shadow); }
 .secondary-visual figcaption { margin-bottom: 2rem; color: var(--teal-dark); font-size: clamp(1.5rem, 3vw, 2.8rem); font-weight: 950; line-height: 1.08; }
 .secondary-visual--rooms > div { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .7rem; }
@@ -486,6 +513,13 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   .household-bridge > div::before, .household-bridge > div::after { top: auto; left: 50%; right: auto; width: 8px; height: 52%; translate: -50% 0; }
   .household-bridge > div::before { top: -1.25rem; }
   .household-bridge > div::after { bottom: -1.25rem; }
+  .rich-page--phased-home-blueprint .rich-hero { min-height: 0; display: grid; grid-template-columns: 1fr; overflow: visible; }
+  .rich-page--phased-home-blueprint .rich-hero__image { position: static; min-height: 560px; order: 1; background-position: 55% center; }
+  .rich-page--phased-home-blueprint .rich-hero__copy { position: static; width: 100%; min-height: 0; order: 2; background: #eef3f2; }
+  .rich-page--phased-home-blueprint .rich-sections { grid-template-columns: 1fr; }
+  .rich-page--phased-home-blueprint .rich-section:nth-child(3n+2) { transform: none; }
+  .phase-track { grid-template-columns: 1fr 1fr; }
+  .phase-track::before { display: none; }
 }
 
 @media (max-width: 640px) {
@@ -592,6 +626,16 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   .household-bridge span { min-height: 70px; }
   .secondary-visual--family-agreement > div { grid-template-columns: 1fr 1fr; }
   .secondary-visual--family-agreement article { min-height: 190px; border-radius: 22px 22px 70px 70px; }
+  .rich-page--phased-home-blueprint .rich-hero__image { min-height: 350px; background-position: 56% center; }
+  .rich-page--phased-home-blueprint .rich-hero__copy { padding: 2.7rem 1rem 3rem; }
+  .rich-page--phased-home-blueprint .rich-hero h1 { font-size: clamp(2.2rem,10.8vw,3.15rem); }
+  .rich-page--phased-home-blueprint .rich-section { grid-template-columns: 1fr; padding: 2rem 1rem; }
+  .rich-page--phased-home-blueprint .rich-section__number::after { width: 100%; height: 1px; border: 0; background: #f1b65e; }
+  .phase-track { grid-template-columns: 1fr; }
+  .phase-track li { grid-template-columns: 72px minmax(0,1fr); align-items: center; text-align: left; }
+  .phase-track b { grid-row: 1/3; width: 64px; margin: 0; border-width: 5px; }
+  .secondary-visual--future-layers > div, .secondary-visual--future-layers section { grid-template-columns: 1fr; }
+  .secondary-visual--future-layers small { grid-column: 1; }
 }
 
 @media (max-width: 980px) {
