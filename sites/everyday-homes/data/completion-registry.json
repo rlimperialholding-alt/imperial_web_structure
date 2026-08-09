@@ -11,7 +11,7 @@
     "nim_managed_routes": 7,
     "source_imported_routes": 17,
     "route_shells": 42,
-    "complete_routes": 8
+    "complete_routes": 9
   },
   "pages": [
     {
@@ -257,13 +257,13 @@
       "route": "/otthon-es-munka",
       "title": "Dolgozni is jó legyen otthon",
       "group": "Élethelyzetek",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/104-otthon-es-munka.md",
       "visible_body_characters": 12513,
       "faq_questions": 10,
       "visual_assets": 3,
       "layout_signature": "workday-switchboard",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
