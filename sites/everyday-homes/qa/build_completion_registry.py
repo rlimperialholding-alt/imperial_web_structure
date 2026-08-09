@@ -26,6 +26,7 @@ SOURCE_BY_ROUTE = {
     "/sajto": "pages/14-sajto.md",
     "/elso-sajat-otthon": "pages/101-elso-sajat-otthon.md",
     "/most-leszunk-csalad": "pages/102-most-leszunk-csalad.md",
+    "/tobb-hely-a-csaladnak": "pages/103-tobb-hely-a-csaladnak.md",
 }
 
 LAYOUT_BY_ROUTE = {
@@ -44,6 +45,7 @@ LAYOUT_BY_ROUTE = {
     "/sajto": "press-desk",
     "/elso-sajat-otthon": "first-key-map",
     "/most-leszunk-csalad": "family-rhythm",
+    "/tobb-hely-a-csaladnak": "family-traffic",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
