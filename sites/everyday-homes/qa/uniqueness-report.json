@@ -1,5 +1,5 @@
 {
-  "pages_checked": 20,
+  "pages_checked": 21,
   "other_brands_checked": [
     "baufreund",
     "bautica",
@@ -85,14 +85,14 @@
       "five_word_jaccard": 0.0008
     },
     {
+      "left": "/elso-lepesek",
+      "right": "/szamolok/hazkoltseg",
+      "five_word_jaccard": 0.00072
+    },
+    {
       "left": "/elso-sajat-otthon",
       "right": "/ket-generacio-egy-otthon",
       "five_word_jaccard": 0.00069
-    },
-    {
-      "left": "/a-fontos-kerdesek",
-      "right": "/sajto",
-      "five_word_jaccard": 0.00067
     }
   ],
   "repeated_headings": [],

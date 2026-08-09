@@ -19,6 +19,7 @@ const RICH_SOURCE_MAP = {
   "/kisebb-haz-konnyebb-elet": { file: "../pages/105-kisebb-haz-konnyebb-elet.md", layout: "lighter-life-balance", photo: "everyday-lighter-home-freedom-v1.png", primary: "/otthonvalaszto", introLimit: 1 },
   "/ket-generacio-egy-otthon": { file: "../pages/106-ket-generacio-egy-otthon.md", layout: "two-household-bridge", photo: "everyday-two-generations-courtyard-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
   "/kesobb-bovitheto-otthon": { file: "../pages/107-kesobb-bovitheto-otthon.md", layout: "phased-home-blueprint", photo: "everyday-expandable-home-plan-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
+  "/szamolok/hazkoltseg": { file: "../pages/301-hazkoltseg.md", layout: "project-cost-ledger", photo: "everyday-house-cost-table-v1.png", primary: "/szamolok/hazkoltseg", introLimit: 1 },
 };
 
 const INTERNAL_STOP = /^(?:\d+\.\s+)?(?:EGYEDI VIZUÁLIS ARCHETÍPUS|ÁLLÍTÁS- ÉS ADATKAPU|KAPUSTÁTUSZ|KIADÁSI STÁTUSZ|BELSŐ ELLENŐRZÉS)/i;
@@ -157,6 +158,9 @@ function diagramMarkup(layout, sections) {
   if (layout === "phased-home-blueprint") {
     return `<figure class="explain-visual explain-visual--phased-home"><figcaption>A bővítés nem a második építkezésnél kezdődik</figcaption><ol class="phase-track"><li><b>01</b><strong>Végállapot</strong><span>Előbb a teljes ház helye és logikája készül el.</span></li><li><b>02</b><strong>Első otthon</strong><span>Önálló, kényelmes, azonnal beköltözhető.</span></li><li><b>03</b><strong>Előkészítés</strong><span>Csatlakozások, kapacitás és szabad építési út.</span></li><li><b>04</b><strong>Folytatás</strong><span>Új tér, kevés bontás, rendezett átmenet.</span></li></ol></figure>`;
   }
+  if (layout === "project-cost-ledger") {
+    return `<figure class="explain-visual explain-visual--cost-ledger"><figcaption>A teljes projekt három külön keretből áll össze</figcaption><div class="cost-rings"><section><b>01</b><strong>A ház</strong><span>rögzített műszaki tartalom</span></section><section><b>02</b><strong>A helyszín</strong><span>telek, közmű, előkészítés</span></section><section><b>03</b><strong>A biztonság</strong><span>külön kezelt tartalék</span></section><p>Az összegek nem cserélhetik fel egymást.</p></div></figure>`;
+  }
   return `<figure class="explain-visual explain-visual--home"><figcaption>Az otthonhoz vezető döntések</figcaption><svg viewBox="0 0 800 360" role="img" aria-label="Döntési útvonal"><path d="M80 270 L220 130 L360 245 L520 90 L720 220"/><circle cx="80" cy="270" r="24"/><circle cx="220" cy="130" r="24"/><circle cx="360" cy="245" r="24"/><circle cx="520" cy="90" r="24"/><circle cx="720" cy="220" r="24"/></svg><div class="visual-labels">${safe.map(label => `<span>${label}</span>`).join("")}</div></figure>`;
 }
 
@@ -182,6 +186,7 @@ function secondaryDiagramMarkup(layout) {
     "lighter-life-balance": `<figure class="secondary-visual secondary-visual--time-return"><figcaption>Mit kezdtek azzal az idővel, amit a ház visszaad?</figcaption><div><span><b>Hétfő</b>nem a javítással indul</span><span><b>Szerda</b>jut idő a saját dolgokra</span><span><b>Szombat</b>a kert öröm, nem műszak</span><strong>Vasárnap<br>együtt vagytok</strong></div></figure>`,
     "two-household-bridge": `<figure class="secondary-visual secondary-visual--family-agreement"><figcaption>Négy mondat, amelyet még a falak előtt érdemes kimondani</figcaption><div><article><b>01</b><span>Miben maradunk önállók?</span></article><article><b>02</b><span>Mit használunk együtt?</span></article><article><b>03</b><span>Mikor számítunk egymásra?</span></article><article><b>04</b><span>Mi változhat később?</span></article></div></figure>`,
     "phased-home-blueprint": `<figure class="secondary-visual secondary-visual--future-layers"><figcaption>Amit ma kell rögzíteni, és amit ráértek később kiválasztani</figcaption><div><section><small>MOST DŐL EL</small><span>hely a telken</span><span>tartószerkezeti rend</span><span>tető és víz útja</span><span>gépészeti csatlakozás</span></section><section><small>KÉSŐBB VÁLASZTHATÓ</small><span>pontos funkció</span><span>belső színek</span><span>bútorozás</span><span>indítás időpontja</span></section></div></figure>`,
+    "project-cost-ledger": `<figure class="secondary-visual secondary-visual--known-unknown"><figcaption>A jó kalkuláció nem rejti el a bizonytalanságot</figcaption><div><span><small>RÖGZÍTETT</small>műszaki tartalom</span><span><small>BECSÜLT</small>helyszíni tétel</span><span><small>VIZSGÁLANDÓ</small>nyitott adat</span><strong><small>ELKÜLÖNÍTETT</small>biztonsági tartalék</strong></div></figure>`,
   };
   return visuals[layout] || "";
 }

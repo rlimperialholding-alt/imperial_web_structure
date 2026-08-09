@@ -31,6 +31,7 @@ SOURCE_BY_ROUTE = {
     "/kisebb-haz-konnyebb-elet": "pages/105-kisebb-haz-konnyebb-elet.md",
     "/ket-generacio-egy-otthon": "pages/106-ket-generacio-egy-otthon.md",
     "/kesobb-bovitheto-otthon": "pages/107-kesobb-bovitheto-otthon.md",
+    "/szamolok/hazkoltseg": "pages/301-hazkoltseg.md",
 }
 
 LAYOUT_BY_ROUTE = {
@@ -54,6 +55,7 @@ LAYOUT_BY_ROUTE = {
     "/kisebb-haz-konnyebb-elet": "lighter-life-balance",
     "/ket-generacio-egy-otthon": "two-household-bridge",
     "/kesobb-bovitheto-otthon": "phased-home-blueprint",
+    "/szamolok/hazkoltseg": "project-cost-ledger",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
