@@ -194,8 +194,10 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .mission-orbit span:nth-of-type(4) { inset: auto 9% 2% auto; }
 
 .rich-page--care-protocol { background: #edf3ef; }
-.rich-page--care-protocol .rich-hero { grid-template-columns: .92fr 1.08fr; }
+.rich-page--care-protocol .rich-hero { grid-template-columns: 1.15fr .85fr; }
+.rich-page--care-protocol .rich-hero__image { background-position: left center; }
 .rich-page--care-protocol .rich-hero__copy { order: 2; background: #edf3ef; }
+.rich-page--care-protocol .rich-hero h1 { font-size: clamp(2.8rem, 4.8vw, 5rem); }
 .rich-page--care-protocol .rich-section { grid-template-columns: 1fr; margin-left: clamp(0rem, 12vw, 10rem); }
 .rich-page--care-protocol .rich-section__number { width: 72px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--teal); font-size: 1.35rem; letter-spacing: 0; }
 .care-track { display: flex; align-items: center; gap: 0; padding: 0; list-style: none; }
@@ -207,7 +209,7 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .rich-page--letter-lab .rich-hero { min-height: 760px; grid-template-columns: 1fr 1fr; background: #fffaf0; }
 .rich-page--letter-lab .rich-hero__image { order: 2; clip-path: polygon(10% 0,100% 0,100% 100%,0 88%); }
 .rich-page--letter-lab .rich-hero__copy { border: 24px solid #fffaf0; outline: 1px solid var(--line); outline-offset: -48px; }
-.rich-page--letter-lab .rich-hero h1 { overflow-wrap: normal; word-break: normal; hyphens: auto; font-size: clamp(2.7rem, 4.4vw, 4.7rem); }
+.rich-page--letter-lab .rich-hero h1 { overflow-wrap: normal; word-break: normal; hyphens: none; font-size: clamp(2.7rem, 3.8vw, 3.9rem); }
 .rich-page--letter-lab .rich-sections { width: min(1100px, calc(100% - 2rem)); }
 .rich-page--letter-lab .rich-section { grid-template-columns: 1fr; padding-left: clamp(0rem, 9vw, 7rem); }
 .rich-page--letter-lab .rich-section:nth-child(even) { padding-right: clamp(0rem, 9vw, 7rem); padding-left: 0; }
@@ -223,7 +225,7 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .rich-page--maker-workshop { --accent: var(--orange); background: #182d31; }
 .rich-page--maker-workshop .rich-hero { min-height: 780px; grid-template-columns: 1fr; background: transparent; }
 .rich-page--maker-workshop .rich-hero__image { grid-area: 1 / 1; min-height: 780px; filter: saturate(.82); }
-.rich-page--maker-workshop .rich-hero__copy { position: relative; grid-area: 1 / 1; align-self: end; z-index: 1; max-width: 900px; min-height: 0; margin-top: 12rem; color: white; background: rgba(24,45,49,.94); }
+.rich-page--maker-workshop .rich-hero__copy { position: relative; grid-area: 1 / 1; align-self: end; z-index: 1; max-width: 720px; min-height: 0; margin-top: 12rem; margin-left: auto; color: white; background: rgba(24,45,49,.94); }
 .rich-page--maker-workshop .rich-hero .lede { color: rgba(255,255,255,.76); }
 .rich-page--maker-workshop .rich-sections { color: white; }
 .rich-page--maker-workshop .rich-copy { color: rgba(255,255,255,.76); }
