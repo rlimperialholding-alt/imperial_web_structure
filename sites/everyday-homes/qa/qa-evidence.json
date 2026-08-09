@@ -1,0 +1,52 @@
+{
+  "generated_at": "2026-08-09",
+  "environment": "remote-staging",
+  "base_url": "http://127.0.0.1:18084/site-preview/everyday-homes",
+  "routes": {
+    "/kell-egy-otthon-mindenkinek": {
+      "passes": 3,
+      "content": ["minimum-character-count", "faq-count", "cross-page-and-cross-brand-uniqueness"],
+      "visual": ["desktop-hero-review", "mobile-hero-review", "deep-module-overflow-review"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/garanciak-es-utogondozas": {
+      "passes": 3,
+      "content": ["minimum-character-count", "faq-count", "cross-page-and-cross-brand-uniqueness"],
+      "visual": ["desktop-hero-review", "mobile-hero-review", "deep-module-overflow-review"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/elso-lepesek-hirlevel": {
+      "passes": 3,
+      "content": ["minimum-character-count", "faq-count", "cross-page-and-cross-brand-uniqueness"],
+      "visual": ["desktop-hero-review", "mobile-hero-review", "deep-module-overflow-review"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/karrier": {
+      "passes": 3,
+      "content": ["minimum-character-count", "faq-count", "cross-page-and-cross-brand-uniqueness"],
+      "visual": ["desktop-hero-review", "mobile-hero-review", "deep-module-overflow-review"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/sajto": {
+      "passes": 3,
+      "content": ["minimum-character-count", "faq-count", "cross-page-and-cross-brand-uniqueness"],
+      "visual": ["desktop-hero-review", "mobile-hero-review", "deep-module-overflow-review"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    }
+  }
+}

@@ -11,7 +11,7 @@
     "nim_managed_routes": 7,
     "source_imported_routes": 13,
     "route_shells": 46,
-    "complete_routes": 0
+    "complete_routes": 5
   },
   "pages": [
     {
@@ -145,13 +145,13 @@
       "route": "/kell-egy-otthon-mindenkinek",
       "title": "Küldetésünk",
       "group": "Alap és vállalati oldalak",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/10-kuldetesunk.md",
       "visible_body_characters": 13126,
       "faq_questions": 12,
       "visual_assets": 3,
       "layout_signature": "mission-manifesto",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
@@ -159,13 +159,13 @@
       "route": "/garanciak-es-utogondozas",
       "title": "Garanciák és gondoskodás",
       "group": "Alap és vállalati oldalak",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/11-garanciak-es-utogondozas.md",
       "visible_body_characters": 13235,
       "faq_questions": 12,
       "visual_assets": 3,
       "layout_signature": "care-protocol",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
@@ -173,13 +173,13 @@
       "route": "/elso-lepesek-hirlevel",
       "title": "A következő jó döntés",
       "group": "Alap és vállalati oldalak",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/12-hirlevel.md",
       "visible_body_characters": 13271,
       "faq_questions": 13,
       "visual_assets": 3,
       "layout_signature": "letter-lab",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
@@ -187,13 +187,13 @@
       "route": "/karrier",
       "title": "Karrier",
       "group": "Alap és vállalati oldalak",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/13-karrier.md",
       "visible_body_characters": 13168,
       "faq_questions": 10,
       "visual_assets": 3,
       "layout_signature": "maker-workshop",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
@@ -201,13 +201,13 @@
       "route": "/sajto",
       "title": "Sajtó és médiakapcsolat",
       "group": "Alap és vállalati oldalak",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/14-sajto.md",
       "visible_body_characters": 14407,
       "faq_questions": 13,
       "visual_assets": 3,
       "layout_signature": "press-desk",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
