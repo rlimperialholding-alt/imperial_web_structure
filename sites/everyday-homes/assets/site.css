@@ -325,6 +325,7 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   .rich-page--first-key-map .rich-hero { grid-template-columns: 1fr; }
   .rich-page--first-key-map .rich-hero__image { order: 1; min-height: 500px; clip-path: none; }
   .rich-page--first-key-map .rich-hero__copy { order: 2; }
+  .rich-page--first-key-map .rich-hero__copy::after { display: none; }
   .first-key-path { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .first-key-path::before { display: none; }
   .first-key-path strong { width: 150px; grid-column: 1 / -1; justify-self: center; }
