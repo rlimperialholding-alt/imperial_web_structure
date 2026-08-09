@@ -408,7 +408,7 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .rich-page--phased-home-blueprint { --accent: #f1b65e; background: #eef3f2; }
 .rich-page--phased-home-blueprint .rich-hero { position: relative; min-height: 820px; display: block; overflow: hidden; background: #cfe2ef; }
 .rich-page--phased-home-blueprint .rich-hero__image { position: absolute; inset: 0; min-height: 100%; background-position: center; }
-.rich-page--phased-home-blueprint .rich-hero__copy { position: absolute; inset: 0 auto auto 0; z-index: 1; width: 48%; min-height: 100%; justify-content: center; padding: clamp(3rem,7vw,7rem); color: #17383d; background: linear-gradient(90deg,rgba(244,249,248,.94) 0%,rgba(244,249,248,.76) 72%,rgba(244,249,248,0) 100%); }
+.rich-page--phased-home-blueprint .rich-hero__copy { position: absolute; inset: 0 auto auto 0; z-index: 1; width: 48%; height: 100%; min-height: 0; box-sizing: border-box; justify-content: center; padding: clamp(3rem,7vw,7rem); color: #17383d; background: linear-gradient(90deg,rgba(244,249,248,.94) 0%,rgba(244,249,248,.76) 72%,rgba(244,249,248,0) 100%); }
 .rich-page--phased-home-blueprint .rich-hero h1 { max-width: 650px; overflow-wrap: normal; word-break: normal; hyphens: none; font-size: clamp(2.75rem,4.3vw,5rem); line-height: .98; }
 .rich-page--phased-home-blueprint .rich-hero .lede { max-width: 610px; color: #35575c; }
 .rich-page--phased-home-blueprint .rich-hero .hero__tag { color: #17383d; background: rgba(255,255,255,.78); border: 1px solid #72a0a7; }
@@ -417,6 +417,7 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .rich-page--phased-home-blueprint .rich-section:nth-child(3n+2) { transform: translateY(2.5rem); background: #fffdf8; }
 .rich-page--phased-home-blueprint .rich-section__number { color: #3d7178; font: 800 1.1rem/1 ui-monospace,monospace; letter-spacing: .08em; }
 .rich-page--phased-home-blueprint .rich-section__number::after { content: ''; display: block; width: 34px; height: 34px; margin-top: .7rem; border-left: 2px solid #f1b65e; border-bottom: 2px solid #f1b65e; }
+.rich-page--phased-home-blueprint .rich-section h2 { overflow-wrap: normal; word-break: normal; hyphens: none; font-size: clamp(2rem,3vw,3rem); }
 .phase-track { position: relative; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 1.2rem; margin: 0; padding: 2.2rem 0 0; list-style: none; }
 .phase-track::before { content: ''; position: absolute; top: 66px; left: 8%; right: 8%; height: 4px; background: #72a0a7; }
 .phase-track li { position: relative; z-index: 1; min-width: 0; display: grid; align-content: start; gap: .8rem; padding: 0 1rem 1.4rem; text-align: center; }
@@ -515,7 +516,7 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   .household-bridge > div::after { bottom: -1.25rem; }
   .rich-page--phased-home-blueprint .rich-hero { min-height: 0; display: grid; grid-template-columns: 1fr; overflow: visible; }
   .rich-page--phased-home-blueprint .rich-hero__image { position: static; min-height: 560px; order: 1; background-position: 55% center; }
-  .rich-page--phased-home-blueprint .rich-hero__copy { position: static; width: 100%; min-height: 0; order: 2; background: #eef3f2; }
+  .rich-page--phased-home-blueprint .rich-hero__copy { position: static; width: 100%; height: auto; min-height: 0; order: 2; background: #eef3f2; }
   .rich-page--phased-home-blueprint .rich-sections { grid-template-columns: 1fr; }
   .rich-page--phased-home-blueprint .rich-section:nth-child(3n+2) { transform: none; }
   .phase-track { grid-template-columns: 1fr 1fr; }
