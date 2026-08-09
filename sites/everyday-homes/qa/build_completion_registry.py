@@ -29,6 +29,7 @@ SOURCE_BY_ROUTE = {
     "/tobb-hely-a-csaladnak": "pages/103-tobb-hely-a-csaladnak.md",
     "/otthon-es-munka": "pages/104-otthon-es-munka.md",
     "/kisebb-haz-konnyebb-elet": "pages/105-kisebb-haz-konnyebb-elet.md",
+    "/ket-generacio-egy-otthon": "pages/106-ket-generacio-egy-otthon.md",
 }
 
 LAYOUT_BY_ROUTE = {
@@ -50,6 +51,7 @@ LAYOUT_BY_ROUTE = {
     "/tobb-hely-a-csaladnak": "family-traffic",
     "/otthon-es-munka": "workday-switchboard",
     "/kisebb-haz-konnyebb-elet": "lighter-life-balance",
+    "/ket-generacio-egy-otthon": "two-household-bridge",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
