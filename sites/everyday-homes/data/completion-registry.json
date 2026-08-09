@@ -9,8 +9,8 @@
   "summary": {
     "canonical_routes": 66,
     "nim_managed_routes": 7,
-    "source_imported_routes": 20,
-    "route_shells": 39,
+    "source_imported_routes": 21,
+    "route_shells": 38,
     "complete_routes": 12
   },
   "pages": [
@@ -397,12 +397,12 @@
       "route": "/szamolok/hazkoltseg",
       "title": "Mennyibe kerülhet a házunk?",
       "group": "Számolók",
-      "state": "ROUTE_SHELL_ONLY",
-      "source": null,
-      "visible_body_characters": 0,
-      "faq_questions": 0,
-      "visual_assets": 0,
-      "layout_signature": null,
+      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "source": "pages/301-hazkoltseg.md",
+      "visible_body_characters": 13609,
+      "faq_questions": 15,
+      "visual_assets": 3,
+      "layout_signature": "project-cost-ledger",
       "triple_qa_passes": 0,
       "publication_allowed": false
     },
