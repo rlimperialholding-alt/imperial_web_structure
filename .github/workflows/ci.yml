@@ -43,6 +43,15 @@ jobs:
       - name: Validate repository structure
         run: sh scripts/validate-structure.sh
 
+      - name: Enforce Everyday Homes content gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 sites/everyday-homes/qa/build_completion_registry.py
+          git diff --exit-code -- sites/everyday-homes/data/completion-registry.json
+          python3 sites/everyday-homes/qa/validate_site.py
+          python3 sites/everyday-homes/qa/validate_uniqueness.py
+
       - name: Validate Compose configuration
         run: docker compose config --quiet
 

@@ -1,0 +1,103 @@
+{
+  "pages_checked": 13,
+  "other_brands_checked": [
+    "baufreund",
+    "bautica",
+    "budapesti-magasepito-vallalat",
+    "casa-moderna",
+    "danish-fabrik",
+    "family-homes",
+    "imperial",
+    "prefab",
+    "property-360",
+    "red-property",
+    "timberhaus"
+  ],
+  "thresholds": {
+    "within_brand_five_word_jaccard": 0.08,
+    "cross_brand_five_word_jaccard": 0.025
+  },
+  "duplicate_layouts": [],
+  "highest_within_brand_pairs": [
+    {
+      "left": "/otthonvalaszto",
+      "right": "/keretbol-otthon",
+      "five_word_jaccard": 0.01315
+    },
+    {
+      "left": "/igy-lesz-egyszeru",
+      "right": "/a-fontos-kerdesek",
+      "five_word_jaccard": 0.00891
+    },
+    {
+      "left": "/",
+      "right": "/otthonvalaszto",
+      "five_word_jaccard": 0.00887
+    },
+    {
+      "left": "/igy-lesz-egyszeru",
+      "right": "/kezdjuk-egyutt",
+      "five_word_jaccard": 0.00744
+    },
+    {
+      "left": "/",
+      "right": "/keretbol-otthon",
+      "five_word_jaccard": 0.0036
+    },
+    {
+      "left": "/a-fontos-kerdesek",
+      "right": "/kezdjuk-egyutt",
+      "five_word_jaccard": 0.00337
+    },
+    {
+      "left": "/elso-lepesek",
+      "right": "/a-fontos-kerdesek",
+      "five_word_jaccard": 0.00336
+    },
+    {
+      "left": "/",
+      "right": "/kozelrol",
+      "five_word_jaccard": 0.00158
+    },
+    {
+      "left": "/igy-lesz-egyszeru",
+      "right": "/elso-lepesek",
+      "five_word_jaccard": 0.00105
+    },
+    {
+      "left": "/elso-lepesek",
+      "right": "/kezdjuk-egyutt",
+      "five_word_jaccard": 0.00103
+    },
+    {
+      "left": "/a-fontos-kerdesek",
+      "right": "/sajto",
+      "five_word_jaccard": 0.00067
+    },
+    {
+      "left": "/kozelrol",
+      "right": "/kezdjuk-egyutt",
+      "five_word_jaccard": 0.00056
+    },
+    {
+      "left": "/kozelrol",
+      "right": "/a-fontos-kerdesek",
+      "five_word_jaccard": 0.00052
+    },
+    {
+      "left": "/",
+      "right": "/igy-lesz-egyszeru",
+      "five_word_jaccard": 0.0005
+    },
+    {
+      "left": "/otthonvalaszto",
+      "right": "/kezdjuk-egyutt",
+      "five_word_jaccard": 0.00046
+    }
+  ],
+  "repeated_headings": [],
+  "repeated_long_sentences": [],
+  "cross_brand_flags": [],
+  "passed": true,
+  "failures": []
+}

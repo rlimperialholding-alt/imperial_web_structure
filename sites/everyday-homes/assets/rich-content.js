@@ -7,6 +7,11 @@ const RICH_SOURCE_MAP = {
   "/elso-lepesek": { file: "07-tudastar.md", layout: "knowledge-magazine", photo: "everyday-young-family.jpg", primary: "/a-fontos-kerdesek" },
   "/a-fontos-kerdesek": { file: "08-gyik.md", layout: "question-wall", photo: "everyday-mother-child.jpg", primary: "/kezdjuk-egyutt" },
   "/kezdjuk-egyutt": { file: "09-kapcsolat.md", layout: "conversation-room", photo: "everyday-warm-generations.jpg", primary: "/otthonvalaszto" },
+  "/kell-egy-otthon-mindenkinek": { file: "../pages/10-kuldetesunk.md", layout: "mission-manifesto", photo: "everyday-mission-family-v1.png", primary: "/otthonvalaszto" },
+  "/garanciak-es-utogondozas": { file: "../pages/11-garanciak-es-utogondozas.md", layout: "care-protocol", photo: "everyday-aftercare-inspection-v1.png", primary: "/biztonsag/atadas-utan" },
+  "/elso-lepesek-hirlevel": { file: "../pages/12-hirlevel.md", layout: "letter-lab", photo: "everyday-newsletter-planning-v1.png", primary: "/elso-lepesek" },
+  "/karrier": { file: "../pages/13-karrier.md", layout: "maker-workshop", photo: "everyday-career-team-v1.png", primary: "/karrier" },
+  "/sajto": { file: "../pages/14-sajto.md", layout: "press-desk", photo: "everyday-press-interview-v1.png", primary: "/sajto" },
 };
 
 const INTERNAL_STOP = /^(?:\d+\.\s+)?(?:EGYEDI VIZUÁLIS ARCHETÍPUS|ÁLLÍTÁS- ÉS ADATKAPU|KAPUSTÁTUSZ|KIADÁSI STÁTUSZ|BELSŐ ELLENŐRZÉS)/i;
@@ -109,7 +114,41 @@ function diagramMarkup(layout, sections) {
   if (layout === "chooser-mosaic") {
     return `<figure class="explain-visual explain-visual--mosaic"><figcaption>Négy válasz szűkíti a választást</figcaption><div>${safe.map((label, index) => `<span style="--i:${index}">${label}</span>`).join("")}</div></figure>`;
   }
+  if (layout === "mission-manifesto") {
+    return `<figure class="explain-visual explain-visual--mission"><figcaption>Az otthon nem a tervrajznál kezdődik</figcaption><div class="mission-orbit"><strong>A család élete</strong>${safe.map((label, index) => `<span style="--orbit:${index}">${label}</span>`).join("")}</div></figure>`;
+  }
+  if (layout === "care-protocol") {
+    return `<figure class="explain-visual explain-visual--care"><figcaption>Egy kérdés útja a jelzéstől a lezárásig</figcaption><ol class="care-track"><li><b>01</b><span>Jelzés</span></li><li><b>02</b><span>Azonosítás</span></li><li><b>03</b><span>Vizsgálat</span></li><li><b>04</b><span>Intézkedés</span></li><li><b>05</b><span>Visszajelzés</span></li></ol></figure>`;
+  }
+  if (layout === "letter-lab") {
+    return `<figure class="explain-visual explain-visual--letters"><figcaption>Nem mindegy, melyik levél érkezik meg ma</figcaption><div class="mail-stack">${safe.map((label, index) => `<article><small>0${index + 1}</small><strong>${label}</strong><span>Egy válasz. Egy következő lépés.</span></article>`).join("")}</div></figure>`;
+  }
+  if (layout === "maker-workshop") {
+    return `<figure class="explain-visual explain-visual--workshop"><figcaption>A munkád mindig valaki más munkáját készíti elő</figcaption><div class="handoff-plan"><span>Megértem</span><i></i><span>Elkészítem</span><i></i><span>Ellenőrzöm</span><i></i><strong>Átadom</strong></div></figure>`;
+  }
+  if (layout === "press-desk") {
+    return `<figure class="explain-visual explain-visual--press"><figcaption>Állításból közölhető információ</figcaption><div class="fact-desk"><span>Forrás</span><span>Dátum</span><span>Feltétel</span><span>Módszer</span><strong>Ellenőrzött mondat</strong></div></figure>`;
+  }
   return `<figure class="explain-visual explain-visual--home"><figcaption>Az otthonhoz vezető döntések</figcaption><svg viewBox="0 0 800 360" role="img" aria-label="Döntési útvonal"><path d="M80 270 L220 130 L360 245 L520 90 L720 220"/><circle cx="80" cy="270" r="24"/><circle cx="220" cy="130" r="24"/><circle cx="360" cy="245" r="24"/><circle cx="520" cy="90" r="24"/><circle cx="720" cy="220" r="24"/></svg><div class="visual-labels">${safe.map(label => `<span>${label}</span>`).join("")}</div></figure>`;
+}
+
+function secondaryDiagramMarkup(layout) {
+  const visuals = {
+    "family-editorial": `<figure class="secondary-visual secondary-visual--rooms"><figcaption>Egy nap az otthonban</figcaption><div><span>Reggel</span><b>Közös tér</b><span>Délután</span><b>Saját sarok</b><span>Este</span></div></figure>`,
+    "chooser-mosaic": `<figure class="secondary-visual secondary-visual--filter"><figcaption>A választás szűkül, az indok tisztul</figcaption><div><i>Élethelyzet</i><i>Telek</i><i>Keret</i><strong>Nekünk való</strong></div></figure>`,
+    "family-ledger": `<figure class="secondary-visual secondary-visual--reserve"><figcaption>A biztonsági tartalék nem maradék</figcaption><div><span>Ház</span><span>Telek és külső munkák</span><strong>Megőrzött tartalék</strong></div></figure>`,
+    "guided-journey": `<figure class="secondary-visual secondary-visual--calendar"><figcaption>A döntéseknek is van időpontjuk</figcaption><div>${["Most", "Következő", "Előkészítve", "Lezárva"].map((x, i) => `<span style="--step:${i}">${x}</span>`).join("")}</div></figure>`,
+    "proof-gallery": `<figure class="secondary-visual secondary-visual--lenses"><figcaption>Ugyanaz a ház négy bizonyítékkal</figcaption><div><span>Fotó</span><span>Helyszín</span><span>Műszaki adat</span><span>Családi tapasztalat</span></div></figure>`,
+    "knowledge-magazine": `<figure class="secondary-visual secondary-visual--reading"><figcaption>A jó kérdésből használható jegyzet lesz</figcaption><div><b>?</b><span>Mi változik?</span><span>Mit kell mérni?</span><span>Ki tud felelni?</span></div></figure>`,
+    "question-wall": `<figure class="secondary-visual secondary-visual--answers"><figcaption>Nem minden válasz ugyanaz a mondat</figcaption><div><span>Ár → számítás</span><span>Telek → vizsgálat</span><span>Technika → mérnök</span><span>Szerződés → dokumentum</span></div></figure>`,
+    "conversation-room": `<figure class="secondary-visual secondary-visual--meeting"><figcaption>Így érkeztek felkészülten a beszélgetésre</figcaption><div><span>Kérdés</span><span>Dokumentum</span><span>Elképzelés</span><strong>Következő lépés</strong></div></figure>`,
+    "mission-manifesto": `<figure class="secondary-visual secondary-visual--promise"><figcaption>A küldetés a hétköznapokban mérhető</figcaption><div><span>Érthető választás</span><span>Vállalható keret</span><span>Követhető út</span><strong>Jól használható otthon</strong></div></figure>`,
+    "care-protocol": `<figure class="secondary-visual secondary-visual--seasons"><figcaption>Az első év négy ellenőrzési nézőpontja</figcaption><div><span>Tavasz<br><b>víz útja</b></span><span>Nyár<br><b>hő és árnyék</b></span><span>Ősz<br><b>felkészítés</b></span><span>Tél<br><b>pára és komfort</b></span></div></figure>`,
+    "letter-lab": `<figure class="secondary-visual secondary-visual--inbox"><figcaption>A postafiók nem tartalomraktár</figcaption><div><span>Megérkezik</span><span>Elolvasható</span><span>Elvégezhető</span><strong>Hasznos döntés</strong></div></figure>`,
+    "maker-workshop": `<figure class="secondary-visual secondary-visual--responsibility"><figcaption>A felelősség nem áll meg a saját feladat végén</figcaption><div><span>Bemenet</span><i></i><span>Munka</span><i></i><span>Ellenőrzés</span><i></i><strong>Másik ember biztos kezdése</strong></div></figure>`,
+    "press-desk": `<figure class="secondary-visual secondary-visual--citation"><figcaption>Az idézhető szám teljes névjegye</figcaption><dl><dt>Mit mér?</dt><dd>Jelentés</dd><dt>Mikor?</dt><dd>Dátum</dd><dt>Hogyan?</dt><dd>Módszer</dd><dt>Honnan?</dt><dd>Forrás</dd></dl></figure>`,
+  };
+  return visuals[layout] || "";
 }
 
 async function renderRichSourcePage(path) {
@@ -133,6 +172,7 @@ async function renderRichSourcePage(path) {
       <div class="rich-metrics" aria-label="Szerkesztési készültség"><span><strong>${bodyChars.toLocaleString("hu-HU")}</strong> látható karakter</span><span><strong>${parsed.sections.length}</strong> önálló fejezet</span><span><strong>${faqCount}</strong> szakmai kérdés</span><span><strong>3×</strong> QA kötelező</span></div>
       ${diagramMarkup(config.layout, parsed.sections)}
       <div class="rich-sections">${parsed.sections.map(sectionMarkup).join("")}</div>
+      ${secondaryDiagramMarkup(config.layout)}
       <section class="rich-closing"><div><p class="eyebrow">Otthon – egyszerűen.</p><h2>${escapeHtml(canonical.title)}</h2></div><a class="button" href="${href(config.primary)}" data-route>${escapeHtml(canonical.primary?.[0] || "Tovább")}</a></section>
     </article>`;
   setCurrent(path);

@@ -10,14 +10,35 @@ MAP_PATH = ROOT / "data" / "page-map.json"
 OUT_PATH = ROOT / "data" / "completion-registry.json"
 
 SOURCE_BY_ROUTE = {
-    "/": "01-kezdolap.md",
-    "/otthonvalaszto": "02-otthonvalaszto.md",
-    "/keretbol-otthon": "04-keretbol-otthon.md",
-    "/igy-lesz-egyszeru": "05-igy-lesz-egyszeru.md",
-    "/kozelrol": "06-kozelrol.md",
-    "/elso-lepesek": "07-tudastar.md",
-    "/a-fontos-kerdesek": "08-gyik.md",
-    "/kezdjuk-egyutt": "09-kapcsolat.md",
+    "/": "drive/01-kezdolap.md",
+    "/otthonvalaszto": "drive/02-otthonvalaszto.md",
+    "/keretbol-otthon": "drive/04-keretbol-otthon.md",
+    "/igy-lesz-egyszeru": "drive/05-igy-lesz-egyszeru.md",
+    "/kozelrol": "drive/06-kozelrol.md",
+    "/elso-lepesek": "drive/07-tudastar.md",
+    "/a-fontos-kerdesek": "drive/08-gyik.md",
+    "/kezdjuk-egyutt": "drive/09-kapcsolat.md",
+    "/kell-egy-otthon-mindenkinek": "pages/10-kuldetesunk.md",
+    "/garanciak-es-utogondozas": "pages/11-garanciak-es-utogondozas.md",
+    "/elso-lepesek-hirlevel": "pages/12-hirlevel.md",
+    "/karrier": "pages/13-karrier.md",
+    "/sajto": "pages/14-sajto.md",
+}
+
+LAYOUT_BY_ROUTE = {
+    "/": "family-editorial",
+    "/otthonvalaszto": "chooser-mosaic",
+    "/keretbol-otthon": "family-ledger",
+    "/igy-lesz-egyszeru": "guided-journey",
+    "/kozelrol": "proof-gallery",
+    "/elso-lepesek": "knowledge-magazine",
+    "/a-fontos-kerdesek": "question-wall",
+    "/kezdjuk-egyutt": "conversation-room",
+    "/kell-egy-otthon-mindenkinek": "mission-manifesto",
+    "/garanciak-es-utogondozas": "care-protocol",
+    "/elso-lepesek-hirlevel": "letter-lab",
+    "/karrier": "maker-workshop",
+    "/sajto": "press-desk",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
@@ -47,7 +68,7 @@ def main() -> None:
             excluded_from_scope = route.startswith(HOUSE_PREFIXES) or page_id == "EH-HU-003"
             raw = ""
             if source_name:
-                raw = (ROOT / "sources" / "drive" / source_name).read_text(encoding="utf-8")
+                raw = (ROOT / "sources" / source_name).read_text(encoding="utf-8")
             visible = public_copy(raw)
             chars = len(visible)
             questions = faq_count(raw)
@@ -70,8 +91,8 @@ def main() -> None:
                 "source": source_name,
                 "visible_body_characters": chars,
                 "faq_questions": questions,
-                "visual_assets": 0,
-                "layout_signature": None,
+                "visual_assets": 3 if source_name else 0,
+                "layout_signature": LAYOUT_BY_ROUTE.get(route),
                 "triple_qa_passes": 0,
                 "publication_allowed": False,
             })
