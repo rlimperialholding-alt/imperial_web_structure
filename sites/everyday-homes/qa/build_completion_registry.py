@@ -34,6 +34,20 @@ SOURCE_BY_ROUTE = {
     "/szamolok/hazkoltseg": "pages/301-hazkoltseg.md",
 }
 
+DECISION_PAGE_ROUTES = {
+    "/szamolok/havi-teher",
+    "/szamolok/teljes-projektkeret",
+    "/szamolok/utemterv",
+    "/szamolok/felujitas-vagy-uj",
+    "/szamolok/energia-es-koltseg",
+    "/szamolok/gyors-hazellenorzes",
+}
+
+PAGE_RULES = {
+    "editorial": {"minimum_characters": 12_000, "minimum_faq": 5, "visual_assets": 3},
+    "decision_tool": {"minimum_characters": 1_800, "minimum_faq": 4, "visual_assets": 3},
+}
+
 LAYOUT_BY_ROUTE = {
     "/": "family-editorial",
     "/otthonvalaszto": "chooser-mosaic",
@@ -56,6 +70,12 @@ LAYOUT_BY_ROUTE = {
     "/ket-generacio-egy-otthon": "two-household-bridge",
     "/kesobb-bovitheto-otthon": "phased-home-blueprint",
     "/szamolok/hazkoltseg": "project-cost-ledger",
+    "/szamolok/havi-teher": "monthly-room",
+    "/szamolok/teljes-projektkeret": "cost-map",
+    "/szamolok/utemterv": "schedule-line",
+    "/szamolok/felujitas-vagy-uj": "three-choices",
+    "/szamolok/energia-es-koltseg": "warm-cold",
+    "/szamolok/gyors-hazellenorzes": "family-compass",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
@@ -76,6 +96,24 @@ def faq_count(text: str) -> int:
     return len(re.findall(r"(?m)^[^\n]{8,160}\?\s*$", text))
 
 
+def decision_page_source(route: str) -> str:
+    source = (ROOT / "assets" / "decision-pages.js").read_text(encoding="utf-8")
+    marker = f'  "{route}": {{'
+    start = source.index(marker)
+    next_page = re.search(r'\n  "/szamolok/[^\"]+": \{', source[start + len(marker):])
+    end = start + len(marker) + next_page.start() if next_page else source.index("\n};", start)
+    return source[start:end]
+
+
+def decision_visible_copy(source: str) -> str:
+    body_blocks = re.findall(r"body:\s*`(.*?)`\s*,?", source, flags=re.S)
+    quoted_copy = re.findall(r'(?:eyebrow|title|intro|closingTitle):\s*"([^"]+)"', source)
+    faq_copy = [item for pair in re.findall(r'\["([^"]+\?)",\s*"([^"]+)"\]', source) for item in pair]
+    text = " ".join(body_blocks + quoted_copy + faq_copy)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def main() -> None:
     page_map = json.loads(MAP_PATH.read_text(encoding="utf-8"))
     qa_evidence = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8")) if EVIDENCE_PATH.exists() else {"routes": {}}
@@ -83,21 +121,31 @@ def main() -> None:
     for group in page_map["groups"]:
         for page_id, route, title in group["pages"]:
             source_name = SOURCE_BY_ROUTE.get(route)
+            page_type = "decision_tool" if route in DECISION_PAGE_ROUTES else "editorial"
+            rules = PAGE_RULES[page_type]
             excluded_from_scope = route.startswith(HOUSE_PREFIXES) or page_id == "EH-HU-003"
             raw = ""
-            if source_name:
+            if page_type == "decision_tool":
+                source_name = f"assets/decision-pages.js#{route}"
+                raw = decision_page_source(route)
+                visible = decision_visible_copy(raw)
+                questions = len(re.findall(r'\["[^"]+\?",\s*"[^"]+"\]', raw))
+            elif source_name:
                 raw = (ROOT / "sources" / source_name).read_text(encoding="utf-8")
-            visible = public_copy(raw)
+                visible = public_copy(raw)
+                questions = faq_count(raw)
+            else:
+                visible = ""
+                questions = 0
             chars = len(visible)
-            questions = faq_count(raw)
             qa_passes = int(qa_evidence.get("routes", {}).get(route, {}).get("passes", 0))
             if excluded_from_scope:
                 state = "NIM_CONTENT_PLACEHOLDER"
             elif not source_name:
                 state = "ROUTE_SHELL_ONLY"
-            elif chars < 12_000:
+            elif chars < rules["minimum_characters"]:
                 state = "SOURCE_IMPORTED_NEEDS_EXPANSION"
-            elif questions < 5:
+            elif questions < rules["minimum_faq"]:
                 state = "SOURCE_IMPORTED_NEEDS_FAQ"
             elif qa_passes == 3:
                 state = "COMPLETE_REVIEW_REQUIRED"
@@ -108,11 +156,14 @@ def main() -> None:
                 "route": route,
                 "title": title,
                 "group": group["name"],
+                "page_type": page_type,
                 "state": state,
                 "source": source_name,
                 "visible_body_characters": chars,
                 "faq_questions": questions,
-                "visual_assets": 3 if source_name else 0,
+                "minimum_visible_body_characters": rules["minimum_characters"],
+                "minimum_faq_questions": rules["minimum_faq"],
+                "visual_assets": rules["visual_assets"] if source_name else 0,
                 "layout_signature": LAYOUT_BY_ROUTE.get(route),
                 "triple_qa_passes": qa_passes,
                 "publication_allowed": False,

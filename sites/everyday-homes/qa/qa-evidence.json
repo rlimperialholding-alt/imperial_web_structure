@@ -119,6 +119,60 @@
       "console_errors": 0,
       "http_asset_failures": 0,
       "approved_for_publication": false
+    },
+    "/szamolok/havi-teher": {
+      "passes": 3,
+      "content": ["decision-page-copy-review", "faq-count", "hungarian-language-gate"],
+      "visual": ["mobile-render-review", "tablet-render-review", "desktop-render-review", "overflow-and-clipping-check"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/szamolok/teljes-projektkeret": {
+      "passes": 3,
+      "content": ["decision-page-copy-review", "faq-count", "hungarian-language-gate"],
+      "visual": ["mobile-render-review", "tablet-render-review", "desktop-render-review", "overflow-and-clipping-check"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/szamolok/utemterv": {
+      "passes": 3,
+      "content": ["decision-page-copy-review", "faq-count", "hungarian-language-gate"],
+      "visual": ["mobile-render-review", "tablet-render-review", "desktop-render-review", "overflow-and-clipping-check"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/szamolok/felujitas-vagy-uj": {
+      "passes": 3,
+      "content": ["decision-page-copy-review", "faq-count", "hungarian-language-gate"],
+      "visual": ["mobile-render-review", "tablet-render-review", "desktop-render-review", "overflow-and-clipping-check"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/szamolok/energia-es-koltseg": {
+      "passes": 3,
+      "content": ["decision-page-copy-review", "faq-count", "hungarian-language-gate"],
+      "visual": ["mobile-render-review", "tablet-render-review", "desktop-render-review", "overflow-and-clipping-check"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
+    },
+    "/szamolok/gyors-hazellenorzes": {
+      "passes": 3,
+      "content": ["decision-page-copy-review", "faq-count", "hungarian-language-gate"],
+      "visual": ["mobile-render-review", "tablet-render-review", "desktop-render-review", "overflow-and-clipping-check"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
     }
   }
 }
