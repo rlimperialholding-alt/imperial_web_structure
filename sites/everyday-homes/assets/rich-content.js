@@ -209,7 +209,6 @@ async function renderRichSourcePage(path) {
         <div class="rich-hero__image" style="background-image:url('${BASE}/assets/photos/${config.photo}')" role="img" aria-label="${escapeHtml(canonical.eyebrow)} – Everyday Homes élethelyzet"></div>
         <div class="rich-hero__copy"><span class="hero__tag">${escapeHtml(canonical.id)} · részletes forrásoldal</span><p class="eyebrow">${escapeHtml(canonical.eyebrow)}</p><h1>${escapeHtml(parsed.title)}</h1><p class="lede">${escapeHtml(intro)}</p><div class="actions"><a class="button" href="${href(config.primary)}" data-route>${escapeHtml(canonical.primary?.[0] || "Megnézem a következő lépést")}</a></div></div>
       </section>
-      <div class="rich-metrics" aria-label="Szerkesztési készültség"><span><strong>${bodyChars.toLocaleString("hu-HU")}</strong> látható karakter</span><span><strong>${parsed.sections.length}</strong> önálló fejezet</span><span><strong>${faqCount}</strong> szakmai kérdés</span><span><strong>3×</strong> QA kötelező</span></div>
       ${diagramMarkup(config.layout, parsed.sections)}
       <div class="rich-sections">${parsed.sections.map(sectionMarkup).join("")}</div>
       ${secondaryDiagramMarkup(config.layout)}

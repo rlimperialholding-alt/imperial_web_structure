@@ -110,9 +110,6 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .rich-hero__image { min-width: 0; min-height: 620px; background-position: center; background-size: cover; }
 .rich-hero__copy { min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: clamp(2.4rem, 6vw, 6rem); }
 .rich-hero h1 { overflow-wrap: anywhere; font-size: clamp(3rem, 5.8vw, 6.4rem); }
-.rich-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; color: white; background: rgba(255,255,255,.2); }
-.rich-metrics span { display: grid; gap: .15rem; min-height: 92px; place-content: center; padding: 1rem; text-align: center; background: var(--teal-dark); }
-.rich-metrics strong { color: var(--orange); font-size: 1.45rem; }
 .rich-sections { width: min(1200px, calc(100% - 2rem)); margin: 0 auto; padding: clamp(4rem, 8vw, 8rem) 0; }
 .rich-section { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: clamp(1.4rem, 4vw, 5rem); padding: clamp(3rem, 7vw, 7rem) 0; border-top: 1px solid var(--line); }
 .rich-section__number { color: var(--orange); font-size: clamp(2rem, 5vw, 4.6rem); font-weight: 950; letter-spacing: -.08em; }
@@ -500,7 +497,6 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   .rich-hero, .rich-page--family-editorial .rich-hero, .rich-page--chooser-mosaic .rich-hero, .rich-page--family-ledger .rich-hero, .rich-page--proof-gallery .rich-hero, .rich-page--conversation-room .rich-hero { grid-template-columns: 1fr; }
   .rich-page--care-protocol .rich-hero, .rich-page--letter-lab .rich-hero, .rich-page--maker-workshop .rich-hero, .rich-page--press-desk .rich-hero { grid-template-columns: 1fr; }
   .rich-hero__image, .rich-page--family-editorial .rich-hero__image { order: 0; min-height: 460px; clip-path: none; }
-  .rich-metrics { grid-template-columns: repeat(2, 1fr); }
   .rich-section, .rich-page--guided-journey .rich-section:nth-child(even) { grid-template-columns: 80px minmax(0,1fr); }
   .rich-page--guided-journey .rich-section:nth-child(even) .rich-section__number { order: 0; text-align: left; }
   .explain-visual--journey ol, .proof-lens { grid-template-columns: repeat(2, 1fr); }
@@ -562,7 +558,6 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   .rich-hero__image { min-height: 320px; }
   .rich-hero__copy { padding: 2rem 1rem 3rem; }
   .rich-hero h1 { font-size: clamp(2.45rem, 13vw, 4rem); }
-  .rich-metrics { grid-template-columns: 1fr 1fr; }
   .rich-section, .rich-page--guided-journey .rich-section:nth-child(even) { grid-template-columns: 1fr; padding: 3.2rem 0; }
   .rich-section__number { font-size: 2rem; }
   .rich-page--knowledge-magazine .rich-section:nth-child(3n + 2) { margin-left: 0; }
