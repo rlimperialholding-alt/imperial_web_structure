@@ -76,6 +76,12 @@ A közlekedők és nehezen bútorozható sarkok területét is fizetni kell. Az 
 
 Nézzétek meg a fenntartást is. A nagyobb ház több fűtött teret, burkolatot, takarítást és karbantartást jelent. A családnak nem a lehető legnagyobb, hanem az évek múlva is kényelmesen működtethető otthon ad szabadságot.
 
+Mérjétek fel azt is, mennyi helyet foglalnak a már meglévő, megtartandó bútorok. Egy nagyobb étkezőasztal, zongora, két íróasztal vagy családi könyvespolc meghatározhatja a használható falszakaszokat. A „majd valahová befér” mondat helyett rajzoljátok be őket méretarányosan, a kihúzható székekkel és nyitható ajtókkal együtt.
+
+Ne csak egyetlen berendezést próbáljatok ki. A gyerekek növekedésével változhat az ágy, az íróasztal, a tároló és a közös tér használata. Ha egy szoba csak egyetlen, milliméterre kiszámított elrendezéssel működik, kevés mozgásteret hagy a következő éveknek. Két-három életszerű változat sokkal többet mutat a terv valódi értékéről.
+
+A bútorozási próba a nyílászárók helyét is ellenőrzi. A szép nagy üvegfelület fényt ad, de elvesz egy használható falat; a rossz irányba nyíló ajtó pedig értékes sarkot zárhat le. Nem az a cél, hogy kevesebb fény vagy kisebb nyílás legyen, hanem hogy a fény, a kilátás, a közlekedés és a berendezés egyetlen működő renddé álljon össze.
+
 MARADJATOK A KÖRNYÉKEN, VAGY INDULJATOK ÚJ HELYRE?
 
 Gyerekekkel a költözés nemcsak ingatlanváltás. Iskola, óvoda, barátok, nagyszülők, munkahely és napi közlekedés kapcsolódik hozzá. Az olcsóbb telek sem biztos, hogy kedvezőbb, ha minden nap hosszú és drága utazást eredményez.
