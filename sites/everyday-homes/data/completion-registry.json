@@ -11,7 +11,7 @@
     "nim_managed_routes": 7,
     "source_imported_routes": 19,
     "route_shells": 40,
-    "complete_routes": 10
+    "complete_routes": 11
   },
   "pages": [
     {
@@ -285,13 +285,13 @@
       "route": "/ket-generacio-egy-otthon",
       "title": "Két generáció",
       "group": "Élethelyzetek",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/106-ket-generacio-egy-otthon.md",
       "visible_body_characters": 17704,
       "faq_questions": 12,
       "visual_assets": 3,
       "layout_signature": "two-household-bridge",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
