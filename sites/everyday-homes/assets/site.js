@@ -476,6 +476,44 @@ function bindRoutes() {
   });
 }
 
+async function initPageDirectory() {
+  const panel = document.querySelector("#page-directory");
+  const groupsTarget = panel?.querySelector("[data-page-directory-groups]");
+  const toggle = document.querySelector(".page-directory-toggle");
+  const close = panel?.querySelector(".page-directory__close");
+  if (!panel || !groupsTarget || !toggle || !close) return;
+  try {
+    const [mapResponse, registryResponse] = await Promise.all([
+      fetch(`${BASE}/data/page-map.json`),
+      fetch(`${BASE}/data/completion-registry.json`),
+    ]);
+    const pageMap = await mapResponse.json();
+    const registry = await registryResponse.json();
+    const states = new Map(registry.pages.map(page => [page.page_id, page.state]));
+    groupsTarget.innerHTML = pageMap.groups.map((group, index) => `
+      <details class="page-directory__group" ${index === 0 ? "open" : ""}>
+        <summary>${escapeHtml(group.name)} · ${group.pages.length} oldal</summary>
+        <div class="page-directory__links">
+          ${group.pages.map(([id, route, label]) => {
+            const state = states.get(id) || "UNKNOWN";
+            return `<a class="page-directory__link" href="${href(route)}" data-route data-state="${escapeHtml(state)}"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(id)} · ${escapeHtml(state)}</small></a>`;
+          }).join("")}
+        </div>
+      </details>`).join("");
+    bindRoutes();
+  } catch (error) {
+    groupsTarget.innerHTML = `<p class="status-note"><strong>Az oldaltérkép nem tölthető be.</strong> ${escapeHtml(error.message)}</p>`;
+  }
+  const setOpen = open => {
+    panel.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    document.body.classList.toggle("directory-open", open);
+  };
+  toggle.addEventListener("click", () => setOpen(panel.hidden));
+  close.addEventListener("click", () => setOpen(false));
+  document.addEventListener("keydown", event => { if (event.key === "Escape") setOpen(false); });
+}
+
 document.querySelector(".menu-toggle").addEventListener("click", event => {
   const nav = document.querySelector(".primary-nav");
   const open = nav.classList.toggle("is-open");
@@ -484,3 +522,4 @@ document.querySelector(".menu-toggle").addEventListener("click", event => {
 window.addEventListener("popstate", () => pages[normalizePath()] ? renderPage(pages[normalizePath()], normalizePath()) : renderNotFound(normalizePath()));
 const initialPath = normalizePath();
 pages[initialPath] ? renderPage(pages[initialPath], initialPath) : renderNotFound(initialPath);
+initPageDirectory();
