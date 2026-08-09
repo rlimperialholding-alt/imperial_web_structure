@@ -10,7 +10,8 @@ const RICH_SOURCE_MAP = {
 };
 
 const INTERNAL_STOP = /^(?:\d+\.\s+)?(?:EGYEDI VIZUÁLIS ARCHETÍPUS|ÁLLÍTÁS- ÉS ADATKAPU|KAPUSTÁTUSZ|KIADÁSI STÁTUSZ|BELSŐ ELLENŐRZÉS)/i;
-const DYNAMIC_PLACEHOLDER = /\[[^\]]+(?:SZÜKSÉGES|JÓVÁHAGYOTT|AKTÍV|ELLENŐRZÖTT|HÁZNÉV|ÁR|MEZŐ|HELYSZÍN|IDŐ)[^\]]*\]/gi;
+const DYNAMIC_PLACEHOLDER = /\[[^\]]+\]/g;
+const EDITORIAL_FIELD_LINE = /^(?:Mezők?|Űrlapmezők|Típusházkártya|Otthonkártya|Összehasonlítási mezők|Kiinduló helyzet|A döntés fő oka|A telek fontos adottsága|A legfontosabb változtatás|Adatkezelési sor|Beküldés utáni üzenet|Fájlfeltöltés|Visszaigazoló üzenet):/i;
 
 function cleanPublicLines(source) {
   let text = source.replace(/\r/g, "");
@@ -22,9 +23,9 @@ function cleanPublicLines(source) {
     const line = rawLine.trim();
     if (INTERNAL_STOP.test(line) || /^Kiadási státusz:/i.test(line)) break;
     if (!line) { cleaned.push(""); continue; }
-    if (/^(?:Szerkesztői szabály|Mezők|Űrlapmezők|Típusházkártya|Összehasonlítási mezők):/i.test(line)) continue;
+    if (/^Szerkesztői szabály:/i.test(line) || EDITORIAL_FIELD_LINE.test(line)) continue;
     const withoutPlaceholder = line.replace(DYNAMIC_PLACEHOLDER, "").replace(/\s{2,}/g, " ").trim();
-    if (withoutPlaceholder) cleaned.push(withoutPlaceholder);
+    if (withoutPlaceholder.length >= 24) cleaned.push(withoutPlaceholder);
   }
   return cleaned;
 }
