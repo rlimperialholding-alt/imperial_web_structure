@@ -133,7 +133,7 @@ guides.forEach(([path,id,eyebrow,title,items]) => pages[path]={id,eyebrow,title,
 const fallbackGroups = {
   "/szamolok/hazkoltseg": ["EH-HU-301","Mennyibe kerülhet a házunk?","Adjátok meg, mit szeretnétek. Megmutatjuk, miből áll össze a várható költség."],
   "/szamolok/havi-teher": ["EH-HU-302","Mekkora havi teher férhet bele?","Ne azt számoljátok, mennyi hitelt kaphattok. Azt, mi marad kényelmes."],
-  "/szamolok/teljes-projektkeret": ["EH-HU-303","Teljes projektkeret","A ház ára csak az egyik sor."],
+  "/szamolok/teljes-projektkeret": ["EH-HU-303","Az építkezés teljes költsége","A ház ára csak az egyik sor."],
   "/szamolok/utemterv": ["EH-HU-304","Mikor költözhetünk?","Nem egyetlen dátumot mondunk. Megmutatjuk, mi vezet el odáig."],
   "/szamolok/felujitas-vagy-uj": ["EH-HU-305","Felújítsunk, bővítsünk vagy építsünk újat?","Nem mindig az új ház a jobb döntés. De nem mindig a felújítás az olcsóbb."],
   "/szamolok/energia-es-koltseg": ["EH-HU-306","Építési és fenntartási költség együtt","Amit ma beépítetek, azt évekig fizetitek – vagy élvezitek."],
@@ -496,7 +496,7 @@ async function initPageDirectory() {
         <div class="page-directory__links">
           ${group.pages.map(([id, route, label]) => {
             const state = states.get(id) || "UNKNOWN";
-            return `<a class="page-directory__link" href="${href(route)}" data-route data-state="${escapeHtml(state)}"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(id)} · ${escapeHtml(state)}</small></a>`;
+            return `<a class="page-directory__link" href="${href(route)}" data-route data-state="${escapeHtml(state)}"><strong>${escapeHtml(label)}</strong></a>`;
           }).join("")}
         </div>
       </details>`).join("");
