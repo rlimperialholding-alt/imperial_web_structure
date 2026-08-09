@@ -56,6 +56,15 @@
       "console_errors": 0,
       "http_asset_failures": 0,
       "approved_for_publication": false
+    },
+    "/most-leszunk-csalad": {
+      "passes": 3,
+      "content": ["minimum-character-count", "faq-count", "cross-page-and-cross-brand-uniqueness"],
+      "visual": ["desktop-hero-review", "mobile-hero-review", "tablet-layout-review", "deep-module-overflow-review"],
+      "viewports": ["390x844", "768x1024", "1440x1000"],
+      "console_errors": 0,
+      "http_asset_failures": 0,
+      "approved_for_publication": false
     }
   }
 }
