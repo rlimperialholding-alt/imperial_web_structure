@@ -107,8 +107,8 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 /* Detailed, source-backed pages. Each archetype has a separate composition. */
 .rich-page { --accent: var(--teal); background: var(--cream); }
 .rich-hero { min-height: min(840px, 88vh); display: grid; grid-template-columns: 1.14fr .86fr; background: var(--paper); }
-.rich-hero__image { min-height: 620px; background-position: center; background-size: cover; }
-.rich-hero__copy { display: flex; flex-direction: column; justify-content: center; padding: clamp(2.4rem, 6vw, 6rem); }
+.rich-hero__image { min-width: 0; min-height: 620px; background-position: center; background-size: cover; }
+.rich-hero__copy { min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: clamp(2.4rem, 6vw, 6rem); }
 .rich-hero h1 { font-size: clamp(3rem, 5.8vw, 6.4rem); }
 .rich-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; color: white; background: rgba(255,255,255,.2); }
 .rich-metrics span { display: grid; gap: .15rem; min-height: 92px; place-content: center; padding: 1rem; text-align: center; background: var(--teal-dark); }
@@ -116,8 +116,9 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .rich-sections { width: min(1200px, calc(100% - 2rem)); margin: 0 auto; padding: clamp(4rem, 8vw, 8rem) 0; }
 .rich-section { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: clamp(1.4rem, 4vw, 5rem); padding: clamp(3rem, 7vw, 7rem) 0; border-top: 1px solid var(--line); }
 .rich-section__number { color: var(--orange); font-size: clamp(2rem, 5vw, 4.6rem); font-weight: 950; letter-spacing: -.08em; }
-.rich-section__body { max-width: 930px; }
+.rich-section__body { min-width: 0; max-width: 930px; }
 .rich-section h2 { max-width: 850px; }
+.rich-section h2, .rich-copy, .rich-faq summary, .rich-faq p { overflow-wrap: anywhere; }
 .rich-copy { max-width: 850px; margin: 0 0 1.15rem; color: #405357; font-size: clamp(1.03rem, 1.25vw, 1.2rem); }
 .rich-faq { margin: .9rem 0; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); }
 .rich-faq summary { position: relative; cursor: pointer; padding: 1.2rem 3.5rem 1.2rem 1.3rem; color: var(--teal-dark); font-size: clamp(1.08rem, 1.5vw, 1.3rem); font-weight: 900; }
@@ -187,6 +188,7 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 }
 
 @media (max-width: 640px) {
+  .rich-page, .rich-hero, .rich-hero__image, .rich-hero__copy { max-width: 100%; }
   .rich-hero__image { min-height: 320px; }
   .rich-hero__copy { padding: 2rem 1rem 3rem; }
   .rich-hero h1 { font-size: clamp(2.45rem, 13vw, 4rem); }
