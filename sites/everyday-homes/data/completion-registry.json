@@ -9,8 +9,8 @@
   "summary": {
     "canonical_routes": 66,
     "nim_managed_routes": 7,
-    "source_imported_routes": 19,
-    "route_shells": 40,
+    "source_imported_routes": 20,
+    "route_shells": 39,
     "complete_routes": 11
   },
   "pages": [
@@ -299,12 +299,12 @@
       "route": "/kesobb-bovitheto-otthon",
       "title": "Később bővíthető",
       "group": "Élethelyzetek",
-      "state": "ROUTE_SHELL_ONLY",
-      "source": null,
-      "visible_body_characters": 0,
-      "faq_questions": 0,
-      "visual_assets": 0,
-      "layout_signature": null,
+      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "source": "pages/107-kesobb-bovitheto-otthon.md",
+      "visible_body_characters": 16534,
+      "faq_questions": 11,
+      "visual_assets": 3,
+      "layout_signature": "phased-home-blueprint",
       "triple_qa_passes": 0,
       "publication_allowed": false
     },

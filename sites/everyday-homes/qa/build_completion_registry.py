@@ -30,6 +30,7 @@ SOURCE_BY_ROUTE = {
     "/otthon-es-munka": "pages/104-otthon-es-munka.md",
     "/kisebb-haz-konnyebb-elet": "pages/105-kisebb-haz-konnyebb-elet.md",
     "/ket-generacio-egy-otthon": "pages/106-ket-generacio-egy-otthon.md",
+    "/kesobb-bovitheto-otthon": "pages/107-kesobb-bovitheto-otthon.md",
 }
 
 LAYOUT_BY_ROUTE = {
@@ -52,6 +53,7 @@ LAYOUT_BY_ROUTE = {
     "/otthon-es-munka": "workday-switchboard",
     "/kisebb-haz-konnyebb-elet": "lighter-life-balance",
     "/ket-generacio-egy-otthon": "two-household-bridge",
+    "/kesobb-bovitheto-otthon": "phased-home-blueprint",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
