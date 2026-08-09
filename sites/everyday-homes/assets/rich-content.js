@@ -17,6 +17,7 @@ const RICH_SOURCE_MAP = {
   "/tobb-hely-a-csaladnak": { file: "../pages/103-tobb-hely-a-csaladnak.md", layout: "family-traffic", photo: "everyday-growing-family-zones-v1.png", primary: "/otthonvalaszto", introLimit: 1 },
   "/otthon-es-munka": { file: "../pages/104-otthon-es-munka.md", layout: "workday-switchboard", photo: "everyday-home-office-boundary-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
   "/kisebb-haz-konnyebb-elet": { file: "../pages/105-kisebb-haz-konnyebb-elet.md", layout: "lighter-life-balance", photo: "everyday-lighter-home-freedom-v1.png", primary: "/otthonvalaszto", introLimit: 1 },
+  "/ket-generacio-egy-otthon": { file: "../pages/106-ket-generacio-egy-otthon.md", layout: "two-household-bridge", photo: "everyday-two-generations-courtyard-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
 };
 
 const INTERNAL_STOP = /^(?:\d+\.\s+)?(?:EGYEDI VIZUÁLIS ARCHETÍPUS|ÁLLÍTÁS- ÉS ADATKAPU|KAPUSTÁTUSZ|KIADÁSI STÁTUSZ|BELSŐ ELLENŐRZÉS)/i;
@@ -149,6 +150,9 @@ function diagramMarkup(layout, sections) {
   if (layout === "lighter-life-balance") {
     return `<figure class="explain-visual explain-visual--lighter-life"><figcaption>Nem egyszerűen kisebb lesz. Más kerül a mérleg két oldalára.</figcaption><div class="life-balance"><section><small>AMIBŐL KEVESEBB</small><span>Takarítás</span><span>Lépcső</span><span>Fűtött üres tér</span><span>Kerti kötelesség</span></section><i><b></b></i><section><small>AMIBŐL TÖBB</small><span>Szabad idő</span><span>Könnyű közlekedés</span><span>Használt, szeretett terek</span><span>Család és hobbi</span></section></div></figure>`;
   }
+  if (layout === "two-household-bridge") {
+    return `<figure class="explain-visual explain-visual--two-households"><figcaption>A közelség nem közös nappalit jelent, hanem jól megválasztott kapcsolatokat</figcaption><div class="household-bridge"><section><small>ELSŐ OTTHON</small><span>Saját bejárat</span><span>Saját napirend</span><span>Saját vendégek</span></section><div><b>KÖZÖS UDVAR</b><i></i><strong>Segítség, amikor szükség van rá</strong></div><section><small>MÁSODIK OTTHON</small><span>Saját fürdő</span><span>Saját konyha</span><span>Saját csend</span></section></div></figure>`;
+  }
   return `<figure class="explain-visual explain-visual--home"><figcaption>Az otthonhoz vezető döntések</figcaption><svg viewBox="0 0 800 360" role="img" aria-label="Döntési útvonal"><path d="M80 270 L220 130 L360 245 L520 90 L720 220"/><circle cx="80" cy="270" r="24"/><circle cx="220" cy="130" r="24"/><circle cx="360" cy="245" r="24"/><circle cx="520" cy="90" r="24"/><circle cx="720" cy="220" r="24"/></svg><div class="visual-labels">${safe.map(label => `<span>${label}</span>`).join("")}</div></figure>`;
 }
 
@@ -172,6 +176,7 @@ function secondaryDiagramMarkup(layout) {
     "family-traffic": `<figure class="secondary-visual secondary-visual--useful-space"><figcaption>A hasznos hely nem mindig újabb szoba</figcaption><div><strong>Jól bútorozható hálók</strong><span>Tanulósarok</span><span>Második mosdó</span><span>Bejárati tárolás</span><span>Csendes visszavonulás</span><span>Kertre nyíló közös tér</span></div></figure>`,
     "workday-switchboard": `<figure class="secondary-visual secondary-visual--sound-shield"><figcaption>A csend útja a forrástól a koncentrációig</figcaption><div><span>Zajos családi tér</span><span>Jó helyiségkapcsolat</span><span>Fal + ajtó + tömítés</span><span>Belső hangelnyelés</span><strong>Érthető beszéd. Nyugodt figyelem.</strong></div></figure>`,
     "lighter-life-balance": `<figure class="secondary-visual secondary-visual--time-return"><figcaption>Mit kezdtek azzal az idővel, amit a ház visszaad?</figcaption><div><span><b>Hétfő</b>nem a javítással indul</span><span><b>Szerda</b>jut idő a saját dolgokra</span><span><b>Szombat</b>a kert öröm, nem műszak</span><strong>Vasárnap<br>együtt vagytok</strong></div></figure>`,
+    "two-household-bridge": `<figure class="secondary-visual secondary-visual--family-agreement"><figcaption>Négy mondat, amelyet még a falak előtt érdemes kimondani</figcaption><div><article><b>01</b><span>Miben maradunk önállók?</span></article><article><b>02</b><span>Mit használunk együtt?</span></article><article><b>03</b><span>Mikor számítunk egymásra?</span></article><article><b>04</b><span>Mi változhat később?</span></article></div></figure>`,
   };
   return visuals[layout] || "";
 }
