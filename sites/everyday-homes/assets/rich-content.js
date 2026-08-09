@@ -16,6 +16,7 @@ const RICH_SOURCE_MAP = {
   "/most-leszunk-csalad": { file: "../pages/102-most-leszunk-csalad.md", layout: "family-rhythm", photo: "everyday-expecting-family-nursery-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
   "/tobb-hely-a-csaladnak": { file: "../pages/103-tobb-hely-a-csaladnak.md", layout: "family-traffic", photo: "everyday-growing-family-zones-v1.png", primary: "/otthonvalaszto", introLimit: 1 },
   "/otthon-es-munka": { file: "../pages/104-otthon-es-munka.md", layout: "workday-switchboard", photo: "everyday-home-office-boundary-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
+  "/kisebb-haz-konnyebb-elet": { file: "../pages/105-kisebb-haz-konnyebb-elet.md", layout: "lighter-life-balance", photo: "everyday-lighter-home-freedom-v1.png", primary: "/otthonvalaszto", introLimit: 1 },
 };
 
 const INTERNAL_STOP = /^(?:\d+\.\s+)?(?:EGYEDI VIZUÁLIS ARCHETÍPUS|ÁLLÍTÁS- ÉS ADATKAPU|KAPUSTÁTUSZ|KIADÁSI STÁTUSZ|BELSŐ ELLENŐRZÉS)/i;
@@ -145,6 +146,9 @@ function diagramMarkup(layout, sections) {
   if (layout === "workday-switchboard") {
     return `<figure class="explain-visual explain-visual--workday"><figcaption>A munkanapnak legyen kezdete, ritmusa és vége</figcaption><div class="workday-console"><span><b>08:00</b><i>FÓKUSZ</i>ajtó becsukva</span><span><b>10:30</b><i>HÍVÁS</i>csendes háttér</span><span><b>13:00</b><i>SZÜNET</i>kilépés a munkatérből</span><span><b>17:00</b><i>LEZÁRÁS</i>eszközök a helyükön</span><strong><i></i>Otthon mód</strong></div></figure>`;
   }
+  if (layout === "lighter-life-balance") {
+    return `<figure class="explain-visual explain-visual--lighter-life"><figcaption>Nem egyszerűen kisebb lesz. Más kerül a mérleg két oldalára.</figcaption><div class="life-balance"><section><small>AMIBŐL KEVESEBB</small><span>Takarítás</span><span>Lépcső</span><span>Fűtött üres tér</span><span>Kerti kötelesség</span></section><i><b></b></i><section><small>AMIBŐL TÖBB</small><span>Szabad idő</span><span>Könnyű közlekedés</span><span>Használt, szeretett terek</span><span>Család és hobbi</span></section></div></figure>`;
+  }
   return `<figure class="explain-visual explain-visual--home"><figcaption>Az otthonhoz vezető döntések</figcaption><svg viewBox="0 0 800 360" role="img" aria-label="Döntési útvonal"><path d="M80 270 L220 130 L360 245 L520 90 L720 220"/><circle cx="80" cy="270" r="24"/><circle cx="220" cy="130" r="24"/><circle cx="360" cy="245" r="24"/><circle cx="520" cy="90" r="24"/><circle cx="720" cy="220" r="24"/></svg><div class="visual-labels">${safe.map(label => `<span>${label}</span>`).join("")}</div></figure>`;
 }
 
@@ -167,6 +171,7 @@ function secondaryDiagramMarkup(layout) {
     "family-rhythm": `<figure class="secondary-visual secondary-visual--safety-home"><figcaption>A nyugodt otthon hat figyelmesen tervezett pontja</figcaption><div><span>Bejárat<br><b>szabad út</b></span><span>Tároló<br><b>kéznél van</b></span><span>Konyha<br><b>átlátható</b></span><span>Fürdő<br><b>segítő hely</b></span><span>Hálók<br><b>csendes rend</b></span><span>Kert<br><b>biztonságos kijárat</b></span></div></figure>`,
     "family-traffic": `<figure class="secondary-visual secondary-visual--useful-space"><figcaption>A hasznos hely nem mindig újabb szoba</figcaption><div><strong>Jól bútorozható hálók</strong><span>Tanulósarok</span><span>Második mosdó</span><span>Bejárati tárolás</span><span>Csendes visszavonulás</span><span>Kertre nyíló közös tér</span></div></figure>`,
     "workday-switchboard": `<figure class="secondary-visual secondary-visual--sound-shield"><figcaption>A csend útja a forrástól a koncentrációig</figcaption><div><span>Zajos családi tér</span><span>Jó helyiségkapcsolat</span><span>Fal + ajtó + tömítés</span><span>Belső hangelnyelés</span><strong>Érthető beszéd. Nyugodt figyelem.</strong></div></figure>`,
+    "lighter-life-balance": `<figure class="secondary-visual secondary-visual--time-return"><figcaption>Mit kezdtek azzal az idővel, amit a ház visszaad?</figcaption><div><span><b>Hétfő</b>nem a javítással indul</span><span><b>Szerda</b>jut idő a saját dolgokra</span><span><b>Szombat</b>a kert öröm, nem műszak</span><strong>Vasárnap<br>együtt vagytok</strong></div></figure>`,
   };
   return visuals[layout] || "";
 }

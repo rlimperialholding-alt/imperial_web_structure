@@ -28,6 +28,7 @@ SOURCE_BY_ROUTE = {
     "/most-leszunk-csalad": "pages/102-most-leszunk-csalad.md",
     "/tobb-hely-a-csaladnak": "pages/103-tobb-hely-a-csaladnak.md",
     "/otthon-es-munka": "pages/104-otthon-es-munka.md",
+    "/kisebb-haz-konnyebb-elet": "pages/105-kisebb-haz-konnyebb-elet.md",
 }
 
 LAYOUT_BY_ROUTE = {
@@ -48,6 +49,7 @@ LAYOUT_BY_ROUTE = {
     "/most-leszunk-csalad": "family-rhythm",
     "/tobb-hely-a-csaladnak": "family-traffic",
     "/otthon-es-munka": "workday-switchboard",
+    "/kisebb-haz-konnyebb-elet": "lighter-life-balance",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
