@@ -19,7 +19,7 @@ const RICH_SOURCE_MAP = {
   "/kisebb-haz-konnyebb-elet": { file: "../pages/105-kisebb-haz-konnyebb-elet.md", layout: "lighter-life-balance", photo: "everyday-lighter-home-freedom-v1.png", primary: "/otthonvalaszto", introLimit: 1 },
   "/ket-generacio-egy-otthon": { file: "../pages/106-ket-generacio-egy-otthon.md", layout: "two-household-bridge", photo: "everyday-two-generations-courtyard-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
   "/kesobb-bovitheto-otthon": { file: "../pages/107-kesobb-bovitheto-otthon.md", layout: "phased-home-blueprint", photo: "everyday-expandable-home-plan-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
-  "/szamolok/hazkoltseg": { file: "../pages/301-hazkoltseg.md", layout: "project-cost-ledger", photo: "everyday-house-cost-table-v1.png", primary: "/szamolok/hazkoltseg", introLimit: 1 },
+  "/szamolok/hazkoltseg": { file: "../pages/301-hazkoltseg.md", layout: "project-cost-ledger", photo: "everyday-house-cost-table-v1.png", primary: "/kezdjuk-egyutt", introLimit: 1 },
 };
 
 const INTERNAL_STOP = /^(?:\d+\.\s+)?(?:EGYEDI VIZUÁLIS ARCHETÍPUS|ÁLLÍTÁS- ÉS ADATKAPU|KAPUSTÁTUSZ|KIADÁSI STÁTUSZ|BELSŐ ELLENŐRZÉS)/i;
