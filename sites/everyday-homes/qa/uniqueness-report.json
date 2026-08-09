@@ -1,5 +1,5 @@
 {
-  "pages_checked": 13,
+  "pages_checked": 14,
   "other_brands_checked": [
     "baufreund",
     "bautica",
@@ -70,6 +70,11 @@
       "five_word_jaccard": 0.00103
     },
     {
+      "left": "/elso-lepesek-hirlevel",
+      "right": "/elso-sajat-otthon",
+      "five_word_jaccard": 0.00081
+    },
+    {
       "left": "/a-fontos-kerdesek",
       "right": "/sajto",
       "five_word_jaccard": 0.00067
@@ -88,11 +93,6 @@
       "left": "/",
       "right": "/igy-lesz-egyszeru",
       "five_word_jaccard": 0.0005
-    },
-    {
-      "left": "/otthonvalaszto",
-      "right": "/kezdjuk-egyutt",
-      "five_word_jaccard": 0.00046
     }
   ],
   "repeated_headings": [],

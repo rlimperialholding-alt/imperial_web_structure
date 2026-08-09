@@ -24,6 +24,7 @@ SOURCE_BY_ROUTE = {
     "/elso-lepesek-hirlevel": "pages/12-hirlevel.md",
     "/karrier": "pages/13-karrier.md",
     "/sajto": "pages/14-sajto.md",
+    "/elso-sajat-otthon": "pages/101-elso-sajat-otthon.md",
 }
 
 LAYOUT_BY_ROUTE = {
@@ -40,6 +41,7 @@ LAYOUT_BY_ROUTE = {
     "/elso-lepesek-hirlevel": "letter-lab",
     "/karrier": "maker-workshop",
     "/sajto": "press-desk",
+    "/elso-sajat-otthon": "first-key-map",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)

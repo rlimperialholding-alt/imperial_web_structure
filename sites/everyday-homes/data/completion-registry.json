@@ -9,8 +9,8 @@
   "summary": {
     "canonical_routes": 66,
     "nim_managed_routes": 7,
-    "source_imported_routes": 13,
-    "route_shells": 46,
+    "source_imported_routes": 14,
+    "route_shells": 45,
     "complete_routes": 5
   },
   "pages": [
@@ -215,12 +215,12 @@
       "route": "/elso-sajat-otthon",
       "title": "Első saját otthon",
       "group": "Élethelyzetek",
-      "state": "ROUTE_SHELL_ONLY",
-      "source": null,
-      "visible_body_characters": 0,
-      "faq_questions": 0,
-      "visual_assets": 0,
-      "layout_signature": null,
+      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "source": "pages/101-elso-sajat-otthon.md",
+      "visible_body_characters": 13372,
+      "faq_questions": 14,
+      "visual_assets": 3,
+      "layout_signature": "first-key-map",
       "triple_qa_passes": 0,
       "publication_allowed": false
     },
