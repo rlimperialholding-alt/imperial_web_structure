@@ -9,18 +9,20 @@
     <link rel="icon" href="/site-preview/everyday-homes/assets/mark.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/site-preview/everyday-homes/assets/site.css">
     <script defer src="/site-preview/everyday-homes/assets/site.js"></script>
+    <script defer src="/site-preview/everyday-homes/assets/rich-content.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#tartalom">Ugrás a tartalomra</a>
     <div class="review-bar" role="status">
       <span>EVERYDAY HOMES · TÁVOLI TESZTKÖRNYEZET</span>
-      <strong>REVIEW_REQUIRED · NEM PUBLIKÁLHATÓ</strong>
+      <strong>HIÁNYOS TARTALMI STAGING · NEM PUBLIKÁLHATÓ</strong>
     </div>
     <header class="site-header">
       <a class="brand" href="/site-preview/everyday-homes/" data-route aria-label="Everyday Homes kezdőlap">
         <img src="/site-preview/everyday-homes/assets/logo-primary.svg" alt="Everyday Homes">
       </a>
       <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">Menü</button>
+      <button class="page-directory-toggle" type="button" aria-expanded="false" aria-controls="page-directory">Az összes aloldal</button>
       <nav id="primary-navigation" class="primary-nav" aria-label="Fő navigáció">
         <a href="/site-preview/everyday-homes/otthonvalaszto" data-route>Otthonválasztó</a>
         <a href="/site-preview/everyday-homes/nekunk-valo-hazak" data-route>Nekünk való házak</a>
@@ -31,6 +33,14 @@
         <a class="nav-cta" href="/site-preview/everyday-homes/kezdjuk-egyutt" data-route>Otthont választok</a>
       </nav>
     </header>
+    <aside id="page-directory" class="page-directory" aria-label="A teljes Everyday Homes oldaltérkép" hidden>
+      <div class="page-directory__header">
+        <div><p class="eyebrow">Teljes oldaltérkép</p><h2>Mind a 66 tervezett útvonal</h2></div>
+        <button class="page-directory__close" type="button" aria-label="Oldaltérkép bezárása">Bezárás</button>
+      </div>
+      <p class="page-directory__note">Az útvonal megléte nem jelent kész tartalmat. A státuszok a tényleges terjedelem, GYIK, vizuális eszközök és háromszoros ellenőrzés alapján készülnek.</p>
+      <div class="page-directory__groups" data-page-directory-groups></div>
+    </aside>
     <main id="tartalom" tabindex="-1"></main>
     <footer class="site-footer">
       <div><img src="/site-preview/everyday-homes/assets/logo-primary.svg" alt="Everyday Homes"><p>Otthon – egyszerűen.</p></div>
