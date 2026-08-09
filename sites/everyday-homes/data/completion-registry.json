@@ -9,8 +9,8 @@
   "summary": {
     "canonical_routes": 66,
     "nim_managed_routes": 7,
-    "source_imported_routes": 14,
-    "route_shells": 45,
+    "source_imported_routes": 15,
+    "route_shells": 44,
     "complete_routes": 6
   },
   "pages": [
@@ -229,12 +229,12 @@
       "route": "/most-leszunk-csalad",
       "title": "Most lesztek család",
       "group": "Élethelyzetek",
-      "state": "ROUTE_SHELL_ONLY",
-      "source": null,
-      "visible_body_characters": 0,
-      "faq_questions": 0,
-      "visual_assets": 0,
-      "layout_signature": null,
+      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "source": "pages/102-most-leszunk-csalad.md",
+      "visible_body_characters": 13063,
+      "faq_questions": 12,
+      "visual_assets": 3,
+      "layout_signature": "family-rhythm",
       "triple_qa_passes": 0,
       "publication_allowed": false
     },

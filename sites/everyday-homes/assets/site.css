@@ -272,6 +272,30 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .secondary-visual--three-doors strong { color: var(--teal-dark); font-size: 1.28rem; }
 .secondary-visual--three-doors span { color: var(--muted); }
 
+/* Becoming a family: one uninterrupted photograph, one quiet planning card. */
+.rich-page--family-rhythm { --accent: #7f9f88; background: #f3efe5; }
+.rich-page--family-rhythm .rich-hero { position: relative; min-height: 860px; display: block; background: #efe7d9; }
+.rich-page--family-rhythm .rich-hero__image { position: absolute; inset: 0; min-height: 100%; background-position: center; }
+.rich-page--family-rhythm .rich-hero__copy { position: absolute; top: 58px; right: clamp(1.5rem,5vw,5rem); z-index: 1; width: min(520px,40%); max-height: calc(100% - 116px); justify-content: center; padding: clamp(2rem,4vw,4rem); border: 1px solid rgba(37,56,60,.18); border-radius: 180px 180px 26px 26px; background: #fffdf8; box-shadow: 0 24px 70px rgba(37,56,60,.18); }
+.rich-page--family-rhythm .rich-hero h1 { overflow-wrap: normal; word-break: normal; hyphens: none; font-size: clamp(2.7rem,4vw,4.8rem); }
+.rich-page--family-rhythm .rich-hero .lede { color: #536468; font-size: clamp(1rem,1.25vw,1.16rem); }
+.rich-page--family-rhythm .rich-section { grid-template-columns: 150px minmax(0,1fr); }
+.rich-page--family-rhythm .rich-section__number { display: grid; place-items: center; width: 110px; aspect-ratio: 1; border-radius: 50% 50% 50% 12px; color: white; background: #7f9f88; font-size: 1.5rem; letter-spacing: 0; }
+.rich-page--family-rhythm .rich-section:nth-child(3n+2) { grid-template-columns: minmax(0,1fr) 150px; padding-left: clamp(1rem,10vw,9rem); }
+.rich-page--family-rhythm .rich-section:nth-child(3n+2) .rich-section__number { order: 2; }
+.rhythm-wheel { position: relative; min-height: 600px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; padding: 2rem; }
+.rhythm-wheel span { min-width: 0; min-height: 240px; display: grid; place-content: center; gap: .7rem; padding: 2rem; border: 2px solid #7f9f88; text-align: center; font-weight: 850; }
+.rhythm-wheel span:nth-child(1) { border-radius: 100% 20px 20px 20px; }
+.rhythm-wheel span:nth-child(2) { border-radius: 20px 100% 20px 20px; }
+.rhythm-wheel span:nth-child(3) { border-radius: 20px 20px 20px 100%; }
+.rhythm-wheel span:nth-child(4) { border-radius: 20px 20px 100% 20px; }
+.rhythm-wheel b { color: #587762; font-size: 2rem; }
+.rhythm-wheel strong { position: absolute; inset: 50% auto auto 50%; width: 190px; aspect-ratio: 1; display: grid; place-items: center; translate: -50% -50%; padding: 1.5rem; border: 14px solid #fffdf8; border-radius: 50%; color: white; background: var(--teal-dark); text-align: center; }
+.secondary-visual--safety-home > div { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 2px; padding: 2px; background: #7f9f88; clip-path: polygon(50% 0,100% 24%,100% 100%,0 100%,0 24%); }
+.secondary-visual--safety-home span { min-width: 0; min-height: 170px; display: grid; place-content: center; padding: 1.2rem; text-align: center; background: #fffdf8; }
+.secondary-visual--safety-home span:nth-child(-n+3) { padding-top: 3rem; }
+.secondary-visual--safety-home b { color: #587762; }
+
 .secondary-visual { width: min(1080px, calc(100% - 2rem)); margin: 0 auto clamp(4rem, 8vw, 8rem); padding: clamp(1.5rem, 5vw, 4rem); overflow: hidden; border-radius: 32px; background: var(--paper); box-shadow: var(--shadow); }
 .secondary-visual figcaption { margin-bottom: 2rem; color: var(--teal-dark); font-size: clamp(1.5rem, 3vw, 2.8rem); font-weight: 950; line-height: 1.08; }
 .secondary-visual--rooms > div { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .7rem; }
@@ -327,6 +351,11 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   .first-key-path { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .first-key-path::before { display: none; }
   .first-key-path strong { width: 150px; grid-column: 1 / -1; justify-self: center; }
+  .rich-page--family-rhythm .rich-hero { min-height: 0; display: grid; grid-template-columns: 1fr; }
+  .rich-page--family-rhythm .rich-hero__image { position: static; min-height: 560px; background-position: 35% center; }
+  .rich-page--family-rhythm .rich-hero__copy { position: static; width: min(680px,calc(100% - 3rem)); max-height: none; margin: -84px auto 0; border-radius: 120px 120px 26px 26px; }
+  .rich-page--family-rhythm .rich-section, .rich-page--family-rhythm .rich-section:nth-child(3n+2) { grid-template-columns: 110px minmax(0,1fr); padding-left: 0; }
+  .rich-page--family-rhythm .rich-section:nth-child(3n+2) .rich-section__number { order: 0; }
 }
 
 @media (max-width: 640px) {
@@ -385,6 +414,16 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   .first-key-path, .secondary-visual--three-doors > div { grid-template-columns: 1fr; }
   .first-key-path span { min-height: 120px; }
   .first-key-path strong { grid-column: auto; width: 132px; }
+  .rich-page--family-rhythm .rich-hero__image { min-height: 360px; background-position: 33% center; }
+  .rich-page--family-rhythm .rich-hero__copy { width: calc(100% - 1rem); margin-top: -44px; padding: 2rem 1rem 2.5rem; border-radius: 48px 48px 20px 20px; }
+  .rich-page--family-rhythm .rich-hero h1 { font-size: clamp(2.35rem,11.5vw,3.35rem); }
+  .rich-page--family-rhythm .rich-section, .rich-page--family-rhythm .rich-section:nth-child(3n+2) { grid-template-columns: 1fr; }
+  .rich-page--family-rhythm .rich-section__number { width: 72px; }
+  .rhythm-wheel { min-height: 0; grid-template-columns: 1fr; padding: 0; }
+  .rhythm-wheel span:nth-child(n) { min-height: 130px; border-radius: 28px; }
+  .rhythm-wheel strong { position: static; width: 150px; margin: .5rem auto 0; translate: 0 0; }
+  .secondary-visual--safety-home > div { grid-template-columns: 1fr; clip-path: none; }
+  .secondary-visual--safety-home span:nth-child(-n+3) { padding-top: 1.2rem; }
 }
 
 @media (max-width: 980px) {
