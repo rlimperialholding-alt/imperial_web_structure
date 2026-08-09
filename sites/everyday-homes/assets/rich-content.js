@@ -12,7 +12,7 @@ const RICH_SOURCE_MAP = {
   "/elso-lepesek-hirlevel": { file: "../pages/12-hirlevel.md", layout: "letter-lab", photo: "everyday-newsletter-planning-v1.png", primary: "/elso-lepesek" },
   "/karrier": { file: "../pages/13-karrier.md", layout: "maker-workshop", photo: "everyday-career-team-v1.png", primary: "/karrier" },
   "/sajto": { file: "../pages/14-sajto.md", layout: "press-desk", photo: "everyday-press-interview-v1.png", primary: "/sajto" },
-  "/elso-sajat-otthon": { file: "../pages/101-elso-sajat-otthon.md", layout: "first-key-map", photo: "everyday-first-home-arrival-v1.png", primary: "/szamolok/havi-teher" },
+  "/elso-sajat-otthon": { file: "../pages/101-elso-sajat-otthon.md", layout: "first-key-map", photo: "everyday-first-home-arrival-v1.png", primary: "/szamolok/havi-teher", introLimit: 2 },
 };
 
 const INTERNAL_STOP = /^(?:\d+\.\s+)?(?:EGYEDI VIZUÁLIS ARCHETÍPUS|ÁLLÍTÁS- ÉS ADATKAPU|KAPUSTÁTUSZ|KIADÁSI STÁTUSZ|BELSŐ ELLENŐRZÉS)/i;
@@ -163,7 +163,7 @@ async function renderRichSourcePage(path) {
   if (!response.ok) throw new Error(`A forrásszöveg nem tölthető be: ${config.file}`);
   const parsed = parsePublicSource(await response.text());
   const canonical = pages[path];
-  const intro = parsed.heroText.slice(0, 3).join(" ");
+  const intro = parsed.heroText.slice(0, config.introLimit || 3).join(" ");
   const faqCount = parsed.sections.reduce((sum, section) => sum + section.blocks.filter(line => line.endsWith("?")).length, 0);
   const bodyChars = parsed.sections.reduce((sum, section) => sum + section.title.length + section.blocks.join(" ").length, 0);
   const main = document.querySelector("main");
