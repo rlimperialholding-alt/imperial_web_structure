@@ -25,6 +25,7 @@ SOURCE_BY_ROUTE = {
     "/karrier": "pages/13-karrier.md",
     "/sajto": "pages/14-sajto.md",
     "/elso-sajat-otthon": "pages/101-elso-sajat-otthon.md",
+    "/most-leszunk-csalad": "pages/102-most-leszunk-csalad.md",
 }
 
 LAYOUT_BY_ROUTE = {
@@ -42,6 +43,7 @@ LAYOUT_BY_ROUTE = {
     "/karrier": "maker-workshop",
     "/sajto": "press-desk",
     "/elso-sajat-otthon": "first-key-map",
+    "/most-leszunk-csalad": "family-rhythm",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
