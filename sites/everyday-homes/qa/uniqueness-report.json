@@ -1,5 +1,5 @@
 {
-  "pages_checked": 15,
+  "pages_checked": 16,
   "other_brands_checked": [
     "baufreund",
     "bautica",
@@ -70,6 +70,11 @@
       "five_word_jaccard": 0.00103
     },
     {
+      "left": "/sajto",
+      "right": "/tobb-hely-a-csaladnak",
+      "five_word_jaccard": 0.00084
+    },
+    {
       "left": "/elso-lepesek-hirlevel",
       "right": "/elso-sajat-otthon",
       "five_word_jaccard": 0.00081
@@ -85,14 +90,9 @@
       "five_word_jaccard": 0.00056
     },
     {
-      "left": "/kozelrol",
-      "right": "/a-fontos-kerdesek",
-      "five_word_jaccard": 0.00052
-    },
-    {
-      "left": "/",
-      "right": "/igy-lesz-egyszeru",
-      "five_word_jaccard": 0.0005
+      "left": "/kell-egy-otthon-mindenkinek",
+      "right": "/tobb-hely-a-csaladnak",
+      "five_word_jaccard": 0.00056
     }
   ],
   "repeated_headings": [],
