@@ -11,7 +11,7 @@
     "nim_managed_routes": 7,
     "source_imported_routes": 16,
     "route_shells": 43,
-    "complete_routes": 7
+    "complete_routes": 8
   },
   "pages": [
     {
@@ -243,13 +243,13 @@
       "route": "/tobb-hely-a-csaladnak",
       "title": "Több hely kell a gyerekeknek",
       "group": "Élethelyzetek",
-      "state": "SOURCE_IMPORTED_NEEDS_VISUAL_QA",
+      "state": "COMPLETE_REVIEW_REQUIRED",
       "source": "pages/103-tobb-hely-a-csaladnak.md",
       "visible_body_characters": 13061,
       "faq_questions": 14,
       "visual_assets": 3,
       "layout_signature": "family-traffic",
-      "triple_qa_passes": 0,
+      "triple_qa_passes": 3,
       "publication_allowed": false
     },
     {
