@@ -6,9 +6,9 @@ Nem kell kész élet ahhoz, hogy legyen saját otthonotok.
 
 Lehet, hogy most albérletben éltek. Lehet, hogy egy kisebb lakásban próbáljátok elférni a munkát, a bicikliket, a barátokat és a következő évekre szóló terveket. A családi ház ilyenkor könnyen távoli álomnak tűnik: túl sok döntés, ismeretlen költség és olyan szakmai kérdés, amelyre mindenki mást mond.
 
-Az első saját otthon oldala nem azt akarja bebizonyítani, hogy mindenkinek azonnal építkeznie kell. Abban segít, hogy gyorsan kiderüljön: nektek most reális lépés-e, és ha igen, milyen méretű, keretű és ütemű ház felé érdemes indulnotok.
-
 ELŐSZÖR NEM HÁZAT VÁLASZTUNK, HANEM HELYZETET TISZTÁZUNK
+
+Az első saját otthon oldala nem azt akarja bebizonyítani, hogy mindenkinek azonnal építkeznie kell. Abban segít, hogy gyorsan kiderüljön: nektek most reális lépés-e, és ha igen, milyen méretű, keretű és ütemű ház felé érdemes indulnotok.
 
 Az első kérdés nem az, hogy lapostető vagy nyeregtető. Az sem, hogy tégla vagy könnyűszerkezet. Előbb azt kell látni, honnan indultok: van-e már telketek, mennyi saját forrás használható fel biztonságosan, milyen havi terhelés fér bele, és mikor lenne valóban szükségetek a költözésre.
 
