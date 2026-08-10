@@ -50,6 +50,46 @@ def public_text(path: Path) -> str:
     return text
 
 
+def rendered_article_text(path: Path) -> str:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    match = re.search(r'<article\s+class="(?:technology-page|decision-page)[^"]*".*?</article>', text, flags=re.S)
+    if not match:
+        raise ValueError(f"Missing page article in rendered file: {path}")
+    article = match.group(0)
+    article = re.sub(r'<nav\b.*?</nav>', "", article, flags=re.S)
+    return article
+
+
+def registry_source_text(source: str) -> str:
+    if source.startswith("assets/technology-pages.js#"):
+        route = source.split("#", 1)[1]
+        rendered_name = "mibol-epuljon.html" if route == "/mibol-epuljon" else route.strip("/").replace("/", "--") + ".html"
+        rendered = ROOT / "qa" / "rendered" / "technology-pages" / rendered_name
+        if not rendered.exists():
+            raise FileNotFoundError(f"Missing rendered technology page: {rendered}")
+        return rendered_article_text(rendered)
+    if source.startswith("assets/detailed-project-pages.js#"):
+        route = source.split("#", 1)[1]
+        rendered_name = route.strip("/").replace("/", "--") + ".html"
+        rendered = ROOT / "qa" / "rendered" / "decision-pages" / rendered_name
+        if not rendered.exists():
+            raise FileNotFoundError(f"Missing rendered decision page: {rendered}")
+        return rendered_article_text(rendered)
+    if source.startswith("assets/decision-pages.js#"):
+        route = source.split("#", 1)[1]
+        script = (ROOT / "assets" / "decision-pages.js").read_text(encoding="utf-8", errors="ignore")
+        marker = f'  "{route}": {{'
+        start = script.index(marker)
+        next_page = re.search(r'\n  "/szamolok/[^\"]+": \{', script[start + len(marker):])
+        end = start + len(marker) + next_page.start() if next_page else script.index("\n};", start)
+        block = script[start:end]
+        body = " ".join(re.findall(r"body:\s*`(.*?)`\s*,?", block, flags=re.S))
+        metadata = " ".join(re.findall(r'(?:eyebrow|title|intro|closingTitle):\s*"([^"]+)"', block))
+        faqs = " ".join(item for pair in re.findall(r'\["([^"]+\?)",\s*"([^"]+)"\]', block) for item in pair)
+        return " ".join((body, metadata, faqs))
+    return public_text(ROOT / "sources" / source)
+
+
 def shingles(text: str, size: int = 5) -> set[tuple[str, ...]]:
     words = WORD_RE.findall(normalize(text))
     return {tuple(words[index:index + size]) for index in range(max(0, len(words) - size + 1))}
@@ -97,7 +137,7 @@ def main() -> int:
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     source_rows = [row for row in registry["pages"] if row.get("source")]
     documents = {
-        row["route"]: public_text(ROOT / "sources" / row["source"])
+        row["route"]: registry_source_text(row["source"])
         for row in source_rows
     }
     layouts = [row.get("layout_signature") for row in source_rows if row.get("layout_signature")]

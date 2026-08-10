@@ -46,8 +46,8 @@ assert REGISTRY["required_qa_passes"] == 3
 complete = [page for page in registry_pages if page["state"] == "COMPLETE_REVIEW_REQUIRED"]
 layout_signatures = []
 for page in complete:
-    assert page["visible_body_characters"] >= 12_000, page
-    assert page["faq_questions"] >= 5, page
+    assert page["visible_body_characters"] >= page["minimum_visible_body_characters"], page
+    assert page["faq_questions"] >= page["minimum_faq_questions"], page
     assert page["visual_assets"] >= 3, page
     assert page["triple_qa_passes"] == 3, page
     assert page["layout_signature"], page

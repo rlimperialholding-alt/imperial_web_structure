@@ -1,5 +1,5 @@
 {
-  "pages_checked": 21,
+  "pages_checked": 33,
   "other_brands_checked": [
     "baufreund",
     "bautica",
@@ -19,6 +19,11 @@
   },
   "duplicate_layouts": [],
   "highest_within_brand_pairs": [
+    {
+      "left": "/szamolok/teljes-projektkeret",
+      "right": "/muszaki-adatok",
+      "five_word_jaccard": 0.03743
+    },
     {
       "left": "/otthonvalaszto",
       "right": "/keretbol-otthon",
@@ -55,9 +60,19 @@
       "five_word_jaccard": 0.00336
     },
     {
+      "left": "/kell-egy-otthon-mindenkinek",
+      "right": "/szamolok/gyors-hazellenorzes",
+      "five_word_jaccard": 0.00186
+    },
+    {
       "left": "/",
       "right": "/kozelrol",
       "five_word_jaccard": 0.00158
+    },
+    {
+      "left": "/elso-lepesek-hirlevel",
+      "right": "/szamolok/havi-teher",
+      "five_word_jaccard": 0.00138
     },
     {
       "left": "/igy-lesz-egyszeru",
@@ -70,29 +85,14 @@
       "five_word_jaccard": 0.00103
     },
     {
+      "left": "/igy-lesz-egyszeru",
+      "right": "/szamolok/gyors-hazellenorzes",
+      "five_word_jaccard": 0.00081
+    },
+    {
       "left": "/elso-lepesek-hirlevel",
       "right": "/elso-sajat-otthon",
       "five_word_jaccard": 0.00081
-    },
-    {
-      "left": "/sajto",
-      "right": "/tobb-hely-a-csaladnak",
-      "five_word_jaccard": 0.00081
-    },
-    {
-      "left": "/elso-sajat-otthon",
-      "right": "/kisebb-haz-konnyebb-elet",
-      "five_word_jaccard": 0.0008
-    },
-    {
-      "left": "/elso-lepesek",
-      "right": "/szamolok/hazkoltseg",
-      "five_word_jaccard": 0.00072
-    },
-    {
-      "left": "/elso-sajat-otthon",
-      "right": "/ket-generacio-egy-otthon",
-      "five_word_jaccard": 0.00069
     }
   ],
   "repeated_headings": [],
