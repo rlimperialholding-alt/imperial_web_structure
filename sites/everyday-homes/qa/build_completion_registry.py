@@ -64,6 +64,8 @@ SERVICE_PAGE_ROUTES = {
     "/mi-intezzuk/pincebol-lakas",
     "/mi-intezzuk/telek-ellenorzes",
     "/mi-intezzuk/szemelyes-hazajanlas",
+    "/biztonsag/vallalasaink",
+    "/biztonsag/atlathato-ar",
 }
 
 PAGE_RULES = {
@@ -130,6 +132,8 @@ LAYOUT_BY_ROUTE = {
     "/mi-intezzuk/pincebol-lakas": "space-reborn",
     "/mi-intezzuk/telek-ellenorzes": "plot-fieldbook",
     "/mi-intezzuk/szemelyes-hazajanlas": "home-conversation",
+    "/biztonsag/vallalasaink": "promise-ledger",
+    "/biztonsag/atlathato-ar": "open-cost-map",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
