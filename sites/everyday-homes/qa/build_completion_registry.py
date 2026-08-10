@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MAP_PATH = ROOT / "data" / "page-map.json"
 OUT_PATH = ROOT / "data" / "completion-registry.json"
 EVIDENCE_PATH = ROOT / "qa" / "qa-evidence.json"
+RENDER_REPORT_PATH = ROOT / "qa" / "decision-pages-report.json"
 
 SOURCE_BY_ROUTE = {
     "/": "drive/01-kezdolap.md",
@@ -41,11 +42,27 @@ DECISION_PAGE_ROUTES = {
     "/szamolok/felujitas-vagy-uj",
     "/szamolok/energia-es-koltseg",
     "/szamolok/gyors-hazellenorzes",
+    "/muszaki-adatok",
 }
 
 PAGE_RULES = {
     "editorial": {"minimum_characters": 12_000, "minimum_faq": 5, "visual_assets": 3},
     "decision_tool": {"minimum_characters": 1_800, "minimum_faq": 4, "visual_assets": 3},
+    "detailed_decision_tool": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
+}
+
+DETAILED_DECISION_ROUTES = {
+    "/szamolok/teljes-projektkeret",
+    "/szamolok/utemterv",
+    "/szamolok/energia-es-koltseg",
+    "/muszaki-adatok",
+}
+
+DETAILED_FAQ_NAMES = {
+    "/szamolok/teljes-projektkeret": "costFaq",
+    "/szamolok/utemterv": "scheduleFaq",
+    "/szamolok/energia-es-koltseg": "energyFaq",
+    "/muszaki-adatok": "technicalFaq",
 }
 
 LAYOUT_BY_ROUTE = {
@@ -76,6 +93,7 @@ LAYOUT_BY_ROUTE = {
     "/szamolok/felujitas-vagy-uj": "three-choices",
     "/szamolok/energia-es-koltseg": "warm-cold",
     "/szamolok/gyors-hazellenorzes": "family-compass",
+    "/muszaki-adatok": "technical-specification-detailed",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
@@ -97,6 +115,17 @@ def faq_count(text: str) -> int:
 
 
 def decision_page_source(route: str) -> str:
+    detailed = (ROOT / "assets" / "detailed-project-pages.js").read_text(encoding="utf-8")
+    marker = f'DECISION_PAGE_MAP["{route}"] = {{'
+    if marker in detailed:
+        start = detailed.index(marker)
+        next_page = detailed.find("\n  DECISION_PAGE_MAP[", start + len(marker))
+        end = next_page if next_page != -1 else detailed.index("\n  upgradeDecisionPage", start)
+        block = detailed[start:end]
+        faq_name = DETAILED_FAQ_NAMES[route]
+        faq_start = detailed.index(f"const {faq_name} = faq([")
+        faq_end = detailed.index("\n  ]);", faq_start) + len("\n  ]);")
+        return block + "\n" + detailed[faq_start:faq_end]
     source = (ROOT / "assets" / "decision-pages.js").read_text(encoding="utf-8")
     marker = f'  "{route}": {{'
     start = source.index(marker)
@@ -117,16 +146,20 @@ def decision_visible_copy(source: str) -> str:
 def main() -> None:
     page_map = json.loads(MAP_PATH.read_text(encoding="utf-8"))
     qa_evidence = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8")) if EVIDENCE_PATH.exists() else {"routes": {}}
+    render_report = json.loads(RENDER_REPORT_PATH.read_text(encoding="utf-8")) if RENDER_REPORT_PATH.exists() else {"checks": []}
+    rendered_by_route: dict[str, list[dict]] = {}
+    for check in render_report.get("checks", []):
+        rendered_by_route.setdefault(check.get("route", ""), []).append(check)
     rows = []
     for group in page_map["groups"]:
         for page_id, route, title in group["pages"]:
             source_name = SOURCE_BY_ROUTE.get(route)
-            page_type = "decision_tool" if route in DECISION_PAGE_ROUTES else "editorial"
+            page_type = "detailed_decision_tool" if route in DETAILED_DECISION_ROUTES else ("decision_tool" if route in DECISION_PAGE_ROUTES else "editorial")
             rules = PAGE_RULES[page_type]
             excluded_from_scope = route.startswith(HOUSE_PREFIXES) or page_id == "EH-HU-003"
             raw = ""
-            if page_type == "decision_tool":
-                source_name = f"assets/decision-pages.js#{route}"
+            if page_type in {"decision_tool", "detailed_decision_tool"}:
+                source_name = f"assets/{'detailed-project-pages.js' if route in DETAILED_DECISION_ROUTES else 'decision-pages.js'}#{route}"
                 raw = decision_page_source(route)
                 visible = decision_visible_copy(raw)
                 questions = len(re.findall(r'\["[^"]+\?",\s*"[^"]+"\]', raw))
@@ -139,6 +172,12 @@ def main() -> None:
                 questions = 0
             chars = len(visible)
             qa_passes = int(qa_evidence.get("routes", {}).get(route, {}).get("passes", 0))
+            rendered_checks = rendered_by_route.get(route, [])
+            if page_type in {"decision_tool", "detailed_decision_tool"} and rendered_checks:
+                chars = max(int(check.get("contentCharacters", 0)) for check in rendered_checks)
+                questions = max(int(check.get("faqItems", 0)) for check in rendered_checks)
+                rendered_passes = len({check.get("viewport") for check in rendered_checks if check.get("passed")})
+                qa_passes = max(qa_passes, min(3, rendered_passes))
             if excluded_from_scope:
                 state = "NIM_CONTENT_PLACEHOLDER"
             elif not source_name:
