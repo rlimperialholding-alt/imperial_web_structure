@@ -8,7 +8,8 @@ const root = path.resolve(__dirname);
 const screenshotRoot = path.join(root, 'screenshots', 'service-pages');
 const renderedRoot = path.join(root, 'rendered', 'service-pages');
 const reportPath = path.join(root, 'service-pages-report.json');
-const routes = ['/mi-intezzuk/tervezes','/mi-intezzuk/general-kivitelezes','/mi-intezzuk/finanszirozas'];
+const canonicalRoutes = ['/mi-intezzuk/tervezes','/mi-intezzuk/general-kivitelezes','/mi-intezzuk/finanszirozas','/mi-intezzuk/felujitas','/mi-intezzuk/tetoter','/mi-intezzuk/pincebol-lakas'];
+const routes = process.env.EVERYDAY_SERVICE_ROUTES ? process.env.EVERYDAY_SERVICE_ROUTES.split(',').map(route => route.trim()).filter(Boolean) : canonicalRoutes;
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -92,7 +93,7 @@ fs.mkdirSync(renderedRoot, { recursive: true });
       check.passed = check.http_status === 200 && check.servicePages === 1 && check.faqItems >= 25 && check.contentCharacters >= 12000 && check.backgroundImage !== 'none' && !check.horizontalOverflow && check.outside.length === 0 && check.clipped.length === 0 && check.forbidden.length === 0 && check.console_errors.length === 0 && check.page_errors.length === 0 && check.request_failures.length === 0 && check.bad_responses.length === 0;
       if (!check.passed) failed = true;
       report.checks.push(check);
-      await page.screenshot({ path: path.join(screenshotRoot, `${slug(route)}--${viewport.name}.png`), fullPage: true });
+      await page.screenshot({ path: path.join(screenshotRoot, `${slug(route)}--${viewport.name}.png`), fullPage: true, timeout: 120000 });
       if (viewport.name === 'desktop') fs.writeFileSync(path.join(renderedRoot, `${slug(route)}.html`), await page.content(), 'utf8');
       await page.close();
     }

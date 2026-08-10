@@ -7,16 +7,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = (ROOT / "index.html").read_text(encoding="utf-8")
 CSS = (ROOT / "assets" / "site.css").read_text(encoding="utf-8")
-JS = (ROOT / "assets" / "site.js").read_text(encoding="utf-8")
+JS = "\n".join(path.read_text(encoding="utf-8") for path in sorted((ROOT / "assets").glob("*.js")))
 PAGE_MAP = json.loads((ROOT / "data" / "page-map.json").read_text(encoding="utf-8"))
 REGISTRY = json.loads((ROOT / "data" / "completion-registry.json").read_text(encoding="utf-8"))
 
-assert PAGE_MAP["canonical_page_count"] == 66
+assert PAGE_MAP["canonical_page_count"] == 67
 assert PAGE_MAP["publication_allowed"] is False
 pages = [page for group in PAGE_MAP["groups"] for page in group["pages"]]
-assert len(pages) == 66, len(pages)
-assert len({page[0] for page in pages}) == 66
-assert len({page[1] for page in pages}) == 66
+assert len(pages) == PAGE_MAP["canonical_page_count"], len(pages)
+assert len({page[0] for page in pages}) == PAGE_MAP["canonical_page_count"]
+assert len({page[1] for page in pages}) == PAGE_MAP["canonical_page_count"]
 
 assert 'name="robots" content="noindex,nofollow"' in INDEX
 assert 'publication_allowed = true' not in (INDEX + CSS + JS)
@@ -36,7 +36,7 @@ assert implemented_ids <= canonical_ids
 assert implemented_ids == canonical_ids, sorted(canonical_ids - implemented_ids)
 
 registry_pages = REGISTRY["pages"]
-assert len(registry_pages) == 66
+assert len(registry_pages) == PAGE_MAP["canonical_page_count"]
 assert {page["page_id"] for page in registry_pages} == canonical_ids
 assert REGISTRY["publication_allowed"] is False
 assert REGISTRY["minimum_visible_body_characters"] == 12_000

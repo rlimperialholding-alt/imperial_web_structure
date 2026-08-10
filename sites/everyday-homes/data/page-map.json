@@ -1,6 +1,6 @@
 {
   "brand": "Everyday Homes",
-  "canonical_page_count": 66,
+  "canonical_page_count": 67,
   "publication_allowed": false,
   "release_state": "REVIEW_REQUIRED",
   "groups": [
@@ -20,7 +20,7 @@
       ["EH-HU-401","/mibol-epuljon","Miből épüljön?"],["EH-HU-402","/technologiak/favazas","Favázas könnyűszerkezet"],["EH-HU-403","/technologiak/tegla","Téglaépítés"],["EH-HU-404","/technologiak/liapor","Liapor rendszer"],["EH-HU-405","/technologiak/acelszerkezet","Acélszerkezetes megoldás"],["EH-HU-406","/muszaki-adatok","Rétegrendek és műszaki adatok"]
     ]},
     {"name":"Szolgáltatások","pages":[
-      ["EH-HU-501","/mi-intezzuk/tervezes","Tervezés a család életére"],["EH-HU-502","/mi-intezzuk/general-kivitelezes","Generálkivitelezés"],["EH-HU-503","/mi-intezzuk/finanszirozas","Finanszírozási segítség"],["EH-HU-504","/mi-intezzuk/felujitas","Felújítás"],["EH-HU-505","/mi-intezzuk/tetoter","Tetőtér-beépítés"],["EH-HU-506","/mi-intezzuk/telek-ellenorzes","Telekellenőrzés"],["EH-HU-507","/mi-intezzuk/szemelyes-hazajanlas","Személyes házajánlás"]
+      ["EH-HU-501","/mi-intezzuk/tervezes","Tervezés a család életére"],["EH-HU-502","/mi-intezzuk/general-kivitelezes","Generálkivitelezés"],["EH-HU-503","/mi-intezzuk/finanszirozas","Finanszírozási segítség"],["EH-HU-504","/mi-intezzuk/felujitas","Felújítás"],["EH-HU-505","/mi-intezzuk/tetoter","Tetőtér-beépítés"],["EH-HU-506","/mi-intezzuk/telek-ellenorzes","Telekellenőrzés"],["EH-HU-507","/mi-intezzuk/szemelyes-hazajanlas","Személyes házajánlás"],["EH-HU-508","/mi-intezzuk/pincebol-lakas","Pincéből lakást"]
     ]},
     {"name":"Bizalom","pages":[
       ["EH-HU-601","/biztonsag/vallalasaink","Mit vállalunk?"],["EH-HU-602","/biztonsag/atlathato-ar","Átlátható ár"],["EH-HU-603","/biztonsag/szerzodes","Érthető szerződés"],["EH-HU-604","/biztonsag/projektkovetes","Kövessétek az építkezést"],["EH-HU-605","/kozelrol/elkeszult-otthonok","Elkészült otthonok"],["EH-HU-606","/kozelrol/csaladok-tortenetei","Családok történetei"],["EH-HU-607","/biztonsag/atadas-utan","Átadás után"]

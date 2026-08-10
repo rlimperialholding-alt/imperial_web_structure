@@ -1,5 +1,5 @@
 ﻿EVERYDAY HOMES – SZOLGÁLTATÁSOK
-7 teljes oldal terv · v1.0 · QUARANTINE / REVIEW_REQUIRED
+8 teljes oldal terv · v1.1 · QUARANTINE / REVIEW_REQUIRED
 Koncepció: nem szolgáltatáslistát sorolunk. Minden oldal egy családi feladatot vesz le az ügyfél válláról, és világosan megmutatja, mi az Everyday Homes felelőssége, mi az ügyfélé, valamint hol kell külön szakértő.
 
 
@@ -58,6 +58,16 @@ CTA: Kérek személyes házajánlást
 Elkülönítés: nem Family Homes „három jó választás” kampánymondatát másoljuk; itt a szolgáltatás értéke a hétköznapi igények és a pénzügyi realitás közös rendezése.
 
 
+EH-HU-508 · PINCÉBŐL LAKÁST – MEGLÉVŐ TÉRBŐL KIS OTTHON
+URL: /mi-intezzuk/pincebol-lakas
+Hero: „Van már helyetek. Lehet belőle egy önálló kis otthon?”
+Kör: pince, garázs vagy melléképület lakhatási célú funkcióváltásának elővizsgálata, tervezése és – igazolt alkalmasság esetén – kivitelezése.
+Blokkok: családi cél és használat; jogi és településképi helyzet; szerkezet és nedvesség; belmagasság; természetes fény és szellőzés; hővédelem; tűzbiztonság és menekülés; közművek; megközelítés és magánszféra; felújítási költség összevetése más lakhatási megoldással.
+Kimenet: zöld/sárga/piros előszűrés, a szükséges szakági vizsgálatok és a reális következő lépés megnevezésével.
+CTA: Megnézetem, lehet-e belőle otthon
+Műszaki és jogi kapu: helyszíni felmérés, tulajdoni és helyi szabályozási ellenőrzés nélkül nincs megvalósíthatósági, lakhatósági, engedélyezési, költség- vagy határidőígéret. A „pincéből lakást” menüpont lehetőséget mutat, nem automatikus ígéretet.
+
+
 KÖZÖS KONVERZIÓS KAPU
 Az űrlap célmezőket kérdez, nem kényszeríti az ügyfelet műszaki szaknyelvre. A beküldés R0–R3 érdeklődési művelet; nem keletkeztet automatikus ajánlatot, szerződést, felelősségelismerést vagy teljesítésigazolást.
-Darabszám: 7. Publikáció: TILOS. HTML: BLOCKED.
+Darabszám: 8. Publikáció: TILOS. HTML: BLOCKED.

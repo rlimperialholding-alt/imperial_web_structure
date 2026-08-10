@@ -59,6 +59,9 @@ SERVICE_PAGE_ROUTES = {
     "/mi-intezzuk/tervezes",
     "/mi-intezzuk/general-kivitelezes",
     "/mi-intezzuk/finanszirozas",
+    "/mi-intezzuk/felujitas",
+    "/mi-intezzuk/tetoter",
+    "/mi-intezzuk/pincebol-lakas",
 }
 
 PAGE_RULES = {
@@ -120,6 +123,9 @@ LAYOUT_BY_ROUTE = {
     "/mi-intezzuk/tervezes": "daily-rhythm",
     "/mi-intezzuk/general-kivitelezes": "responsibility-grid",
     "/mi-intezzuk/finanszirozas": "funding-roadmap",
+    "/mi-intezzuk/felujitas": "condition-map",
+    "/mi-intezzuk/tetoter": "roof-section",
+    "/mi-intezzuk/pincebol-lakas": "space-reborn",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
