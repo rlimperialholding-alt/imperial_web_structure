@@ -62,6 +62,8 @@ SERVICE_PAGE_ROUTES = {
     "/mi-intezzuk/felujitas",
     "/mi-intezzuk/tetoter",
     "/mi-intezzuk/pincebol-lakas",
+    "/mi-intezzuk/telek-ellenorzes",
+    "/mi-intezzuk/szemelyes-hazajanlas",
 }
 
 PAGE_RULES = {
@@ -126,6 +128,8 @@ LAYOUT_BY_ROUTE = {
     "/mi-intezzuk/felujitas": "condition-map",
     "/mi-intezzuk/tetoter": "roof-section",
     "/mi-intezzuk/pincebol-lakas": "space-reborn",
+    "/mi-intezzuk/telek-ellenorzes": "plot-fieldbook",
+    "/mi-intezzuk/szemelyes-hazajanlas": "home-conversation",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)

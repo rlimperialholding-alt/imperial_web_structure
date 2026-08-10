@@ -1,5 +1,5 @@
 {
-  "pages_checked": 39,
+  "pages_checked": 41,
   "other_brands_checked": [
     "baufreund",
     "bautica",
@@ -60,6 +60,11 @@
       "five_word_jaccard": 0.00336
     },
     {
+      "left": "/mi-intezzuk/finanszirozas",
+      "right": "/mi-intezzuk/szemelyes-hazajanlas",
+      "five_word_jaccard": 0.00212
+    },
+    {
       "left": "/kell-egy-otthon-mindenkinek",
       "right": "/szamolok/gyors-hazellenorzes",
       "five_word_jaccard": 0.00186
@@ -85,14 +90,9 @@
       "five_word_jaccard": 0.00103
     },
     {
-      "left": "/igy-lesz-egyszeru",
-      "right": "/szamolok/gyors-hazellenorzes",
-      "five_word_jaccard": 0.00081
-    },
-    {
-      "left": "/elso-lepesek-hirlevel",
-      "right": "/elso-sajat-otthon",
-      "five_word_jaccard": 0.00081
+      "left": "/elso-sajat-otthon",
+      "right": "/mi-intezzuk/telek-ellenorzes",
+      "five_word_jaccard": 0.00092
     }
   ],
   "repeated_headings": [],
