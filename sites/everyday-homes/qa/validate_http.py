@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 import threading
 import urllib.request
+from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -17,11 +17,11 @@ def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--serve-local":
         port = int(sys.argv[2])
         site_root = Path(__file__).resolve().parents[1]
-        os.chdir(site_root.parent)
-        server = ThreadingHTTPServer(("127.0.0.1", port), SimpleHTTPRequestHandler)
+        handler = partial(SimpleHTTPRequestHandler, directory=str(site_root))
+        server = ThreadingHTTPServer(("127.0.0.1", port), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        base_url = f"http://127.0.0.1:{port}/everyday-homes"
+        base_url = f"http://127.0.0.1:{port}"
     elif len(sys.argv) == 2:
         base_url = sys.argv[1].rstrip("/")
         site_root = Path(__file__).resolve().parents[1]
@@ -48,7 +48,7 @@ def main() -> int:
     failures: list[dict[str, str | int]] = []
     for url in urls:
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "Everyday-QA/1.0"})
+            request = urllib.request.Request(url, headers={"User-Agent": "Everyday-QA/1.0"}, method="HEAD")
             with urllib.request.urlopen(request, timeout=10) as response:
                 if response.status != 200:
                     failures.append({"url": url, "status": response.status})

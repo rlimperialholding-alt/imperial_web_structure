@@ -1,5 +1,5 @@
 {
-  "pages_checked": 27,
+  "pages_checked": 33,
   "other_brands_checked": [
     "baufreund",
     "bautica",
@@ -19,6 +19,11 @@
   },
   "duplicate_layouts": [],
   "highest_within_brand_pairs": [
+    {
+      "left": "/szamolok/teljes-projektkeret",
+      "right": "/muszaki-adatok",
+      "five_word_jaccard": 0.03743
+    },
     {
       "left": "/otthonvalaszto",
       "right": "/keretbol-otthon",
@@ -78,11 +83,6 @@
       "left": "/elso-lepesek",
       "right": "/kezdjuk-egyutt",
       "five_word_jaccard": 0.00103
-    },
-    {
-      "left": "/keretbol-otthon",
-      "right": "/szamolok/teljes-projektkeret",
-      "five_word_jaccard": 0.00083
     },
     {
       "left": "/igy-lesz-egyszeru",
