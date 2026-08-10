@@ -52,7 +52,7 @@ def public_text(path: Path) -> str:
 
 def rendered_article_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="ignore")
-    match = re.search(r'<article\s+class="(?:technology-page|decision-page)[^"]*".*?</article>', text, flags=re.S)
+    match = re.search(r'<article\s+class="(?:technology-page|decision-page|service-page)[^"]*".*?</article>', text, flags=re.S)
     if not match:
         raise ValueError(f"Missing page article in rendered file: {path}")
     article = match.group(0)
@@ -61,6 +61,13 @@ def rendered_article_text(path: Path) -> str:
 
 
 def registry_source_text(source: str) -> str:
+    if source.startswith("assets/service-pages.js#"):
+        route = source.split("#", 1)[1]
+        rendered_name = route.strip("/").replace("/", "--") + ".html"
+        rendered = ROOT / "qa" / "rendered" / "service-pages" / rendered_name
+        if not rendered.exists():
+            raise FileNotFoundError(f"Missing rendered service page: {rendered}")
+        return rendered_article_text(rendered)
     if source.startswith("assets/technology-pages.js#"):
         route = source.split("#", 1)[1]
         rendered_name = "mibol-epuljon.html" if route == "/mibol-epuljon" else route.strip("/").replace("/", "--") + ".html"

@@ -11,6 +11,7 @@ OUT_PATH = ROOT / "data" / "completion-registry.json"
 EVIDENCE_PATH = ROOT / "qa" / "qa-evidence.json"
 RENDER_REPORT_PATH = ROOT / "qa" / "decision-pages-report.json"
 TECHNOLOGY_RENDER_REPORT_PATH = ROOT / "qa" / "technology-pages-report.json"
+SERVICE_RENDER_REPORT_PATH = ROOT / "qa" / "service-pages-report.json"
 
 SOURCE_BY_ROUTE = {
     "/": "drive/01-kezdolap.md",
@@ -54,11 +55,18 @@ TECHNOLOGY_PAGE_ROUTES = {
     "/technologiak/acelszerkezet",
 }
 
+SERVICE_PAGE_ROUTES = {
+    "/mi-intezzuk/tervezes",
+    "/mi-intezzuk/general-kivitelezes",
+    "/mi-intezzuk/finanszirozas",
+}
+
 PAGE_RULES = {
     "editorial": {"minimum_characters": 12_000, "minimum_faq": 5, "visual_assets": 3},
     "decision_tool": {"minimum_characters": 1_800, "minimum_faq": 4, "visual_assets": 3},
     "detailed_decision_tool": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
     "technology_page": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
+    "service_page": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
 }
 
 DETAILED_DECISION_ROUTES = {
@@ -109,6 +117,9 @@ LAYOUT_BY_ROUTE = {
     "/technologiak/tegla": "brick-calendar",
     "/technologiak/liapor": "liapor-logistics",
     "/technologiak/acelszerkezet": "steel-precision",
+    "/mi-intezzuk/tervezes": "daily-rhythm",
+    "/mi-intezzuk/general-kivitelezes": "responsibility-grid",
+    "/mi-intezzuk/finanszirozas": "funding-roadmap",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
@@ -163,18 +174,24 @@ def main() -> None:
     qa_evidence = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8")) if EVIDENCE_PATH.exists() else {"routes": {}}
     render_report = json.loads(RENDER_REPORT_PATH.read_text(encoding="utf-8")) if RENDER_REPORT_PATH.exists() else {"checks": []}
     technology_render_report = json.loads(TECHNOLOGY_RENDER_REPORT_PATH.read_text(encoding="utf-8")) if TECHNOLOGY_RENDER_REPORT_PATH.exists() else {"checks": []}
+    service_render_report = json.loads(SERVICE_RENDER_REPORT_PATH.read_text(encoding="utf-8")) if SERVICE_RENDER_REPORT_PATH.exists() else {"checks": []}
     rendered_by_route: dict[str, list[dict]] = {}
-    for check in render_report.get("checks", []) + technology_render_report.get("checks", []):
+    for check in render_report.get("checks", []) + technology_render_report.get("checks", []) + service_render_report.get("checks", []):
         rendered_by_route.setdefault(check.get("route", ""), []).append(check)
     rows = []
     for group in page_map["groups"]:
         for page_id, route, title in group["pages"]:
             source_name = SOURCE_BY_ROUTE.get(route)
-            page_type = "technology_page" if route in TECHNOLOGY_PAGE_ROUTES else ("detailed_decision_tool" if route in DETAILED_DECISION_ROUTES else ("decision_tool" if route in DECISION_PAGE_ROUTES else "editorial"))
+            page_type = "service_page" if route in SERVICE_PAGE_ROUTES else ("technology_page" if route in TECHNOLOGY_PAGE_ROUTES else ("detailed_decision_tool" if route in DETAILED_DECISION_ROUTES else ("decision_tool" if route in DECISION_PAGE_ROUTES else "editorial")))
             rules = PAGE_RULES[page_type]
             excluded_from_scope = route.startswith(HOUSE_PREFIXES) or page_id == "EH-HU-003"
             raw = ""
-            if page_type == "technology_page":
+            if page_type == "service_page":
+                source_name = f"assets/service-pages.js#{route}"
+                raw = (ROOT / "assets" / "service-pages.js").read_text(encoding="utf-8")
+                visible = ""
+                questions = 0
+            elif page_type == "technology_page":
                 source_name = f"assets/technology-pages.js#{route}"
                 raw = (ROOT / "assets" / "technology-pages.js").read_text(encoding="utf-8")
                 visible = ""
@@ -194,7 +211,7 @@ def main() -> None:
             chars = len(visible)
             qa_passes = int(qa_evidence.get("routes", {}).get(route, {}).get("passes", 0))
             rendered_checks = rendered_by_route.get(route, [])
-            if page_type in {"decision_tool", "detailed_decision_tool", "technology_page"} and rendered_checks:
+            if page_type in {"decision_tool", "detailed_decision_tool", "technology_page", "service_page"} and rendered_checks:
                 chars = max(int(check.get("contentCharacters", 0)) for check in rendered_checks)
                 questions = max(int(check.get("faqItems", 0)) for check in rendered_checks)
                 rendered_passes = len({check.get("viewport") for check in rendered_checks if check.get("passed")})
