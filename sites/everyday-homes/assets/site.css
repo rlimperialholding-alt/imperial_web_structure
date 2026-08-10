@@ -937,3 +937,125 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* Detailed project, pricing and technical-content pages */
+.reference-note { width: min(1180px, calc(100% - 2rem)); margin: 1.5rem auto 0; padding: 1.2rem 1.35rem; border: 1px solid #b9d9d2; border-left: 7px solid var(--teal); border-radius: 18px; background: #f2faf7; color: var(--teal-dark); }
+.reference-note strong { display: block; margin-bottom: .35rem; font-size: .82rem; letter-spacing: .1em; text-transform: uppercase; }
+.reference-note p { margin: 0; line-height: 1.65; }
+.editorial-split { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; display: grid; grid-template-columns: .85fr 1.15fr; gap: clamp(2rem, 6vw, 6rem); align-items: start; }
+.editorial-split h2 { margin: .25rem 0 0; font-size: clamp(2rem, 4vw, 4rem); line-height: 1.02; }
+.editorial-split p { font-size: 1.06rem; line-height: 1.75; }
+.detail-ledger, .schedule-program, .package-comparison, .energy-scenario { width: min(1280px, calc(100% - 2rem)); margin: 4rem auto 0; }
+.detail-ledger > header, .schedule-program > header, .package-comparison > header, .energy-scenario > header { max-width: 800px; margin-bottom: 1.5rem; }
+.detail-ledger > header h2, .schedule-program > header h2, .package-comparison > header h2, .energy-scenario > header h2 { margin: .25rem 0 .6rem; font-size: clamp(2rem, 4vw, 3.7rem); line-height: 1.04; }
+.detail-table-wrap { width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border: 1px solid #d6dedb; border-radius: 22px; background: white; box-shadow: 0 18px 55px rgba(22, 49, 46, .09); }
+.detail-table { width: 100%; min-width: 980px; border-collapse: collapse; font-size: .9rem; }
+.detail-table th, .detail-table td { padding: 1rem .9rem; border-right: 1px solid #dfe6e3; border-bottom: 1px solid #dfe6e3; text-align: left; vertical-align: top; line-height: 1.45; }
+.detail-table tr > :last-child { border-right: 0; }
+.detail-table thead th { position: sticky; top: 0; z-index: 2; background: var(--teal-dark); color: white; }
+.detail-table thead th:first-child { left: 0; z-index: 3; min-width: 250px; }
+.detail-table tbody th, .detail-table tfoot th { position: sticky; left: 0; z-index: 1; width: 280px; background: #f7faf8; color: #173d39; }
+.detail-table tbody tr:nth-child(even) td { background: #f9fbfa; }
+.detail-table th strong, .detail-table th small, .detail-table td b, .detail-table td span { display: block; }
+.detail-table th small, .detail-table thead small { margin-top: .25rem; color: inherit; opacity: .72; font-weight: 500; }
+.detail-table td b { color: var(--teal-dark); font-size: .94rem; }
+.detail-table td span { margin-top: .2rem; color: #64736f; font-size: .78rem; }
+.detail-table tfoot th, .detail-table tfoot td { border-bottom: 0; background: #e5f1ed; font-weight: 800; }
+.assumption-cards { width: min(1180px, calc(100% - 2rem)); margin: 3rem auto 0; display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+.assumption-cards article { padding: clamp(1.5rem, 3vw, 2.5rem); border-radius: 26px; background: #eaf5f1; }
+.assumption-cards article + article { background: #fff2dc; }
+.assumption-cards span { display: inline-block; margin-bottom: .5rem; color: var(--teal); font-weight: 900; font-size: .78rem; letter-spacing: .13em; }
+.assumption-cards h3 { margin: 0 0 1rem; font-size: 1.7rem; }
+.assumption-cards ul { margin: 0; padding-left: 1.2rem; }
+.assumption-cards li { margin: .65rem 0; line-height: 1.55; }
+.change-warning { width: min(1180px, calc(100% - 2rem)); margin: 3rem auto 0; padding: clamp(1.7rem, 5vw, 4rem); display: grid; grid-template-columns: .8fr 1.2fr; gap: clamp(2rem, 6vw, 6rem); border-radius: 32px; background: var(--teal-dark); color: white; }
+.change-warning h2 { margin: .25rem 0; font-size: clamp(2rem, 4vw, 3.5rem); }
+.change-warning p { line-height: 1.72; }
+.budget-reading { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; }
+.budget-reading > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.budget-reading article { padding: 1.5rem; border-top: 8px solid var(--teal); background: #f4f8f6; border-radius: 0 0 18px 18px; }
+.budget-reading article b { font-size: 2rem; color: var(--teal); }
+.schedule-summary { width: min(1180px, calc(100% - 2rem)); margin: 2rem auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.schedule-summary div { padding: 1.5rem; border-radius: 22px; background: var(--cream); border-bottom: 5px solid var(--teal); }
+.schedule-summary span { display: block; color: var(--teal-dark); font-size: clamp(1.6rem, 3vw, 2.7rem); font-weight: 950; }
+.schedule-summary p { margin: .4rem 0 0; }
+.detail-table--schedule { min-width: 1080px; }
+.detail-table--schedule td:first-child { color: var(--teal); font-size: 1.15rem; font-weight: 900; }
+.technology-clock { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; }
+.technology-clock > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+.technology-clock article { min-width: 0; padding: 1.4rem; border-radius: 20px; background: #f4f8f6; }
+.technology-clock span { display: block; min-height: 2.4em; color: var(--teal); font-size: 1.35rem; font-weight: 950; }
+.critical-path { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; display: grid; grid-template-columns: .8fr 1.2fr; gap: 3rem; }
+.critical-path ol { margin: 0; padding: 0; list-style: none; counter-reset: none; }
+.critical-path li { display: grid; grid-template-columns: 1fr 2fr; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid #cbd8d4; }
+.critical-path li b { color: var(--teal-dark); }
+.legal-timing { width: min(1180px, calc(100% - 2rem)); margin: 3rem auto 0; padding: 1.5rem 1.8rem; border-radius: 20px; background: #fff2dc; }
+.legal-timing strong { display: block; margin-bottom: .35rem; color: #824f00; font-size: 1.2rem; }
+.legal-timing p { margin: 0; line-height: 1.65; }
+.schedule-handoff { width: min(1180px, calc(100% - 2rem)); margin: 3rem auto 0; padding: clamp(1.6rem, 4vw, 3rem); border-radius: 26px; background: #eaf5f1; }
+.schedule-handoff h2 { max-width: 22ch; margin-top: 0; }
+.schedule-handoff p { max-width: 880px; margin-bottom: 0; line-height: 1.7; }
+.parallel-work { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; }
+.parallel-work > div { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+.parallel-work article { padding: 1.4rem; border-radius: 20px; background: #f4f8f6; border-top: 5px solid var(--teal); }
+.parallel-work h3 { margin-top: 0; }
+.completion-levels { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; }
+.completion-levels > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.completion-levels article { padding: 1.7rem; border: 1px solid #cddbd6; border-radius: 24px; background: white; }
+.completion-levels article > span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: var(--teal); color: white; font-weight: 900; }
+.completion-levels li { margin: .55rem 0; }
+.package-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.2rem; }
+.package-card { padding: 1.5rem; border-radius: 22px; background: #e8f4ef; border-top: 8px solid #71a99e; }
+.package-card.is-mid { background: #f1f4e4; border-color: #9fb14f; }
+.package-card.is-premium { background: #fff0d4; border-color: #d68b19; }
+.package-card span { font-size: .75rem; font-weight: 900; letter-spacing: .12em; }
+.package-card h3 { margin: .4rem 0; font-size: 2rem; }
+.package-card strong { display: block; min-height: 3em; color: var(--teal-dark); }
+.price-definition { width: min(1180px, calc(100% - 2rem)); margin: 3rem auto 0; padding: clamp(1.7rem, 4vw, 3.5rem); display: grid; grid-template-columns: .8fr 1.2fr; gap: 3rem; border-radius: 30px; background: #fff2dc; }
+.price-definition h2 { font-size: clamp(2rem, 4vw, 3.3rem); }
+.technology-principles { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; }
+.technology-principles > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+.technology-principles article { padding: 1.4rem; border-radius: 18px; background: #f4f8f6; border-left: 5px solid var(--teal); }
+.energy-benchmark { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; }
+.energy-benchmark > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.energy-benchmark article { padding: 1.7rem; border-radius: 24px; background: #eef6f2; }
+.energy-benchmark article:nth-child(2) { background: #f4f4e4; }
+.energy-benchmark article:nth-child(3) { background: #fff0d7; }
+.energy-benchmark span { display: block; color: var(--teal); font-weight: 900; letter-spacing: .12em; }
+.energy-benchmark strong { display: block; margin: .5rem 0; font-size: 1.45rem; }
+.energy-order { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; display: grid; grid-template-columns: .8fr 1.2fr; gap: 3rem; }
+.energy-order ol { margin: 0; padding: 0; list-style: none; }
+.energy-order li { display: grid; grid-template-columns: 46px 1fr; align-items: center; gap: .8rem; margin: .7rem 0; }
+.energy-order b { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: var(--teal); color: white; }
+.energy-honesty { width: min(1180px, calc(100% - 2rem)); margin: 3rem auto 0; padding: 2rem; border: 2px solid var(--teal); border-radius: 24px; }
+.energy-honesty h2 { margin-top: 0; }
+.worked-energy-example { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; }
+.worked-energy-example > header { max-width: 900px; margin-bottom: 1.4rem; }
+.worked-energy-example > header h2 { font-size: clamp(2rem, 4vw, 3.6rem); margin: .25rem 0 .6rem; }
+.worked-energy-example > header p { line-height: 1.7; }
+.example-reading { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem; }
+.example-reading article { padding: 1.4rem; border-radius: 18px; background: #eef6f2; }
+.example-reading article:nth-child(2) { background: #fff2dc; }
+.example-reading h3 { margin-top: 0; }
+.energy-decisions { width: min(1180px, calc(100% - 2rem)); margin: 4rem auto 0; padding: clamp(1.5rem, 4vw, 3.5rem); border-radius: 30px; background: #f7f4eb; }
+.energy-decisions > header { max-width: 800px; margin-bottom: 2rem; }
+.energy-decisions > header h2 { max-width: 15ch; font-size: clamp(2rem, 4vw, 3.5rem); }
+.energy-decisions > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.energy-decisions article { padding: clamp(1.35rem, 3vw, 2.2rem); border-top: 5px solid var(--orange); border-radius: 0 0 20px 20px; background: white; box-shadow: 0 18px 44px rgba(37, 56, 60, .08); }
+.energy-decisions article h3 { margin-top: 0; color: var(--teal-dark); }
+.energy-decisions aside { margin-top: 1rem; padding: clamp(1.4rem, 3vw, 2.4rem); border-radius: 22px; color: white; background: var(--teal); }
+.energy-decisions aside strong { display: block; margin-bottom: .5rem; font-size: clamp(1.15rem, 2vw, 1.55rem); }
+
+@media (max-width: 900px) {
+  .editorial-split, .change-warning, .critical-path, .price-definition, .energy-order { grid-template-columns: 1fr; gap: 1.2rem; }
+  .assumption-cards, .budget-reading > div, .schedule-summary, .completion-levels > div, .package-grid, .energy-benchmark > div, .parallel-work > div, .example-reading, .energy-decisions > div { grid-template-columns: 1fr; }
+  .technology-clock > div, .technology-principles > div { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .reference-note, .editorial-split, .detail-ledger, .schedule-program, .package-comparison, .energy-scenario, .assumption-cards, .change-warning, .budget-reading, .schedule-summary, .technology-clock, .critical-path, .schedule-handoff, .legal-timing, .parallel-work, .completion-levels, .price-definition, .technology-principles, .energy-benchmark, .worked-energy-example, .energy-decisions, .energy-order, .energy-honesty { width: min(100% - 1rem, 1280px); }
+  .detail-table-wrap { border-radius: 14px; }
+  .detail-table { font-size: .82rem; }
+  .technology-clock > div, .technology-principles > div { grid-template-columns: 1fr; }
+  .critical-path li { grid-template-columns: 1fr; gap: .3rem; }
+}
