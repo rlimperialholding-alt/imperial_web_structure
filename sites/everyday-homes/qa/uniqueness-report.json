@@ -1,5 +1,5 @@
 {
-  "pages_checked": 43,
+  "pages_checked": 46,
   "other_brands_checked": [
     "baufreund",
     "bautica",
@@ -60,6 +60,16 @@
       "five_word_jaccard": 0.00336
     },
     {
+      "left": "/biztonsag/vallalasaink",
+      "right": "/biztonsag/szerzodes",
+      "five_word_jaccard": 0.00336
+    },
+    {
+      "left": "/garanciak-es-utogondozas",
+      "right": "/biztonsag/atadas-utan",
+      "five_word_jaccard": 0.00243
+    },
+    {
       "left": "/mi-intezzuk/finanszirozas",
       "right": "/mi-intezzuk/szemelyes-hazajanlas",
       "five_word_jaccard": 0.00212
@@ -83,16 +93,6 @@
       "left": "/igy-lesz-egyszeru",
       "right": "/elso-lepesek",
       "five_word_jaccard": 0.00105
-    },
-    {
-      "left": "/elso-lepesek",
-      "right": "/kezdjuk-egyutt",
-      "five_word_jaccard": 0.00103
-    },
-    {
-      "left": "/elso-sajat-otthon",
-      "right": "/mi-intezzuk/telek-ellenorzes",
-      "five_word_jaccard": 0.00092
     }
   ],
   "repeated_headings": [],

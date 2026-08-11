@@ -66,6 +66,9 @@ SERVICE_PAGE_ROUTES = {
     "/mi-intezzuk/szemelyes-hazajanlas",
     "/biztonsag/vallalasaink",
     "/biztonsag/atlathato-ar",
+    "/biztonsag/szerzodes",
+    "/biztonsag/projektkovetes",
+    "/biztonsag/atadas-utan",
 }
 
 PAGE_RULES = {
@@ -134,6 +137,9 @@ LAYOUT_BY_ROUTE = {
     "/mi-intezzuk/szemelyes-hazajanlas": "home-conversation",
     "/biztonsag/vallalasaink": "promise-ledger",
     "/biztonsag/atlathato-ar": "open-cost-map",
+    "/biztonsag/szerzodes": "contract-margin",
+    "/biztonsag/projektkovetes": "site-diary",
+    "/biztonsag/atadas-utan": "care-calendar",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
