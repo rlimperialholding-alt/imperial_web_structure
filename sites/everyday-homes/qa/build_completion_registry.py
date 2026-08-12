@@ -73,6 +73,12 @@ SERVICE_PAGE_ROUTES = {
     "/elso-lepesek/jo-alaprajz",
     "/elso-lepesek/telekvasarlas",
     "/elso-lepesek/teljes-koltseg",
+    "/elso-lepesek/technologia-valasztas",
+    "/elso-lepesek/finanszirozas-menete",
+    "/elso-lepesek/tarthato-utemterv",
+    "/elso-lepesek/energia",
+    "/kozelrol/elkeszult-otthonok",
+    "/kozelrol/csaladok-tortenetei",
 }
 
 PAGE_RULES = {
@@ -148,6 +154,12 @@ LAYOUT_BY_ROUTE = {
     "/elso-lepesek/jo-alaprajz": "plan-economy",
     "/elso-lepesek/telekvasarlas": "plot-expedition",
     "/elso-lepesek/teljes-koltseg": "cost-cutaway",
+    "/elso-lepesek/technologia-valasztas": "material-library",
+    "/elso-lepesek/finanszirozas-menete": "funding-conveyor",
+    "/elso-lepesek/tarthato-utemterv": "schedule-weave",
+    "/elso-lepesek/energia": "comfort-climate",
+    "/kozelrol/elkeszult-otthonok": "open-house-album",
+    "/kozelrol/csaladok-tortenetei": "story-portraits",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)

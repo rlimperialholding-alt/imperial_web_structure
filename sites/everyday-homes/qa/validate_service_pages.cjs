@@ -8,7 +8,7 @@ const root = path.resolve(__dirname);
 const screenshotRoot = path.join(root, 'screenshots', 'service-pages');
 const renderedRoot = path.join(root, 'rendered', 'service-pages');
 const reportPath = path.join(root, 'service-pages-report.json');
-const canonicalRoutes = ['/mi-intezzuk/tervezes','/mi-intezzuk/general-kivitelezes','/mi-intezzuk/finanszirozas','/mi-intezzuk/felujitas','/mi-intezzuk/tetoter','/mi-intezzuk/pincebol-lakas','/mi-intezzuk/telek-ellenorzes','/mi-intezzuk/szemelyes-hazajanlas','/biztonsag/vallalasaink','/biztonsag/atlathato-ar','/biztonsag/szerzodes','/biztonsag/projektkovetes','/biztonsag/atadas-utan','/elso-lepesek/mekkora-haz','/elso-lepesek/jo-alaprajz','/elso-lepesek/telekvasarlas','/elso-lepesek/teljes-koltseg'];
+const canonicalRoutes = ['/mi-intezzuk/tervezes','/mi-intezzuk/general-kivitelezes','/mi-intezzuk/finanszirozas','/mi-intezzuk/felujitas','/mi-intezzuk/tetoter','/mi-intezzuk/pincebol-lakas','/mi-intezzuk/telek-ellenorzes','/mi-intezzuk/szemelyes-hazajanlas','/biztonsag/vallalasaink','/biztonsag/atlathato-ar','/biztonsag/szerzodes','/biztonsag/projektkovetes','/biztonsag/atadas-utan','/elso-lepesek/mekkora-haz','/elso-lepesek/jo-alaprajz','/elso-lepesek/telekvasarlas','/elso-lepesek/teljes-koltseg','/elso-lepesek/technologia-valasztas','/elso-lepesek/finanszirozas-menete','/elso-lepesek/tarthato-utemterv','/elso-lepesek/energia','/kozelrol/elkeszult-otthonok','/kozelrol/csaladok-tortenetei'];
 const routes = process.env.EVERYDAY_SERVICE_ROUTES ? process.env.EVERYDAY_SERVICE_ROUTES.split(',').map(route => route.trim()).filter(Boolean) : canonicalRoutes;
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
