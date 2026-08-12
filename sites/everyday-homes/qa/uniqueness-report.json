@@ -1,5 +1,5 @@
 {
-  "pages_checked": 46,
+  "pages_checked": 50,
   "other_brands_checked": [
     "baufreund",
     "bautica",
@@ -75,6 +75,11 @@
       "five_word_jaccard": 0.00212
     },
     {
+      "left": "/mi-intezzuk/telek-ellenorzes",
+      "right": "/elso-lepesek/telekvasarlas",
+      "five_word_jaccard": 0.0019
+    },
+    {
       "left": "/kell-egy-otthon-mindenkinek",
       "right": "/szamolok/gyors-hazellenorzes",
       "five_word_jaccard": 0.00186
@@ -88,11 +93,6 @@
       "left": "/elso-lepesek-hirlevel",
       "right": "/szamolok/havi-teher",
       "five_word_jaccard": 0.00138
-    },
-    {
-      "left": "/igy-lesz-egyszeru",
-      "right": "/elso-lepesek",
-      "five_word_jaccard": 0.00105
     }
   ],
   "repeated_headings": [],

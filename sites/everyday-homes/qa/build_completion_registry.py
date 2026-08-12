@@ -69,6 +69,10 @@ SERVICE_PAGE_ROUTES = {
     "/biztonsag/szerzodes",
     "/biztonsag/projektkovetes",
     "/biztonsag/atadas-utan",
+    "/elso-lepesek/mekkora-haz",
+    "/elso-lepesek/jo-alaprajz",
+    "/elso-lepesek/telekvasarlas",
+    "/elso-lepesek/teljes-koltseg",
 }
 
 PAGE_RULES = {
@@ -140,6 +144,10 @@ LAYOUT_BY_ROUTE = {
     "/biztonsag/szerzodes": "contract-margin",
     "/biztonsag/projektkovetes": "site-diary",
     "/biztonsag/atadas-utan": "care-calendar",
+    "/elso-lepesek/mekkora-haz": "room-measure",
+    "/elso-lepesek/jo-alaprajz": "plan-economy",
+    "/elso-lepesek/telekvasarlas": "plot-expedition",
+    "/elso-lepesek/teljes-koltseg": "cost-cutaway",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
