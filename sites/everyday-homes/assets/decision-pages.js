@@ -171,7 +171,10 @@ function decisionFaqMarkup(items) {
 function renderDecisionPage(path) {
   const page = DECISION_PAGE_MAP[path];
   if (!page) return false;
-  document.title = `${page.eyebrow} | Everyday Homes staging`;
+  const completion = globalThis.EVERYDAY_DECISION_COMPLETION?.[path];
+  const completionBody = completion ? `<section class="decision-completion" aria-labelledby="decision-completion-title"><p class="decision-kicker">Részletes döntési segítség</p><h2 id="decision-completion-title">${escapeHtml(completion.title)}</h2>${completion.paragraphs.map(paragraph => `<p>${escapeHtml(paragraph)}</p>`).join("")}</section>` : "";
+  const faqItems = completion ? [...page.faq, ...completion.faq] : page.faq;
+  document.title = `${page.eyebrow} | Everyday Homes`;
   const main = document.querySelector("main");
   main.innerHTML = `
     <article class="decision-page decision-page--${escapeHtml(page.layout)}" data-page-id="${escapeHtml(page.id)}" data-release-state="review-required">
@@ -182,8 +185,8 @@ function renderDecisionPage(path) {
       <nav class="decision-switcher" aria-label="Számolók és választást segítő eszközök">
         ${Object.entries(DECISION_PAGE_MAP).map(([route, item]) => `<a href="${href(route)}" data-route${route === path ? ' aria-current="page"' : ""}>${escapeHtml(item.eyebrow)}</a>`).join("")}
       </nav>
-      <div class="decision-body">${page.body}</div>
-      ${decisionFaqMarkup(page.faq)}
+      <div class="decision-body">${page.body}${completionBody}</div>
+      ${decisionFaqMarkup(faqItems)}
       <section class="decision-closing"><div><p>Otthon – egyszerűen.</p><h2>${escapeHtml(page.closingTitle)}</h2></div>${decisionAction(page.closingCta)}</section>
     </article>`;
   setCurrent(path);

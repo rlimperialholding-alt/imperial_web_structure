@@ -127,6 +127,9 @@ h3 { margin: 0 0 .7rem; font-size: clamp(1.3rem, 2vw, 1.85rem); }
 .decision-switcher a[aria-current="page"] { color: white; border-color: var(--teal); background: var(--teal); }
 .decision-body > section, .decision-faq, .decision-closing { width: min(1180px,calc(100% - 2rem)); margin-inline: auto; }
 .decision-body > section { margin-block: clamp(4rem,8vw,8rem); }
+.decision-completion { padding: clamp(1.5rem,4vw,3.5rem); border-radius: 28px; background: var(--cream); color: var(--ink); }
+.decision-completion h2 { max-width: 18ch; }
+.decision-completion p:not(.decision-kicker) { max-width: 75ch; margin: 1rem 0 0; line-height: 1.75; }
 .decision-kicker { margin: 0 0 .85rem; color: var(--teal); font-size: .78rem; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
 .decision-tool { position: relative; padding: clamp(2rem,5vw,5rem); border-radius: 38px; background: var(--paper); box-shadow: var(--shadow); }
 .decision-tool__intro { max-width: 760px; }

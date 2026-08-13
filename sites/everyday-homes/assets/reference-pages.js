@@ -40,7 +40,7 @@ SERVICE_PAGES["/kozelrol/elkeszult-otthonok"]={
   ["Miért lehetnek korlátozottak a publikált képek?","Adatvédelem, szerződés, vagyonbiztonság, szerzői jog és a tulajdonos kérése miatt. A kevesebb, de jogszerű és pontos kép értékesebb a bizonytalan eredetű galériánál."],
   ["Mit tegyünk, ha valami nem tetszik?","Írjátok le konkrétan: méret, fény, ajtó, anyag, zaj vagy útvonal. Ezután vizsgáljátok meg, a terv sajátossága, egyedi választás vagy kivitelezési részlet okozza-e; ne általánosítsatok egész technológiára."],
   ["Mit tegyünk, ha nagyon tetszik a ház?","Ugyanígy bontsátok részletekre. A hangulat mögött lehet jó tájolás, belmagasság, bútorozás, kert vagy fotózási fény. Csak azt vigyétek tovább, ami a saját telken és keretben is megvalósítható."],
-  ["Mi legyen a látogatás utáni lépés?","Készítsetek háromoszlopos jegyzetet: megtartanánk, módosítanánk, nem kérjük. A kiválasztott részleteket tervezővel és költségszámítással ellenőrizzétek, majd csak ezután kerüljenek a saját briefbe." ]
+  ["Mi legyen a látogatás utáni lépés?","Készítsetek háromoszlopos jegyzetet: megtartanánk, módosítanánk, nem kérjük. A kiválasztott részleteket tervezővel és költségszámítással ellenőrizzétek, majd csak ezután kerüljenek a saját tervezési programotokba." ]
  ],closingTitle:"Ne csak képzeljétek el. Nézzétek meg, kérdezzetek, és vigyetek haza valódi tanulságot.",closingCta:["Kérek egyeztetést egy háznézéshez","/kezdjuk-egyutt"]
 };
 

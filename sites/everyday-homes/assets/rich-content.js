@@ -207,7 +207,7 @@ async function renderRichSourcePage(path) {
   const faqCount = parsed.sections.reduce((sum, section) => sum + section.blocks.filter(line => line.endsWith("?")).length, 0);
   const bodyChars = parsed.sections.reduce((sum, section) => sum + section.title.length + section.blocks.join(" ").length, 0);
   const main = document.querySelector("main");
-  document.title = `${canonical.eyebrow} | Everyday Homes staging`;
+  document.title = `${canonical.eyebrow} | Everyday Homes`;
   main.innerHTML = `
     <article class="rich-page rich-page--${config.layout}" data-page-id="${escapeHtml(canonical.id)}" data-release-state="review-required" data-body-characters="${bodyChars}" data-faq-count="${faqCount}">
       <section class="rich-hero">

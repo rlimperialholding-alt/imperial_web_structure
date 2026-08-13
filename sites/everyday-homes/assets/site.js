@@ -4,7 +4,7 @@ const pages = {
   "/": {
     id: "EH-HU-001", eyebrow: "Everyday Homes", title: "A saját otthon nem lehet örökké csak terv.",
     intro: "Találjátok meg azt a házat, amelyik illik a családotokhoz, a telketekhez és a lehetőségeitekhez. Segítünk átlátni a választást, a finanszírozást és az építkezés teljes útját.",
-    image: "young", primary: ["Megnézem a házakat", "/nekunk-valo-hazak"], secondary: ["Megnézem, mi fér bele", "/keretbol-otthon"],
+    image: "young", primary: ["Megnézem a házakat", "/otthonvalaszto"], secondary: ["Megnézem, mi fér bele", "/keretbol-otthon"],
     sections: [
       ["Nem építkezni szeretnétek. Hanem hazamenni.", "Nem kell hónapokon át külön szakembereket keresnetek, részajánlatokat bogarásznotok és minden nap új problémát megoldanotok. Előbb lássátok, milyen ház jöhet szóba, mire elég a keretetek, és mi történik az első döntéstől az átadásig.", ["Házválasztás érthetően", "A teljes keret áttekintése", "Egymásra épülő lépések"]],
       ["Milyen életre tervezzük?", "Nem pusztán alaprajzot választotok. Helyet a közös reggeliknek, a gyerekszobáknak, az otthoni munkának és annak az életnek, amelyet évek múlva is jó lesz itt élni.", ["Első saját otthon", "Növekvő család", "Kisebb, kényelmesebb ház", "Otthon munkához is"]],
@@ -18,16 +18,9 @@ const pages = {
     image: "mother", primary: ["Elindítom az Otthonválasztót", "/kezdjuk-egyutt"], secondary: ["Inkább előbb számolnék", "/keretbol-otthon"],
     sections: [
       ["Induljunk abból, ami valóban számít", "Hányan költöznétek? Mi nem hiányozhat? Mekkora keret fér bele kényelmesen? Van már telketek? Ezek a válaszok nem kizárnak, hanem rövidebbé és értelmesebbé teszik a választást.", ["Család és jövőbeli változás", "Kötelező helyiségek", "Kényelmesen vállalható keret", "Telek és költözési cél"]],
-      ["Ezeket érdemes közelebbről megnéznetek", "A találatok az igényeitek és az ellenőrzött házadatok alapján készülnek. Ha nincs pontos találat, nem erőltetünk rátok rossz választást: megmutatjuk, melyik feltételen érdemes változtatni.", ["Legfeljebb három közeli találat", "Világos különbségek", "Egy kizáró szempont házanként"]],
-      ["Egy pillantás, és látszik a lényeg", "A háznév, a bruttó alapterület, a szobák, az ellenőrzött nettó ár + ÁFA és az építési idő egy összefüggő egységben jelenik meg. Üres vagy nem igazolt mezővel ház nem kerülhet a találatok közé.", ["Azonos adatmezők", "Teljes házkép", "Nincs elrejtett műszaki csomag"]]
+      ["Ezeket érdemes közelebbről megnéznetek", "A javaslatok a családotok igényei és az adott házról rendelkezésre álló, ellenőrzött adatok alapján készülnek. Ha nincs pontos találat, nem erőltetünk rátok rossz választást: megmutatjuk, melyik feltételen érdemes változtatni.", ["Legfeljebb három közeli találat", "Világos különbségek", "Egy kizáró szempont házanként"]],
+      ["Egy pillantás, és látszik a lényeg", "A ház neve, bruttó alapterülete, szobaszáma, aktuális nettó ára + ÁFA és építési ideje egy összefüggő egységben jelenik meg. Hiányos vagy nem ellenőrzött adatokkal ház nem kerülhet a javaslatok közé.", ["Azonos szempontok", "Teljes házkép", "Egyértelmű műszaki tartalom"]]
     ]
-  },
-  "/nekunk-valo-hazak": {
-    id: "EH-HU-002", eyebrow: "Nekünk való házak", title: "Ne száz tervet nézzetek. A hozzátok illőket.",
-    intro: "A házakat méret, élethelyzet és telekadottság szerint rendezzük. Minden gyűjtőoldal más döntést segít, és csak ellenőrzött termékadatot mutathat.",
-    image: "young", primary: ["Első otthonokat nézek", "/otthonok/30-69"], secondary: ["Családi otthonokat nézek", "/otthonok/70-99"],
-    links: [["Induló otthonok 30–69 m²", "/otthonok/30-69"], ["Családi otthonok 70–99 m²", "/otthonok/70-99"], ["Tágasabb otthonok 100–130 m²", "/otthonok/100-130"], ["Keskenyebb telekre", "/otthonok/keskenyebb-telekre"], ["Könnyebben használható otthonok", "/otthonok/konnyebb-hasznalat"], ["Később bővíthető házak", "/otthonok/bovitheto"]],
-    sections: [["A katalógus nem találgat", "HousePlanID, kép, alaprajz és alapterület csak azonosított forrásból érkezhet. Ár, technológia és építési idő kizárólag aktív Everyday Homes-rekordból jelenhet meg.", ["Ellenőrzött házadat", "Érthető összehasonlítás", "Házspecifikus előny"]]]
   },
   "/keretbol-otthon": {
     id: "EH-HU-004", eyebrow: "Keretből otthon", title: "Előbb lássátok, mi vállalható. Utána válasszatok házat.",
@@ -42,7 +35,7 @@ const pages = {
   "/igy-lesz-egyszeru": {
     id: "EH-HU-005", eyebrow: "Mi intézzük", title: "Építkezés, ami nem lesz a másodállásotok.",
     intro: "Nem kell háromfelé szaladnotok. A házválasztás, a keret, a tervezés és a kivitelezés egymásra épülő feladat. Mindig lássátok, mi következik és ki felel érte.",
-    image: "mother", primary: ["Elmondom, hol tartunk", "/kezdjuk-egyutt"], secondary: ["Megnézem a házakat", "/nekunk-valo-hazak"],
+    image: "mother", primary: ["Elmondom, hol tartunk", "/kezdjuk-egyutt"], secondary: ["Megnézem a házakat", "/otthonvalaszto"],
     sections: [
       ["1. Először a házat választjátok ki", "A ház akkor jó, ha elfértek benne, szerethető marad, és a költsége mellett a beköltözés után is marad mozgásteretek.", ["Élethelyzet", "Méret és szobák", "Alaprajz és változtathatóság"]],
       ["2. A keretet mellé tesszük", "Átnézzük a saját forrást, a szükséges finanszírozást és a ház árán túli tételeket. Nem a legnagyobb házat keressük, hanem a végigvihető döntést.", ["Nettó ár + ÁFA", "Teljes költségkép", "Finanszírozási lépések"]],
@@ -53,7 +46,7 @@ const pages = {
   },
   "/kozelrol": {
     id: "EH-HU-006", eyebrow: "Közelről", title: "Ne csak azt nézzétek meg, mit ígérünk.",
-    intro: "Egy elkészült otthon vagy egy futó építkezés többet mutat bármely látványtervnél. A helyszínek csak jóváhagyott referenciarekordból jelenhetnek meg.",
+    intro: "Egy elkészült otthon vagy egy futó építkezés többet mutat bármely látványtervnél. Csak olyan helyszínt mutatunk meg, amelyhez rendelkezünk a szükséges hozzájárulással.",
     image: "generations", primary: ["Megnéznék egy házat", "/kezdjuk-egyutt"], secondary: ["Családok történetei", "/kozelrol/csaladok-tortenetei"],
     sections: [["Olyat nézzetek meg, ami nektek releváns", "Méret, technológia és készültségi állapot szerint keressük meg a hasznos helyszínt. Nem díszletet mutatunk, hanem olyan részleteket, amelyek segítik a döntést.", ["Elkészült otthon", "Futó építkezés", "Szakmai kérdések a helyszínen"]]]
   },
@@ -62,7 +55,7 @@ const pages = {
     intro: "A tudástár nem általános cikklista. Minden útmutató egy konkrét családi döntést tesz érthetőbbé, majd a megfelelő számolóhoz vagy következő lépéshez vezet.",
     image: "young", primary: ["A házmérettel kezdem", "/elso-lepesek/mekkora-haz"], secondary: ["A teljes költséget nézem", "/elso-lepesek/teljes-koltseg"],
     links: [["Mekkora házra van szükségetek?", "/elso-lepesek/mekkora-haz"], ["Hogyan spórol egy jó alaprajz?", "/elso-lepesek/jo-alaprajz"], ["Hét telekellenőrzés foglaló előtt", "/elso-lepesek/telekvasarlas"], ["Milyen költség van a ház árán túl?", "/elso-lepesek/teljes-koltseg"], ["Melyik technológia mikor jó?", "/elso-lepesek/technologia-valasztas"], ["Mitől tartható az ütemterv?", "/elso-lepesek/tarthato-utemterv"]],
-    sections: [["A válaszok ellenőrizhetők", "Minden szakmai oldal szerzőt, ellenőrzési dátumot és forráslistát kap. Számszerű példa csak jóváhagyott számításból készülhet.", ["Valós kérdés", "Világos módszer", "Használható következő lépés"]]]
+    sections: [["A válaszok ellenőrizhetők", "Minden szakmai oldalnál látható, mikor ellenőriztük utoljára. Számszerű példát csak friss, visszakereshető számítás alapján mutatunk.", ["Valós kérdés", "Világos módszer", "Használható következő lépés"]]]
   },
   "/a-fontos-kerdesek": {
     id: "EH-HU-008", eyebrow: "A fontos kérdések", title: "Amit a döntés előtt érdemes tisztázni.",
@@ -92,7 +85,7 @@ const pages = {
     id: "EH-HU-011", eyebrow: "Átadás után", title: "A kulcsátadás után is legyen kitől kérdezni.",
     intro: "Az új otthon első évében lehetnek beállítások, ellenőrzések és kérdések. Közérthetően különválasztjuk a törvényi jótállást, a vállalt többletszolgáltatásokat és a tulajdonosi karbantartást.",
     image: "senior", primary: ["Megnézem a vállalások rendszerét", "/biztonsag/vallalasaink"],
-    sections: [["Hibabejelentés, érthetően", "Megmutatjuk, milyen adat és fotó segíti a gyors kivizsgálást, ki válaszol, hogyan követhető az ügy, és mikor van szükség helyszíni ellenőrzésre.", ["Bejelentés", "Visszaigazolás", "Vizsgálat", "Megoldás és lezárás"]], ["A konkrét garanciák adatkapusak", "Időtartam, díjmentes karbantartás vagy műszaki vizsgálat csak jóváhagyott garanciaszabályból jelenhet meg. A staging felület ezért nem állít olyat, amit a végleges dokumentum még nem igazol.", ["Hatályos jogi forrás", "Jóváhagyott többletvállalás", "Verziózott tájékoztató"]]]
+    sections: [["Hibabejelentés, érthetően", "Megmutatjuk, milyen adat és fotó segíti a gyors kivizsgálást, ki válaszol, hogyan követhető az ügy, és mikor van szükség helyszíni ellenőrzésre.", ["Bejelentés", "Visszaigazolás", "Vizsgálat", "Megoldás és lezárás"]], ["Csak azt ígérjük, amit írásban is vállalunk", "A garancia időtartama, a díjmentes karbantartás és minden műszaki vizsgálat csak a hatályos szerződésben és garanciális feltételekben szereplő tartalom szerint jelenhet meg.", ["Hatályos feltételek", "Egyértelmű többletvállalás", "Dátummal ellátott tájékoztató"]]]
   }
 };
 
@@ -118,7 +111,7 @@ const houseCollections = [
   ["/otthonok/konnyebb-hasznalat","EH-HU-205","Könnyebben használható otthonok","Otthon, amelyben hosszú távon is könnyebb mozogni.","Egyszintes, kevés szintkülönbséggel, jól járható közlekedőkkel és később is alakítható fürdővel tervezhető házak."],
   ["/otthonok/bovitheto","EH-HU-206","Később bővíthető házak","Most elég. Később tovább nőhet veletek.","Olyan alapmodellek, amelyeknél már a tervezéskor kijelölhető a bővítés lehetséges iránya."]
 ];
-houseCollections.forEach(([path,id,eyebrow,title,intro]) => pages[path] = {id,eyebrow,title,intro,image:"young",primary:["Kérek személyes házajánlást","/kezdjuk-egyutt"],sections:[["Mit láttok majd minden háznál?","A kártya csak akkor jelenhet meg, ha a ház képe, neve, bruttó alapterülete, hálószobaszáma, ellenőrzött nettó ára + ÁFA és építési ideje egyaránt rendelkezésre áll.",["Teljes házkép","Azonosított alaprajz","Ellenőrzött kereskedelmi adat","Egyetlen házspecifikus előny"]]],notice:"A termékkártyák ezen a staging builden adatkapu miatt rejtve maradnak. Ellenőrizetlen árat, határidőt vagy házadatot nem jelenítünk meg."});
+houseCollections.forEach(([path,id,eyebrow,title,intro]) => pages[path] = {id,eyebrow,title,intro,image:"young",primary:["Kérek személyes házajánlást","/kezdjuk-egyutt"],sections:[["Mit láttok majd minden háznál?","A ház csak akkor jelenik meg, ha a képe, neve, bruttó alapterülete, hálószobaszáma, aktuális nettó ára + ÁFA és építési ideje egyaránt rendelkezésre áll.",["Teljes házkép","Azonosított alaprajz","Ellenőrzött ár és határidő","Egyetlen házspecifikus előny"]]],notice:"A típusházak adatai később kapcsolódnak ehhez az oldalhoz. Addig nem mutatunk ellenőrizetlen árat, határidőt vagy házadatot."});
 
 const guides = [
   ["/elso-lepesek/mekkora-haz","EH-HU-701","Mekkora házra van valóban szükségetek?","Ne négyzetméterrel kezdjetek. A napjaitokkal.",["Hányan éltek majd itt?","Mely funkciók kötelezők?","Mennyi helyet visz el a közlekedés?","Mit ad hozzá a kert és a terasz?"]],
@@ -412,7 +405,7 @@ function mediaClass(image) { return image === "generations" ? "hero__media--gene
 function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 
 function renderPage(page, path) {
-  document.title = `${page.eyebrow} | Everyday Homes staging`;
+  document.title = `${page.eyebrow} | Everyday Homes`;
   const main = document.querySelector("main");
   const action = (item, secondary = false) => item ? `<a class="button${secondary ? " button--secondary" : ""}" href="${href(item[1])}" data-route>${escapeHtml(item[0])}</a>` : "";
   const sections = (page.sections || []).map(([title, body, items], sectionIndex) => `
@@ -451,7 +444,7 @@ function setCurrent(path) {
 }
 
 function renderNotFound(path) {
-  document.querySelector("main").innerHTML = `<section class="not-found"><div><p class="eyebrow">Tartalmi staging</p><h1>Ez az aloldal még nincs ebben a buildben.</h1><p class="lede">A kért útvonal: ${escapeHtml(path)}. A kanonikus tervben szereplő, de még nem implementált oldalak kiadása továbbra is blokkolt.</p><div class="actions"><a class="button" href="${href("/")}" data-route>Vissza a kezdőlapra</a></div></div></section>`;
+  document.querySelector("main").innerHTML = `<section class="not-found"><div><p class="eyebrow">Az oldal nem található</p><h1>Ezt az aloldalt most nem tudjuk megmutatni.</h1><p class="lede">A kért cím: ${escapeHtml(path)}. Válasszatok a menüből, vagy térjetek vissza a kezdőlapra.</p><div class="actions"><a class="button" href="${href("/")}" data-route>Vissza a kezdőlapra</a></div></div></section>`;
   bindRoutes();
 }
 

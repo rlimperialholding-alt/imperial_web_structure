@@ -105,7 +105,7 @@
     ["Hivatkozhat más oldal az Everyday Homes tartalmára?", "Jogszabályi keretek között, a forrás egyértelmű megjelölésével lehetséges hivatkozás. Teljes oldalak vagy adatbázisok átvételéhez külön engedély szükséges lehet."],
     ["Miért szerepel dátum és verzió az impresszumon?", "Mert az üzemeltető, szolgáltató vagy kapcsolati adat változhat. A verzió megmutatja, mely időpontban milyen tájékoztatás volt érvényes."],
     ["Mi történik, ha változik az üzemeltető?", "Az impresszumot, adatkezelést, szerződéses dokumentumokat, számlázást és kapcsolódó rendszereket összehangoltan kell módosítani, az érintettek szükséges tájékoztatásával."],
-    ["Miért nem elég egy közösségi oldal elérhetősége?", "A közösségi profil külső platform, nem feltétlenül alkalmas hivatalos jogi vagy adatvédelmi megkeresésre, és nem helyettesíti a szolgáltató azonosítását."],
+    ["Miért nem elég egy közösségi oldal elérhetősége?", "A közösségi profil nem feltétlenül alkalmas hivatalos jogi vagy adatvédelmi megkeresésre, és nem helyettesíti a szolgáltató azonosítását."],
     ["Hol lesznek a fogyasztói tájékoztatások?", "A végleges jogi felülvizsgálat dönti el, mely tájékoztatások szükségesek a tényleges szolgáltatási modellhez. Nem helyezünk ki általános webáruházi sablont építési szolgáltatásra."],
     ["Miért marad review-required állapotban az oldal?", "Mert hiányzik a közhitelesen ellenőrzött jogi törzsadat és az éles tárhelyszolgáltatói konfiguráció. Ez tudatos, megkerülhetetlen kiadási blokk."],
     ["A hiányzó adatok ellenére működhet a tartalmi előnézet?", "Igen, ha nem gyűjt adatot, nem tesz külső kötelezettségvállalást és egyértelműen tesztkörnyezetként jelölt. Éles ügyfélszerzésre azonban nem használható."],
@@ -144,7 +144,7 @@
     ["Van automatikusan induló mozgás?", "Az oldal alapvetően nem függ automatikus animációtól. Ha később mozgó elem kerül be, megállíthatónak kell lennie, és a csökkentett mozgás beállítását tiszteletben kell tartania."],
     ["Mi történik űrlaphibánál?", "A hiba nem csak piros kerettel jelenik meg: szövegesen megnevezi a problémát, a mezőhöz kapcsolódik, és leírja a javítás módját. A bevitt adat indokolatlanul nem vész el."],
     ["Az űrlapmezőknek lesz címkéjük?", "Igen. A placeholder nem helyettesíti a tartós, programozottan kapcsolt címkét. Kötelező mező és formátum előre, közérthetően jelenik meg."],
-    ["Miért nincs még teljes űrlapaudit?", "Az éles űrlapok a későbbi ügyfélkezelő rendszerből érkeznek. Az akadálymentességi kapu azok integrációja után, valós validációval és hibaállapotokkal ismét lefut."],
+    ["Miért nincs még teljes űrlapellenőrzés?", "Az éles űrlapok a későbbi ügyfélkezelő rendszerből érkeznek. Az akadálymentességi vizsgálat azok beillesztése után, valós használati próbával és hibaállapotokkal ismét lefut."],
     ["Használható képernyőolvasóval?", "A szemantikus HTML, címkék, navigációs területek és állapotok ezt támogatják, de teljes megfelelőséget csak több képernyőolvasóval és böngészővel végzett kézi próba igazolhat."],
     ["Mit jelent a reszponzív akadálymentesség?", "Nem csak kisebb dobozokat. A tartalom sorrendje, fókusz, menü, táblázat, grafika és érintési cél mobilon is érthető és elérhető marad."],
     ["Hogyan kezelitek a nagy táblázatokat?", "Világos fejlécekkel, programozott cellakapcsolattal, mobilon kontrollált görgetéssel vagy tartalmi átalakítással. Az adat nem vágható le, és a sor jelentése nem veszhet el."],
@@ -171,7 +171,18 @@
   SERVICE_PAGES["/sutik"].extraCopy = {title:"A hozzájárulást négy külön állapotban kell bizonyítani",paragraphs:["Tiszta böngészőben először választás nélkül mérjük meg a hálózati forgalmat. Ezután mindent elutasítva, csak statisztikát engedélyezve, végül teljes engedéllyel ismételjük meg a próbát. A négy eredménynek pontosan a kategóriák szerint kell különböznie; ismeretlen külső kérés vagy korán induló pixel azonnali blokk.","A vizsgálat nemcsak hagyományos sütit keres. Helyi tárolót, beágyazott szolgáltatást, címkézőrendszert, böngésző-azonosítót és külső végpontot is naplóz. Mobilon, tableten és desktopon ugyanaz a választási logika érvényes, a panel pedig billentyűzettel és képernyőolvasóval is kezelhető.","A hozzájárulási rekord maga is minimális: csak a választás bizonyításához szükséges verziót, időpontot és kategóriát őrzi. Nem használható új, rejtett profil építésére. Lejárat, szolgáltatóváltás vagy érdemi célváltozás esetén a rendszer új döntést kér, és addig minden nem szükséges technológiát zárva tart."]};
   SERVICE_PAGES["/akadalymentesseg"].extraCopy = {title:"A megfelelőség nem automatikus pontszám, hanem végigjárható feladat",paragraphs:["A kritikus útvonalakat valódi használati helyzetekkel próbáljuk: menü megnyitása egér nélkül, hosszú szakmai oldal áttekintése címsorokkal, táblázat megértése képernyőolvasóval, kétszáz százalékos nagyítás, GYIK kezelése és hiba javítása az űrlapon. Az automatizált szabályellenőrzés ezek mellett működik, nem helyettük.","A fő oldaltípusokat Windows- és mobilos segítő technológiával is át kell nézni. Vizsgáljuk a lap címét, navigációs területeket, fókusz visszatérését, vezérlők nevét és állapotát, a képek szöveges megfelelőjét, valamint azt, hogy kényszerített színek vagy csökkentett mozgás mellett is teljes marad-e az információ.","Minden új kalkulátor, carousel, feltöltőelem vagy modális ablak külön hozzáférhetőségi kaput kap, mielőtt a közös komponenskönyvtárba kerülhet. Ha az ügyfél kritikus akadályt jelez, hozzáférhető alternatív csatornát kell kapnia, a hiba pedig felelőssel, súlyossággal és visszaellenőrzéssel kerül a javítási folyamatba."]};
 
-  upgradeServicePage();
+  const accessibilityPage = SERVICE_PAGES["/akadalymentesseg"];
+  accessibilityPage.intro = "Az Everyday Homes oldal fejlesztési célja a WCAG 2.2 AA szempontrendszer követése. Ez még nem teljes megfelelőségi állítás: az éles űrlapok, külső beágyazások és a végleges jogi kapcsolati pont beillesztése után kézi és automatikus ellenőrzés szükséges.";
+  accessibilityPage.proofItems = accessibilityPage.proofItems.map(([title, copy]) => [
+    title === "Három viewport" ? "Három képernyőméret" : title,
+    copy === "Mobil, tablet és desktop render külön ellenőrzött."
+      ? "Mobilon, táblagépen és asztali gépen külön ellenőrizzük a megjelenést."
+      : copy
+  ]);
+  accessibilityPage.deepDive.items = accessibilityPage.deepDive.items.map(([title, copy]) => [
+    title,
+    copy.replace("javítási státuszt", "a javítás állását")
+  ]);
 
   upgradeServicePage();
 })();
