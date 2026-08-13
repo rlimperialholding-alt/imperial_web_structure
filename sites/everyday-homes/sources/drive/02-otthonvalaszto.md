@@ -46,6 +46,7 @@ Otthonválasztó | Everyday Homes típusházak
 Meta description
 Találjátok meg azt a típusházat, amelyik illik a családotokhoz és a lehetőségeitekhez. Induljatok a fontos kérdésekből, majd nézzétek meg a valóban szóba jövő otthonokat.
 5. Teljes magyar oldalszöveg
+NYILVÁNOS OLDALSZÖVEG
 Felső navigáció
 Otthonválasztó · Keretből otthon · Mi intézzük · Közelről · Első lépések · Első közös lépés
 Kiemelt gomb: Otthont választok
@@ -118,6 +119,7 @@ A találati nézet törtfehér alapon, petrolkék szerkezeti elemekkel, narancs 
 A házkép a kártya vizuális terének legalább 75%-át foglalja el. Szöveg, doboz vagy gombszöveg nem takarhat rá a házra. A teljes épülettömeg látszik, hacsak egy részletképnek nincs előre rögzített tartalmi célja.
 Az ár, háznév és bruttó alapterület egyetlen összefüggő információs egységben jelenik meg. A betűméret minden célképernyőn nagyítás nélkül olvasható. Automatikus tördelés után kötelező a desktop-, tablet- és mobil-render ellenőrzése.
 Az oldal vizuális ritmusa: teljes képernyős választási kérdés → könnyű eredménylista → egyetlen nagy összehasonlító vászon → pénzügyi döntési blokk → valódi helyszín → rövid kapcsolatfelvétel. Ez a sorrend nem másolható át más márkához.
+SZERKESZTŐI ÉS KOMPONENSÁTADÁS
 7. Állítás- és adatkapu
 Jelenleg igazolt: az Everyday Homes kanonikus szlogenje „Otthon – egyszerűen.”; a küldetésmondata „Kell egy otthon mindenkinek.”; a kommunikáció központja a megfizethetőbb, egyszerűbben választható otthon és az egy kézben tartott folyamat.
 Nem igazolt ezen dokumentumhoz: konkrét háznevek, aktuális típusházárak, építési idők, havi törlesztők, önerők, módosíthatósági határok, látogatható helyszínek és aktív finanszírozási feltételek.

@@ -62,6 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           EVERYDAY_NODE=node python3 sites/everyday-homes/qa/run_render_gates.py
+          node sites/everyday-homes/qa/validate_public_release.cjs
           python3 sites/everyday-homes/qa/validate_http.py --serve-local 18089
 
       - name: Enforce Everyday Homes content and release gates

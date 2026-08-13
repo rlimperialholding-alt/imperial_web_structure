@@ -28,7 +28,7 @@ NYILVÁNOS OLDALSZÖVEG
 HERO
 
 
-Nem kell mindent tudnotok az építkezésről. A kdöntések következményeit viszont érdemes érteni.
+Nem kell mindent tudnotok az építkezésről. A fontos döntések következményeit viszont érdemes érteni.
 
 
 Telek, alaprajz, műszaki tartalom, finanszírozás, kivitelezési idő: egyszerre túl sok kérdésnek tűnhet. Ezért nem egy hosszú szakkönyvet teszünk elétek, hanem mindig azt a választ, amelyik ott segít, ahol éppen tartotok.

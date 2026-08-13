@@ -421,15 +421,14 @@ function renderPage(page, path) {
     </section>`).join("");
   const links = page.links ? `<section class="section"><div class="shell"><div class="section-heading"><h2>Innen érdemes folytatni</h2><p>Válasszátok azt az utat, amelyik a mostani döntésetekhez áll a legközelebb.</p></div><ul class="route-list">${page.links.map(([label, target]) => `<li><a href="${href(target)}" data-route>${escapeHtml(label)}</a></li>`).join("")}</ul></div></section>` : "";
   const quote = page.quote ? `<section class="quote-band"><div class="quote-band__photo"></div><div class="quote-band__copy"><blockquote>${escapeHtml(page.quote[0])}</blockquote><cite>${escapeHtml(page.quote[1])}</cite></div></section>` : "";
-  const notice = page.notice ? `<div class="shell"><p class="status-note"><strong>Adat- és kiadási kapu:</strong> ${escapeHtml(page.notice)}</p></div>` : "";
   main.innerHTML = `
-    <article data-page-id="${escapeHtml(page.id)}" data-release-state="review-required">
+    <article>
       <section class="hero">
-        <div class="hero__copy"><span class="hero__tag">${escapeHtml(page.id)} · szerkesztési előnézet</span><p class="eyebrow">${escapeHtml(page.eyebrow)}</p><h1>${escapeHtml(page.title)}</h1><p class="lede">${escapeHtml(page.intro)}</p><div class="actions">${action(page.primary)}${action(page.secondary, true)}</div></div>
+        <div class="hero__copy"><span class="hero__tag">Otthon – egyszerűen.</span><p class="eyebrow">${escapeHtml(page.eyebrow)}</p><h1>${escapeHtml(page.title)}</h1><p class="lede">${escapeHtml(page.intro)}</p><div class="actions">${action(page.primary)}${action(page.secondary, true)}${action(["Beszéljünk a terveitekről", "/kezdjuk-egyutt"], true)}</div></div>
         <div class="hero__media ${mediaClass(page.image)}" role="img" aria-label="Everyday Homes élethelyzet"></div>
       </section>
-      <div class="trust-strip"><span>Típusházak</span><span>Tervezés</span><span>Finanszírozási segítség</span><span>Generálkivitelezés</span></div>
-      ${notice}${sections}${links}${quote}
+      <div class="trust-strip"><span>Több mint 300 típusterv</span><span>Személyes házajánlás</span><span>Átlátható feltételek</span><span>Tervezéstől az átadásig</span></div>
+      ${sections}${links}${quote}
       <section class="section section--dark"><div class="shell"><div class="decision-panel"><div><p class="eyebrow">A következő lépés</p><h2>Nem kell ma mindenről dönteni.</h2><p>Elég azt tisztázni, mi visz most közelebb a saját otthonotokhoz.</p></div><div><h3>Otthon – egyszerűen.</h3><div class="actions">${action(page.primary || ["Kezdjük együtt","/kezdjuk-egyutt"], true)}</div></div></div></div></section>
     </article>`;
   setCurrent(path);
@@ -465,46 +464,9 @@ function bindRoutes() {
       navigate(target);
       document.querySelector(".primary-nav")?.classList.remove("is-open");
       document.querySelector(".menu-toggle")?.setAttribute("aria-expanded", "false");
+      document.querySelectorAll(".nav-group[open]").forEach(group => group.removeAttribute("open"));
     };
   });
-}
-
-async function initPageDirectory() {
-  const panel = document.querySelector("#page-directory");
-  const groupsTarget = panel?.querySelector("[data-page-directory-groups]");
-  const toggle = document.querySelector(".page-directory-toggle");
-  const close = panel?.querySelector(".page-directory__close");
-  if (!panel || !groupsTarget || !toggle || !close) return;
-  try {
-    const [mapResponse, registryResponse] = await Promise.all([
-      fetch(`${BASE}/data/page-map.json`),
-      fetch(`${BASE}/data/completion-registry.json`),
-    ]);
-    const pageMap = await mapResponse.json();
-    const registry = await registryResponse.json();
-    const states = new Map(registry.pages.map(page => [page.page_id, page.state]));
-    groupsTarget.innerHTML = pageMap.groups.map((group, index) => `
-      <details class="page-directory__group" ${index === 0 ? "open" : ""}>
-        <summary>${escapeHtml(group.name)} · ${group.pages.length} oldal</summary>
-        <div class="page-directory__links">
-          ${group.pages.map(([id, route, label]) => {
-            const state = states.get(id) || "UNKNOWN";
-            return `<a class="page-directory__link" href="${href(route)}" data-route data-state="${escapeHtml(state)}"><strong>${escapeHtml(label)}</strong></a>`;
-          }).join("")}
-        </div>
-      </details>`).join("");
-    bindRoutes();
-  } catch (error) {
-    groupsTarget.innerHTML = `<p class="status-note"><strong>Az oldaltérkép nem tölthető be.</strong> ${escapeHtml(error.message)}</p>`;
-  }
-  const setOpen = open => {
-    panel.hidden = !open;
-    toggle.setAttribute("aria-expanded", String(open));
-    document.body.classList.toggle("directory-open", open);
-  };
-  toggle.addEventListener("click", () => setOpen(panel.hidden));
-  close.addEventListener("click", () => setOpen(false));
-  document.addEventListener("keydown", event => { if (event.key === "Escape") setOpen(false); });
 }
 
 document.querySelector(".menu-toggle").addEventListener("click", event => {
@@ -512,7 +474,11 @@ document.querySelector(".menu-toggle").addEventListener("click", event => {
   const open = nav.classList.toggle("is-open");
   event.currentTarget.setAttribute("aria-expanded", String(open));
 });
+document.addEventListener("click", event => {
+  if (!event.target.closest(".primary-nav")) {
+    document.querySelectorAll(".nav-group[open]").forEach(group => group.removeAttribute("open"));
+  }
+});
 window.addEventListener("popstate", () => pages[normalizePath()] ? renderPage(pages[normalizePath()], normalizePath()) : renderNotFound(normalizePath()));
 const initialPath = normalizePath();
 pages[initialPath] ? renderPage(pages[initialPath], initialPath) : renderNotFound(initialPath);
-initPageDirectory();

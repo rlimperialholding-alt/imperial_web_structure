@@ -252,7 +252,7 @@
       section("MÁR AZ ELSŐ BESZÉLGETÉSNEK IS LEGYEN EREDMÉNYE", [
         "Nem kell kész tervvel, hibátlan költségvetéssel vagy minden kérdésre adott válasszal érkeznetek. Elég, ha őszintén elmondjátok, hol tartotok, mit szeretnétek megváltoztatni a jelenlegi lakhatásotokban, milyen telek- és pénzügyi adat biztos, és mely döntés okozza most a legnagyobb bizonytalanságot.",
         "A jó első beszélgetés végén nem hangzatos ígéret marad. Kaptok egy rövid, érthető összefoglalót arról, milyen irány látszik reálisnak, milyen dokumentum vagy vizsgálat hiányzik, ki tud válaszolni a nyitott kérdésre, és mi legyen a következő, még biztonságosan megtehető lépés.",
-        "A tesztoldalon látható űrlaphelyek nem gyűjtenek éles adatot. Az adatbekérés és továbbítás csak a későbbi, ellenőrzött ügyfélkezelési folyamatban működhet, jóváhagyott adatkezelési tájékoztatóval és a szükséges hozzájárulásokkal."
+        "Az első beszélgetéshez nem kell hosszú adatlapot kitöltenetek. Elég megírni, hol tartotok, miben kértek segítséget, és hogyan érhetünk el benneteket; a további adatokat csak akkor kérjük, amikor valóban szükség van rájuk."
       ]),
       section("MIT ÉRDEMES ELŐKÉSZÍTENETEK?", [
         "Ha van telketek, legyen kéznél a helyrajzi szám, térképmásolat vagy rendelkezésre álló telekdokumentum. Ha még kerestek, hozzatok két-három példát, és írjátok le, mely térséghez ragaszkodtok. Ha van tervetek, a legfrissebb, azonosítható verziót küldjétek, ne különböző dátumú részleteket.",
@@ -263,7 +263,7 @@
         ["Melyik családtagnak érdemes részt vennie az első beszélgetésen?", "Minden olyan döntéshozónak, akinek a pénzügyi keretre, telekre vagy az otthon alapvető használatára érdemi ráhatása van. Így kevesebb lesz a későbbi félreértés."],
         ["Mi történik, ha még nincs pontos pénzügyi keretünk?", "Nagyságrendet és biztonságos havi terhet is megadhattok. A beszélgetés megmutatja, milyen számítást vagy előzetes pénzügyi vizsgálatot érdemes a házválasztás előtt elvégezni."],
         ["Érdemes elküldeni egy internetről mentett alaprajzot?", "Igen, ha inspirációként jelölitek, és leírjátok, mi tetszik benne. Tulajdonjog, megvalósíthatóság és telekillesztés nélkül nem tekinthető kivitelezési tervnek."],
-        ["Mit tegyünk, ha csak este tudunk egyeztetni?", "Jelezzétek az elérhető idősávokat. A konkrét időpontot a rendelkezésre álló kapacitás szerint lehet visszaigazolni; automatikus időpontígéretet a tesztoldal nem ad."],
+        ["Mit tegyünk, ha csak este tudunk egyeztetni?", "Jelezzétek az elérhető idősávokat. Megnézzük, melyik időpont illeszthető be, és külön visszaigazoljuk a beszélgetést."],
         ["Kérhetünk először csak írásos választ?", "Igen, írjátok le egyetlen, konkrét döntési kérdésként a problémát, és csatoljátok a szükséges adatot. Ha a válasz helyszíni vagy több szakágat érintő vizsgálatot igényel, ezt jelezni fogjuk."],
         ["Milyen fájlokat ne küldjünk el?", "Felesleges személyes okmányt, banki belépési adatot, teljes egészségügyi vagy más érzékeny dokumentumot ne küldjetek. Csak a kérdés megválaszolásához szükséges iratot adjátok át."],
         ["Hogyan jelöljük, ha egy dokumentum már nem aktuális?", "A fájlnévben és az üzenetben is írjátok le, hogy korábbi változat, és nevezzétek meg a jelenleg érvényes dokumentumot. Az eltérő verziókat nem szabad összekeverni."],
@@ -280,7 +280,7 @@
         ["Miért kérdezik meg, min szeretnénk változtatni?", "Mert a módosítás hatással lehet a tervezésre, árra, időre és a típusterv előnyeire. A korai, pontos kérdés segít eldönteni, módosítás vagy másik terv a jobb út."],
         ["Elindíthatjuk a beszélgetést telek és terv nélkül is?", "Igen. Ilyenkor a cél az élethelyzet, a térigény, a térség és a pénzügyi keret rendezése, valamint annak kijelölése, milyen adatot szerezzetek meg legközelebb."],
         ["Mikor kapunk személyre szabott következő lépést?", "Miután a rendelkezésre álló adatokat áttekintettük, és kiderült, mi a döntést leginkább blokkoló hiány. A következő lépés lehet számítás, dokumentumkérés, helyszíni vizsgálat vagy konzultáció."],
-        ["Hogyan kezelik a megadott adatainkat?", "Az adatbekérés indulása előtt könnyen elérhető tájékoztató mutatja be a célt, jogalapot, megőrzést, hozzáférést és jogokat. Ez az előnézet még nem fogad ügyféladatot."],
+        ["Hogyan kezelik a megadott adatainkat?", "Az adatbekérés előtt könnyen elérhető tájékoztató mutatja be, mire használjuk az adatokat, meddig őrizzük meg őket, ki férhet hozzájuk, és milyen jogaitok vannak."],
         ["Kérhetünk csak házlátogatást?", "Igen, ha van erre engedéllyel és megfelelő körülményekkel rendelkező referencia. A tulajdonos magánélete, a munkavédelem és az időpont-egyeztetés minden esetben elsődleges."],
         ["Miért jobb egyetlen, jól megfogalmazott kérdéssel kezdeni?", "Mert gyorsan megmutatja, milyen adat, szakember vagy döntési folyamat szükséges. A többi kapcsolódó kérdés ezután rendezett sorrendben bontható ki."],
         ["Mit tegyünk, ha az első egyeztetés után még bizonytalanok vagyunk?", "Kérjetek írásos összefoglalót és különítsétek el, mi tény, mi lehetőség és mi vizsgálandó. Ne lépjetek tovább olyan döntésben, amelynek lényegi következménye nem érthető."],

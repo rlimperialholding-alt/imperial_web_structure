@@ -9,6 +9,7 @@ Találd meg a családotokhoz és a keretetekhez illő otthont. Típusházak, fin
 FELSŐ NAVIGÁCIÓ
 Házaink · Melyik otthon illik hozzátok? · Árak és finanszírozás · Így építünk · Megnézném élőben · Tudástár · Kapcsolat
 Kiemelt gomb: Megnézem a házakat
+NYILVÁNOS OLDALSZÖVEG
 HERO
 EVERYDAY HOMES
 Mindenkinek kell egy otthon. 

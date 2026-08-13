@@ -177,10 +177,10 @@ function renderDecisionPage(path) {
   document.title = `${page.eyebrow} | Everyday Homes`;
   const main = document.querySelector("main");
   main.innerHTML = `
-    <article class="decision-page decision-page--${escapeHtml(page.layout)}" data-page-id="${escapeHtml(page.id)}" data-release-state="review-required">
+    <article class="decision-page decision-page--${escapeHtml(page.layout)}">
       <section class="decision-hero">
         <div class="decision-hero__photo" style="background-image:url('${BASE}/assets/photos/${escapeHtml(page.photo)}')" role="img" aria-label="${escapeHtml(page.eyebrow)} – Everyday Homes"></div>
-        <div class="decision-hero__copy"><p class="decision-brandline">Otthon – egyszerűen.</p><p class="eyebrow">${escapeHtml(page.eyebrow)}</p><h1>${escapeHtml(page.title)}</h1><p class="lede">${escapeHtml(page.intro)}</p><div class="actions">${decisionAction(page.primary)}${decisionAction(page.secondary, true)}</div></div>
+        <div class="decision-hero__copy"><p class="decision-brandline">Otthon – egyszerűen.</p><p class="eyebrow">${escapeHtml(page.eyebrow)}</p><h1>${escapeHtml(page.title)}</h1><p class="lede">${escapeHtml(page.intro)}</p><div class="actions">${decisionAction(page.primary)}${decisionAction(page.secondary, true)}${decisionAction(["Személyes számítást kérek", "/kezdjuk-egyutt"], true)}</div></div>
       </section>
       <nav class="decision-switcher" aria-label="Számolók és választást segítő eszközök">
         ${Object.entries(DECISION_PAGE_MAP).map(([route, item]) => `<a href="${href(route)}" data-route${route === path ? ' aria-current="page"' : ""}>${escapeHtml(item.eyebrow)}</a>`).join("")}

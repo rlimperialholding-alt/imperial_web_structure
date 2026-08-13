@@ -22,6 +22,7 @@ Nézzétek meg, milyen Everyday Homes típusházak jöhetnek szóba a saját for
 Felső navigáció
 Otthonválasztó · Keretből otthon · Mi intézzük · Közelről · Első lépések · Első közös lépés
 Kiemelt gombszöveg: Otthont választok
+NYILVÁNOS OLDALSZÖVEG
 HERO
 EVERYDAY HOMES
 Lehet saját otthonotok. Előbb tegyük rendbe a számokat.
@@ -92,6 +93,7 @@ Mi történik, ha még nincs telkünk?
 A keretfelmérést és a házválasztást telek nélkül is el lehet kezdeni. A végleges házhoz azonban a telek beépíthetőségét, elhelyezkedését és helyszíni költségeit is ellenőrizni kell.
 Elmenthetjük a számítást?
 Igen, ha a rendszer biztonságosan azonosítja a számítást és a felhasználó kéri a mentést. A mentett eredményen látszania kell az adatok dátumának és annak, ha közben ár vagy finanszírozási feltétel változott.
+SZERKESZTŐI ÉS KOMPONENSÁTADÁS
 5. Egyedi vizuális archetípus
 A Keretből otthon vizuális metaforája nem banki irat, műszerfal vagy árkalkulátor-táblázat. Egy meleg, világos „családi tervezőasztal”: a látogató lépésenként helyezi el rajta a saját forrást, a havi keretet, a telket és a költözési célt.
 Minden lépés egyetlen nagy kérdést mutat. A számmezők mellett nem jelenik meg apró jogi szövegtömb. A szükséges tájékoztatás a döntéshez közel, röviden és kinyitható részletekkel szerepel.

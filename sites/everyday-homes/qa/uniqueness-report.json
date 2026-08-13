@@ -22,12 +22,7 @@
     {
       "left": "/szamolok/teljes-projektkeret",
       "right": "/muszaki-adatok",
-      "five_word_jaccard": 0.03743
-    },
-    {
-      "left": "/otthonvalaszto",
-      "right": "/keretbol-otthon",
-      "five_word_jaccard": 0.01315
+      "five_word_jaccard": 0.03719
     },
     {
       "left": "/igy-lesz-egyszeru",
@@ -35,9 +30,9 @@
       "five_word_jaccard": 0.00891
     },
     {
-      "left": "/",
-      "right": "/otthonvalaszto",
-      "five_word_jaccard": 0.00887
+      "left": "/technologiak/tegla",
+      "right": "/technologiak/liapor",
+      "five_word_jaccard": 0.00766
     },
     {
       "left": "/igy-lesz-egyszeru",
@@ -45,9 +40,39 @@
       "five_word_jaccard": 0.00744
     },
     {
+      "left": "/technologiak/tegla",
+      "right": "/technologiak/acelszerkezet",
+      "five_word_jaccard": 0.00699
+    },
+    {
+      "left": "/technologiak/liapor",
+      "right": "/technologiak/acelszerkezet",
+      "five_word_jaccard": 0.00643
+    },
+    {
+      "left": "/technologiak/favazas",
+      "right": "/technologiak/tegla",
+      "five_word_jaccard": 0.00571
+    },
+    {
+      "left": "/technologiak/favazas",
+      "right": "/technologiak/liapor",
+      "five_word_jaccard": 0.00533
+    },
+    {
+      "left": "/otthonvalaszto",
+      "right": "/keretbol-otthon",
+      "five_word_jaccard": 0.00512
+    },
+    {
+      "left": "/technologiak/favazas",
+      "right": "/technologiak/acelszerkezet",
+      "five_word_jaccard": 0.005
+    },
+    {
       "left": "/",
       "right": "/keretbol-otthon",
-      "five_word_jaccard": 0.0036
+      "five_word_jaccard": 0.00449
     },
     {
       "left": "/a-fontos-kerdesek",
@@ -62,37 +87,12 @@
     {
       "left": "/biztonsag/vallalasaink",
       "right": "/biztonsag/szerzodes",
-      "five_word_jaccard": 0.00336
-    },
-    {
-      "left": "/garanciak-es-utogondozas",
-      "right": "/biztonsag/atadas-utan",
-      "five_word_jaccard": 0.00243
-    },
-    {
-      "left": "/mi-intezzuk/finanszirozas",
-      "right": "/mi-intezzuk/szemelyes-hazajanlas",
-      "five_word_jaccard": 0.00212
-    },
-    {
-      "left": "/mi-intezzuk/telek-ellenorzes",
-      "right": "/elso-lepesek/telekvasarlas",
-      "five_word_jaccard": 0.0019
-    },
-    {
-      "left": "/kell-egy-otthon-mindenkinek",
-      "right": "/szamolok/gyors-hazellenorzes",
-      "five_word_jaccard": 0.00186
+      "five_word_jaccard": 0.00332
     },
     {
       "left": "/",
-      "right": "/kozelrol",
-      "five_word_jaccard": 0.00158
-    },
-    {
-      "left": "/elso-lepesek-hirlevel",
-      "right": "/szamolok/havi-teher",
-      "five_word_jaccard": 0.00138
+      "right": "/otthonvalaszto",
+      "five_word_jaccard": 0.00316
     }
   ],
   "repeated_headings": [],

@@ -184,5 +184,47 @@
     copy.replace("javítási státuszt", "a javítás állását")
   ]);
 
+  const publicLegalText = value => value
+    .replace(/adat- és kiadási kapu/gi, "adatkezelési és közzétételi feltétel")
+    .replace(/kiadási kapu/gi, "közzétételi feltétel")
+    .replace(/review-required állapotban/gi, "hiányos")
+    .replace(/review-required/gi, "hiányos")
+    .replace(/tesztkörnyezet/gi, "jelenlegi oldal")
+    .replace(/tesztoldal/gi, "jelenlegi oldal")
+    .replace(/tartalmi előnézet/gi, "jelenlegi oldal")
+    .replace(/nem publikálható/gi, "nem tehető közzé")
+    .replace(/fejlesztői rendszerben/gi, "jelenlegi adatforrásban")
+    .replace(/fejlesztési felület/gi, "jelenlegi oldal")
+    .replace(/fejlesztési állapotban/gi, "jelenleg")
+    .replace(/fejlesztési cél/gi, "cél")
+    .replace(/repositoryban/gi, "jelenlegi nyilvántartásban")
+    .replace(/crawler/gi, "automatikus ellenőrzés")
+    .replace(/komponenskönyvtár/gi, "közös elemkészlet")
+    .replace(/carousel/gi, "lapozható tartalmi elem")
+    .replace(/modális/gi, "felugró")
+    .replace(/integráció/gi, "összekapcsolás")
+    .replace(/platform/gi, "felület")
+    .replace(/viewport/gi, "képernyőméret")
+    .replace(/render/gi, "megjelenés")
+    .replace(/státusz/gi, "állapot")
+    .replace(/kiadási/gi, "közzétételi")
+    .replace(/kiadás/gi, "közzététel")
+    .replace(/teszt/gi, "ellenőrzés")
+    .replace(/kapu/gi, "feltétel")
+    .replace(/belső/gi, "vállalati");
+
+  const publicizeLegalValue = value => {
+    if (typeof value === "string") return publicLegalText(value);
+    if (Array.isArray(value)) return value.map(publicizeLegalValue);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, publicizeLegalValue(item)]));
+    }
+    return value;
+  };
+
+  ["/adatkezeles", "/impresszum", "/sutik", "/akadalymentesseg"].forEach(path => {
+    SERVICE_PAGES[path] = publicizeLegalValue(SERVICE_PAGES[path]);
+  });
+
   upgradeServicePage();
 })();
