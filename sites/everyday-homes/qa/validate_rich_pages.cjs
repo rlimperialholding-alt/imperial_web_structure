@@ -4,10 +4,12 @@ const { chromium } = require('playwright');
 
 const baseUrl = process.env.EVERYDAY_PREVIEW_URL || 'http://127.0.0.1:18084/site-preview/everyday-homes';
 const previewRoot = path.resolve(process.env.EVERYDAY_PREVIEW_ROOT || path.join(__dirname, '..'));
-const routes = (process.env.EVERYDAY_RICH_ROUTES || '/,/otthonvalaszto,/keretbol-otthon,/igy-lesz-egyszeru,/kozelrol,/elso-lepesek,/a-fontos-kerdesek,/kezdjuk-egyutt').split(',');
+const routes = (process.env.EVERYDAY_RICH_ROUTES || '/,/otthonvalaszto,/keretbol-otthon,/igy-lesz-egyszeru,/kozelrol,/elso-lepesek,/a-fontos-kerdesek,/kezdjuk-egyutt,/kell-egy-otthon-mindenkinek,/garanciak-es-utogondozas,/elso-lepesek-hirlevel,/karrier,/sajto,/elso-sajat-otthon,/most-leszunk-csalad,/tobb-hely-a-csaladnak,/otthon-es-munka,/kisebb-haz-konnyebb-elet,/ket-generacio-egy-otthon,/kesobb-bovitheto-otthon,/szamolok/hazkoltseg').split(',');
 const viewports = [{name:'mobile',width:390,height:844},{name:'tablet',width:768,height:1024},{name:'desktop',width:1440,height:1000}];
 const screenshotRoot = path.join(__dirname, 'screenshots', 'rich-pages');
-const reportPath = path.join(__dirname, 'rich-pages-report.json');
+const reportPath = process.env.EVERYDAY_RICH_REPORT_PATH
+  ? path.resolve(process.env.EVERYDAY_RICH_REPORT_PATH)
+  : path.join(__dirname, 'rich-pages-report.json');
 const forbidden = ['látható karakter','önálló fejezet','QA kötelez','NIM CMS','belső ellenőrzés','kiadási státusz'];
 fs.mkdirSync(screenshotRoot, {recursive:true});
 

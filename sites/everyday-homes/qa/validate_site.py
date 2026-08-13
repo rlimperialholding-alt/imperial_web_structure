@@ -40,12 +40,13 @@ assert len(registry_pages) == PAGE_MAP["canonical_page_count"]
 assert {page["page_id"] for page in registry_pages} == canonical_ids
 assert REGISTRY["publication_allowed"] is False
 assert REGISTRY["minimum_visible_body_characters"] == 12_000
+assert REGISTRY["minimum_faq_questions"] == 25
 assert REGISTRY["minimum_page_specific_visuals"] == 3
 assert REGISTRY["required_qa_passes"] == 3
 
-complete = [page for page in registry_pages if page["state"] == "COMPLETE_REVIEW_REQUIRED"]
+complete = [page for page in registry_pages if page["state"] == "AUTOMATED_QA_PASSED_COPY_REVIEW_REQUIRED"]
 nim_managed = [page for page in registry_pages if page["state"] == "NIM_CONTENT_PLACEHOLDER"]
-open_pages = [page for page in registry_pages if page["state"] not in {"COMPLETE_REVIEW_REQUIRED", "NIM_CONTENT_PLACEHOLDER"}]
+open_pages = [page for page in registry_pages if page["state"] not in {"AUTOMATED_QA_PASSED_COPY_REVIEW_REQUIRED", "NIM_CONTENT_PLACEHOLDER"}]
 assert not open_pages, open_pages
 assert len(complete) == 60, len(complete)
 assert len(nim_managed) == 7, len(nim_managed)
@@ -54,7 +55,10 @@ for page in complete:
     assert page["visible_body_characters"] >= page["minimum_visible_body_characters"], page
     assert page["faq_questions"] >= page["minimum_faq_questions"], page
     assert page["visual_assets"] >= 3, page
-    assert page["triple_qa_passes"] == 3, page
+    assert page["automated_render_passes"] == 3, page
+    assert page["copy_gate_state"] == "BLOCKED_MISSING_HASH_BOUND_INDEPENDENT_REVIEWS", page
+    assert page["independent_copy_reviews"] == 0, page
+    assert page["publication_allowed"] is False, page
     assert page["layout_signature"], page
     assert page["publication_allowed"] is False, page
     layout_signatures.append(page["layout_signature"])

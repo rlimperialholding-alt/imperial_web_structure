@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "brand": "everyday-homes",
+  "generated_at": "2026-08-13",
+  "publication_allowed": false,
+  "sources": {
+    "EH-PRICE-2026-08": {
+      "kind": "owner_authorized_internal_price_model",
+      "title": "Everyday Homes 2026. augusztusi nettó tervezési árszint",
+      "source": "Tulajdonosi utasítás és sites/everyday-homes/assets/detailed-project-pages.js referencia-modell",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "review_state": "OWNER_AUTHORIZED_FOR_STAGING",
+      "rules": ["Minden ár nettó és + ÁFA jelölésű.", "A szám nem személyre szabott szerződéses ajánlat."]
+    },
+    "EH-SCHEDULE-2026-08": {
+      "kind": "internal_planning_model",
+      "title": "Technológiánkénti projekt- és helyszíni időtartamok",
+      "source": "sites/everyday-homes/assets/detailed-project-pages.js és technology-pages.js",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "review_state": "TECHNICAL_REVIEW_REQUIRED",
+      "rules": ["Csak tartomány közölhető.", "Nem jelenhet meg feltétel nélküli átadási garanciaként."]
+    },
+    "EH-ENERGY-SCENARIO-2026-08": {
+      "kind": "calculation_scenario",
+      "title": "100 m²-es referenciaház energia- és fenntartási forgatókönyve",
+      "source": "sites/everyday-homes/assets/detailed-project-pages.js dokumentált számítási feltételekkel",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "review_state": "TECHNICAL_REVIEW_REQUIRED",
+      "rules": ["A számok nem fogyasztási ígéretek.", "Az egyedi terv energetikai számítása elsőbbséget élvez."]
+    },
+    "EH-TECHNICAL-CONTENT-2026-08": {
+      "kind": "brand_technical_content",
+      "title": "Everyday Homes technológiai és műszaki tartalmi alap",
+      "source": "sites/everyday-homes/sources/brand és a technológiai oldalak tételes feltételei",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "review_state": "TECHNICAL_REVIEW_REQUIRED",
+      "rules": ["Konkrét teljesítmény csak a beépített rendszer érvényes dokumentuma alapján állítható."]
+    }
+  },
+  "route_bindings": {
+    "/szamolok/teljes-projektkeret": ["EH-PRICE-2026-08", "EH-TECHNICAL-CONTENT-2026-08"],
+    "/szamolok/utemterv": ["EH-SCHEDULE-2026-08"],
+    "/szamolok/energia-es-koltseg": ["EH-ENERGY-SCENARIO-2026-08", "EH-PRICE-2026-08"],
+    "/muszaki-adatok": ["EH-PRICE-2026-08", "EH-TECHNICAL-CONTENT-2026-08"],
+    "/mibol-epuljon": ["EH-PRICE-2026-08", "EH-SCHEDULE-2026-08", "EH-TECHNICAL-CONTENT-2026-08"],
+    "/technologiak/favazas": ["EH-PRICE-2026-08", "EH-SCHEDULE-2026-08", "EH-TECHNICAL-CONTENT-2026-08"],
+    "/technologiak/tegla": ["EH-PRICE-2026-08", "EH-SCHEDULE-2026-08", "EH-TECHNICAL-CONTENT-2026-08"],
+    "/technologiak/liapor": ["EH-PRICE-2026-08", "EH-SCHEDULE-2026-08", "EH-TECHNICAL-CONTENT-2026-08"],
+    "/technologiak/acelszerkezet": ["EH-PRICE-2026-08", "EH-SCHEDULE-2026-08", "EH-TECHNICAL-CONTENT-2026-08"]
+  }
+}

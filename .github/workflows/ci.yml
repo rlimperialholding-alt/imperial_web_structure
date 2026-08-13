@@ -21,7 +21,7 @@ jobs:
   validate:
     name: Validate and smoke test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       COMPOSE_PROJECT_NAME: imperial-ci-${{ github.run_id }}
       HTTP_PORT: "8080"
@@ -43,7 +43,28 @@ jobs:
       - name: Validate repository structure
         run: sh scripts/validate-structure.sh
 
-      - name: Enforce Everyday Homes content gates
+      - name: Set up Node.js for rendered QA
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install browser QA runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Run Everyday Homes rendered and asset gates
+        shell: bash
+        env:
+          EVERYDAY_PREVIEW_ROOT: sites/everyday-homes
+        run: |
+          set -euo pipefail
+          EVERYDAY_NODE=node python3 sites/everyday-homes/qa/run_render_gates.py
+          python3 sites/everyday-homes/qa/validate_http.py --serve-local 18089
+
+      - name: Enforce Everyday Homes content and release gates
         shell: bash
         run: |
           set -euo pipefail
@@ -51,6 +72,8 @@ jobs:
           git diff --exit-code -- sites/everyday-homes/data/completion-registry.json
           python3 sites/everyday-homes/qa/validate_site.py
           python3 sites/everyday-homes/qa/validate_uniqueness.py
+          python3 sites/everyday-homes/qa/validate_claim_evidence.py
+          python3 sites/everyday-homes/qa/validate_release.py
 
       - name: Validate Compose configuration
         run: docker compose config --quiet

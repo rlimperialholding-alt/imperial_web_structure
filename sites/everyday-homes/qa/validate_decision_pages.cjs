@@ -19,13 +19,6 @@ const routes = [
   '/muszaki-adatok',
 ];
 
-const detailedRoutes = new Set([
-  '/szamolok/teljes-projektkeret',
-  '/szamolok/utemterv',
-  '/szamolok/energia-es-koltseg',
-  '/muszaki-adatok',
-]);
-
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'tablet', width: 768, height: 1024 },
@@ -161,8 +154,8 @@ fs.mkdirSync(renderedRoot, { recursive: true });
         bad_responses: badResponses,
         ...dom,
       };
-      const minimumFaq = detailedRoutes.has(route) ? 25 : 4;
-      const minimumContentCharacters = detailedRoutes.has(route) ? 12000 : 0;
+      const minimumFaq = 25;
+      const minimumContentCharacters = 12000;
       check.minimum_faq = minimumFaq;
       check.minimum_content_characters = minimumContentCharacters;
       check.passed = check.http_status === 200 && check.decisionPages === 1 && check.faqItems >= minimumFaq && check.contentCharacters >= minimumContentCharacters && check.toolMounts === 1 && check.backgroundImage !== 'none' && !check.horizontalOverflow && check.clipped.length === 0 && check.outside.length === 0 && check.forbidden.length === 0 && check.console_errors.length === 0 && check.page_errors.length === 0 && check.request_failures.length === 0 && check.bad_responses.length === 0;

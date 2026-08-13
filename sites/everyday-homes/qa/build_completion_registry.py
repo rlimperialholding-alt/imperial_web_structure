@@ -8,7 +8,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAP_PATH = ROOT / "data" / "page-map.json"
 OUT_PATH = ROOT / "data" / "completion-registry.json"
-EVIDENCE_PATH = ROOT / "qa" / "qa-evidence.json"
 RENDER_REPORT_PATH = ROOT / "qa" / "decision-pages-report.json"
 TECHNOLOGY_RENDER_REPORT_PATH = ROOT / "qa" / "technology-pages-report.json"
 SERVICE_RENDER_REPORT_PATH = ROOT / "qa" / "service-pages-report.json"
@@ -87,8 +86,8 @@ SERVICE_PAGE_ROUTES = {
 }
 
 PAGE_RULES = {
-    "editorial": {"minimum_characters": 12_000, "minimum_faq": 5, "visual_assets": 3},
-    "decision_tool": {"minimum_characters": 1_800, "minimum_faq": 4, "visual_assets": 3},
+    "editorial": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
+    "decision_tool": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
     "detailed_decision_tool": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
     "technology_page": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
     "service_page": {"minimum_characters": 12_000, "minimum_faq": 25, "visual_assets": 3},
@@ -220,7 +219,6 @@ def decision_visible_copy(source: str) -> str:
 
 def main() -> None:
     page_map = json.loads(MAP_PATH.read_text(encoding="utf-8"))
-    qa_evidence = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8")) if EVIDENCE_PATH.exists() else {"routes": {}}
     render_report = json.loads(RENDER_REPORT_PATH.read_text(encoding="utf-8")) if RENDER_REPORT_PATH.exists() else {"checks": []}
     technology_render_report = json.loads(TECHNOLOGY_RENDER_REPORT_PATH.read_text(encoding="utf-8")) if TECHNOLOGY_RENDER_REPORT_PATH.exists() else {"checks": []}
     service_render_report = json.loads(SERVICE_RENDER_REPORT_PATH.read_text(encoding="utf-8")) if SERVICE_RENDER_REPORT_PATH.exists() else {"checks": []}
@@ -261,17 +259,17 @@ def main() -> None:
                 visible = ""
                 questions = 0
             chars = len(visible)
-            qa_passes = int(qa_evidence.get("routes", {}).get(route, {}).get("passes", 0))
+            qa_passes = 0
             rendered_checks = rendered_by_route.get(route, [])
             if page_type == "editorial" and rendered_checks:
                 chars = max(int(check.get("contentCharacters", 0)) for check in rendered_checks)
                 questions = max(int(check.get("faqItems", 0)) for check in rendered_checks)
-                qa_passes = max(qa_passes, min(3, len({check.get("viewport") for check in rendered_checks if check.get("passed")})))
+                qa_passes = min(3, len({check.get("viewport") for check in rendered_checks if check.get("passed")}))
             if page_type in {"decision_tool", "detailed_decision_tool", "technology_page", "service_page"} and rendered_checks:
                 chars = max(int(check.get("contentCharacters", 0)) for check in rendered_checks)
                 questions = max(int(check.get("faqItems", 0)) for check in rendered_checks)
                 rendered_passes = len({check.get("viewport") for check in rendered_checks if check.get("passed")})
-                qa_passes = max(qa_passes, min(3, rendered_passes))
+                qa_passes = min(3, rendered_passes)
             if excluded_from_scope:
                 state = "NIM_CONTENT_PLACEHOLDER"
             elif not source_name:
@@ -281,7 +279,7 @@ def main() -> None:
             elif questions < rules["minimum_faq"]:
                 state = "SOURCE_IMPORTED_NEEDS_FAQ"
             elif qa_passes == 3:
-                state = "COMPLETE_REVIEW_REQUIRED"
+                state = "AUTOMATED_QA_PASSED_COPY_REVIEW_REQUIRED"
             else:
                 state = "SOURCE_IMPORTED_NEEDS_VISUAL_QA"
             rows.append({
@@ -298,7 +296,9 @@ def main() -> None:
                 "minimum_faq_questions": rules["minimum_faq"],
                 "visual_assets": rules["visual_assets"] if source_name else 0,
                 "layout_signature": LAYOUT_BY_ROUTE.get(route),
-                "triple_qa_passes": qa_passes,
+                "automated_render_passes": qa_passes,
+                "independent_copy_reviews": 0,
+                "copy_gate_state": "BLOCKED_MISSING_HASH_BOUND_INDEPENDENT_REVIEWS",
                 "publication_allowed": False,
             })
 
@@ -307,6 +307,7 @@ def main() -> None:
         "generated_from": "Drive canonical sources + page-map.json",
         "minimum_visible_body_characters": 12_000,
         "preferred_visible_body_characters": 20_000,
+        "minimum_faq_questions": 25,
         "minimum_page_specific_visuals": 3,
         "required_qa_passes": 3,
         "publication_allowed": False,
@@ -315,7 +316,8 @@ def main() -> None:
             "nim_managed_routes": sum(r["state"] == "NIM_CONTENT_PLACEHOLDER" for r in rows),
             "source_imported_routes": sum(bool(r["source"]) for r in rows),
             "route_shells": sum(r["state"] == "ROUTE_SHELL_ONLY" for r in rows),
-            "complete_routes": sum(r["state"] == "COMPLETE_REVIEW_REQUIRED" for r in rows),
+            "automated_qa_passed_routes": sum(r["state"] == "AUTOMATED_QA_PASSED_COPY_REVIEW_REQUIRED" for r in rows),
+            "publication_ready_routes": 0,
         },
         "pages": rows,
     }

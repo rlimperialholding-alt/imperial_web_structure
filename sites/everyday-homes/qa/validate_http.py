@@ -12,16 +12,30 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
+PREFIX = "/site-preview/everyday-homes"
+
+
+class PreviewHandler(SimpleHTTPRequestHandler):
+    """Serve the static bundle under the same prefix used in production preview."""
+
+    def translate_path(self, path: str) -> str:
+        if path == PREFIX:
+            path = "/"
+        elif path.startswith(PREFIX + "/"):
+            path = path[len(PREFIX):]
+        return super().translate_path(path)
+
+
 def main() -> int:
     server: ThreadingHTTPServer | None = None
     if len(sys.argv) == 3 and sys.argv[1] == "--serve-local":
         port = int(sys.argv[2])
         site_root = Path(__file__).resolve().parents[1]
-        handler = partial(SimpleHTTPRequestHandler, directory=str(site_root))
+        handler = partial(PreviewHandler, directory=str(site_root))
         server = ThreadingHTTPServer(("127.0.0.1", port), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        base_url = f"http://127.0.0.1:{port}"
+        base_url = f"http://127.0.0.1:{port}{PREFIX}"
     elif len(sys.argv) == 2:
         base_url = sys.argv[1].rstrip("/")
         site_root = Path(__file__).resolve().parents[1]
