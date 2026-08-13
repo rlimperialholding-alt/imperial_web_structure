@@ -61,7 +61,7 @@ def rendered_article_text(path: Path) -> str:
 
 
 def registry_source_text(source: str) -> str:
-    if source.startswith("assets/service-pages.js#"):
+    if source.startswith("assets/service-pages.js#") or source.startswith("assets/legal-pages.js#"):
         route = source.split("#", 1)[1]
         rendered_name = route.strip("/").replace("/", "--") + ".html"
         rendered = ROOT / "qa" / "rendered" / "service-pages" / rendered_name

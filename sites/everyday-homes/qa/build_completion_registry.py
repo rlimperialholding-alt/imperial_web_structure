@@ -12,6 +12,7 @@ EVIDENCE_PATH = ROOT / "qa" / "qa-evidence.json"
 RENDER_REPORT_PATH = ROOT / "qa" / "decision-pages-report.json"
 TECHNOLOGY_RENDER_REPORT_PATH = ROOT / "qa" / "technology-pages-report.json"
 SERVICE_RENDER_REPORT_PATH = ROOT / "qa" / "service-pages-report.json"
+RICH_RENDER_REPORT_PATH = ROOT / "qa" / "rich-pages-report.json"
 
 SOURCE_BY_ROUTE = {
     "/": "drive/01-kezdolap.md",
@@ -79,6 +80,10 @@ SERVICE_PAGE_ROUTES = {
     "/elso-lepesek/energia",
     "/kozelrol/elkeszult-otthonok",
     "/kozelrol/csaladok-tortenetei",
+    "/adatkezeles",
+    "/impresszum",
+    "/sutik",
+    "/akadalymentesseg",
 }
 
 PAGE_RULES = {
@@ -160,6 +165,10 @@ LAYOUT_BY_ROUTE = {
     "/elso-lepesek/energia": "comfort-climate",
     "/kozelrol/elkeszult-otthonok": "open-house-album",
     "/kozelrol/csaladok-tortenetei": "story-portraits",
+    "/adatkezeles": "privacy-ledger",
+    "/impresszum": "identity-blueprint",
+    "/sutik": "cookie-control-room",
+    "/akadalymentesseg": "accessibility-path",
 }
 
 HOUSE_PREFIXES = ("/otthonok/",)
@@ -215,8 +224,9 @@ def main() -> None:
     render_report = json.loads(RENDER_REPORT_PATH.read_text(encoding="utf-8")) if RENDER_REPORT_PATH.exists() else {"checks": []}
     technology_render_report = json.loads(TECHNOLOGY_RENDER_REPORT_PATH.read_text(encoding="utf-8")) if TECHNOLOGY_RENDER_REPORT_PATH.exists() else {"checks": []}
     service_render_report = json.loads(SERVICE_RENDER_REPORT_PATH.read_text(encoding="utf-8")) if SERVICE_RENDER_REPORT_PATH.exists() else {"checks": []}
+    rich_render_report = json.loads(RICH_RENDER_REPORT_PATH.read_text(encoding="utf-8")) if RICH_RENDER_REPORT_PATH.exists() else {"checks": []}
     rendered_by_route: dict[str, list[dict]] = {}
-    for check in render_report.get("checks", []) + technology_render_report.get("checks", []) + service_render_report.get("checks", []):
+    for check in render_report.get("checks", []) + technology_render_report.get("checks", []) + service_render_report.get("checks", []) + rich_render_report.get("checks", []):
         rendered_by_route.setdefault(check.get("route", ""), []).append(check)
     rows = []
     for group in page_map["groups"]:
@@ -227,8 +237,10 @@ def main() -> None:
             excluded_from_scope = route.startswith(HOUSE_PREFIXES) or page_id == "EH-HU-003"
             raw = ""
             if page_type == "service_page":
-                source_name = f"assets/service-pages.js#{route}"
-                raw = (ROOT / "assets" / "service-pages.js").read_text(encoding="utf-8")
+                legal_routes = {"/adatkezeles", "/impresszum", "/sutik", "/akadalymentesseg"}
+                source_file = "legal-pages.js" if route in legal_routes else "service-pages.js"
+                source_name = f"assets/{source_file}#{route}"
+                raw = (ROOT / "assets" / source_file).read_text(encoding="utf-8")
                 visible = ""
                 questions = 0
             elif page_type == "technology_page":
@@ -251,6 +263,10 @@ def main() -> None:
             chars = len(visible)
             qa_passes = int(qa_evidence.get("routes", {}).get(route, {}).get("passes", 0))
             rendered_checks = rendered_by_route.get(route, [])
+            if page_type == "editorial" and rendered_checks:
+                chars = max(int(check.get("contentCharacters", 0)) for check in rendered_checks)
+                questions = max(int(check.get("faqItems", 0)) for check in rendered_checks)
+                qa_passes = max(qa_passes, min(3, len({check.get("viewport") for check in rendered_checks if check.get("passed")})))
             if page_type in {"decision_tool", "detailed_decision_tool", "technology_page", "service_page"} and rendered_checks:
                 chars = max(int(check.get("contentCharacters", 0)) for check in rendered_checks)
                 questions = max(int(check.get("faqItems", 0)) for check in rendered_checks)

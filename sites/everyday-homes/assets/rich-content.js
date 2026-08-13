@@ -197,6 +197,11 @@ async function renderRichSourcePage(path) {
   const response = await fetch(`${BASE}/sources/drive/${config.file}`);
   if (!response.ok) throw new Error(`A forrásszöveg nem tölthető be: ${config.file}`);
   const parsed = parsePublicSource(await response.text());
+  const extensions = globalThis.RICH_CONTENT_EXTENSIONS?.[path] || [];
+  parsed.sections.push(...extensions.map(section => ({
+    title: section.title,
+    blocks: section.blocks.slice(),
+  })));
   const canonical = pages[path];
   const intro = parsed.heroText.slice(0, config.introLimit || 3).join(" ");
   const faqCount = parsed.sections.reduce((sum, section) => sum + section.blocks.filter(line => line.endsWith("?")).length, 0);

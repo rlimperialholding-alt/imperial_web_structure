@@ -44,6 +44,11 @@ assert REGISTRY["minimum_page_specific_visuals"] == 3
 assert REGISTRY["required_qa_passes"] == 3
 
 complete = [page for page in registry_pages if page["state"] == "COMPLETE_REVIEW_REQUIRED"]
+nim_managed = [page for page in registry_pages if page["state"] == "NIM_CONTENT_PLACEHOLDER"]
+open_pages = [page for page in registry_pages if page["state"] not in {"COMPLETE_REVIEW_REQUIRED", "NIM_CONTENT_PLACEHOLDER"}]
+assert not open_pages, open_pages
+assert len(complete) == 60, len(complete)
+assert len(nim_managed) == 7, len(nim_managed)
 layout_signatures = []
 for page in complete:
     assert page["visible_body_characters"] >= page["minimum_visible_body_characters"], page
