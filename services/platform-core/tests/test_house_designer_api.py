@@ -181,6 +181,7 @@ def test_house_designer_json_api_enforces_preconditions_and_replays(client):
     assert 'for="global-search-input">Központi keresés</label>' in editor.text
     assert 'aria-label="Terv állapota"' in editor.text
     assert 'aria-label="Telek, megfelelőség és tervfolyamat"' in editor.text
+    assert 'class="hd-touch-link" href="/house-designer/regulatory-admin"' in editor.text
     assert editor.text.count("data-hd-autosave") == 2
     assert '<script src="/static/house-designer-editor.js"></script>' in editor.text
     assert re.search(r'data-offline-scope="[0-9a-f]{64}"', editor.text)
@@ -196,6 +197,15 @@ def test_house_designer_json_api_enforces_preconditions_and_replays(client):
     assert shared_css.status_code == 200
     assert ":focus-visible" in shared_css.text
     assert ".skip-link:focus" in shared_css.text
+    assert (
+        ".menu-toggle,.side-nav a,.logout-button,.global-search input"
+        "{min-width:44px;min-height:44px}"
+    ) in shared_css.text
+    assert ".top-action{padding-block:16px}" in shared_css.text
+    assert (
+        ".hd-touch-link{display:inline-flex;align-items:center;min-height:44px}"
+        in shared_css.text
+    )
 
     changed_design = changed.json()
     restore_key = str(uuid4())
