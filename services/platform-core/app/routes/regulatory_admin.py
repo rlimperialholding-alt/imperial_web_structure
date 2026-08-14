@@ -174,18 +174,33 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
         try:
             roofs = [item for item in str(form.get("allowed_roof_types") or "").split(",") if item]
             vectors = json.loads(str(form.get("test_vectors_json") or "[]"))
+            declarative_checks = json.loads(
+                str(form.get("declarative_rules_json") or "[]")
+            )
             if not isinstance(vectors, list):
                 raise RegulatoryAdminError("test_vector_invalid", "A tesztvektor lista legyen.")
+            if not isinstance(declarative_checks, list):
+                raise RegulatoryAdminError(
+                    "rules_list_invalid", "A deklaratív szabályok mezője JSON-lista legyen."
+                )
+            rule_input = {
+                "maxStoreys": form.get("max_storeys"),
+                "maxGrossAreaM2": form.get("max_gross_area_m2"),
+                "allowedRoofTypes": roofs,
+            }
+            if declarative_checks:
+                rule_input.update(
+                    {
+                        "schemaVersion": "regulatory-rules-v2",
+                        "checks": declarative_checks,
+                    }
+                )
             create_interpretation(
                 db,
                 actor=_actor(user),
                 source_snapshot_id=str(form.get("source_snapshot_id") or ""),
                 source_span=str(form.get("source_span") or ""),
-                rules={
-                    "maxStoreys": form.get("max_storeys"),
-                    "maxGrossAreaM2": form.get("max_gross_area_m2"),
-                    "allowedRoofTypes": roofs,
-                },
+                rules=rule_input,
                 test_vectors=vectors,
             )
         except (RegulatoryAdminError, json.JSONDecodeError, TypeError, ValueError) as error:

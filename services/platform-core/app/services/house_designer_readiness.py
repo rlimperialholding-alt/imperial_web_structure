@@ -28,6 +28,12 @@ from .house_designer_submission import (
     HOUSE_DESIGN_TERMS_VERSION,
 )
 from .regulatory_compliance import _binding_issue, _ruleset_binding_state
+from .regulatory_rule_schema import (
+    RULE_CATEGORIES,
+    RULE_SCHEMA_VERSION,
+    RegulatoryRuleSchemaError,
+    normalize_declarative_rules,
+)
 
 REQUIRED_ADAPTERS = ("pricing", "capacity", "render")
 REQUIRED_INTEGRATIONS = ("crm", "my-imperial", "smart-calendar")
@@ -59,8 +65,17 @@ def house_designer_release_readiness(
             ),
         )
     ).all()
-    ruleset_count = sum(
-        _binding_issue(_ruleset_binding_state(db, row, now)) is None for row in approved_rulesets
+    binding_valid_rulesets = [
+        row
+        for row in approved_rulesets
+        if _binding_issue(_ruleset_binding_state(db, row, now)) is None
+    ]
+    ruleset_count = len(binding_valid_rulesets)
+    ruleset_coverage = {
+        row.ruleset_id: sorted(_ruleset_categories(row)) for row in binding_valid_rulesets
+    }
+    production_ruleset_count = sum(
+        set(categories) == set(RULE_CATEGORIES) for categories in ruleset_coverage.values()
     )
     terms = db.scalar(
         select(ReservationOfferVersion)
@@ -143,6 +158,16 @@ def house_designer_release_readiness(
         _check("approved_template", template_count > 0, f"{template_count} jóváhagyott típusterv"),
         _check(
             "approved_ruleset", ruleset_count > 0, f"{ruleset_count} jóváhagyott szabálykészlet"
+        ),
+        _check(
+            "regulatory_rule_coverage",
+            production_ruleset_count > 0,
+            (
+                f"{production_ruleset_count} teljes v2 szabálykészlet; "
+                f"kötelező kategóriák: {len(RULE_CATEGORIES)}."
+                if production_ruleset_count > 0
+                else "Nincs mind a 14 kötelező kategóriát lefedő validált v2 szabálykészlet."
+            ),
         ),
         _check(
             "approved_terms",
@@ -527,6 +552,21 @@ def suspend_entitlement(
 
 def _check(key: str, passed: bool, detail: str) -> dict[str, Any]:
     return {"key": key, "passed": bool(passed), "detail": detail}
+
+
+def _ruleset_categories(row: RegulatoryRuleSet) -> set[str]:
+    try:
+        rules = json.loads(row.rules_json)
+        if rules.get("schemaVersion") != RULE_SCHEMA_VERSION:
+            return set()
+        checks = normalize_declarative_rules(rules.get("checks"))
+    except (json.JSONDecodeError, AttributeError, RegulatoryRuleSchemaError):
+        return set()
+    return {
+        item["category"]
+        for item in checks
+        if item["severity"] in {"BLOCKER", "ERROR"}
+    }
 
 
 def _require_expected_version(

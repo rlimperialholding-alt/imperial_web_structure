@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -27,6 +28,11 @@ from .house_designer import decode_revision_site
 from .house_designer_geometry import canonical_sha256
 from .house_designer_privacy import protect_site, verification_identity_token
 from .regulatory_compliance import evaluate_rules
+from .regulatory_rule_schema import (
+    RULE_SCHEMA_VERSION,
+    RegulatoryRuleSchemaError,
+    normalize_declarative_rules,
+)
 
 
 class RegulatoryAdminError(ValueError):
@@ -232,7 +238,19 @@ def create_interpretation(
     _lock_scope(db, preview.scope_key)
     source = _source(db, source_snapshot_id, lock=True)
     _require_active_source(source)
-    validated_rules = _rules(rules)
+    prepared_rules = deepcopy(rules)
+    if isinstance(prepared_rules.get("checks"), list):
+        for check in prepared_rules["checks"]:
+            if not isinstance(check, dict):
+                continue
+            source_ref = str(check.get("sourceRef") or "").strip()
+            if source_ref and source_ref != source_snapshot_id:
+                raise RegulatoryAdminError(
+                    "rule_source_mismatch",
+                    "A deklaratív szabály csak a kiválasztott forrássnapshotra hivatkozhat.",
+                )
+            check["sourceRef"] = source_snapshot_id
+    validated_rules = _rules(prepared_rules)
     _validate_test_vectors(validated_rules, test_vectors)
     if not source_span.strip():
         raise RegulatoryAdminError("source_span_required", "A pontos forráshely kötelező.")
@@ -405,10 +423,7 @@ def create_ruleset(
         _require_active_source(source)
         if source.scope_key not in {scope_key, _municipality_scope(scope_key)}:
             raise RegulatoryAdminError("source_scope_mismatch", "A forrás területi hatálya eltér.")
-        for key, value in json.loads(interpretation.interpreted_rules_json).items():
-            if key in merged and merged[key] != value:
-                raise RegulatoryAdminError("rule_conflict", f"Ellentmondó szabály: {key}.")
-            merged[key] = value
+        _merge_rules(merged, json.loads(interpretation.interpreted_rules_json))
         source_ids.append(source.source_snapshot_id)
     effective_from = _aware(effective_from)
     effective_to = _aware(effective_to) if effective_to else None
@@ -544,10 +559,7 @@ def transition_ruleset(
                     "interpretation_not_latest", "A szabálykészlet egyik értelmezése elavult."
                 )
             _require_active_source(_source(db, interpretation.source_snapshot_id, lock=True))
-            for key, value in json.loads(interpretation.interpreted_rules_json).items():
-                if key in merged and merged[key] != value:
-                    raise RegulatoryAdminError("rule_conflict", f"Ellentmondó szabály: {key}.")
-                merged[key] = value
+            _merge_rules(merged, json.loads(interpretation.interpreted_rules_json))
         if merged != json.loads(row.rules_json):
             raise RegulatoryAdminError(
                 "ruleset_material_changed", "Az értelmezések tartalma eltér a szabálykészlettől."
@@ -783,7 +795,13 @@ def regulatory_dashboard(db: Session, *, actor_subject_id: str) -> dict[str, Any
 
 
 def _rules(value: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"maxStoreys", "maxGrossAreaM2", "allowedRoofTypes"}
+    allowed = {
+        "maxStoreys",
+        "maxGrossAreaM2",
+        "allowedRoofTypes",
+        "schemaVersion",
+        "checks",
+    }
     unknown = set(value) - allowed
     if unknown:
         raise RegulatoryAdminError("rule_key_unknown", f"Ismeretlen szabálymező: {sorted(unknown)}")
@@ -805,9 +823,45 @@ def _rules(value: dict[str, Any]) -> dict[str, Any]:
         if not set(roofs) <= valid:
             raise RegulatoryAdminError("roof_type_invalid", "Ismeretlen tetőtípus.")
         result["allowedRoofTypes"] = roofs
+    checks = value.get("checks")
+    if checks is not None and checks != "":
+        if value.get("schemaVersion") != RULE_SCHEMA_VERSION:
+            raise RegulatoryAdminError(
+                "rule_schema_invalid",
+                f"A deklaratív szabályséma kötelező verziója: {RULE_SCHEMA_VERSION}.",
+            )
+        try:
+            result["checks"] = normalize_declarative_rules(checks)
+        except RegulatoryRuleSchemaError as error:
+            raise RegulatoryAdminError(error.code, str(error)) from error
+        result["schemaVersion"] = RULE_SCHEMA_VERSION
     if not result:
         raise RegulatoryAdminError("rules_required", "Legalább egy végrehajtható szabály kötelező.")
     return result
+
+
+def _merge_rules(target: dict[str, Any], incoming: dict[str, Any]) -> None:
+    for key, value in incoming.items():
+        if key in {"checks", "schemaVersion"}:
+            continue
+        if key in target and target[key] != value:
+            raise RegulatoryAdminError("rule_conflict", f"Ellentmondó szabály: {key}.")
+        target[key] = value
+    checks = incoming.get("checks")
+    if checks is None:
+        return
+    if incoming.get("schemaVersion") != RULE_SCHEMA_VERSION:
+        raise RegulatoryAdminError("rule_schema_invalid", "Eltérő deklaratív szabályséma.")
+    existing = {item["code"]: item for item in target.get("checks", [])}
+    for item in checks:
+        prior = existing.get(item["code"])
+        if prior is not None and prior != item:
+            raise RegulatoryAdminError(
+                "rule_conflict", f"Ellentmondó deklaratív szabály: {item['code']}."
+            )
+        existing[item["code"]] = item
+    target["schemaVersion"] = RULE_SCHEMA_VERSION
+    target["checks"] = [existing[code] for code in sorted(existing)]
 
 
 def _validate_test_vectors(rules: dict[str, Any], vectors: list[dict[str, Any]]) -> None:
@@ -827,7 +881,15 @@ def _validate_test_vectors(rules: dict[str, Any], vectors: list[dict[str, Any]])
             raise RegulatoryAdminError(
                 "test_vector_invalid", f"A(z) {index + 1}. teszt várt eredménye hibás."
             )
-        outcome, _ = evaluate_rules(vector["geometry"], vector["site"], rules)
+        configuration = vector.get("configuration") or {}
+        if not isinstance(configuration, dict):
+            raise RegulatoryAdminError(
+                "test_vector_invalid",
+                f"A(z) {index + 1}. tesztvektor konfigurációja hibás.",
+            )
+        outcome, _ = evaluate_rules(
+            vector["geometry"], vector["site"], rules, configuration
+        )
         if outcome != expected:
             raise RegulatoryAdminError(
                 "test_vector_failed",

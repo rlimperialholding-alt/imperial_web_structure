@@ -1,13 +1,19 @@
+import math
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
+from app.models import RegulatoryComplianceRun
 from app.services.house_designer import ActorScope, apply_session_command, create_session
 from app.services.house_designer_geometry import apply_command, empty_geometry
 from app.services.regulatory_admin import (
     RegulatoryActor,
     RegulatoryAdminError,
+    _merge_rules,
+    _rules,
     approve_source,
     create_interpretation,
     create_ruleset,
@@ -18,6 +24,68 @@ from app.services.regulatory_admin import (
     verify_design_site,
 )
 from app.services.regulatory_compliance import run_compliance
+
+
+def _declarative_height_rule(code="MAX_BUILDING_HEIGHT", expected="3"):
+    return {
+        "code": code,
+        "category": "height_storeys",
+        "fact": "building.height_m",
+        "operator": "lte",
+        "expected": expected,
+        "severity": "BLOCKER",
+        "sourceRef": "SRC-1",
+        "ruleRef": "12. § (3)",
+        "explanation": "Az épület túl magas.",
+        "remediation": "Csökkentse az épület magasságát.",
+    }
+
+
+def test_declarative_rules_are_normalized_and_merged_by_unique_code():
+    first = _rules(
+        {
+            "schemaVersion": "regulatory-rules-v2",
+            "checks": [_declarative_height_rule()],
+        }
+    )
+    second = _rules(
+        {
+            "schemaVersion": "regulatory-rules-v2",
+            "checks": [_declarative_height_rule("MIN_BUILDING_HEIGHT", "2.5")],
+        }
+    )
+    merged = {}
+    _merge_rules(merged, first)
+    _merge_rules(merged, second)
+    assert [item["code"] for item in merged["checks"]] == [
+        "MAX_BUILDING_HEIGHT",
+        "MIN_BUILDING_HEIGHT",
+    ]
+
+    conflicting = _rules(
+        {
+            "schemaVersion": "regulatory-rules-v2",
+            "checks": [_declarative_height_rule(expected="2.7")],
+        }
+    )
+    with pytest.raises(RegulatoryAdminError) as collision:
+        _merge_rules(merged, conflicting)
+    assert collision.value.code == "rule_conflict"
+
+
+def test_regulatory_admin_ui_exposes_bounded_declarative_rule_input(client):
+    login = client.post(
+        "/login",
+        data={"email": "technical-prep@imperial.local", "password": "Imperial2026!"},
+        follow_redirects=False,
+    )
+    assert login.status_code == 303
+    response = client.get("/house-designer/regulatory-admin")
+    assert response.status_code == 200
+    assert 'name="declarative_rules_json"' in response.text
+    assert "Deklaratív v2 szabályok" in response.text
+    assert "legfeljebb 500" in response.text
+    assert "MAX_BUILDING_HEIGHT" in response.text
 
 
 def _verified_test_vector():
@@ -33,7 +101,13 @@ def _verified_test_vector():
     }
 
 
-def _approved_ruleset(db, *, source_key: str, scope_key: str = "HU:011:*"):
+def _approved_ruleset(
+    db,
+    *,
+    source_key: str,
+    scope_key: str = "HU:011:*",
+    rules=None,
+):
     author = RegulatoryActor(f"{source_key}-author", can_author=True, can_review=False)
     reviewer = RegulatoryActor(f"{source_key}-reviewer", can_author=False, can_review=True)
     now = datetime.now(UTC)
@@ -62,7 +136,8 @@ def _approved_ruleset(db, *, source_key: str, scope_key: str = "HU:011:*"):
         actor=author,
         source_snapshot_id=source["sourceSnapshotId"],
         source_span="12. § (3)",
-        rules={"maxStoreys": 2, "maxGrossAreaM2": 160, "allowedRoofTypes": ["gable"]},
+        rules=rules
+        or {"maxStoreys": 2, "maxGrossAreaM2": 160, "allowedRoofTypes": ["gable"]},
         test_vectors=[_verified_test_vector()],
     )
     interpretation = transition_interpretation(
@@ -104,6 +179,49 @@ def _approved_ruleset(db, *, source_key: str, scope_key: str = "HU:011:*"):
         action="approve",
     )
     return author, reviewer, source, ruleset
+
+
+def test_full_compliance_service_p95_is_below_three_seconds_with_500_rules(db):
+    checks = []
+    for index in range(500):
+        check = _declarative_height_rule(f"PERF_HEIGHT_{index:03d}")
+        check.pop("sourceRef")
+        checks.append(check)
+    rules = {"schemaVersion": "regulatory-rules-v2", "checks": checks}
+    _, reviewer, _, _ = _approved_ruleset(
+        db,
+        source_key="HESZ-PERF-500",
+        rules=rules,
+    )
+    session_ids = [
+        _verified_design(db, reviewer, command_prefix=f"perf-500-{index}")
+        for index in range(10)
+    ]
+    samples = []
+    for session_id in session_ids:
+        started = perf_counter()
+        result = run_compliance(
+            db,
+            session_id=session_id,
+            tenant_id="imperial-holding",
+            actor_subject_id="performance-reviewer",
+        )
+        samples.append(perf_counter() - started)
+        assert result["outcome"] == "PASS"
+        assert len(result["findings"]) == 500
+        persisted = db.scalar(
+            select(RegulatoryComplianceRun).where(
+                RegulatoryComplianceRun.run_id == result["runId"]
+            )
+        )
+        assert persisted is not None
+        assert (persisted.blocker_count, persisted.error_count, persisted.warning_count) == (
+            0,
+            0,
+            0,
+        )
+    p95 = sorted(samples)[math.ceil(len(samples) * 0.95) - 1]
+    assert p95 < 3.0
 
 
 def _verified_design(db, reviewer: RegulatoryActor, *, command_prefix: str):
@@ -192,9 +310,18 @@ def test_governed_source_interpretation_ruleset_and_site_produce_pass(db):
             "maxStoreys": 2,
             "maxGrossAreaM2": 160,
             "allowedRoofTypes": ["gable", "hip"],
+            "schemaVersion": "regulatory-rules-v2",
+            "checks": [
+                {
+                    key: value
+                    for key, value in _declarative_height_rule().items()
+                    if key != "sourceRef"
+                }
+            ],
         },
         test_vectors=[_verified_test_vector()],
     )
+    assert interpretation["rules"]["checks"][0]["sourceRef"] == source["sourceSnapshotId"]
     interpretation = transition_interpretation(
         db,
         actor=author,

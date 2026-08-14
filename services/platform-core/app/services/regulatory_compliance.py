@@ -23,8 +23,13 @@ from ..models import (
 )
 from .house_designer import decode_revision_site
 from .house_designer_geometry import gross_area_m2
+from .regulatory_rule_schema import (
+    RULE_SCHEMA_VERSION,
+    RegulatoryRuleSchemaError,
+    normalize_declarative_rules,
+)
 
-ENGINE_VERSION = "regulatory-compliance-v1"
+ENGINE_VERSION = "regulatory-compliance-v2"
 
 
 @dataclass(frozen=True)
@@ -42,7 +47,10 @@ class Finding:
 
 
 def evaluate_rules(
-    geometry: dict[str, Any], site: dict[str, Any], rules: dict[str, Any] | None
+    geometry: dict[str, Any],
+    site: dict[str, Any],
+    rules: dict[str, Any] | None,
+    configuration: dict[str, Any] | None = None,
 ) -> tuple[str, list[Finding]]:
     if site.get("verificationStatus") != "verified":
         return "UNKNOWN", [
@@ -79,7 +87,10 @@ def evaluate_rules(
                 limit={"required": "latest-approved"},
             )
         ]
+    if not isinstance(rules, dict):
+        return "UNKNOWN", [_schema_finding("ruleset_not_object")]
     findings: list[Finding] = []
+    executed_rule_count = 0
     checks = (
         (
             "MAX_STOREYS",
@@ -97,6 +108,8 @@ def evaluate_rules(
         ),
     )
     for code, measured, limit, path, message in checks:
+        if limit is not None:
+            executed_rule_count += 1
         if limit is not None and measured > limit:
             findings.append(
                 Finding(
@@ -113,6 +126,8 @@ def evaluate_rules(
                 )
             )
     allowed_roofs = set(rules.get("allowedRoofTypes") or [])
+    if allowed_roofs:
+        executed_rule_count += 1
     roofs = {
         str(level["roof"]["type"]) for level in geometry.get("levels", []) if level.get("roof")
     }
@@ -148,11 +163,221 @@ def evaluate_rules(
                 geometry_path="levels[].roof",
             )
         )
-    if any(item.outcome == "FAIL" for item in findings):
+    declarative = rules.get("checks")
+    if declarative is not None:
+        if rules.get("schemaVersion") != RULE_SCHEMA_VERSION:
+            return "UNKNOWN", [_schema_finding("rule_schema_version_invalid")]
+        try:
+            normalized = normalize_declarative_rules(declarative)
+        except RegulatoryRuleSchemaError as error:
+            return "UNKNOWN", [_schema_finding(error.code)]
+        executed_rule_count += len(normalized)
+        try:
+            facts = _compliance_facts(geometry, site, configuration or {})
+        except (ArithmeticError, KeyError, TypeError, ValueError):
+            return "UNKNOWN", [_schema_finding("fact_extraction_failed")]
+        findings.extend(_evaluate_declarative_rules(normalized, facts))
+    if executed_rule_count == 0:
+        return "UNKNOWN", [_schema_finding("ruleset_empty")]
+    if any(
+        item.outcome == "FAIL" and item.severity in {"BLOCKER", "ERROR"}
+        for item in findings
+    ):
         return "FAIL", findings
-    if any(item.outcome == "UNKNOWN" for item in findings):
+    if any(
+        item.outcome == "UNKNOWN" and item.severity in {"BLOCKER", "ERROR"}
+        for item in findings
+    ):
         return "UNKNOWN", findings
     return "PASS", findings
+
+
+def _evaluate_declarative_rules(
+    rules: list[dict[str, Any]], facts: dict[str, Any]
+) -> list[Finding]:
+    findings: list[Finding] = []
+    for rule in rules:
+        measured = facts.get(rule["fact"])
+        if measured is None:
+            outcome = "UNKNOWN"
+            explanation = f"A(z) {rule['fact']} hitelesített tény nem áll rendelkezésre."
+        else:
+            outcome = "PASS" if _compare(measured, rule["operator"], rule["expected"]) else "FAIL"
+            explanation = (
+                "A szabály teljesült."
+                if outcome == "PASS"
+                else rule["explanation"]
+            )
+        findings.append(
+            Finding(
+                code=rule["code"],
+                severity=rule["severity"],
+                outcome=outcome,
+                explanation=explanation,
+                remediation="" if outcome == "PASS" else rule["remediation"],
+                rule_ref=rule["ruleRef"],
+                source_ref=rule["sourceRef"],
+                measured={"fact": rule["fact"], "value": _json_value(measured)},
+                limit={"operator": rule["operator"], "expected": rule["expected"]},
+                geometry_path=rule.get("geometryPath"),
+            )
+        )
+    return findings
+
+
+def _compare(measured: Any, operator: str, expected: Any) -> bool:
+    if operator in {"lte", "gte"}:
+        left = Decimal(str(measured))
+        right = Decimal(str(expected))
+        return left <= right if operator == "lte" else left >= right
+    if operator == "eq":
+        if isinstance(measured, Decimal):
+            return measured == Decimal(str(expected))
+        return measured == expected
+    if operator == "in":
+        return str(measured) in set(expected)
+    measured_values = {str(item) for item in measured}
+    expected_values = set(expected)
+    if operator == "subset":
+        return measured_values <= expected_values
+    if operator == "contains":
+        return expected_values <= measured_values
+    if operator == "contains_any":
+        return bool(measured_values & expected_values)
+    return False
+
+
+def _compliance_facts(
+    geometry: dict[str, Any], site: dict[str, Any], configuration: dict[str, Any]
+) -> dict[str, Any]:
+    levels = geometry.get("levels") if isinstance(geometry.get("levels"), list) else []
+    ground_area = _polygon_area_m2(levels[0].get("outerBoundary")) if levels else None
+    gross_area = Decimal(str(gross_area_m2(geometry))) if levels else None
+    heights = [
+        Decimal(str(int(level.get("elevationMm") or 0) + int(level.get("heightMm") or 0)))
+        / Decimal("1000")
+        for level in levels
+    ]
+    rooms = [room for level in levels for room in (level.get("rooms") or [])]
+    room_areas = [_polygon_area_m2(room.get("polygon")) for room in rooms]
+    room_areas = [area for area in room_areas if area is not None]
+    room_heights = [
+        Decimal(str(int(level.get("heightMm") or 0))) / Decimal("1000")
+        for level in levels
+        if level.get("rooms")
+    ]
+    roofs = [level.get("roof") for level in levels if isinstance(level.get("roof"), dict)]
+    roof_pitches = [Decimal(str(roof["pitchDeg"])) for roof in roofs if "pitchDeg" in roof]
+    verified = site.get("verifiedFacts") if isinstance(site.get("verifiedFacts"), dict) else {}
+    plot_area = _decimal_fact(verified.get("plotAreaM2"))
+    green_area = _decimal_fact(verified.get("greenAreaM2"))
+    facts: dict[str, Any] = {
+        "building.storeys": Decimal(len(levels)),
+        "building.footprint_area_m2": ground_area,
+        "building.gross_area_m2": gross_area,
+        "building.height_m": max(heights) if heights else None,
+        "building.site_coverage_percent": (
+            ground_area * Decimal("100") / plot_area
+            if ground_area is not None and plot_area and plot_area > 0
+            else None
+        ),
+        "building.floor_area_ratio": (
+            gross_area / plot_area
+            if gross_area is not None and plot_area and plot_area > 0
+            else None
+        ),
+        "rooms.count": Decimal(len(rooms)),
+        "rooms.min_area_m2": min(room_areas) if room_areas else None,
+        "rooms.min_height_m": min(room_heights) if room_heights else None,
+        "roof.min_pitch_deg": min(roof_pitches) if roof_pitches else None,
+        "roof.max_pitch_deg": max(roof_pitches) if roof_pitches else None,
+        "roof.types": sorted({str(roof.get("type")) for roof in roofs if roof.get("type")}) or None,
+        "site.zoning_code": _text_fact(verified.get("zoningCode")),
+        "site.building_mode": _text_fact(verified.get("buildingMode")),
+        "site.allowed_uses": _collection_fact(verified.get("allowedUses")),
+        "site.green_area_percent": (
+            green_area * Decimal("100") / plot_area
+            if green_area is not None and plot_area and plot_area > 0
+            else None
+        ),
+        "site.front_setback_m": _decimal_fact(verified.get("frontSetbackM")),
+        "site.side_setback_m": _decimal_fact(verified.get("sideSetbackM")),
+        "site.rear_setback_m": _decimal_fact(verified.get("rearSetbackM")),
+        "site.parking_spaces": _decimal_fact(verified.get("parkingSpaces")),
+        "site.access_verified": _boolean_fact(verified.get("accessVerified")),
+        "site.utilities_verified": _boolean_fact(verified.get("utilitiesVerified")),
+        "site.protection_clear": _boolean_fact(verified.get("protectionClear")),
+        "building.stair_data_complete": True if len(levels) == 1 else bool(
+            geometry.get("verticalCores") and geometry.get("verticalConnections")
+        ),
+        "building.accessibility_data_complete": _boolean_fact(
+            configuration.get("accessibilityDataComplete")
+        ),
+        "handoff.fire_data_complete": _boolean_fact(configuration.get("fireDataComplete")),
+        "handoff.energy_data_complete": _boolean_fact(configuration.get("energyDataComplete")),
+    }
+    return facts
+
+
+def _polygon_area_m2(points: Any) -> Decimal | None:
+    if not isinstance(points, list) or len(points) < 4 or points[0] != points[-1]:
+        return None
+    try:
+        area_twice = sum(
+            int(first["x"]) * int(second["y"]) - int(second["x"]) * int(first["y"])
+            for first, second in zip(points, points[1:], strict=False)
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+    return Decimal(abs(area_twice)) / Decimal("2000000")
+
+
+def _decimal_fact(value: Any) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = Decimal(str(value))
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
+def _text_fact(value: Any) -> str | None:
+    text_value = str(value).strip() if value is not None else ""
+    return text_value or None
+
+
+def _collection_fact(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    result = sorted({str(item).strip() for item in value if str(item).strip()})
+    return result or None
+
+
+def _boolean_fact(value: Any) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def _json_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return format(value.normalize(), "f")
+    if isinstance(value, list):
+        return [_json_value(item) for item in value]
+    return value
+
+
+def _schema_finding(reason: str) -> Finding:
+    return Finding(
+        code="RULESET_SCHEMA_INVALID",
+        severity="BLOCKER",
+        outcome="UNKNOWN",
+        explanation="A szabálykészlet végrehajtható sémája hiányos vagy érvénytelen.",
+        remediation="Készítsen új, validált és négy-szem elvvel jóváhagyott szabálykészletet.",
+        rule_ref="HD-001/ruleset-schema",
+        source_ref="ruleset",
+        measured={"reason": reason},
+        limit={"schemaVersion": RULE_SCHEMA_VERSION},
+    )
 
 
 def run_compliance(
@@ -225,7 +450,8 @@ def run_compliance(
             )
         ]
     else:
-        outcome, findings = evaluate_rules(geometry, site, rules)
+        configuration = json.loads(revision.configuration_json)
+        outcome, findings = evaluate_rules(geometry, site, rules, configuration)
     input_hash = _sha(
         {
             "revision": revision.canonical_sha256,
@@ -251,9 +477,13 @@ def run_compliance(
         ruleset_sha256=ruleset.canonical_sha256 if ruleset else None,
         input_sha256=input_hash,
         outcome=outcome,
-        blocker_count=sum(item.severity == "BLOCKER" for item in findings),
-        error_count=sum(item.severity == "ERROR" for item in findings),
-        warning_count=sum(item.severity == "WARNING" for item in findings),
+        blocker_count=sum(
+            item.severity == "BLOCKER" and item.outcome != "PASS" for item in findings
+        ),
+        error_count=sum(item.severity == "ERROR" and item.outcome != "PASS" for item in findings),
+        warning_count=sum(
+            item.severity == "WARNING" and item.outcome != "PASS" for item in findings
+        ),
         engine_version=ENGINE_VERSION,
         completed_at=now,
         created_by=actor_subject_id,

@@ -653,6 +653,7 @@ def test_adapter_admin_and_production_job_screens_are_rendered(client, db):
     readiness = house_designer_release_readiness(db, tenant_id=TENANT, brand_id=BRAND)
     assert readiness["readyForActivation"] is False
     checks = {item["key"]: item["passed"] for item in readiness["checks"]}
+    assert checks["regulatory_rule_coverage"] is False
     assert checks["site_data_encryption"] is True
     assert checks["runtime_security"] is True
     assert checks["production_release"] is False
