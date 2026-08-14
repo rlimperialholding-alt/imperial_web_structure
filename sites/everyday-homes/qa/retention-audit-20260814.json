@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "audit_date": "2026-08-14",
+  "site": "everyday-homes",
+  "publication_allowed": false,
+  "remote_test": {
+    "worktree": "/opt/imperial-intelligence/worktrees/everyday-homes-web-20260808",
+    "service": "everyday-homes-preview.service",
+    "bind": "127.0.0.1:18084",
+    "route": "/site-preview/everyday-homes/",
+    "access": "SSH tunnel only",
+    "enabled": true,
+    "restart_test": "PASS",
+    "http_status": 200,
+    "http_checks": 139,
+    "http_failures": 0
+  },
+  "git_retention": {
+    "branch": "feature/everyday-homes-web-content-20260808",
+    "content_commit": "09e4835b3d3457be77f939435a0de2906da2362a",
+    "service_commit": "55547439f141ca07458fbe016198e3545f35a7e8",
+    "origin_verified": true,
+    "remote_worktree_verified": true
+  },
+  "content_gates": {
+    "canonical_routes": 67,
+    "content_complete_routes": 60,
+    "nim_managed_routes": 7,
+    "uniqueness_pages_checked": 60,
+    "uniqueness_failures": 0,
+    "claim_gate": "PASS"
+  },
+  "google_drive_cleanup": {
+    "source_folder_id": "1u0dWxPoSb1IIXU6rmp5RnJMQ8EFY0Ekt",
+    "source_folder_empty_after_cleanup": true,
+    "deleted_files": 17,
+    "deletion_readback": "NOT_FOUND",
+    "content_coverage_method": "normalized Hungarian five-word shingles against Git-tracked remote source files",
+    "minimum_coverage": 0.9596,
+    "minimum_coverage_exception": "Only the internal QUARANTINE / REVIEW_REQUIRED and HTML BLOCKED header lines were absent; customer and professional content was retained.",
+    "preserved_files": [
+      "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+      "17Vzfoqm3Bc8rEXYKpDeA7FuDBDBs21k5_7ijzzicUmo",
+      "1nzGIeQz3sjrfvqkuBo-eZj0-xtQ_O3Oq3cgSQFWdZEo",
+      "1L806c-fGK3DDsU7hZ7JRQTDVrR2v8yAXOaUwjmzUAH0",
+      "1lP7ngGtXVz0lHFTP2njDb_esouk-W4zMuCFylE1ef4U"
+    ],
+    "preservation_reason": "Canonical brand evidence, separate articles, a shared publication package, and the approved claims registry were not proven redundant."
+  },
+  "local_cleanup": {
+    "worktree": "C:/Users/kovac/Documents/imperial_everyday_web_20260808",
+    "measured_bytes": 377700636,
+    "everyday_site_bytes": 360001355,
+    "preconditions": "clean worktree, origin commit verified, remote service and QA verified",
+    "method": "remove linked Git worktree after this audit is pushed and read back remotely"
+  }
+}
