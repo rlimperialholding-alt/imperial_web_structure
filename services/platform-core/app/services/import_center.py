@@ -157,7 +157,7 @@ def classify_domain(record: dict[str, Any], text: str = "", hint: str | None = N
     scores: dict[str, int] = {}
     for domain, keywords in DOMAIN_KEYWORDS.items():
         scores[domain] = sum(1 for kw in keywords if kw in haystack)
-    winner = max(scores, key=scores.get)
+    winner = max(scores, key=lambda domain: scores[domain])
     return winner if scores[winner] > 0 else "document"
 
 

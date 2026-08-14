@@ -112,14 +112,19 @@ class HouseMatchRepository:
             return Decimal("1")
         return Decimal("1") if norm(brand) in {norm(x) for x in allowed} else Decimal("0")
 
-    def match(self, profile: HouseProfile, limit: int = 6) -> list[dict[str, Any]]:
+    def match(
+        self,
+        profile: HouseProfile,
+        limit: int = 6,
+        catalog: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         self._load()
         assert self._catalog is not None and self._weights is not None
         weights = self._weights.get(profile.score_profile)
         if not weights:
             raise ValueError("Ismeretlen HouseMatch pontozási profil.")
         matches: list[dict[str, Any]] = []
-        for house in self._catalog:
+        for house in catalog if catalog is not None else self._catalog:
             if not house["active"]:
                 continue
             brand_score = self._brand_score(house["brand"], profile.allowed_brands)

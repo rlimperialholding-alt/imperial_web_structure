@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="hu"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>{{ access.company_name }} | Helyszíni portál</title><link rel="stylesheet" href="/static/style.css"><link rel="manifest" href="/static/partner-field.webmanifest"><meta name="theme-color" content="#0b1d34"></head>
+<html lang="hu"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>{{ access.company_name }} | Helyszíni portál</title><link rel="stylesheet" href="/static/style.css?v={{ asset_version }}"><link rel="manifest" href="/static/partner-field.webmanifest"><meta name="theme-color" content="#0b1d34"></head>
 <body class="partner-body"><div class="partner-app">
 <header class="partner-top"><div><span>IMPERIAL INTELLIGENCE</span><h1>{{ access.company_name }}</h1><p>{{ project.name }}{% if package %} · {{ package.name }}{% endif %}</p></div><form method="post" action="/partner-field/logout"><button class="partner-logout">Kilépés</button></form></header>
 <div class="partner-connection" id="partner-connection">Kapcsolat ellenőrzése…</div>

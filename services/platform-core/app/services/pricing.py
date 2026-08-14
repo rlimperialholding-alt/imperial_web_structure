@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_CEILING
+from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -153,7 +153,11 @@ class PricingRepository:
     def brand_catalog(self) -> dict[str, list[str]]:
         self._load_public()
         assert self._brand_prices is not None
-        return {brand: sorted(prices) for brand, prices in self._brand_prices.items() if brand in {"imperial", "bautica", "prefab", "danish fabrik", "baufreund"}}
+        return {
+            brand: sorted(prices)
+            for brand, prices in self._brand_prices.items()
+            if brand in {"imperial", "bautica", "prefab", "danish fabrik", "baufreund"}
+        }
 
     def calculate_new_build(
         self,
@@ -167,22 +171,32 @@ class PricingRepository:
     ) -> dict[str, Any]:
         self._load_public()
         self._load_internal()
-        assert self._brand_prices is not None and self._factors is not None and self._internal is not None
+        assert (
+            self._brand_prices is not None
+            and self._factors is not None
+            and self._internal is not None
+        )
         brand_key = norm(brand)
         if brand_key not in self._brand_prices:
             raise ValueError("Ismeretlen márka.")
         tech_key = TECH_ALIASES.get(norm(technology), technology.strip())
         base_price = self._brand_prices[brand_key].get(tech_key)
         if base_price is None:
-            raise ValueError("A kiválasztott technológia ehhez a márkához nincs jóváhagyott árforrással összekötve.")
+            raise ValueError(
+                "A kiválasztott technológia ehhez a márkához nincs "
+                "jóváhagyott árforrással összekötve."
+            )
         factor = self._factors.get((completion_level, package))
         if factor is None:
             raise ValueError("Ismeretlen készültségi szint vagy műszaki csomag.")
         if gross_area_m2 < Decimal("20") or gross_area_m2 > Decimal("500"):
             raise ValueError("A kalkulálható bruttó alapterület 20–500 m².")
-        public_unit_gross = round_up(base_price * factor)
-        public_total_gross = round_up(public_unit_gross * gross_area_m2, Decimal("100000"))
-        public_total_net = (public_total_gross / (Decimal("1") + vat_rate)).quantize(Decimal("1"))
+        # The approved spreadsheet is a net-price source. Customer-facing
+        # communication always uses net HUF and the explicit "+ ÁFA" suffix.
+        public_unit_net = round_up(base_price * factor)
+        public_total_net = round_up(public_unit_net * gross_area_m2, Decimal("100000"))
+        public_unit_gross = (public_unit_net * (Decimal("1") + vat_rate)).quantize(Decimal("1"))
+        public_total_gross = (public_total_net * (Decimal("1") + vat_rate)).quantize(Decimal("1"))
         result: dict[str, Any] = {
             "brand": brand,
             "technology": tech_key,
@@ -190,23 +204,38 @@ class PricingRepository:
             "package": package,
             "gross_area_m2": str(gross_area_m2),
             "vat_rate": str(vat_rate),
+            "estimated_net_unit_price_huf": int(public_unit_net),
+            "estimated_net_total_huf": int(public_total_net),
+            # Gross fields remain calculation-only compatibility fields. They
+            # must never be selected by the marketing publication gate.
             "estimated_gross_unit_price_huf": int(public_unit_gross),
             "estimated_gross_total_huf": int(public_total_gross),
-            "estimated_net_total_huf": int(public_total_net),
-            "price_basis": "2026-07 jóváhagyott márkaár × készültségi/csomagtényező",
+            "customer_facing_price_huf": int(public_total_net),
+            "customer_facing_price_suffix": "+ ÁFA",
+            "price_basis": "2026-07 jóváhagyott nettó márkaár × készültségi/csomagtényező",
             "source_version": "Kalkuláció_oldalakhoz_frissített_minden_weboldal_2026-07",
             "assumptions": [
-                "Tájékoztató előkalkuláció; telek-, terv- és műszaki pontosítás nélkül.",
-                "A publikus eredmény nem tartalmaz belső önköltséget, fedezeti vagy kapacitásadatot.",
+                "Tájékoztató nettó előkalkuláció; telek-, terv- és műszaki pontosítás nélkül.",
+                "Minden ügyféloldali megjelenítés kötelező formája: nettó összeg + ÁFA.",
+                "A publikus eredmény nem tartalmaz belső önköltséget, "
+                "fedezeti vagy kapacitásadatot.",
                 "A szerződéses ár kizárólag jóváhagyott BuildConfig-verzióból adható ki.",
             ],
         }
         if include_internal:
             internal_tech = INTERNAL_TECH.get(tech_key)
-            internal = self._internal.get((internal_tech, completion_level, package)) if internal_tech else None
+            internal = (
+                self._internal.get((internal_tech, completion_level, package))
+                if internal_tech
+                else None
+            )
             if internal:
                 cash_cost = D(internal["cash_cost_m2"]) * gross_area_m2
-                margin = Decimal("1") - (cash_cost / public_total_gross) if public_total_gross else Decimal("0")
+                margin = (
+                    Decimal("1") - (cash_cost / public_total_net)
+                    if public_total_net
+                    else Decimal("0")
+                )
                 result["internal_control"] = {
                     "internal_technology": internal_tech,
                     "cash_cost_m2_huf": int(D(internal["cash_cost_m2"])),
@@ -229,35 +258,39 @@ class PricingRepository:
         for row in ws.iter_rows(min_row=2, values_only=True):
             if not row[0] or not isinstance(row[7], (int, float)):
                 continue
-            catalog.append({
-                "item_id": str(row[0]),
-                "type": "labor",
-                "trade": row[1],
-                "group": row[2],
-                "technology": row[3],
-                "name": row[4],
-                "unit": row[5],
-                "net_unit_price_huf": int(row[7]),
-                "data_quality": row[28],
-                "note": row[29],
-            })
+            catalog.append(
+                {
+                    "item_id": str(row[0]),
+                    "type": "labor",
+                    "trade": row[1],
+                    "group": row[2],
+                    "technology": row[3],
+                    "name": row[4],
+                    "unit": row[5],
+                    "net_unit_price_huf": int(row[7]),
+                    "data_quality": row[28],
+                    "note": row[29],
+                }
+            )
         ws = wb["Anyag_Master"]
         for row in ws.iter_rows(min_row=2, values_only=True):
             if not row[0] or not isinstance(row[25], (int, float)):
                 continue
-            catalog.append({
-                "item_id": str(row[0]),
-                "type": "material",
-                "trade": row[1],
-                "group": row[2],
-                "technology": row[3],
-                "name": row[4],
-                "specification": row[5],
-                "unit": row[6],
-                "net_unit_price_huf": int(row[25]),
-                "data_quality": row[41],
-                "note": row[42],
-            })
+            catalog.append(
+                {
+                    "item_id": str(row[0]),
+                    "type": "material",
+                    "trade": row[1],
+                    "group": row[2],
+                    "technology": row[3],
+                    "name": row[4],
+                    "specification": row[5],
+                    "unit": row[6],
+                    "net_unit_price_huf": int(row[25]),
+                    "data_quality": row[41],
+                    "note": row[42],
+                }
+            )
         self._renovation_catalog = catalog
 
     def renovation_catalog(self, query: str = "", limit: int = 50) -> list[dict[str, Any]]:
@@ -266,10 +299,22 @@ class PricingRepository:
         q = norm(query)
         rows = self._renovation_catalog
         if q:
-            rows = [r for r in rows if q in norm(" ".join(str(r.get(k) or "") for k in ("item_id", "trade", "group", "name", "specification")))]
+            rows = [
+                r
+                for r in rows
+                if q
+                in norm(
+                    " ".join(
+                        str(r.get(k) or "")
+                        for k in ("item_id", "trade", "group", "name", "specification")
+                    )
+                )
+            ]
         return rows[: max(1, min(limit, 200))]
 
-    def calculate_renovation(self, lines: list[dict[str, Any]], vat_rate: Decimal = Decimal("0.27")) -> dict[str, Any]:
+    def calculate_renovation(
+        self, lines: list[dict[str, Any]], vat_rate: Decimal = Decimal("0.27")
+    ) -> dict[str, Any]:
         self._load_renovation_catalog()
         assert self._renovation_catalog is not None
         by_id = {r["item_id"]: r for r in self._renovation_catalog}
@@ -285,7 +330,9 @@ class PricingRepository:
             item = by_id[item_id]
             line_net = D(item["net_unit_price_huf"]) * quantity
             net_total += line_net
-            result_lines.append({**item, "quantity": str(quantity), "net_line_total_huf": int(line_net)})
+            result_lines.append(
+                {**item, "quantity": str(quantity), "net_line_total_huf": int(line_net)}
+            )
         gross_total = (net_total * (Decimal("1") + vat_rate)).quantize(Decimal("1"))
         survey_upper = (gross_total * Decimal("1.20")).quantize(Decimal("1"))
         return {
@@ -297,7 +344,8 @@ class PricingRepository:
             "source_version": "Generalkivitelezo_ArTukor_Munkadij_Anyag_2026_07",
             "assumptions": [
                 "A mennyiségeket a felhasználó vagy műszaki előkészítő adta meg.",
-                "A 20%-os felső sáv helyszíni feltárás előtti bizonytalansági tartalék, nem automatikus szerződéses felár.",
+                "A 20%-os felső sáv helyszíni feltárás előtti bizonytalansági "
+                "tartalék, nem automatikus szerződéses felár.",
                 "A tételes Ártükör nem adható hozzá automatikusan újépítési all-in önköltséghez.",
             ],
         }

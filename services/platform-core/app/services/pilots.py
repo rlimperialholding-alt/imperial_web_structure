@@ -5,10 +5,9 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import ConsistencyIssue, PilotRun
+from ..models import PilotRun
 from ..schemas import EventIn, FactIn
 from .consistency import scan_consistency, upsert_fact
 from .integration import ingest_event, process_outbox
@@ -93,7 +92,7 @@ def run_pilot_scenario(db: Session, scenario: str) -> PilotRun:
         ]:
             run_step(f"Tényadat: {src}.{key}", lambda src=src, key=key, value=value: upsert_fact(db, FactIn(project_id=project_id, source_module=src, fact_key=key, value=value)).id)
         run_step("Konzisztenciavizsgálat", lambda: scan_consistency(db, project_id=project_id))
-        run_step("Outbox továbbítás", lambda: process_outbox(db, simulate_success=True))
+        run_step("Outbox továbbítás", lambda: process_outbox(db))
 
     else:
         run_step("Jóváhagyott változtatás", lambda: ingest_event(db, _event(project_id, "change_control", "CHANGE_APPROVED", payload={"project_name": name, "summary": "Ügyfél által jóváhagyott pótmunka"}, financial=3_200_000, object_type="Change", object_id="CHG-PILOT-003"))[1])

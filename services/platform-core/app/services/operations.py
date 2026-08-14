@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -20,6 +20,8 @@ from ..models import (
     PMPhase,
     PMWorkPackage,
     ProcurementOrderProjection,
+    ProcurementRequirement,
+    ProcurementSubstitutionReview,
     ProjectRegistry,
     SiteDailyReport,
     SiteIssue,
@@ -58,21 +60,40 @@ def _is_past(value: datetime | None) -> bool:
     return value < now
 
 
-def operations_summary(db: Session) -> dict:
-    active_projects = db.scalar(select(func.count(ProjectRegistry.id)).where(ProjectRegistry.status.in_(["active", "planning"]))) or 0
-    blocked_projects = db.scalar(select(func.count(ProjectRegistry.id)).where(ProjectRegistry.blocked.is_(True))) or 0
-    blocked_packages = db.scalar(select(func.count(PMWorkPackage.id)).where(PMWorkPackage.blocked.is_(True), PMWorkPackage.status != "done")) or 0
-    open_issues = db.scalar(select(func.count(SiteIssue.id)).where(SiteIssue.status == "open")) or 0
-    overdue_packages = db.scalar(select(func.count(PMWorkPackage.id)).where(PMWorkPackage.planned_end < utcnow(), PMWorkPackage.status.notin_(["done", "cancelled"]))) or 0
-    pending_gates = db.scalar(select(func.count(PMGateCheck.id)).where(PMGateCheck.required.is_(True), PMGateCheck.status != "passed")) or 0
+def operations_summary(db: Session, project_ids: set[str] | None = None) -> dict:
+    scoped_ids = project_ids or {"-"}
+    project_filter = (
+        [ProjectRegistry.project_id.in_(scoped_ids)] if project_ids is not None else []
+    )
+    package_filter = [PMWorkPackage.project_id.in_(scoped_ids)] if project_ids is not None else []
+    issue_filter = [SiteIssue.project_id.in_(scoped_ids)] if project_ids is not None else []
+    gate_filter = [PMGateCheck.project_id.in_(scoped_ids)] if project_ids is not None else []
+    delivery_filter = (
+        [DeliveryNoteProjection.project_id.in_(scoped_ids)] if project_ids is not None else []
+    )
+    operations_scope = or_(
+        ProjectRegistry.project_id.in_(select(PMPhase.project_id)),
+        ProjectRegistry.project_id.in_(select(PMWorkPackage.project_id)),
+    )
+    active_projects = db.scalar(select(func.count(ProjectRegistry.id)).where(ProjectRegistry.status.in_(["active", "planning"]), operations_scope, *project_filter)) or 0
+    blocked_projects = db.scalar(select(func.count(ProjectRegistry.id)).where(ProjectRegistry.blocked.is_(True), operations_scope, *project_filter)) or 0
+    blocked_packages = db.scalar(select(func.count(PMWorkPackage.id)).where(PMWorkPackage.blocked.is_(True), PMWorkPackage.status != "done", *package_filter)) or 0
+    open_issues = db.scalar(select(func.count(SiteIssue.id)).where(SiteIssue.status == "open", *issue_filter)) or 0
+    overdue_packages = db.scalar(select(func.count(PMWorkPackage.id)).where(PMWorkPackage.planned_end < utcnow(), PMWorkPackage.status.notin_(["done", "cancelled"]), *package_filter)) or 0
+    pending_gates = db.scalar(select(func.count(PMGateCheck.id)).where(PMGateCheck.required.is_(True), PMGateCheck.status != "passed", *gate_filter)) or 0
     pending_delivery_docs = db.scalar(select(func.count(DeliveryNoteProjection.id)).where(
         (DeliveryNoteProjection.document_status != "complete") |
         (DeliveryNoteProjection.performance_declaration_status != "complete") |
         (DeliveryNoteProjection.elog_evidence_status != "complete")
-    )) or 0
+    , *delivery_filter)) or 0
     inventory_value = Decimal("0")
-    lots = db.scalars(select(MaterialLot)).all()
-    controls = db.scalars(select(MaterialUsageControl)).all()
+    lot_query = select(MaterialLot)
+    control_query = select(MaterialUsageControl)
+    if project_ids is not None:
+        lot_query = lot_query.where(MaterialLot.project_id.in_(scoped_ids))
+        control_query = control_query.where(MaterialUsageControl.project_id.in_(scoped_ids))
+    lots = db.scalars(lot_query).all()
+    controls = db.scalars(control_query).all()
     unit_cost_by_lot = {c.lot_id: _decimal(c.unit_cost_huf) for c in controls if c.lot_id}
     for lot in lots:
         inventory_value += _decimal(lot.current_quantity) * unit_cost_by_lot.get(lot.lot_id, Decimal("0"))
@@ -88,8 +109,15 @@ def operations_summary(db: Session) -> dict:
     }
 
 
-def operations_portfolio(db: Session) -> list[dict]:
-    projects = db.scalars(select(ProjectRegistry).order_by(desc(ProjectRegistry.updated_at))).all()
+def operations_portfolio(db: Session, project_ids: set[str] | None = None) -> list[dict]:
+    operations_scope = or_(
+        ProjectRegistry.project_id.in_(select(PMPhase.project_id)),
+        ProjectRegistry.project_id.in_(select(PMWorkPackage.project_id)),
+    )
+    query = select(ProjectRegistry).where(operations_scope)
+    if project_ids is not None:
+        query = query.where(ProjectRegistry.project_id.in_(project_ids or {"-"}))
+    projects = db.scalars(query.order_by(desc(ProjectRegistry.updated_at))).all()
     result: list[dict] = []
     for project in projects:
         packages = db.scalars(select(PMWorkPackage).where(PMWorkPackage.project_id == project.project_id)).all()
@@ -166,20 +194,56 @@ def project_operations(db: Session, project_id: str) -> dict:
 
 
 def update_work_package(db: Session, work_package_id: str, data: WorkPackageUpdateIn, actor: str) -> PMWorkPackage:
-    row = db.scalar(select(PMWorkPackage).where(PMWorkPackage.work_package_id == work_package_id))
+    row = db.scalar(select(PMWorkPackage).where(PMWorkPackage.work_package_id == work_package_id).with_for_update())
     if not row:
         raise KeyError(work_package_id)
+    if data.expected_updated_at and row.updated_at:
+        expected = data.expected_updated_at if data.expected_updated_at.tzinfo else data.expected_updated_at.replace(tzinfo=timezone.utc)
+        actual = row.updated_at if row.updated_at.tzinfo else row.updated_at.replace(tzinfo=timezone.utc)
+        if expected != actual:
+            raise ValueError("A munkacsomagot időközben más módosította; frissítse az oldalt.")
+    allowed = {
+        "planned": {"planned", "ready", "blocked"},
+        "ready": {"ready", "planned", "in_progress", "blocked"},
+        "in_progress": {"in_progress", "done", "blocked"},
+        "blocked": {"blocked", "planned", "ready"},
+        "done": {"done"},
+    }
+    target_status = data.status or row.status
+    if target_status not in allowed.get(row.status, set()):
+        raise ValueError(f"A(z) {row.status} állapotból nem váltható {target_status} állapotba.")
+    target_blocked = data.blocked if data.blocked is not None else row.blocked
+    target_reason = data.block_reason if data.block_reason is not None else row.block_reason
+    if target_status == "blocked":
+        target_blocked = True
+    if target_blocked and len((target_reason or "").strip()) < 10:
+        raise ValueError("Blokkolt munkacsomaghoz legalább 10 karakteres blokkoló ok szükséges.")
+    if target_status in {"ready", "in_progress"} and target_status != row.status:
+        blocking_gates = db.scalars(select(PMGateCheck).where(
+            PMGateCheck.work_package_id == row.work_package_id,
+            PMGateCheck.required.is_(True),
+            PMGateCheck.status.notin_({"passed", "waived"}),
+        )).all()
+        if blocking_gates:
+            raise ValueError(
+                "A munkacsomag indítását nyitott kapuk blokkolják: "
+                + ", ".join(gate.label for gate in blocking_gates)
+            )
     before = {"status": row.status, "progress_pct": row.progress_pct, "blocked": row.blocked, "block_reason": row.block_reason}
     for field in ("status", "progress_pct", "assignee", "blocked", "block_reason", "next_action"):
         value = getattr(data, field)
         if value is not None:
             setattr(row, field, value)
+    row.blocked = target_blocked
+    row.block_reason = target_reason
     if row.status == "done":
         row.progress_pct = 100
         row.blocked = False
         row.actual_end = row.actual_end or utcnow()
     if row.status == "in_progress" and not row.actual_start:
         row.actual_start = utcnow()
+    if not row.blocked:
+        row.block_reason = None
     row.updated_at = utcnow()
     audit(db, actor=actor, action="operations.work_package.update", entity_type="work_package", entity_id=row.work_package_id, before=before, after={"status": row.status, "progress_pct": row.progress_pct, "blocked": row.blocked, "block_reason": row.block_reason})
     db.commit()
@@ -188,9 +252,19 @@ def update_work_package(db: Session, work_package_id: str, data: WorkPackageUpda
 
 
 def update_gate(db: Session, gate_id: str, data: GateCheckIn, actor: str) -> PMGateCheck:
-    row = db.scalar(select(PMGateCheck).where(PMGateCheck.gate_id == gate_id))
+    row = db.scalar(select(PMGateCheck).where(PMGateCheck.gate_id == gate_id).with_for_update())
     if not row:
         raise KeyError(gate_id)
+    if data.expected_updated_at and row.updated_at:
+        expected = data.expected_updated_at if data.expected_updated_at.tzinfo else data.expected_updated_at.replace(tzinfo=timezone.utc)
+        actual = row.updated_at if row.updated_at.tzinfo else row.updated_at.replace(tzinfo=timezone.utc)
+        if expected != actual:
+            raise ValueError("A kaput időközben más módosította; frissítse az oldalt.")
+    effective_evidence = (data.evidence_url or row.evidence_url or "").strip()
+    if data.status in {"passed", "failed", "waived"} and not effective_evidence:
+        raise ValueError("A kapudöntéshez bizonyíték-hivatkozás szükséges.")
+    if data.status == "waived" and len((data.notes or "").strip()) < 10:
+        raise ValueError("Felmentéshez legalább 10 karakteres indoklás szükséges.")
     before = {"status": row.status, "evidence_url": row.evidence_url}
     row.status = data.status
     row.evidence_url = data.evidence_url or row.evidence_url
@@ -239,7 +313,14 @@ def create_daily_report(db: Session, data: DailyReportIn, actor: str) -> SiteDai
         before = None
         action = "operations.daily_report.create"
     audit(db, actor=actor, action=action, entity_type="daily_report", entity_id=row.report_id, before=before, after={"project_id": row.project_id, "summary": row.summary, "blockers": row.blockers})
-    if data.blockers:
+    existing_blocker = None
+    if row.report_id:
+        existing_blocker = db.scalar(select(SiteIssue).where(
+            SiteIssue.report_id == row.report_id,
+            SiteIssue.status == "open",
+            SiteIssue.issue_type == "blocker",
+        ))
+    if data.blockers and not existing_blocker:
         create_issue(db, SiteIssueIn(
             project_id=data.project_id, report_id=row.report_id, issue_type="blocker", severity="high",
             title="Napi jelentésben rögzített blokkoló akadály", description=data.blockers,
@@ -252,6 +333,14 @@ def create_daily_report(db: Session, data: DailyReportIn, actor: str) -> SiteDai
 
 
 def create_issue(db: Session, data: SiteIssueIn, actor: str, commit: bool = True) -> SiteIssue:
+    if not db.scalar(select(ProjectRegistry.id).where(ProjectRegistry.project_id == data.project_id)):
+        raise KeyError(data.project_id)
+    if data.work_package_id:
+        package_project = db.scalar(select(PMWorkPackage.project_id).where(
+            PMWorkPackage.work_package_id == data.work_package_id
+        ))
+        if package_project != data.project_id:
+            raise ValueError("A munkacsomag nem a megadott projekthez tartozik.")
     row = SiteIssue(
         issue_id=_id("ISS"), project_id=data.project_id, report_id=data.report_id,
         work_package_id=data.work_package_id, issue_type=data.issue_type, severity=data.severity,
@@ -288,6 +377,17 @@ def create_delivery_note(db: Session, data: DeliveryNoteIn, actor: str) -> tuple
     order = db.scalar(select(ProcurementOrderProjection).where(ProcurementOrderProjection.order_id == data.order_id))
     if not order:
         raise KeyError(data.order_id)
+    if order.requirement_id and (order.approval_status != "approved" or order.confirmation_status != "confirmed"):
+        raise ValueError("Csak jóváhagyott és visszaigazolt rendelés vehető át.")
+    requirement = db.scalar(select(ProcurementRequirement).where(ProcurementRequirement.requirement_id == order.requirement_id)) if order.requirement_id else None
+    if requirement and data.actual_specification and data.actual_specification.strip() != requirement.specification.strip():
+        substitution = db.scalar(select(ProcurementSubstitutionReview).where(
+            ProcurementSubstitutionReview.requirement_id == requirement.requirement_id,
+            ProcurementSubstitutionReview.proposed_specification == data.actual_specification.strip(),
+            ProcurementSubstitutionReview.status == "approved",
+        ))
+        if not substitution:
+            raise ValueError("Eltérő termék/specifikáció csak jóváhagyott helyettesítési felülvizsgálattal vehető át.")
     row = DeliveryNoteProjection(
         delivery_note_id=_id("DN"), order_id=data.order_id, project_id=data.project_id,
         note_number=data.note_number, source_url=data.source_url, received_at=data.received_at or utcnow(),
@@ -297,10 +397,13 @@ def create_delivery_note(db: Session, data: DeliveryNoteIn, actor: str) -> tuple
         plan_match=data.plan_match, document_status=data.document_status,
         performance_declaration_status=data.performance_declaration_status,
         elog_evidence_status=data.elog_evidence_status,
+        supplier_signed=data.supplier_signed, receiver_signed=data.receiver_signed,
+        signature_evidence_ref=data.signature_evidence_ref,
     )
     db.add(row)
     variance = data.received_quantity != data.ordered_quantity or data.plan_match != "matched" or data.quality_status != "accepted"
-    docs_missing = data.document_status != "complete"
+    signature_missing = not data.supplier_signed or not data.receiver_signed or not data.signature_evidence_ref
+    docs_missing = data.document_status != "complete" or signature_missing
     evidence_missing = data.performance_declaration_status != "complete" or data.elog_evidence_status != "complete"
     order.delivery_status = "received_with_variance" if variance else "received"
     order.document_status = "missing" if docs_missing or evidence_missing else "complete"
@@ -321,6 +424,15 @@ def create_delivery_note(db: Session, data: DeliveryNoteIn, actor: str) -> tuple
         _procurement_event(db, row, "PERFORMANCE_DECLARATION_MISSING", "critical", "Teljesítménynyilatkozat vagy e-napló bizonyíték hiányzik", actor)
     if variance:
         _procurement_event(db, row, "QUANTITY_VARIANCE_DETECTED", "high", "Szállított mennyiség vagy minőség eltér a rendeléstől", actor)
+        from .procurement import register_deviation
+        register_deviation(
+            db, order_id=order.order_id, delivery_note_id=row.delivery_note_id,
+            deviation_type="quantity_quality_or_specification",
+            description="Az átvett mennyiség, minőség vagy specifikáció eltér a jóváhagyott rendeléstől.",
+            owner=data.receiver, due_at=utcnow() + timedelta(days=2),
+            corrective_action="Beszállítói egyeztetés, műszaki döntés és pénzügyi hatás rögzítése.",
+            financial_impact_huf=Decimal("0"), actor=actor, commit=False,
+        )
     audit(db, actor=actor, action="operations.delivery_note.create", entity_type="delivery_note", entity_id=row.delivery_note_id, after={"order_id": data.order_id, "received_quantity": str(data.received_quantity), "variance": variance, "documents_complete": not docs_missing and not evidence_missing})
     db.commit()
     db.refresh(row)
@@ -428,8 +540,8 @@ def create_operations_command(db: Session, data: OperationsCommandIn, actor: str
     return message
 
 
-def field_projects(db: Session) -> list[dict]:
-    rows = operations_portfolio(db)
+def field_projects(db: Session, project_ids: set[str] | None = None) -> list[dict]:
+    rows = operations_portfolio(db, project_ids=project_ids)
     for row in rows:
         project_id = row["project"].project_id
         row["latest_report"] = db.scalar(select(SiteDailyReport).where(SiteDailyReport.project_id == project_id).order_by(desc(SiteDailyReport.report_date)).limit(1))

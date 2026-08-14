@@ -38,14 +38,14 @@ def parse_upload(filename: str, data: bytes) -> dict[str, Any]:
     if suffix == ".json":
         parsed = json.loads(data.decode("utf-8-sig"))
         if isinstance(parsed, list):
-            records = [row for row in parsed if isinstance(row, dict)]
+            json_records = [row for row in parsed if isinstance(row, dict)]
         elif isinstance(parsed, dict) and isinstance(parsed.get("records"), list):
-            records = [row for row in parsed["records"] if isinstance(row, dict)]
+            json_records = [row for row in parsed["records"] if isinstance(row, dict)]
         elif isinstance(parsed, dict):
-            records = [parsed]
+            json_records = [parsed]
         else:
             raise ValueError("A JSON fájlnak objektumot vagy objektumlistát kell tartalmaznia.")
-        return {"records": records[:MAX_ROWS_PER_FILE], "metadata": {"format": "json", "sha256": digest}}
+        return {"records": json_records[:MAX_ROWS_PER_FILE], "metadata": {"format": "json", "sha256": digest}}
 
     if suffix == ".csv":
         text = data.decode("utf-8-sig", errors="replace")
@@ -55,12 +55,12 @@ def parse_upload(filename: str, data: bytes) -> dict[str, Any]:
         except csv.Error:
             dialect = None
         reader = csv.DictReader(io.StringIO(text), dialect=dialect) if dialect else csv.DictReader(io.StringIO(text), delimiter=";")
-        records = [dict(row) for _, row in zip(range(MAX_ROWS_PER_FILE), reader)]
-        return {"records": records, "metadata": {"format": "csv", "delimiter": dialect.delimiter if dialect else ";", "sha256": digest}}
+        csv_records = [dict(row) for _, row in zip(range(MAX_ROWS_PER_FILE), reader)]
+        return {"records": csv_records, "metadata": {"format": "csv", "delimiter": dialect.delimiter if dialect else ";", "sha256": digest}}
 
     if suffix in {".xlsx", ".xlsm"}:
         wb = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
-        records: list[dict[str, Any]] = []
+        workbook_records: list[dict[str, Any]] = []
         sheet_stats: list[dict[str, Any]] = []
         for ws in wb.worksheets:
             iterator = ws.iter_rows(values_only=True)
@@ -76,12 +76,12 @@ def parse_upload(filename: str, data: bytes) -> dict[str, Any]:
                     continue
                 row = {headers[idx]: value for idx, value in enumerate(values[: len(headers)])}
                 row["_source_sheet"] = ws.title
-                records.append(row)
+                workbook_records.append(row)
                 count += 1
             sheet_stats.append({"sheet": ws.title, "rows": count})
-            if len(records) >= MAX_ROWS_PER_FILE:
+            if len(workbook_records) >= MAX_ROWS_PER_FILE:
                 break
-        return {"records": records[:MAX_ROWS_PER_FILE], "metadata": {"format": "xlsx", "sheets": sheet_stats, "sha256": digest}}
+        return {"records": workbook_records[:MAX_ROWS_PER_FILE], "metadata": {"format": "xlsx", "sheets": sheet_stats, "sha256": digest}}
 
     text = data.decode("utf-8-sig", errors="replace")
     return {"text": text[:500_000], "metadata": {"format": "text", "sha256": digest}}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -28,16 +29,16 @@ def seed_operations(db):
     db.add(ProjectRegistry(
         project_id="IMP-OPS-001", name="Operations tesztprojekt", customer_name="Teszt Ügyfél",
         project_type="Aktív kivitelezés", status="active", risk_level="yellow", blocked=False,
-        responsible="Teszt PM", next_action="Munkacsomag indítása",
+        responsible="project-manager@imperial.local", next_action="Munkacsomag indítása",
     ))
     db.add(PMPhase(
         phase_id="PH-OPS-001", project_id="IMP-OPS-001", phase_key="structure", name="Szerkezet",
         sequence=10, status="in_progress", planned_start=now-timedelta(days=3), planned_end=now+timedelta(days=10),
-        actual_start=now-timedelta(days=2), progress_pct=35, readiness_status="passed", owner="Teszt PM",
+        actual_start=now-timedelta(days=2), progress_pct=35, readiness_status="passed", owner="project-manager@imperial.local",
     ))
     db.add(PMWorkPackage(
         work_package_id="WP-OPS-001", project_id="IMP-OPS-001", phase_id="PH-OPS-001", name="Falazás",
-        trade="Kőműves", assignee="Teszt brigád", status="in_progress", progress_pct=35,
+        trade="Kőműves", assignee="project-manager@imperial.local", status="in_progress", progress_pct=35,
         planned_start=now-timedelta(days=2), planned_end=now+timedelta(days=5), actual_start=now-timedelta(days=1),
         budget_huf=Decimal("5000000"), committed_huf=Decimal("4700000"), actual_huf=Decimal("1500000"),
     ))
@@ -59,6 +60,14 @@ def seed_operations(db):
     db.commit()
 
 
+def csrf_token(client, path: str) -> str:
+    response = client.get(path)
+    assert response.status_code == 200
+    match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)
+    assert match
+    return match.group(1)
+
+
 def test_operations_pages_and_work_package_update(logged_in_client, db):
     seed_operations(db)
     for path in ["/operations", "/operations/projects/IMP-OPS-001", "/field", "/field/IMP-OPS-001", "/procurement/workbench", "/procurement/projects/IMP-OPS-001"]:
@@ -67,7 +76,16 @@ def test_operations_pages_and_work_package_update(logged_in_client, db):
         assert "Imperial" in response.text or "Operations" in response.text
     response = logged_in_client.post(
         "/operations/work-packages/WP-OPS-001",
-        data={"project_id": "IMP-OPS-001", "status": "in_progress", "progress_pct": "55", "blocked": "true", "block_reason": "Teszt blokk"},
+        data={
+            "project_id": "IMP-OPS-001",
+            "status": "blocked",
+            "progress_pct": "55",
+            "blocked": "true",
+            "block_reason": "Teszt blokk",
+            "csrf_token": csrf_token(
+                logged_in_client, "/operations/projects/IMP-OPS-001"
+            ),
+        },
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -79,12 +97,14 @@ def test_operations_pages_and_work_package_update(logged_in_client, db):
 
 def test_daily_report_blocker_creates_issue_task_and_event(logged_in_client, db):
     seed_operations(db)
+    csrf = csrf_token(logged_in_client, "/field/IMP-OPS-001")
     response = logged_in_client.post(
         "/field/IMP-OPS-001/daily-report",
         data={
             "report_date": "2026-07-19", "reporter": "Teszt PM", "weather": "Napos",
             "workers_total": "6", "summary": "Falazás folytatódott.",
             "blockers": "Hiányzik a jóváhagyott részletrajz.", "safety_status": "ok", "quality_status": "attention",
+            "csrf_token": csrf,
         },
         follow_redirects=False,
     )
@@ -95,6 +115,134 @@ def test_daily_report_blocker_creates_issue_task_and_event(logged_in_client, db)
     assert issue is not None and issue.severity == "high"
     assert db.scalar(select(TaskRecord).where(TaskRecord.project_id == "IMP-OPS-001", TaskRecord.title.like("Napi jelentés%"))) is not None
     assert db.scalar(select(EventRecord).where(EventRecord.object_id == issue.issue_id)) is not None
+
+    repeated = logged_in_client.post(
+        "/field/IMP-OPS-001/daily-report",
+        data={
+            "report_date": "2026-07-19",
+            "reporter": "Teszt PM",
+            "workers_total": "6",
+            "summary": "Falazás folytatódott.",
+            "blockers": "Hiányzik a jóváhagyott részletrajz.",
+            "safety_status": "ok",
+            "quality_status": "attention",
+            "csrf_token": csrf,
+        },
+        follow_redirects=False,
+    )
+    assert repeated.status_code == 303
+    assert len(
+        db.scalars(select(SiteIssue).where(SiteIssue.report_id == report.report_id)).all()
+    ) == 1
+
+
+def test_operations_requires_csrf_and_gate_evidence(logged_in_client, db):
+    seed_operations(db)
+    missing_csrf = logged_in_client.post(
+        "/operations/work-packages/WP-OPS-001",
+        data={"project_id": "IMP-OPS-001", "status": "blocked"},
+        follow_redirects=False,
+    )
+    assert missing_csrf.status_code == 403
+
+    csrf = csrf_token(logged_in_client, "/operations/projects/IMP-OPS-001")
+    missing_evidence = logged_in_client.post(
+        "/operations/gates/GATE-OPS-001",
+        data={
+            "project_id": "IMP-OPS-001",
+            "status": "passed",
+            "csrf_token": csrf,
+        },
+        follow_redirects=False,
+    )
+    assert missing_evidence.status_code == 409
+    accepted = logged_in_client.post(
+        "/operations/gates/GATE-OPS-001",
+        data={
+            "project_id": "IMP-OPS-001",
+            "status": "passed",
+            "evidence_url": "https://drive.google.com/evidence",
+            "csrf_token": csrf,
+        },
+        follow_redirects=False,
+    )
+    assert accepted.status_code == 303
+
+
+def test_project_manager_scope_and_subcontractor_denial(client, db):
+    seed_operations(db)
+    db.add(
+        ProjectRegistry(
+            project_id="IMP-OPS-OTHER",
+            name="Tiltott projekt",
+            project_type="Aktív kivitelezés",
+            status="active",
+            risk_level="green",
+            responsible="someone-else@imperial.local",
+        )
+    )
+    db.add(
+        PMWorkPackage(
+            work_package_id="WP-OPS-OTHER",
+            project_id="IMP-OPS-OTHER",
+            name="Idegen csomag",
+            assignee="someone-else@imperial.local",
+            status="planned",
+            progress_pct=0,
+        )
+    )
+    db.commit()
+
+    assert (
+        client.post(
+            "/login",
+            data={
+                "email": "project-manager@imperial.local",
+                "password": "Imperial2026!",
+            },
+            follow_redirects=False,
+        ).status_code
+        == 303
+    )
+    portfolio = client.get("/operations")
+    assert portfolio.status_code == 200
+    assert "Operations tesztprojekt" in portfolio.text
+    assert "Tiltott projekt" not in portfolio.text
+    assert client.get("/operations/projects/IMP-OPS-OTHER").status_code == 403
+    csrf = csrf_token(client, "/operations/projects/IMP-OPS-001")
+    denied_write = client.post(
+        "/operations/work-packages/WP-OPS-OTHER",
+        data={
+            "project_id": "IMP-OPS-OTHER",
+            "status": "planned",
+            "csrf_token": csrf,
+        },
+        follow_redirects=False,
+    )
+    assert denied_write.status_code == 403
+
+    client.cookies.clear()
+    assert (
+        client.post(
+            "/login",
+            data={
+                "email": "subcontractor@imperial.local",
+                "password": "Imperial2026!",
+            },
+            follow_redirects=False,
+        ).status_code
+        == 303
+    )
+    subcontractor_portfolio = client.get("/operations")
+    assert subcontractor_portfolio.status_code == 200
+    assert "Operations tesztprojekt" not in subcontractor_portfolio.text
+    assert "Tiltott projekt" not in subcontractor_portfolio.text
+    subcontractor_field = client.get("/field")
+    assert subcontractor_field.status_code == 200
+    assert "Operations tesztprojekt" not in subcontractor_field.text
+    assert "Tiltott projekt" not in subcontractor_field.text
+    assert client.get("/operations/projects/IMP-OPS-001").status_code == 403
+    assert client.get("/field/IMP-OPS-001").status_code == 403
 
 
 def test_delivery_note_variance_creates_lot_and_control_events(client, db):

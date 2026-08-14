@@ -1,4 +1,5 @@
-* text=auto eol=lf
-
-*.bat text eol=crlf
-*.cmd text eol=crlf
+services/platform-core/app/static/prevalidated-commercial-sources/*.json text eol=lf
+services/platform-core/data/copy_gate/*.json text eol=lf
+services/platform-core/app/static/brand-assets/*.json text eol=lf
+services/platform-core/app/static/brand-assets/**/*.svg text eol=lf
+*.sh text eol=lf

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marketinghozzájárulás kezelése | Imperial</title>
+  <style>body{font-family:system-ui,sans-serif;background:#f5f3ef;color:#1b1b1b;margin:0;padding:2rem}.card{max-width:42rem;margin:5vh auto;background:#fff;padding:2rem;border-radius:1rem;box-shadow:0 1rem 3rem #0001}button{background:#172d22;color:#fff;border:0;border-radius:.5rem;padding:.8rem 1.1rem;font-weight:700}small{color:#666}</style>
+</head>
+<body><main class="card">
+  <p><strong>Imperial</strong></p>
+  <h1>Marketinghozzájárulás kezelése</h1>
+  {% if withdrawn %}<p>A marketingcélú hozzájárulást visszavontuk. Az e-mail-cím tiltólistára került, további marketingküldés nem engedélyezett.</p>
+  {% elif lead.marketing_consent %}<p>{{ lead.full_name }}, ezen az oldalon egy lépésben visszavonhatja a marketingcélú hozzájárulását.</p><form method="post" action="/marketing/consent/{{ token }}"><button>Hozzájárulás visszavonása</button></form>
+  {% else %}<p>Ehhez a kapcsolathoz nincs aktív marketinghozzájárulás.</p>{% endif %}
+  <p><small>A projekt- vagy ajánlatkéréssel kapcsolatos szükséges ügyintézést a marketinghozzájárulás visszavonása nem érinti.</small></p>
+</main></body></html>

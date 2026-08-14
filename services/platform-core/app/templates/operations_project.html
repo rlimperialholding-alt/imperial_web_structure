@@ -42,10 +42,13 @@
     {% if wp.blocked %}<div class="block-note"><b>Blokkoló ok</b><span>{{ wp.block_reason }}</span></div>{% endif %}
     <form class="wp-update" method="post" action="/operations/work-packages/{{ wp.work_package_id }}">
       <input type="hidden" name="project_id" value="{{ project.project_id }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="expected_updated_at" value="{{ wp.updated_at.isoformat() if wp.updated_at else '' }}">
       <select name="status"><option value="planned" {% if wp.status=='planned' %}selected{% endif %}>Tervezett</option><option value="ready" {% if wp.status=='ready' %}selected{% endif %}>Indítható</option><option value="in_progress" {% if wp.status=='in_progress' %}selected{% endif %}>Folyamatban</option><option value="done" {% if wp.status=='done' %}selected{% endif %}>Kész</option><option value="blocked" {% if wp.status=='blocked' %}selected{% endif %}>Blokkolt</option></select>
       <input name="progress_pct" type="number" min="0" max="100" value="{{ wp.progress_pct }}">
       <select name="blocked"><option value="false" {% if not wp.blocked %}selected{% endif %}>Nem blokkolt</option><option value="true" {% if wp.blocked %}selected{% endif %}>Blokkolt</option></select>
       <input name="block_reason" value="{{ wp.block_reason or '' }}" placeholder="Blokkoló ok">
+      <input name="next_action" value="{{ wp.next_action or '' }}" placeholder="Következő lépés">
       <button>Mentés</button>
     </form>
   </article>{% else %}<div class="empty-state"><b>Nincs munkacsomag.</b></div>{% endfor %}
@@ -56,7 +59,7 @@
   <div class="panel elevated"><div class="panel-title"><div><span class="eyebrow">START READINESS</span><h2>Indulási kapuk</h2></div><span class="muted-chip">Automatikus felülírás nélkül</span></div>
   <div class="gate-groups">
   {% for wp in packages %}<article class="gate-group"><header><b>{{ wp.name }}</b><small>{{ wp.work_package_id }}</small></header>
-    {% for gate in gate_map.get(wp.work_package_id, []) %}<form method="post" action="/operations/gates/{{ gate.gate_id }}" class="gate-row {{ gate.status }}"><input type="hidden" name="project_id" value="{{ project.project_id }}"><span class="gate-icon">{% if gate.status=='passed' %}✓{% elif gate.status=='failed' %}!{% else %}·{% endif %}</span><div><b>{{ gate.label }}</b><small>{{ gate.checked_by or 'Nincs ellenőrző' }}{% if gate.evidence_url %} · bizonyíték rögzítve{% endif %}</small></div><select name="status"><option value="pending" {% if gate.status=='pending' %}selected{% endif %}>Függő</option><option value="passed" {% if gate.status=='passed' %}selected{% endif %}>Megfelelt</option><option value="failed" {% if gate.status=='failed' %}selected{% endif %}>Nem felelt meg</option><option value="waived" {% if gate.status=='waived' %}selected{% endif %}>Felmentve</option></select><input name="evidence_url" value="{{ gate.evidence_url or '' }}" placeholder="Drive bizonyíték"><button>Rögzít</button></form>{% endfor %}
+    {% for gate in gate_map.get(wp.work_package_id, []) %}<form method="post" action="/operations/gates/{{ gate.gate_id }}" class="gate-row {{ gate.status }}"><input type="hidden" name="project_id" value="{{ project.project_id }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_updated_at" value="{{ gate.updated_at.isoformat() if gate.updated_at else '' }}"><span class="gate-icon">{% if gate.status=='passed' %}✓{% elif gate.status=='failed' %}!{% else %}·{% endif %}</span><div><b>{{ gate.label }}</b><small>{{ gate.checked_by or 'Nincs ellenőrző' }}{% if gate.evidence_url %} · bizonyíték rögzítve{% endif %}</small></div><select name="status"><option value="pending" {% if gate.status=='pending' %}selected{% endif %}>Függő</option><option value="passed" {% if gate.status=='passed' %}selected{% endif %}>Megfelelt</option><option value="failed" {% if gate.status=='failed' %}selected{% endif %}>Nem felelt meg</option><option value="waived" {% if gate.status=='waived' %}selected{% endif %}>Felmentve</option></select><input name="evidence_url" value="{{ gate.evidence_url or '' }}" placeholder="Drive bizonyíték"><input name="notes" value="{{ gate.notes or '' }}" placeholder="Döntési megjegyzés"><button>Rögzít</button></form>{% endfor %}
   </article>{% endfor %}
   </div></div>
 </section>
@@ -102,5 +105,13 @@ document.querySelectorAll('.ops-tabs button').forEach(btn => btn.addEventListene
 }));
 const requestedTab = {{ requested_tab|tojson }};
 if (requestedTab) { const button=document.querySelector(`[data-tab="${requestedTab}"]`); if(button) button.click(); }
+const operationsCsrfToken = {{ csrf_token|tojson }};
+document.querySelectorAll('form[method="post"]').forEach(form => {
+  if (!form.querySelector('input[name="csrf_token"]')) {
+    const input = document.createElement('input');
+    input.type = 'hidden'; input.name = 'csrf_token'; input.value = operationsCsrfToken;
+    form.prepend(input);
+  }
+});
 </script>
 {% endblock %}

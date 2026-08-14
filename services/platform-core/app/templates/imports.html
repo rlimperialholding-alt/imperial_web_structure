@@ -18,6 +18,43 @@
   <article class="metric-emphasis"><span>Végleges rekord</span><strong>{{ metrics.committed_records }}</strong><small>auditált vállalati adat</small></article>
 </section>
 
+<section class="panel elevated canonical-sync-panel">
+  <div class="panel-title">
+    <div><span class="eyebrow">BELSŐ RENDSZERSZINKRON</span><h2>Migrált CRM-adatok beemelése</h2></div>
+    <form method="post" action="/imports/crm-sync"><button class="primary">Kanonikus szinkron indítása</button></form>
+  </div>
+  <p>A védett CRM-migrációs tár teljes tartalma stabil forráskulccsal kerül a központi adatmodellbe. Az ismételt futás csak a megváltozott rekordokat frissíti.</p>
+  {% if canonical_by_domain %}<div class="source-counts">
+    {% for domain, count in canonical_by_domain.items() %}<span><b>{{ count }}</b>{{ domain }}</span>{% endfor %}
+  </div>{% endif %}
+</section>
+
+<section class="panel elevated canonical-sync-panel">
+  <div class="panel-title">
+    <div><span class="eyebrow">KÉTIRÁNYÚ KANONIKUS ADATGERINC</span><h2>CRM ↔ platform ↔ ITEP egyeztetés</h2></div>
+  </div>
+  <p>A műveletek tartós kézbesítési naplóval, forrásverzióval és SHA-256 ellenőrzéssel futnak. Előbb az ITEP-feladatokat és a CRM-adatokat kell beolvasni, majd az eseményeket és a kanonikus állapotot kiküldeni, végül visszaolvasással egyeztetni.</p>
+  <div class="action-buttons">
+    <form method="post" action="/imports/canonical/pull-itep"><button>1. ITEP-feladatok beolvasása</button></form>
+    <form method="post" action="/imports/canonical/push-itep"><button>2. Platformesemények küldése</button></form>
+    <form method="post" action="/imports/canonical/push-crm"><button>3. Kanonikus állapot küldése CRM-be</button></form>
+    <form method="post" action="/imports/canonical/reconcile-crm"><button class="primary">4. CRM-egyeztetés futtatása</button></form>
+  </div>
+  {% if delivery_by_target_status %}<div class="source-counts">
+    {% for item in delivery_by_target_status %}<span><b>{{ item.count }}</b>{{ item.target }} · {{ item.status }}</span>{% endfor %}
+  </div>{% endif %}
+  {% if latest_reconciliation %}
+  <div class="principle-strip"><b>Legutóbbi egyeztetés: {{ latest_reconciliation.status }}</b><span>{{ latest_reconciliation.matching_count }}/{{ latest_reconciliation.local_count }} egyező · {{ latest_reconciliation.missing_remote_count }} hiányzó · {{ latest_reconciliation.hash_mismatch_count }} hash-eltérés · {{ latest_reconciliation.conflict_count }} konfliktus</span></div>
+  {% endif %}
+  <div class="principle-strip">
+    <b>Modulközi ProjectID-integritás: {{ integrity.status }}</b>
+    <span>{{ integrity.linked_project_references }}/{{ integrity.project_references }} érvényes hivatkozás · {{ integrity.project_masters }} projekttörzs · {{ integrity.missing_project_masters }} hiányzó projekt · {{ integrity.modules_with_canonical_data }} adatot tartalmazó modul</span>
+  </div>
+  {% if integrity.warnings %}<div class="source-counts">
+    {% for warning in integrity.warnings %}<span><b>{{ warning.count }}</b>{{ warning.code }}</span>{% endfor %}
+  </div>{% endif %}
+</section>
+
 <div class="workspace-grid">
   <section class="panel elevated">
     <div class="panel-title"><div><span class="eyebrow">ÚJ FUTÁS</span><h2>Adatforrás beolvasása</h2></div><span class="status-dot good">kontrollált</span></div>

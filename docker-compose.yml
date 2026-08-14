@@ -56,31 +56,126 @@ services:
       platform-core:
         condition: service_healthy
 
-  platform-core:
+  platform-runtime-init:
+    image: ${PLATFORM_CORE_IMAGE:-imperial-platform-core:local}
     build:
       context: ./services/platform-core
       target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    command: ["chown", "-R", "10001:10001", "/app/runtime", "/app/data"]
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - platform_core_runtime:/app/runtime
+      - platform_core_data:/app/data
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+
+  platform-core:
+    image: ${PLATFORM_CORE_IMAGE:-imperial-platform-core:local}
+    build:
+      context: ./services/platform-core
+      target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     restart: unless-stopped
     init: true
-    environment:
-      ENVIRONMENT: development
+    environment: &platform-core-environment
+      ENVIRONMENT: ${PLATFORM_ENVIRONMENT:-development}
       DATABASE_HOST: platform-postgres
       DATABASE_PORT: "5432"
       DATABASE_NAME: ${PLATFORM_DATABASE_NAME:-imperial_platform}
       DATABASE_USER: ${PLATFORM_DATABASE_USER:-imperial_platform}
       DATABASE_PASSWORD_FILE: /run/secrets/platform_db_password
+      CONTENT_EXPERT_REVIEW_SECRET_FILE: /run/secrets/platform_expert_review_secret
+      CONTENT_EXPERT_REVIEW_KEY_ID: ${PLATFORM_EXPERT_REVIEW_KEY_ID:-content-expert-review-v1}
+      CONTENT_MARKETING_REVIEW_SECRET_FILE: /run/secrets/platform_marketing_review_secret
+      CONTENT_MARKETING_REVIEW_KEY_ID: ${PLATFORM_MARKETING_REVIEW_KEY_ID:-content-marketing-review-v1}
+      CONTENT_COPYWRITER_REVIEW_SECRET_FILE: /run/secrets/platform_copywriter_review_secret
+      CONTENT_COPYWRITER_REVIEW_KEY_ID: ${PLATFORM_COPYWRITER_REVIEW_KEY_ID:-content-copywriter-review-v1}
+      CONTENT_VISUAL_REVIEW_SECRET_FILE: /run/secrets/platform_visual_review_secret
+      CONTENT_VISUAL_REVIEW_KEY_ID: ${PLATFORM_VISUAL_REVIEW_KEY_ID:-content-visual-review-v1}
+      CONTENT_CAMPAIGN_PACKAGE_SECRET_FILE: /run/secrets/platform_campaign_package_secret
+      CONTENT_CAMPAIGN_PACKAGE_KEY_ID: ${PLATFORM_CAMPAIGN_PACKAGE_KEY_ID:-imperial-conversion-campaign-gate-v1}
+      IMPERIAL_RELEASE_HMAC_KEY_FILE: /run/secrets/platform_release_hmac_key
       DEMO_RUNTIME_PATH: /app/runtime/platform_demo_runtime.json
+      DEMO_FEATURES_ENABLED: ${PLATFORM_DEMO_FEATURES_ENABLED:-}
       SESSION_SECRET: ${PLATFORM_SESSION_SECRET:-local-demo-session-key-not-for-production}
-      ALLOWED_HOSTS: localhost,127.0.0.1,testserver,gateway,platform-core
-      REQUIRE_HTTPS: "false"
+      CONTROL_CENTER_API_TOKEN: ${PLATFORM_CONTROL_CENTER_API_TOKEN:-}
+      INTERNAL_JOB_TOKEN: ${PLATFORM_INTERNAL_JOB_TOKEN:-}
+      ITEP_API_BASE_URL: ${PLATFORM_ITEP_API_BASE_URL:-http://itep-api:3000}
+      ITEP_IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:-}
+      DPM_API_BASE_URL: ${DPM_PLATFORM_GATEWAY_BASE_URL:-http://digital-project-managers:8000}
+      DPM_AUTH_ISSUER: ${DPM_AUTH_ISSUER:-imperial-intelligence}
+      DPM_AUTH_AUDIENCE: ${DPM_AUTH_AUDIENCE:-digital-project-managers}
+      CRM_READ_BASE_URL: ${PLATFORM_CRM_READ_BASE_URL:-http://crm:8787}
+      CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:-}
+      CRM_WRITE_BASE_URL: ${PLATFORM_CRM_WRITE_BASE_URL:-http://crm:8787}
+      CRM_WRITE_TOKEN: ${PLATFORM_CRM_WRITE_TOKEN:-}
+      CRM_SITES_BYPASS_TOKEN: ${PLATFORM_CRM_SITES_BYPASS_TOKEN:-}
+      CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-live}
+      CONTENT_EXTERNAL_PUBLISHING_ENABLED: ${PLATFORM_CONTENT_EXTERNAL_PUBLISHING_ENABLED:-false}
+      MARKET_PUBLIC_FETCH_ENABLED: ${MARKET_PUBLIC_FETCH_ENABLED:-false}
+      MARKET_EVIDENCE_KEK_FILE: /run/secrets/market_evidence_kek
+      MARKET_EVIDENCE_KEY_ID: ${MARKET_EVIDENCE_KEY_ID:-mci-evidence-kek-v1}
+      HOUSE_DESIGNER_SITE_KEK_FILE: /run/secrets/house_designer_site_kek
+      HOUSE_DESIGNER_SITE_KEY_ID: ${HOUSE_DESIGNER_SITE_KEY_ID:-hd-site-kek-v1}
+      ALLOWED_HOSTS: ${PLATFORM_ALLOWED_HOSTS:-localhost,127.0.0.1,testserver,gateway,platform-core}
+      REQUIRE_HTTPS: ${PLATFORM_REQUIRE_HTTPS:-false}
+      AI_EXTERNAL_CALLS_ENABLED: ${AI_EXTERNAL_CALLS_ENABLED:-false}
+      AI_ROUTING_PROVIDER: ${AI_ROUTING_PROVIDER:-openrouter}
+      AI_ROUTINE_MODEL: ${AI_ROUTINE_MODEL:-qwen/qwen3-30b-a3b-instruct-2507}
+      AI_REASONING_MODEL: ${AI_REASONING_MODEL:-openai/gpt-5-mini}
+      AI_MONTHLY_BUDGET_USD: ${AI_MONTHLY_BUDGET_USD:-0}
+      AI_PROVIDER_API_KEY_FILE: ${AI_PROVIDER_API_KEY_FILE:-}
+      PARTNER_EVIDENCE_PROJECT_QUOTA_BYTES: ${PARTNER_EVIDENCE_PROJECT_QUOTA_BYTES:-5368709120}
+      CONTROL_CENTER_WORKER_INTERVAL_SECONDS: ${CONTROL_CENTER_WORKER_INTERVAL_SECONDS:-15}
+      CONTROL_CENTER_CONSISTENCY_INTERVAL_SECONDS: ${CONTROL_CENTER_CONSISTENCY_INTERVAL_SECONDS:-3600}
+      TYPEHOUSE_FACTORY_PROCESSING_ENABLED: ${TYPEHOUSE_FACTORY_PROCESSING_ENABLED:-true}
+      TYPEHOUSE_FACTORY_CONCURRENCY: "1"
+      TYPEHOUSE_FACTORY_WORKER_POLL_SECONDS: ${TYPEHOUSE_FACTORY_WORKER_POLL_SECONDS:-5}
+      TYPEHOUSE_FACTORY_LEASE_SECONDS: ${TYPEHOUSE_FACTORY_LEASE_SECONDS:-300}
+      TYPEHOUSE_FACTORY_MAX_RENDER_ATTEMPTS: ${TYPEHOUSE_FACTORY_MAX_RENDER_ATTEMPTS:-3}
+      TYPEHOUSE_FACTORY_MAX_REPAIR_CYCLES: ${TYPEHOUSE_FACTORY_MAX_REPAIR_CYCLES:-2}
+      TYPEHOUSE_FACTORY_QA_MIN_SCORE: ${TYPEHOUSE_FACTORY_QA_MIN_SCORE:-92}
+      TYPEHOUSE_FACTORY_REQUIRED_CONSECUTIVE_PASSES: "2"
+      TYPEHOUSE_FACTORY_ASSET_ROOT: /app/data/housevision-typehouse-factory
+      RENDER_PROVIDER: ${TYPEHOUSE_FACTORY_RENDER_PROVIDER:-source-only}
+      OPENAI_IMAGE_MODEL: ${TYPEHOUSE_FACTORY_OPENAI_IMAGE_MODEL:-gpt-image-2}
+      OPENAI_VISION_MODEL: ${TYPEHOUSE_FACTORY_OPENAI_VISION_MODEL:-gpt-5.4-mini}
+      IMAGE_FACTORY_API_TOKEN: ${IMAGE_FACTORY_API_TOKEN:-}
+      CONTENT_IMAGE_FACTORY_ENABLED: ${CONTENT_IMAGE_FACTORY_ENABLED:-false}
+      CONTENT_IMAGE_FACTORY_HOST: ${CONTENT_IMAGE_FACTORY_HOST:-image-factory}
+      CONTENT_IMAGE_FACTORY_PORT: ${CONTENT_IMAGE_FACTORY_PORT:-8000}
+      CONTENT_IMAGE_FACTORY_TIMEOUT_SECONDS: ${CONTENT_IMAGE_FACTORY_TIMEOUT_SECONDS:-30}
+      CONTENT_IMAGE_FACTORY_BATCH_SIZE: ${CONTENT_IMAGE_FACTORY_BATCH_SIZE:-100}
+      CONTENT_IMAGE_FACTORY_ASSET_ROOT: /app/runtime/marketing_creatives
     volumes:
       - platform_core_runtime:/app/runtime
+      - platform_core_data:/app/data
     secrets:
       - platform_db_password
+      - platform_expert_review_secret
+      - platform_marketing_review_secret
+      - platform_copywriter_review_secret
+      - platform_visual_review_secret
+      - platform_campaign_package_secret
+      - platform_release_hmac_key
+      - market_evidence_kek
+      - house_designer_site_kek
     ports:
       - "127.0.0.1:${PLATFORM_CORE_PORT:-8091}:8000"
+    networks:
+      - default
+      - integrated
     healthcheck:
       test:
         [
@@ -100,6 +195,84 @@ services:
     depends_on:
       platform-postgres:
         condition: service_healthy
+      platform-runtime-init:
+        condition: service_completed_successfully
+
+  platform-outbox-worker:
+    image: ${PLATFORM_CORE_IMAGE:-imperial-platform-core:local}
+    build:
+      context: ./services/platform-core
+      target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "app.worker"]
+    environment: *platform-core-environment
+    volumes:
+      - platform_core_runtime:/app/runtime
+      - platform_core_data:/app/data
+    secrets:
+      - platform_db_password
+      - platform_expert_review_secret
+      - platform_marketing_review_secret
+      - platform_copywriter_review_secret
+      - platform_visual_review_secret
+      - platform_campaign_package_secret
+      - platform_release_hmac_key
+      - market_evidence_kek
+      - house_designer_site_kek
+    networks:
+      - default
+      - integrated
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-runtime-init:
+        condition: service_completed_successfully
+
+  typehouse-worker:
+    image: ${PLATFORM_CORE_IMAGE:-imperial-platform-core:local}
+    build:
+      context: ./services/platform-core
+      target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "app.typehouse_worker"]
+    environment: *platform-core-environment
+    volumes:
+      - platform_core_runtime:/app/runtime
+      - platform_core_data:/app/data
+    secrets:
+      - platform_db_password
+      - platform_expert_review_secret
+      - platform_marketing_review_secret
+      - platform_copywriter_review_secret
+      - platform_visual_review_secret
+      - platform_campaign_package_secret
+      - platform_release_hmac_key
+      - market_evidence_kek
+      - house_designer_site_kek
+    networks:
+      - default
+      - integrated
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-runtime-init:
+        condition: service_completed_successfully
 
   platform-core-tests:
     build:
@@ -107,24 +280,43 @@ services:
       target: test
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["platform-test"]
     command:
       [
         "sh",
         "-c",
-        "ruff format --check app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py tests/test_commercial_prevalidation.py scripts/build_prevalidated_commercial_registry.py alembic/versions/20260726_0008_commercial_source_prevalidation.py && ruff check app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py tests/test_commercial_prevalidation.py scripts/build_prevalidated_commercial_registry.py alembic/versions/20260726_0008_commercial_source_prevalidation.py && mypy app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py && pytest -q",
+        "ruff format --check app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py app/services/integration.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py tests/test_commercial_prevalidation.py scripts/build_prevalidated_commercial_registry.py alembic/versions/20260726_0008_commercial_source_prevalidation.py alembic/versions/20260727_0009_mandatory_expert_copy_gates.py alembic/versions/20260727_0010_staged_campaign_delivery.py alembic/versions/20260730_0011_unbypassable_marketing_gates.py alembic/versions/20260731_0017_conversion_campaign_package_gate.py && ruff check app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py app/services/integration.py tests/copy_gate_fixtures.py tests/test_copy_gate_engine.py tests/test_content_quality_workflow.py tests/test_imperial_copy_gate_pilot.py tests/test_commercial_prevalidation.py scripts/build_prevalidated_commercial_registry.py alembic/versions/20260726_0008_commercial_source_prevalidation.py alembic/versions/20260727_0009_mandatory_expert_copy_gates.py alembic/versions/20260727_0010_staged_campaign_delivery.py alembic/versions/20260730_0011_unbypassable_marketing_gates.py alembic/versions/20260731_0017_conversion_campaign_package_gate.py && mypy app/copy_gate app/services/content_quality.py app/services/commercial_prevalidation.py app/services/integration.py && pytest -q",
       ]
     environment:
       ENVIRONMENT: test
       DATABASE_URL: sqlite:////tmp/platform_core_test.db
       DEMO_RUNTIME_PATH: /tmp/platform_demo_runtime.json
       SESSION_SECRET: local-test-session-key-not-for-production
+      CONTENT_EXPERT_REVIEW_SECRET_FILE: /run/secrets/platform_expert_review_secret
+      CONTENT_EXPERT_REVIEW_KEY_ID: test-expert-review-key-v1
+      CONTENT_MARKETING_REVIEW_SECRET_FILE: /run/secrets/platform_marketing_review_secret
+      CONTENT_MARKETING_REVIEW_KEY_ID: test-marketing-review-key-v1
+      CONTENT_COPYWRITER_REVIEW_SECRET_FILE: /run/secrets/platform_copywriter_review_secret
+      CONTENT_COPYWRITER_REVIEW_KEY_ID: test-copywriter-review-key-v1
+      CONTENT_VISUAL_REVIEW_SECRET_FILE: /run/secrets/platform_visual_review_secret
+      CONTENT_VISUAL_REVIEW_KEY_ID: test-visual-review-key-v1
+      CONTENT_CAMPAIGN_PACKAGE_SECRET_FILE: /run/secrets/platform_campaign_package_secret
+      CONTENT_CAMPAIGN_PACKAGE_KEY_ID: test-imperial-conversion-campaign-gate-v1
+      IMPERIAL_RELEASE_HMAC_KEY_FILE: /run/secrets/platform_release_hmac_key
       ALLOWED_HOSTS: localhost,127.0.0.1,testserver
       RUFF_CACHE_DIR: /tmp/ruff-cache
       MYPY_CACHE_DIR: /tmp/mypy-cache
       PYTHONPYCACHEPREFIX: /tmp/pycache
     tmpfs:
       - /tmp:size=128m,mode=1777
+    secrets:
+      - platform_expert_review_secret
+      - platform_marketing_review_secret
+      - platform_copywriter_review_secret
+      - platform_visual_review_secret
+      - platform_campaign_package_secret
+      - platform_release_hmac_key
     cap_drop:
       - ALL
     security_opt:
@@ -132,7 +324,7 @@ services:
 
   dpm-postgres:
     image: ${DPM_POSTGRES_IMAGE:-postgres:17-alpine}
-    profiles: ["digital-pm", "digital-pm-test"]
+    profiles: ["digital-pm"]
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DPM_DATABASE_NAME:-imperial_dpm}
@@ -156,7 +348,7 @@ services:
 
   dpm-redis:
     image: ${DPM_REDIS_IMAGE:-redis:8-alpine}
-    profiles: ["digital-pm", "digital-pm-test"]
+    profiles: ["digital-pm"]
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
@@ -173,12 +365,14 @@ services:
       - no-new-privileges:true
 
   dpm-migrate:
+    image: ${DPM_RUNTIME_IMAGE:-imperial-digital-project-managers:local}
     build:
       context: ./services/digital-project-managers
       target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
-    profiles: ["digital-pm", "digital-pm-test"]
+      secrets: [build_ca]
+    profiles: ["digital-pm"]
     command: ["alembic", "upgrade", "head"]
     environment: &dpm-environment
       APP_ENV: ${DPM_APP_ENV:-development}
@@ -189,10 +383,12 @@ services:
       DATABASE_PASSWORD_FILE: /run/secrets/dpm_db_password
       REDIS_URL: redis://dpm-redis:6379/0
       PLATFORM_DATA_PATH: /data/platform.json
+      PLATFORM_API_BASE_URL: ${DPM_PLATFORM_API_BASE_URL:-http://platform-core:8000}
+      PLATFORM_API_TOKEN: ${PLATFORM_INTERNAL_JOB_TOKEN:-}
       AUTH_MODE: oidc
       AUTH_ISSUER: ${DPM_AUTH_ISSUER:-imperial-intelligence}
       AUTH_AUDIENCE: ${DPM_AUTH_AUDIENCE:-digital-project-managers}
-      AUTH_JWKS_URL: ${DPM_AUTH_JWKS_URL:-}
+      AUTH_JWKS_URL: ${DPM_AUTH_JWKS_URL:-http://itep-api:3000/v1/auth/.well-known/jwks.json}
       AUTH_HS256_SECRET_FILE: /run/secrets/dpm_auth_hs256_secret
       EXTERNAL_WRITES_ENABLED: "false"
     secrets:
@@ -212,12 +408,77 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  digital-project-managers:
+  dpm-test-postgres:
+    image: ${DPM_POSTGRES_IMAGE:-postgres:17-alpine}
+    profiles: ["digital-pm-test"]
+    restart: "no"
+    environment:
+      POSTGRES_DB: ${DPM_TEST_DATABASE_NAME:-imperial_dpm_test}
+      POSTGRES_USER: ${DPM_DATABASE_USER:-imperial_dpm}
+      POSTGRES_PASSWORD_FILE: /run/secrets/dpm_db_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets:
+      - dpm_db_password
+    tmpfs:
+      - /var/lib/postgresql/data:size=256m,mode=0700,uid=70,gid=70
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DPM_DATABASE_USER:-imperial_dpm} -d ${DPM_TEST_DATABASE_NAME:-imperial_dpm_test}",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    security_opt:
+      - no-new-privileges:true
+
+  dpm-test-migrate:
+    image: ${DPM_RUNTIME_IMAGE:-imperial-digital-project-managers:local}
     build:
       context: ./services/digital-project-managers
       target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    profiles: ["digital-pm-test"]
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: *dpm-environment
+      APP_ENV: test
+      DATABASE_HOST: dpm-test-postgres
+      DATABASE_NAME: ${DPM_TEST_DATABASE_NAME:-imperial_dpm_test}
+      REDIS_URL: redis://dpm-test-redis.invalid:6379/0
+      PLATFORM_API_BASE_URL: ""
+      PLATFORM_API_TOKEN: ""
+      AUTH_MODE: test
+      AUTH_JWKS_URL: ""
+      QUEUE_ENABLED: "false"
+    secrets:
+      - dpm_db_password
+      - dpm_auth_hs256_secret
+    volumes:
+      - ./sites/_portal/data/platform.json:/data/platform.json:ro
+    depends_on:
+      dpm-test-postgres:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  digital-project-managers:
+    image: ${DPM_RUNTIME_IMAGE:-imperial-digital-project-managers:local}
+    build:
+      context: ./services/digital-project-managers
+      target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["digital-pm"]
     restart: unless-stopped
     environment:
@@ -230,6 +491,9 @@ services:
       - ./sites/_portal/data/platform.json:/data/platform.json:ro
     ports:
       - "127.0.0.1:${DIGITAL_PM_PORT:-8090}:8000"
+    networks:
+      - default
+      - integrated
     depends_on:
       dpm-migrate:
         condition: service_completed_successfully
@@ -255,11 +519,13 @@ services:
       - no-new-privileges:true
 
   dpm-worker:
+    image: ${DPM_RUNTIME_IMAGE:-imperial-digital-project-managers:local}
     build:
       context: ./services/digital-project-managers
       target: runtime
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["digital-pm"]
     command:
       [
@@ -297,6 +563,7 @@ services:
       target: test
       args:
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
     profiles: ["digital-pm-test"]
     command:
       [
@@ -307,7 +574,13 @@ services:
     environment:
       <<: *dpm-environment
       APP_ENV: test
+      DATABASE_HOST: dpm-test-postgres
+      DATABASE_NAME: ${DPM_TEST_DATABASE_NAME:-imperial_dpm_test}
+      REDIS_URL: redis://dpm-test-redis.invalid:6379/0
       AUTH_MODE: test
+      AUTH_JWKS_URL: ""
+      PLATFORM_API_BASE_URL: ""
+      PLATFORM_API_TOKEN: ""
       QUEUE_ENABLED: "false"
       RUFF_CACHE_DIR: /tmp/ruff-cache
       MYPY_CACHE_DIR: /tmp/mypy-cache
@@ -319,7 +592,7 @@ services:
     volumes:
       - ./sites/_portal/data/platform.json:/data/platform.json:ro
     depends_on:
-      dpm-migrate:
+      dpm-test-migrate:
         condition: service_completed_successfully
     read_only: true
     tmpfs:
@@ -329,14 +602,38 @@ services:
     security_opt:
       - no-new-privileges:true
 
+networks:
+  integrated:
+    external: true
+    name: ${INTEGRATED_NETWORK_NAME:-imperial-intelligence-test_default}
+
 volumes:
   dpm_postgres_data:
   platform_postgres_data:
   platform_core_runtime:
+  platform_core_data:
 
 secrets:
+  build_ca:
+    file: ${BUILD_CA_CERT_FILE:-./docker/no-extra-ca.pem}
   platform_db_password:
     file: ${PLATFORM_DB_PASSWORD_FILE:-./secrets/platform_db_password.txt}
+  platform_expert_review_secret:
+    file: ${PLATFORM_EXPERT_REVIEW_SECRET_FILE:-./secrets/platform_expert_review_secret.txt}
+  platform_marketing_review_secret:
+    file: ${PLATFORM_MARKETING_REVIEW_SECRET_FILE:-./secrets/platform_marketing_review_secret.txt}
+  platform_copywriter_review_secret:
+    file: ${PLATFORM_COPYWRITER_REVIEW_SECRET_FILE:-./secrets/platform_copywriter_review_secret.txt}
+  platform_visual_review_secret:
+    file: ${PLATFORM_VISUAL_REVIEW_SECRET_FILE:-./secrets/platform_visual_review_secret.txt}
+  platform_campaign_package_secret:
+    file: ${PLATFORM_CAMPAIGN_PACKAGE_SECRET_FILE:-./secrets/platform_campaign_package_secret.txt}
+  platform_release_hmac_key:
+    file: ${PLATFORM_RELEASE_HMAC_KEY_FILE:-./secrets/platform_release_hmac_key.txt}
+  market_evidence_kek:
+    file: ${PLATFORM_MARKET_EVIDENCE_KEK_FILE:-./secrets/market_evidence_kek.txt}
+  house_designer_site_kek:
+    file: ${PLATFORM_HOUSE_DESIGNER_SITE_KEK_FILE:-./secrets/house_designer_site_kek.txt}
   dpm_db_password:
     file: ${DPM_DB_PASSWORD_FILE:-./secrets/dpm_db_password.txt}
   dpm_auth_hs256_secret:

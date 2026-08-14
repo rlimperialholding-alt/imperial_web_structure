@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head">
   <div><span class="eyebrow">KANONIKUS MODULOK ÖSSZEKÖTÉSE</span><h1>Commercial Integration</h1><p>A Contract Generator és a ChangeControl közös Workspace-nézete. Ez a felület nem másolja le a forrásmodulok üzleti logikáját.</p></div>
-  <div class="head-actions"><a class="button primary" href="/commercial/contracts/new">Új szerződéscsomag</a><a class="button" href="/development-governance">Discovery gate</a></div>
+  <div class="head-actions"><a class="button primary" href="/commercial/contracts/new">Új szerződéscsomag</a><a class="button" href="/change-control">Change Control</a><a class="button" href="/development-governance">Discovery gate</a></div>
 </div>
 <div class="metric-grid four">
   <article class="metric-card"><span>Szerződések</span><strong>{{ data.contracts|length }}</strong><small>Contract Generator projekciók</small></article>
@@ -35,6 +35,12 @@
   </tbody></table></div>
 </section>
 </div>
+<section class="panel">
+  <div class="panel-head"><div><h2>Szerződés-életciklusok</h2><p>Elkülönített jóváhagyás, aláírt példány, kettős kézbesítés és munkakezdési kapu.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Szerződés</th><th>Partner</th><th>Projekt</th><th>Állapot</th><th>Munkakezdés</th></tr></thead><tbody>
+  {% for row in data.contract_workflows %}<tr><td><a href="/commercial/contracts/{{ row.contract_id }}"><b>{{ row.contract_number }}</b></a><small>{{ row.contract_type }}</small></td><td>{{ row.counterparty_name }}</td><td>{{ row.project_id }}</td><td><span class="status-pill {{ 'ok' if row.status == 'active' else 'critical' if row.status == 'rejected' else '' }}">{{ row.status }}</span></td><td>{{ 'ENGEDÉLYEZETT' if row.work_start_allowed else 'TILOS' }}</td></tr>{% else %}<tr><td colspan="5" class="empty">Nincs még generált szerződés-életciklus.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
 <section class="panel">
   <div class="panel-head"><div><h2>Alvállalkozói változásbejelentések</h2><p>Ezek csak intake rekordok; az üzleti döntést a ChangeControl végzi.</p></div></div>
   <div class="table-wrap"><table><thead><tr><th>Projekt</th><th>Bejelentés</th><th>Típus</th><th>Állapot</th><th>Határidőhatás</th></tr></thead><tbody>

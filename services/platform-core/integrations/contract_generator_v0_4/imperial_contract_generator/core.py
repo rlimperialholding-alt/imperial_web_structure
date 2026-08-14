@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
-from docx import Document
+from docx import Document as create_docx_document
+from docx.document import Document as DocxDocument
 from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
@@ -651,7 +652,7 @@ def build_invoice_rejection_notice(data: dict[str, Any], invoice: dict[str, Any]
     }
 
 
-def _set_paragraph(doc: Document, index: int, text: str, audit: list[dict[str, Any]], field: str) -> None:
+def _set_paragraph(doc: DocxDocument, index: int, text: str, audit: list[dict[str, Any]], field: str) -> None:
     if index < len(doc.paragraphs):
         paragraph = doc.paragraphs[index]
         paragraph.text = text
@@ -663,7 +664,7 @@ def _set_paragraph(doc: Document, index: int, text: str, audit: list[dict[str, A
         audit.append({"field": field, "changed": False, "target": f"paragraph:{index}"})
 
 
-def _set_table_value(doc: Document, table_index: int, row_index: int, value: str, audit: list[dict[str, Any]], field: str) -> None:
+def _set_table_value(doc: DocxDocument, table_index: int, row_index: int, value: str, audit: list[dict[str, Any]], field: str) -> None:
     try:
         row = doc.tables[table_index].rows[row_index]
         target = 1 if len(row.cells) == 2 else 2
@@ -718,7 +719,7 @@ def _payment_schedule_sentence(data: dict[str, Any]) -> str:
     return "; ".join(parts)
 
 
-def _clear_designer_review_markup(doc: Document) -> None:
+def _clear_designer_review_markup(doc: DocxDocument) -> None:
     """Remove template-review coloring/highlighting from the generated designer copy."""
     for paragraph in doc.paragraphs:
         for run in paragraph.runs:
@@ -729,7 +730,7 @@ def _clear_designer_review_markup(doc: Document) -> None:
 
 def fill_designated_fields(template_path: Path, output_path: Path, data: dict[str, Any]) -> list[dict[str, Any]]:
     shutil.copy2(template_path, output_path)
-    doc = Document(str(output_path))
+    doc = create_docx_document(str(output_path))
     audit: list[dict[str, Any]] = []
     ct = data["contract_type"]
     cp, ie, pr, c, sch = data["counterparty"], data["internal_entity"], data["project"], data["commercial"], data["schedule"]
@@ -886,7 +887,7 @@ PLACEHOLDER_REGEXES = [
 
 
 def scan_unresolved_placeholders(path: Path) -> list[str]:
-    doc = Document(str(path))
+    doc = create_docx_document(str(path))
     findings: list[str] = []
     texts: list[tuple[str, str]] = []
     for idx, p in enumerate(doc.paragraphs):
@@ -902,7 +903,7 @@ def scan_unresolved_placeholders(path: Path) -> list[str]:
     return findings
 
 
-def _configure_doc(doc: Document) -> None:
+def _configure_doc(doc: DocxDocument) -> None:
     doc.styles["Normal"].font.name = "Arial"
     doc.styles["Normal"].font.size = Pt(10)
     for style_name in ("Title", "Heading 1", "Heading 2"):
@@ -910,7 +911,7 @@ def _configure_doc(doc: Document) -> None:
             doc.styles[style_name].font.name = "Arial"
 
 
-def _compact_landscape(doc: Document, normal_size: float = 8.5) -> None:
+def _compact_landscape(doc: DocxDocument, normal_size: float = 8.5) -> None:
     section = doc.sections[0]
     section.orientation = WD_ORIENT.LANDSCAPE
     section.page_width, section.page_height = section.page_height, section.page_width
@@ -931,7 +932,7 @@ def _set_cell_font_size(cell, size_pt: float) -> None:
 
 
 def generate_data_annex(data: dict[str, Any], path: Path) -> None:
-    doc = Document(); _configure_doc(doc); _compact_landscape(doc, 8.2)
+    doc = create_docx_document(); _configure_doc(doc); _compact_landscape(doc, 8.2)
     title = doc.add_paragraph("1. SZÁMÚ MELLÉKLET – KÖTELEZŐ SZERZŐDÉSES ADATLAP")
     title.style = doc.styles["Title"]; title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     rows = [
@@ -970,11 +971,11 @@ def generate_data_annex(data: dict[str, Any], path: Path) -> None:
         for row in tbl.rows:
             _prevent_row_split(row)
             for cell in row.cells: _set_cell_font_size(cell, 7.7)
-    doc.save(path)
+    doc.save(str(path))
 
 
 def generate_deduction_annex(data: dict[str, Any], path: Path) -> None:
-    doc = Document(); _configure_doc(doc); _compact_landscape(doc, 7.8)
+    doc = create_docx_document(); _configure_doc(doc); _compact_landscape(doc, 7.8)
     title = doc.add_paragraph("2. SZÁMÚ MELLÉKLET – MŰSZAKI MEGFELELŐSÉG ÉS LEVONÁSI TÁBLA")
     title.style = doc.styles["Title"]; title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     table = doc.add_table(rows=1, cols=5); table.style = "Table Grid"
@@ -986,11 +987,11 @@ def generate_deduction_annex(data: dict[str, Any], path: Path) -> None:
     for row in table.rows:
         _prevent_row_split(row)
         for cell in row.cells: _set_cell_font_size(cell, 7.2)
-    doc.save(path)
+    doc.save(str(path))
 
 
 def generate_checklist_doc(data: dict[str, Any], path: Path) -> None:
-    doc = Document(); _configure_doc(doc)
+    doc = create_docx_document(); _configure_doc(doc)
     is_subcontractor = data["contract_type"] in {EXECUTION_SUBCONTRACTOR_TYPE, DESIGN_SUBCONTRACTOR_TYPE}
     title_text = (
         "JÓVÁHAGYÁSI, KÉZBESÍTÉSI, INDÍTÁSI ÉS SZÁMLAKAPUK"
@@ -1033,17 +1034,17 @@ def generate_checklist_doc(data: dict[str, Any], path: Path) -> None:
     for heading, items in sections.items():
         doc.add_heading(heading, level=1)
         for item in items: doc.add_paragraph(item, style="List Bullet")
-    doc.save(path)
+    doc.save(str(path))
 
 
 def generate_invoice_rejection_doc(notice: dict[str, Any], path: Path) -> None:
-    doc = Document(); _configure_doc(doc)
+    doc = create_docx_document(); _configure_doc(doc)
     doc.add_heading(notice["subject"], 0)
     for block in notice["body"].split("\n\n"):
         doc.add_paragraph(block)
     doc.add_heading("Jogszabályi hivatkozások", level=1)
     for text in notice["legal_basis"].values(): doc.add_paragraph(text, style="List Bullet")
-    doc.save(path)
+    doc.save(str(path))
 
 
 def generate_package(data: dict[str, Any], registry_path: Path, templates_dir: Path, output_dir: Path) -> dict[str, Any]:

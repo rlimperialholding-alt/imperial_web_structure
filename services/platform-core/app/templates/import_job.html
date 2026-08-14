@@ -8,6 +8,19 @@
 
 <section class="process-rail"><div class="done"><b>1</b><span>Forrás</span></div><i></i><div class="{{ 'done' if job.items_total else '' }}"><b>2</b><span>Fájl / adat</span></div><i></i><div class="{{ 'done' if job.records_extracted else '' }}"><b>3</b><span>Értő feldolgozás</span></div><i></i><div class="{{ 'done' if job.status in ['review','partially_committed','committed'] else '' }}"><b>4</b><span>Ellenőrzés</span></div><i></i><div class="{{ 'done' if job.status == 'committed' else '' }}"><b>5</b><span>Commit</span></div></section>
 
+{% if job.source_key == 'crm-migrated-data' %}
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">SZINKRONEREDMÉNY</span><h2>CRM → központi adatmodell</h2></div><span class="badge green">idempotens</span></div>
+  <div class="source-counts">
+    <span><b>{{ job_summary.get('inserted', 0) }}</b>új rekord</span>
+    <span><b>{{ job_summary.get('updated', 0) }}</b>frissített rekord</span>
+    <span><b>{{ job_summary.get('unchanged', 0) }}</b>változatlan rekord</span>
+  </div>
+  <div class="source-counts">
+    {% for entity, counts in job_summary.get('entities', {}).items() %}<span><b>{{ counts.get('source', 0) }}</b>{{ entity|replace('_', ' ') }}</span>{% endfor %}
+  </div>
+</section>
+{% else %}
 <div class="workspace-grid">
 <section class="panel elevated">
   <div class="panel-title"><div><span class="eyebrow">ADATCSOMAG</span><h2>Fájl feltöltése</h2></div><span class="muted-chip">CSV · JSON · XLSX · TXT</span></div>
@@ -48,4 +61,5 @@
   {% else %}<p class="empty span-all">A feldolgozás után itt jelennek meg az értelmezett rekordok.</p>{% endfor %}
   </div>
 </section>
+{% endif %}
 {% endblock %}

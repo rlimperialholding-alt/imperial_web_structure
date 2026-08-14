@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Marketing Control | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="page-hero compact-hero">
+  <div><span class="eyebrow light">MARKETING CONTROL</span><h1>Forrás → brief → stratégia → tartalom → publikáció</h1><p>Verziózott források, négy szem elvű stratégiai döntés és megkerülhetetlen publikációs kapuk egy munkatérben.</p><p><a class="button primary" href="/marketing/automation">Kampányok, attribúció és Lead Intelligence</a></p></div>
+  <div class="hero-status"><small>Élő adatbázis</small><b>{{ assets|length }} asset</b><small>{{ briefs|length }} brief · {{ sources|length }} forrásverzió</small></div>
+</section>
+
+<section class="kpis">
+  <div><span>Jóváhagyott forrás</span><b>{{ sources|selectattr('approved')|list|length }}</b><small>aktív verzió</small></div>
+  <div><span>Stratégiai review</span><b>{{ briefs|selectattr('row.status','equalto','STRATEGY_QA')|list|length }}</b><small>vezetői döntésre vár</small></div>
+  <div><span>Aktív tartalom</span><b>{{ assets|rejectattr('row.state','equalto','PUBLISHED')|list|length }}</b><small>folyamatban</small></div>
+  <div><span>Publikált</span><b>{{ assets|selectattr('row.state','equalto','PUBLISHED')|list|length }}</b><small>élő double checkkel</small></div>
+</section>
+
+{% if can_operate %}
+<details class="workspace-card" open>
+  <summary><strong>1. Kanonikus forrásverzió rögzítése</strong> — a marketing új verziót készít, a vezetés külön hagyja jóvá</summary>
+  <form class="form-grid" method="post" action="/marketing/sources">
+    <label>Forráskulcs *<input name="source_key" required placeholder="imperial-brand-master"></label>
+    <label>Forrástípus *<select name="source_type">{% for item in source_types %}<option value="{{ item }}">{{ item }}</option>{% endfor %}</select></label>
+    <label>Márkaazonosító *<input name="brand_id" required placeholder="imperial"></label>
+    <label>Verzió *<input name="version" required placeholder="2026.07.31"></label>
+    <label>Törzsadat-azonosító<input name="record_id" placeholder="OFF-..., PS-..., CLM-..."></label>
+    <label>Prioritás<input type="number" name="priority" value="100" min="1" max="1000"></label>
+    <label>Oldalazonosító<input name="page_id" placeholder="Pontosan oldal vagy kampány"></label>
+    <label>Kampányazonosító<input name="campaign_id"></label>
+    <label>Assettípus<input name="asset_type" placeholder="landing, meta_ad, email"></label>
+    <label>Márka megszólítás<input name="addressing" placeholder="formal"></label>
+    <label>Érvényes ettől<input type="date" name="valid_from"></label>
+    <label>Érvényes eddig<input type="date" name="valid_until"></label>
+    <label class="span-2">Forrás URL<input type="url" name="source_url"></label>
+    <label class="span-2">Kiegészítő forrásadat (opcionális)<textarea name="payload_json" rows="3" placeholder='{"required_concepts":["..."],"forbidden_phrases":["..."]}'>{}</textarea></label>
+    <div class="form-action span-2"><button class="gold">Piszkozat forrásverzió mentése</button></div>
+  </form>
+</details>
+{% endif %}
+
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">CLAIM & SOURCE REGISTRY</span><h2>Forrásverziók és vezetői döntések</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Forrás</th><th>Hatókör</th><th>Verzió</th><th>Státusz</th><th>Döntés</th></tr></thead><tbody>
+  {% for source in sources %}<tr id="source-{{ source.id }}"><td><strong>{{ source.source_key }}</strong><small>{{ source.source_type }} · {{ source.brand_id }}</small></td><td>{{ source.page_id or source.campaign_id or 'globális' }}<small>{{ source.asset_type or 'minden asset' }}</small></td><td>{{ source.version }}<small>{{ source.content_hash[:12] }}</small></td><td><span class="status-pill {{ 'ok' if source.approved else '' }}">{{ source.status }}</span></td><td>{% if can_approve_source and source.status!='retired' %}<form class="review-form" method="post" action="/marketing/sources/{{ source.id }}/review"><select name="decision"><option value="approved">Jóváhagyás</option><option value="retired">Visszavonás</option></select><input name="note" placeholder="Döntési megjegyzés"><button>Mentés</button></form>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="5">Még nincs rögzített forrásverzió.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+{% if can_operate %}
+<details class="workspace-card">
+  <summary><strong>2. CopyBrief létrehozása</strong> — csak teljes és jóváhagyott kanonikus forráskészletből</summary>
+  <form class="form-grid" method="post" action="/marketing/briefs">
+    <label>CopyBriefID *<input name="copy_brief_id" required placeholder="CB-IMP-..."></label><label>Márka *<input name="brand_id" required value="imperial"></label>
+    <label>Assettípus *<input name="asset_type" required placeholder="landing"></label><label>Csatorna *<input name="channel" required placeholder="website"></label>
+    <label>Oldalazonosító<input name="page_id" placeholder="Oldal vagy kampány közül pontosan egy"></label><label>Kampányazonosító<input name="campaign_id"></label>
+    <label>Kampánycél *<input name="campaign_objective" required></label><label>Elsődleges konverzió *<input name="primary_conversion" required placeholder="qualified_lead"></label>
+    <label>Persona *<input name="target_persona_id" required></label><label>Tudatossági szint *<input name="awareness_level" required></label>
+    <label>Piaci érettség *<input name="market_sophistication_level" required></label><label>Elsődleges CTA *<input name="primary_cta_type" required></label>
+    <label class="span-2">Alapprobléma *<textarea name="core_problem" required></textarea></label><label class="span-2">Vágyott eredmény *<textarea name="desired_outcome" required></textarea></label>
+    <label class="span-2">Elsődleges ígéret *<textarea name="primary_promise" required></textarea></label><label class="span-2">Egyedi mechanizmus *<textarea name="unique_mechanism" required></textarea></label>
+    <label>OfferVersionID *<input name="offer_version_id" required></label><label>PriceSnapshotID *<input name="price_snapshot_id" required></label>
+    <label>TermsVersionID *<input name="terms_version_id" required></label><label>Landing message match *<input name="landing_message_match_id" required></label>
+    <label>ProductID<input name="product_id" placeholder="Product vagy HousePlan közül egy"></label><label>HousePlanID<input name="house_plan_id"></label>
+    <label>ClaimID-k *<textarea name="claim_ids" required placeholder="soronként"></textarea></label><label>ProofID-k *<textarea name="proof_ids" required placeholder="soronként"></textarea></label>
+    <label>Elsődleges kifogások *<textarea name="primary_objection_ids" required></textarea></label><label>Másodlagos kifogások<textarea name="secondary_objection_ids"></textarea></label>
+    <label class="span-2">Kockázatcsökkentés *<textarea name="risk_reversal" required></textarea></label><label>Sürgősség oka<input name="urgency_reason"></label><label>Szűkösség oka<input name="scarcity_reason"></label>
+    <label>Másodlagos CTA<input name="secondary_cta_type"></label><label>Brand voice profil *<input name="brand_voice_profile" required></label>
+    <label>Kötelező szlogen *<input name="required_slogan" required></label><label>Szlogenverzió *<input name="required_slogan_version" required></label>
+    <label>Tiltott kifejezések<textarea name="forbidden_phrases"></textarea></label><label>Kötelező kulcsszavak<textarea name="required_keywords"></textarea></label>
+    <label>Havi promóció ID<input name="monthly_promotion_id"></label><label class="checkbox"><input type="checkbox" name="monthly_promotion_copy_required">Havi promóciós szöveg kötelező</label>
+    <label>Érvényes ettől *<input type="date" name="valid_from" required></label><label>Érvényes eddig *<input type="date" name="valid_until" required></label>
+    <div class="form-action span-2"><button class="gold">Brief létrehozása és forrásellenőrzés</button></div>
+  </form>
+</details>
+{% endif %}
+
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">CAMPAIGN FACTORY</span><h2>CopyBriefek és stratégiai kapu</h2></div></div>
+  {% for brief in briefs %}<article class="record-card" id="brief-{{ brief.row.copy_brief_id }}"><div class="record-top"><strong>{{ brief.row.copy_brief_id }}</strong><span class="status-badge">{{ brief.row.status }}</span></div><h3>{{ brief.data.campaign_objective }}</h3><p>{{ brief.row.brand_id }} · {{ brief.row.channel }} · {{ brief.row.asset_type }} · {{ brief.row.page_id or brief.row.campaign_id }}</p><dl><div><dt>Létrehozta</dt><dd>{{ brief.row.created_by }}</dd></div><div><dt>Forráspillanatkép</dt><dd>{{ brief.row.source_snapshot_hash[:12] }}</dd></div><div><dt>Érvényesség</dt><dd>{{ brief.row.valid_from|dt }} – {{ brief.row.valid_until|dt }}</dd></div></dl>
+    {% if brief.row.status=='STRATEGY_QA' and can_operate %}{% if brief.row.created_by != user.email %}<form class="form-grid" method="post" action="/marketing/briefs/{{ brief.row.copy_brief_id }}/strategy-review"><label>Stratégiai futás/anyag ID *<input name="strategist_run_id" required></label>{% for key,label in [('objective_score','Cél'),('audience_score','Célközönség'),('offer_score','Ajánlat'),('message_architecture_score','Üzenet'),('channel_plan_score','Csatornaterv'),('brand_fit_score','Márkailleszkedés'),('feasibility_score','Megvalósíthatóság')] %}<label>{{ label }} (0–10)<input type="number" min="0" max="10" name="{{ key }}" value="9" required></label>{% endfor %}<label>Döntés<select name="decision"><option value="APPROVED">Jóváhagyás</option><option value="RETURN_FOR_REVISION">Visszaküldés</option></select></label><label class="span-2">Taktikai terv *<textarea name="tactical_plan" minlength="40" required></textarea></label><label>Assetterv *<textarea name="asset_plan" required placeholder="soronként"></textarea></label><label>Nyitott hibák<textarea name="findings"></textarea></label><div class="form-action span-2"><button>Stratégiai döntés mentése</button></div></form>{% else %}<div class="validation warn">A négy szem elve miatt ezt a briefet másik jogosult felhasználónak kell ellenőriznie.</div>{% endif %}{% endif %}
+  </article>{% else %}<p class="empty">Még nincs CopyBrief.</p>{% endfor %}
+</section>
+
+{% if can_operate %}
+<details class="workspace-card">
+  <summary><strong>3. Jóváhagyott briefből tartalomverzió létrehozása</strong></summary>
+  <form class="form-grid" method="post" action="/marketing/assets">
+    <label>Jóváhagyott CopyBrief *<select name="copy_brief_id" required>{% for brief in briefs if brief.row.status=='STRATEGY_APPROVED' %}<option value="{{ brief.row.copy_brief_id }}">{{ brief.row.copy_brief_id }} · {{ brief.data.campaign_objective }}</option>{% endfor %}</select></label><label>AssetID *<input name="asset_id" required placeholder="ASSET-..."></label>
+    <label>ProjectID<input name="project_id"></label><label>Szövegmód<select name="copy_mode"><option value="original_concept">Eredeti koncepció</option><option value="source_adaptation">Forrás átdolgozása</option><option value="verbatim_source">Szó szerinti forrás</option></select></label>
+    <label class="span-2">Cím *<input name="title" minlength="8" required></label><label class="span-2">Törzsszöveg *<textarea name="body" minlength="20" required rows="5"></textarea></label>
+    <label>CTA *<input name="cta" required></label><label>Szlogen<input name="slogan"></label>
+    <label>Koncepció ID *<input name="copy_concept_id" required></label><label>Szövegarchitektúra ID *<input name="copy_architecture_id" minlength="8" required></label>
+    <label class="span-2">Szerkezeti aláírás *<input name="copy_structure_signature" minlength="12" required placeholder="bekezdések és érvelési sorrend"></label>
+    <label>Forrásszöveg aránya (0–1)<input type="number" min="0" max="1" step="0.01" name="source_text_usage_ratio" value="0"></label><label>Kockázati szint (0–7)<input type="number" min="0" max="7" name="action_risk_level" value="0"></label>
+    <label class="span-2">Kreatív indoklás *<textarea name="creative_rationale" minlength="20" required></textarea></label>
+    <label>Felhasznált claim ID-k<textarea name="claim_ids_used"></textarea></label><label>Felhasznált proof ID-k<textarea name="proof_ids_used"></textarea></label>
+    <label>Kezelt kifogások<textarea name="objection_ids_handled"></textarea></label><label>Felhasznált kulcsszavak<textarea name="required_keywords_used"></textarea></label>
+    <label>Tényállítások<textarea name="factual_claims"></textarea></label><label>Árközlések<textarea name="price_mentions"></textarea></label>
+    <label>Határidőközlések<textarea name="deadline_mentions"></textarea></label><label>Feltételek<textarea name="condition_mentions"></textarea></label>
+    <label>Havi promóciós szöveg<input name="monthly_promotion_copy_text"></label><label class="checkbox"><input type="checkbox" name="meaning_preservation_checked">Jelentésmegőrzés ellenőrizve</label>
+    <label class="checkbox"><input type="checkbox" name="introduces_new_factual_claims">Új tényállítást tartalmaz</label><label class="checkbox"><input type="checkbox" name="human_fact_review_required">Emberi tényellenőrzés szükséges</label>
+    <div class="form-action span-2"><button class="gold">Tartalomverzió létrehozása</button></div>
+  </form>
+</details>
+{% endif %}
+
+<section class="content-header"><div><span class="eyebrow">CONTENT FACTORY</span><h1>Tartalomverziók és publikációs kapuk</h1><p>A publikálás csak az aktuális tartalomhashhez tartozó teljes kapulánc után lehetséges.</p></div></section>
+<div class="record-grid">
+{% for asset in assets %}<article class="record-card" id="asset-{{ asset.row.asset_id }}"><div class="record-top"><strong>{{ asset.row.asset_id }}</strong><div><span class="status-badge">{{ asset.row.state }}</span><span class="muted-chip">v{{ asset.row.content_version }}</span></div></div><h3>{{ asset.data.title }}</h3><p>{{ asset.row.copy_brief_id }} · {{ asset.row.channel }} · {{ asset.row.asset_type }}</p><dl><div><dt>Hash</dt><dd>{{ asset.row.content_hash[:12] }}</dd></div><div><dt>Létrehozta</dt><dd>{{ asset.row.created_by }}</dd></div><div><dt>Generálási futás</dt><dd>{{ asset.trace.generation_run_id or '—' }}</dd></div></dl>
+  {% for flag,label in [('gate_1_approved','Copy QA'),('expert_language_approved','Nyelvi szakértő'),('expert_marketing_approved','Marketing gate'),('copywriter_approved','Copywriter gate'),('four_gate_approved','Jogi/pénzügyi/műszaki'),('editorial_approved','Szerkesztő'),('owner_approved','Tulajdonos'),('creative_director_approved','Kreatív igazgató'),('assembly_approved','Assembly'),('release_approved','Release QA'),('live_review_approved','Live QA')] %}<span class="status-pill {{ 'ok' if asset.row|attr(flag) else '' }}">{{ label }}: {{ '✓' if asset.row|attr(flag) else '–' }}</span>{% endfor %}
+  {% if asset.row.state in ['DRAFT','COPY_QA','BLOCKED'] and user.role in ['copywriter','owner','managing-director','platform-admin'] and asset.row.created_by != user.email %}<details><summary><strong>Független magyar nyelvi és Copy QA</strong></summary><form class="form-grid" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/copy-qa">{% for key,label in [('idiomatic_hungarian_score','Természetes magyar'),('grammar_score','Nyelvhelyesség'),('semantic_clarity_score','Jelentéstisztaság'),('terminology_score','Terminológia'),('hook_strength_score','Hook'),('offer_clarity_score','Ajánlatérthetőség'),('specificity_score','Konkrétság'),('persuasion_score','Meggyőzés'),('brand_voice_score','Márkahang'),('conversion_path_score','Konverziós út')] %}<label>{{ label }}<input type="number" min="0" max="10" name="{{ key }}" value="9" required></label>{% endfor %}<label>Döntés<select name="decision"><option value="APPROVED">Jóváhagyás</option><option value="RETURN_FOR_REVISION">Visszaküldés</option></select></label><label class="span-2">Mit ért ebből a fogyasztó? *<textarea name="consumer_interpretation" minlength="20" required></textarea></label><label class="span-2">Hogyan érti az ajánlatot? *<textarea name="offer_interpretation" minlength="20" required></textarea></label><label class="span-2">Mi a következő lépés? *<textarea name="cta_interpretation" minlength="20" required></textarea></label><label>Megállapítások<textarea name="findings"></textarea></label><label>Kötelező javítások<textarea name="required_repairs"></textarea></label><div class="form-action span-2"><button>Copy QA jegyzőkönyv hitelesítése</button></div></form></details>{% endif %}
+  {% if asset.row.state=='SPECIALIST_QA' and not asset.row.expert_marketing_approved and user.role in ['marketing','owner','managing-director','platform-admin'] and asset.row.created_by != user.email %}<details><summary><strong>Kötelező marketingkapu</strong></summary><form class="form-grid" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/mandatory-gates/MARKETING">{% for key,label in [('objective_fit','Kampánycél'),('audience_fit','Célközönség'),('offer_strength','Ajánlaterő'),('message_architecture','Üzenetszerkezet'),('conversion_path','Konverziós út'),('qualification_quality','Lead-minőség'),('brand_specificity','Márkaspecifikusság')] %}<label>{{ label }}<input type="number" min="0" max="10" name="{{ key }}" value="9" required></label>{% endfor %}<label>Döntés<select name="decision"><option value="APPROVED">Jóváhagyás</option><option value="RETURN_FOR_REVISION">Visszaküldés</option></select></label><label class="span-2">Fogyasztói visszaolvasás *<textarea name="consumer_readback" minlength="30" required></textarea></label><label class="span-2">Konverziós indoklás *<textarea name="conversion_rationale" minlength="30" required></textarea></label><label class="span-2">Legerősebb kifogás *<textarea name="strongest_objection" minlength="10" required></textarea></label><label class="checkbox"><input type="checkbox" name="dry_copy_detected">Száraz szöveg</label><label class="checkbox"><input type="checkbox" name="generic_copy_detected">Generikus szöveg</label><label class="checkbox"><input type="checkbox" name="brand_voice_violation_detected">Márkahanghiba</label><label>Megállapítások<textarea name="findings"></textarea></label><label>Kötelező javítások<textarea name="required_repairs"></textarea></label><div class="form-action span-2"><button>Marketingkapu hitelesítése</button></div></form></details>{% endif %}
+  {% if asset.row.state=='SPECIALIST_QA' and not asset.row.copywriter_approved and user.role in ['copywriter','owner','managing-director','platform-admin'] and asset.row.created_by != user.email %}<details><summary><strong>Kötelező direct-response kapu</strong></summary><form class="form-grid" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/mandatory-gates/DIRECT_RESPONSE">{% for key,label in [('hook_strength','Hook'),('emotional_tension','Érzelmi feszültség'),('specificity','Konkrétság'),('natural_hungarian','Természetes magyar'),('direct_response_persuasion','Direct response'),('clarity','Érthetőség'),('cta_strength','CTA-erő'),('brand_voice','Márkahang')] %}<label>{{ label }}<input type="number" min="0" max="10" name="{{ key }}" value="9" required></label>{% endfor %}<label>Döntés<select name="decision"><option value="APPROVED">Jóváhagyás</option><option value="RETURN_FOR_REVISION">Visszaküldés</option></select></label><label class="span-2">Fogyasztói visszaolvasás *<textarea name="consumer_readback" minlength="30" required></textarea></label><label class="span-2">Konverziós indoklás *<textarea name="conversion_rationale" minlength="30" required></textarea></label><label class="span-2">Legerősebb kifogás *<textarea name="strongest_objection" minlength="10" required></textarea></label><label class="checkbox"><input type="checkbox" name="dry_copy_detected">Száraz szöveg</label><label class="checkbox"><input type="checkbox" name="generic_copy_detected">Generikus szöveg</label><label class="checkbox"><input type="checkbox" name="brand_voice_violation_detected">Márkahanghiba</label><label>Megállapítások<textarea name="findings"></textarea></label><label>Kötelező javítások<textarea name="required_repairs"></textarea></label><div class="form-action span-2"><button>Direct-response kapu hitelesítése</button></div></form></details>{% endif %}
+  {% for gate_id,label,roles in [('GATE_2_LEGAL_POLICY','Jogi és policy kapu',['legal','owner','managing-director','platform-admin']),('GATE_3_FINANCIAL_COMMERCIAL','Pénzügyi és kereskedelmi kapu',['finance','owner','managing-director','platform-admin']),('GATE_4_TECHNICAL_FACTUAL','Műszaki és ténykapu',['technical-prep','designer','owner','managing-director','platform-admin'])] %}{% if asset.row.state=='FOUR_GATE_QA' and gate_id not in asset.specialist and user.role in roles and asset.row.created_by != user.email %}<details><summary><strong>{{ label }}</strong></summary><form class="form-grid" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/specialist-gates/{{ gate_id }}"><label class="checkbox"><input type="checkbox" name="relevant" checked>A kapu releváns</label><label>Döntés<select name="decision"><option value="APPROVED">Jóváhagyás</option><option value="RETURN_FOR_REVISION">Visszaküldés</option><option value="SKIPPED_NOT_RELEVANT">Nem releváns</option></select></label><label class="span-2">Bizonyíték és indoklás *<textarea name="evidence" minlength="10" required></textarea></label><div class="form-action span-2"><button>Specialistadöntés mentése</button></div></form></details>{% endif %}{% endfor %}
+  {% if asset.row.state=='HUMAN_EDITORIAL' and user.role in ['marketing','copywriter','managing-director','platform-admin'] and asset.row.created_by != user.email %}<form class="review-form" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/editorial-approval"><select name="decision"><option value="APPROVED">Szerkesztőileg jóváhagyva</option><option value="REJECTED">Visszautasítva</option></select><input name="note" required placeholder="Szerkesztői döntés indoklása"><button>Szerkesztői döntés</button></form>{% endif %}
+  {% if asset.row.state=='OWNER_APPROVAL' and user.role=='owner' %}<form class="review-form" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/owner-approval"><select name="decision"><option value="APPROVED">Tulajdonosként jóváhagyom</option><option value="REJECTED">Visszautasítom</option></select><input name="note" required placeholder="Tulajdonosi döntés indoklása"><button class="approve">Tulajdonosi döntés</button></form>{% endif %}
+  {% include "marketing_visual_workflow.html" %}
+</article>{% else %}<div class="workspace-card empty span-all"><b>Még nincs tartalomasset</b><span>Jóváhagyott stratégiai briefből hozható létre.</span></div>{% endfor %}
+</div>
+{% endblock %}

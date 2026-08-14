@@ -10,6 +10,7 @@
   <div class="field-columns">
     <section class="field-form-card" id="daily-report"><span class="eyebrow">NAPI JELENTÉS</span><h2>Mi történt ma a helyszínen?</h2>
       <form method="post" action="/field/{{ project.project_id }}/daily-report" class="field-form persist-form" data-draft-key="daily-{{ project.project_id }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="field-form-row"><label>Dátum<input type="date" name="report_date"></label><label>Létszám<input type="number" min="0" name="workers_total" value="0"></label></div>
         <label>Jelentést készíti<input name="reporter" value="{{ user.name }}" required></label>
         <label>Időjárás<input name="weather" placeholder="Például: napos, 27 °C"></label>
@@ -26,6 +27,7 @@
 
     <section class="field-form-card" id="issue-form"><span class="eyebrow">ÚJ ÜGY</span><h2>Probléma vagy eltérés rögzítése</h2>
       <form method="post" action="/field/{{ project.project_id }}/issues" class="field-form persist-form" data-draft-key="issue-{{ project.project_id }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="field-form-row"><label>Típus<select name="issue_type"><option value="blocker">Akadály</option><option value="quality">Minőség</option><option value="safety">Munkavédelem</option><option value="documentation">Dokumentum</option><option value="quantity">Mennyiség</option><option value="other">Egyéb</option></select></label><label>Súlyosság<select name="severity"><option value="medium">Közepes</option><option value="high">Magas</option><option value="critical">Kritikus</option></select></label></div>
         <label>Megnevezés<input name="title" required placeholder="Mi a probléma?"></label>
         <label>Leírás<textarea name="description" rows="4"></textarea></label>

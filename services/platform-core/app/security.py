@@ -51,12 +51,26 @@ def require_internal_job_token(x_internal_job_token: Annotated[str | None, Heade
 def require_role(*roles: str):
     def dependency(request: Request, db: Session = Depends(get_db)) -> User:
         user = current_user(request, db)
-        if not user:
+        if not user or not user.active:
             raise HTTPException(status_code=401, detail="Bejelentkezés szükséges.")
+        if user.must_change_password:
+            raise HTTPException(status_code=403, detail="A folytatáshoz előbb jelszót kell módosítani.")
         if user.role not in roles:
             raise HTTPException(status_code=403, detail="Nincs jogosultság.")
         return user
     return dependency
+
+
+def require_session_user(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> User:
+    user = current_user(request, db)
+    if not user or not user.active:
+        raise HTTPException(status_code=401, detail="Bejelentkezés szükséges.")
+    if user.must_change_password and request.url.path != "/account/password":
+        raise HTTPException(status_code=403, detail="A folytatáshoz előbb jelszót kell módosítani.")
+    return user
 
 
 

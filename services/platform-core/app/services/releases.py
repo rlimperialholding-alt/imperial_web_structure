@@ -54,7 +54,7 @@ def add_artifact(db: Session, release_id: str, data: ArtifactIn, *, actor: str =
     if artifact.cloud_status == "verified":
         artifact.verified_at = utcnow()
     db.flush()
-    artifacts = db.scalars(select(ArtifactRecord).where(ArtifactRecord.release_id_fk == release.id)).all()
+    artifacts = list(db.scalars(select(ArtifactRecord).where(ArtifactRecord.release_id_fk == release.id)).all())
     release.status = calculate_release_status(release, artifacts)
     audit(db, actor=actor, action="artifact_upsert", entity_type="artifact", entity_id=data.artifact_id, after=data.model_dump())
     db.commit()

@@ -1,13 +1,26 @@
 from __future__ import annotations
 
+import re
 from io import BytesIO
+
+import pytest
 from sqlalchemy import select
 
 from app.models import (
-    EventRecord, OutboxMessage, PartnerAttendance, PartnerChangeNotice, PartnerEvidence,
-    PartnerFieldAccess, PartnerProgressReport, PartnerWorker, PMWorkPackage, ProjectRegistry, TaskRecord,
+    EventRecord,
+    OutboxMessage,
+    PartnerAttendance,
+    PartnerChangeNotice,
+    PartnerEvidence,
+    PartnerFieldAccess,
+    PartnerProgressReport,
+    PartnerWorker,
+    PMWorkPackage,
+    ProjectRegistry,
+    TaskRecord,
 )
 from app.security import hash_password
+from app.services.partner_field import ensure_project_evidence_quota
 
 
 def seed_partner_scope(db):
@@ -77,8 +90,11 @@ def test_partner_progress_requires_pm_approval_before_work_package_change(client
     package = db.scalar(select(PMWorkPackage).where(PMWorkPackage.work_package_id == 'WP-GOD-WALL'))
     assert package.progress_pct == original
     assert report.status == 'pending_review'
+    page = logged_in_client.get('/operations/projects/IMP-GOD-014?tab=partners')
+    csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    assert page.status_code == 200 and csrf
     response = logged_in_client.post(f'/operations/partner-progress/{report.progress_report_id}/review', data={
-        'project_id': 'IMP-GOD-014', 'decision': 'approved'
+        'project_id': 'IMP-GOD-014', 'decision': 'approved', 'csrf_token': csrf.group(1)
     }, follow_redirects=False)
     assert response.status_code == 303
     db.expire_all()
@@ -123,3 +139,10 @@ def test_partner_photo_upload_validates_and_stores_image(client, db):
     bad = client.post('/partner-field/photos', data={'category': 'progress'},
                       files={'photos': ('bad.jpg', BytesIO(b'not-an-image'), 'image/jpeg')}, follow_redirects=False)
     assert bad.status_code == 303
+    with pytest.raises(ValueError, match="fájlszerver"):
+        ensure_project_evidence_quota(
+            db,
+            "IMP-GOD-014",
+            12 * 1024 * 1024,
+            quota_bytes=12 * 1024 * 1024,
+        )

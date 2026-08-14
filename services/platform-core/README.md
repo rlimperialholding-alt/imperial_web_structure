@@ -1,6 +1,6 @@
 # Imperial Intelligence Platform v4.4 / Control Center 1.1
 
-A meglévő Imperial Intelligence Control Center additív továbbfejlesztése. Nem váltja le a CRM, Finance, Procurement, HouseMatch, PlotCheck, BuildConfig, PlanCheck vagy más forrásmodul üzleti logikáját; közös ProjectID-, esemény-, adatbefogadási, audit- és webes megjelenítési réteget ad hozzájuk.
+A meglévő Imperial Intelligence Control Center additív továbbfejlesztése. A platform a már kanonizált folyamatok (köztük a HouseBuild, PlotCheck és PlanCheck) üzleti motorját maga futtatja, a külön forrásmodulokhoz pedig közös ProjectID-, esemény-, adatbefogadási, audit- és webes megjelenítési réteget ad.
 
 ## Ebben a kiadásban elkészült
 
@@ -31,7 +31,7 @@ A meglévő Imperial Intelligence Control Center additív továbbfejlesztése. N
 - elkülönített publikus és belső számítás: a publikus API nem ad vissza önköltséget, fedezetet vagy kapacitási adatot;
 - felújítási kalkulátor a meglévő 398 munkadíj- és 283 anyagtételes Ártükör alapján;
 - HouseMatch a meglévő 45 aktív rekorddal és az eredeti négy pontozási profillal;
-- BuildConfig webes konfigurációs nézet ugyanazon árforrás-elsőbbséggel és jóváhagyási kapukkal;
+- BuildConfig teljes munkatér megváltoztathatatlan konfigurációverzióval, tételes BOM-mal, opciókompatibilitással, ár-/fedezet-/cashflow-/kapacitáskapukkal és kettős szakmai jóváhagyással;
 - közös reszponzív, white-labelre előkészített vizuális felület.
 
 ## Megőrzött kötelező üzleti szabályok
@@ -63,7 +63,11 @@ Fejlesztői belépés:
 
 - `/` – Vezetői cockpit
 - `/imports` – Enterprise Import Center
-- `/experience` – Új építés, felújítás, HouseMatch és BuildConfig webes felület
+- `/experience` – Új építés, felújítás és HouseMatch ügyfélélmény
+- `/buildconfig` – kanonikus HousePlan-alapú BuildConfig, BOM, ár, cashflow, kapacitás és kiadás
+- `/housebuild` – Kanonikus típusház-generálás, HousePlan-validáció és kiadás
+- `/plotcheck` – Kanonikus telekalkalmassági döntési motor
+- `/plancheck` – Kanonikus tervcsomag-ellenőrzés
 - `/tendermail` – Tenderkampányok, domainkapuk, címzettek és suppression
 - `/projects` – Közös ProjectID-regiszter
 - `/modules` – Modulregiszter

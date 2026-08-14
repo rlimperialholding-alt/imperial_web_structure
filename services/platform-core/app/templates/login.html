@@ -6,10 +6,11 @@
   <p>Egységes ProjectID-, esemény-, kivétel- és kiadásfelügyelet.</p>
   {% if error %}<div class="alert danger">{{ error }}</div>{% endif %}
   <form method="post" action="/login" class="stack">
+    <input type="hidden" name="return_to" value="{{ return_to or '/' }}">
     <label>E-mail<input type="email" name="email" value="owner@imperial.local" required></label>
     <label>Jelszó<input type="password" name="password" required></label>
     <button type="submit">Belépés</button>
   </form>
-  <small>Fejlesztői demo-jelszó: {{ demo_password }}</small>
+  {% if demo_password %}<small>Fejlesztői demo-jelszó: {{ demo_password }}</small>{% endif %}
 </section>
 {% endblock %}

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -13,11 +14,25 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..models import (
-    EventRecord, OutboxMessage, PartnerAttendance, PartnerChangeNotice, PartnerEvidence,
-    PartnerFieldAccess, PartnerProgressReport, PartnerWorker, PMWorkPackage, ProjectRegistry,
-    SiteIssue, TaskRecord,
+    EventRecord,
+    OutboxMessage,
+    PartnerAttendance,
+    PartnerChangeNotice,
+    PartnerEvidence,
+    PartnerFieldAccess,
+    PartnerProgressReport,
+    PartnerWorker,
+    PMWorkPackage,
+    ProjectRegistry,
+    SiteIssue,
+    TaskRecord,
 )
-from ..schemas import PartnerAccessCreateIn, PartnerAttendanceActionIn, PartnerChangeIn, PartnerProgressIn
+from ..schemas import (
+    PartnerAccessCreateIn,
+    PartnerAttendanceActionIn,
+    PartnerChangeIn,
+    PartnerProgressIn,
+)
 from ..security import hash_password, verify_password
 
 
@@ -102,6 +117,8 @@ def deactivate_access(db: Session, access_id: str, actor: str) -> PartnerFieldAc
     row = db.scalar(select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == access_id))
     if not row:
         raise KeyError(access_id)
+    if not row.active:
+        raise ValueError("A hozzáférés már le van zárva.")
     row.active = False
     audit(db, actor=actor, action="partner_field.access.deactivate", entity_type="partner_field_access", entity_id=row.access_id)
     db.commit()
@@ -132,7 +149,11 @@ def partner_dashboard(db: Session, access: PartnerFieldAccess) -> dict:
     closed_hours = Decimal("0")
     for a in attendance:
         if a.check_in_at and a.check_out_at:
-            seconds = Decimal(str((_as_aware(a.check_out_at) - _as_aware(a.check_in_at)).total_seconds()))
+            check_out_at = _as_aware(a.check_out_at)
+            check_in_at = _as_aware(a.check_in_at)
+            if check_out_at is None or check_in_at is None:
+                continue
+            seconds = Decimal(str((check_out_at - check_in_at).total_seconds()))
             closed_hours += seconds / Decimal("3600")
     return {
         "access": access, "project": project, "package": package, "workers": workers,
@@ -244,11 +265,13 @@ def create_progress(db: Session, access: PartnerFieldAccess, data: PartnerProgre
 
 
 def review_progress(db: Session, progress_report_id: str, decision: str, actor: str) -> PartnerProgressReport:
-    row = db.scalar(select(PartnerProgressReport).where(PartnerProgressReport.progress_report_id == progress_report_id))
+    row = db.scalar(select(PartnerProgressReport).where(PartnerProgressReport.progress_report_id == progress_report_id).with_for_update())
     if not row:
         raise KeyError(progress_report_id)
     if decision not in {"approved", "rejected"}:
         raise ValueError("Ismeretlen döntés.")
+    if row.status != "pending_review":
+        raise ValueError("A haladási jelentést már elbírálták.")
     before = {"status": row.status}
     row.status = decision
     row.reviewed_by = actor
@@ -347,6 +370,7 @@ _ALLOWED_IMAGES = {
     "image/webp": (".webp", lambda b: len(b) >= 12 and b[:4] == b"RIFF" and b[8:12] == b"WEBP"),
 }
 _MAX_IMAGE_BYTES = 12 * 1024 * 1024
+_DEFAULT_PROJECT_EVIDENCE_QUOTA_BYTES = 5 * 1024 * 1024 * 1024
 
 
 def save_evidence(db: Session, access: PartnerFieldAccess, *, file_name: str, mime_type: str, raw: bytes,
@@ -357,6 +381,7 @@ def save_evidence(db: Session, access: PartnerFieldAccess, *, file_name: str, mi
         raise ValueError("Csak JPG, PNG vagy WEBP kép tölthető fel.")
     if not raw or len(raw) > _MAX_IMAGE_BYTES:
         raise ValueError("A kép üres vagy nagyobb 12 MB-nál.")
+    ensure_project_evidence_quota(db, access.project_id, len(raw))
     extension, validator = _ALLOWED_IMAGES[mime_type]
     if not validator(raw):
         raise ValueError("A fájl tartalma nem egyezik a képformátummal.")
@@ -393,6 +418,40 @@ def save_evidence(db: Session, access: PartnerFieldAccess, *, file_name: str, mi
     db.commit()
     db.refresh(row)
     return row
+
+
+def ensure_project_evidence_quota(
+    db: Session,
+    project_id: str,
+    incoming_bytes: int,
+    *,
+    quota_bytes: int | None = None,
+) -> None:
+    quota = quota_bytes
+    if quota is None:
+        raw_quota = os.getenv(
+            "PARTNER_EVIDENCE_PROJECT_QUOTA_BYTES",
+            str(_DEFAULT_PROJECT_EVIDENCE_QUOTA_BYTES),
+        )
+        try:
+            quota = int(raw_quota)
+        except ValueError as exc:
+            raise ValueError(
+                "A PARTNER_EVIDENCE_PROJECT_QUOTA_BYTES egész szám kell legyen."
+            ) from exc
+    if quota < _MAX_IMAGE_BYTES:
+        raise ValueError("A projekt bizonyítéktár-korlátja nem lehet 12 MB-nál kisebb.")
+    used = db.scalar(
+        select(func.coalesce(func.sum(PartnerEvidence.file_size), 0)).where(
+            PartnerEvidence.project_id == project_id
+        )
+    )
+    if int(used or 0) + incoming_bytes > quota:
+        quota_gib = quota / 1024 / 1024 / 1024
+        raise ValueError(
+            f"A projekt bizonyítéktára elérte a {quota_gib:.1f} GB-os korlátot. "
+            "Kérj külön fájlszerver-kapacitást."
+        )
 
 
 def internal_partner_projection(db: Session, project_id: str) -> dict:

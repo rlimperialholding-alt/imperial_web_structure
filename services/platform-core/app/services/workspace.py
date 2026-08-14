@@ -35,12 +35,27 @@ def _aware(value: datetime | None) -> datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+def _is_overdue(value: datetime | None, now: datetime) -> bool:
+    due_at = _aware(value)
+    return due_at is not None and due_at < now
+
+
+def _is_today(value: datetime | None, now: datetime) -> bool:
+    due_at = _aware(value)
+    return due_at is not None and due_at.date() == now.date()
+
+
+def _expires_within(value: datetime | None, now: datetime, days: int) -> bool:
+    expires_at = _aware(value)
+    return expires_at is not None and 0 <= (expires_at - now).days <= days
+
+
 def workspace_summary(db: Session, user: User) -> dict[str, Any]:
     now = utcnow()
     open_tasks = db.scalars(select(TaskRecord).where(TaskRecord.status.in_(["open", "in_progress", "blocked"]))).all()
     assigned_tasks = [t for t in open_tasks if not t.assignee or t.assignee in {user.email, user.name}]
-    overdue = [t for t in assigned_tasks if _aware(t.due_at) and _aware(t.due_at) < now]
-    today = [t for t in assigned_tasks if _aware(t.due_at) and _aware(t.due_at).date() == now.date()]
+    overdue = [t for t in assigned_tasks if _is_overdue(t.due_at, now)]
+    today = [t for t in assigned_tasks if _is_today(t.due_at, now)]
     blocked_projects = db.scalars(select(ProjectRegistry).where(ProjectRegistry.blocked.is_(True)).order_by(desc(ProjectRegistry.financial_impact_huf))).all()
     executive_events = db.scalars(select(EventRecord).where(
         EventRecord.status == "open", EventRecord.executive_relevance.is_(True)
@@ -79,7 +94,7 @@ def task_metrics(db: Session, *, assignee: str | None = None) -> dict[str, int]:
         "in_progress": sum(1 for t in tasks if t.status == "in_progress"),
         "blocked": sum(1 for t in tasks if t.status == "blocked"),
         "done": sum(1 for t in tasks if t.status == "done"),
-        "overdue": sum(1 for t in tasks if t.status not in {"done", "cancelled"} and _aware(t.due_at) and _aware(t.due_at) < now),
+        "overdue": sum(1 for t in tasks if t.status not in {"done", "cancelled"} and _is_overdue(t.due_at, now)),
     }
 
 
@@ -104,7 +119,7 @@ def list_tasks(
     if query_text:
         needle = f"%{query_text.strip()}%"
         query = query.where(or_(TaskRecord.title.ilike(needle), TaskRecord.description.ilike(needle), TaskRecord.project_id.ilike(needle)))
-    return db.scalars(query.order_by(TaskRecord.status, TaskRecord.due_at, desc(TaskRecord.updated_at))).all()
+    return list(db.scalars(query.order_by(TaskRecord.status, TaskRecord.due_at, desc(TaskRecord.updated_at))).all())
 
 
 def update_task(db: Session, task_id: str, payload: TaskUpdateIn, *, actor: str) -> TaskRecord:
@@ -194,7 +209,7 @@ def list_documents(
     if query_text:
         needle = f"%{query_text.strip()}%"
         query = query.where(or_(WorkspaceDocument.title.ilike(needle), WorkspaceDocument.extracted_summary.ilike(needle), WorkspaceDocument.project_id.ilike(needle)))
-    return db.scalars(query.order_by(desc(WorkspaceDocument.updated_at))).all()
+    return list(db.scalars(query.order_by(desc(WorkspaceDocument.updated_at))).all())
 
 
 def document_metrics(db: Session) -> dict[str, int]:
@@ -205,7 +220,7 @@ def document_metrics(db: Session) -> dict[str, int]:
         "approved": sum(1 for r in rows if r.approval_status == "approved"),
         "pending": sum(1 for r in rows if r.approval_status in {"draft", "pending_review"}),
         "unverified": sum(1 for r in rows if r.verification_status != "verified"),
-        "expiring": sum(1 for r in rows if _aware(r.expires_at) and 0 <= (_aware(r.expires_at) - now).days <= 30),
+        "expiring": sum(1 for r in rows if _expires_within(r.expires_at, now, 30)),
     }
 
 
@@ -241,7 +256,7 @@ def project_360(db: Session, project_id: str) -> dict[str, Any]:
         "documents": documents,
         "canonical": canonical,
         "open_task_count": sum(1 for t in tasks if t.status not in {"done", "cancelled"}),
-        "overdue_task_count": sum(1 for t in tasks if t.status not in {"done", "cancelled"} and _aware(t.due_at) and _aware(t.due_at) < now),
+        "overdue_task_count": sum(1 for t in tasks if t.status not in {"done", "cancelled"} and _is_overdue(t.due_at, now)),
         "open_issue_count": sum(1 for i in issues if i.status == "open"),
         "verified_document_count": sum(1 for d in documents if d.verification_status == "verified"),
     }

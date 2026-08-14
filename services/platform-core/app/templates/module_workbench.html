@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.name }} · Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="business-hero">
+  <div>
+    <span class="eyebrow">{{ profile.module_key }}</span>
+    <h1>{{ profile.name }}</h1>
+    <p>{{ profile.entity_label }} teljes üzleti munkapadja: adatfelvitel, felelős, határidő,
+      állapotfolyam, jóváhagyás és belső kommunikáció.</p>
+  </div>
+  <div class="business-kpis">
+    <div><strong>{{ records|length }}</strong><span>aktív rekord</span></div>
+    <div><strong>{{ records|selectattr('status', 'equalto', 'in_review')|list|length }}</strong><span>ellenőrzésen</span></div>
+    <div><strong>{{ records|selectattr('priority', 'equalto', 'critical')|list|length }}</strong><span>kritikus</span></div>
+  </div>
+</div>
+
+{% if source_projection %}
+<section class="workspace-card source-projection {{ 'connected' if source_projection.connected else 'disconnected' }}">
+  <div class="card-heading">
+    <div><span class="eyebrow">MIGRÁLT ÉLES ADATOK</span><h2>{{ source_projection.message }}</h2></div>
+    <strong>{{ source_projection.total }} forrásrekord</strong>
+  </div>
+  {% if source_projection.connected %}
+  <div class="source-counts">
+    {% for item in source_projection.counts %}
+    <span><b>{{ item.count }}</b>{{ item.recordType|replace('_', ' ') }} · {{ item.reviewStatus }}</span>
+    {% endfor %}
+  </div>
+  {% if source_projection.recent %}<div class="source-recent">
+    {% for item in source_projection.recent %}<a href="{{ item.sourceUrl or '#' }}" target="_blank" rel="noopener"><b>{{ item.title }}</b><small>{{ item.recordType|replace('_', ' ') }} · {{ item.reviewStatus }}</small></a>{% endfor %}
+  </div>{% endif %}
+  {% else %}<p>{{ source_projection.message }}</p>{% endif %}
+</section>
+{% endif %}
+
+{% if canonical_total %}
+<section class="workspace-card canonical-data-card">
+  <div class="card-heading">
+    <div><span class="eyebrow">KANONIKUS VÁLLALATI ADATOK</span><h2>A modulba beemelt rekordok</h2></div>
+    <strong>{{ canonical_total }} rekord</strong>
+  </div>
+  <p class="canonical-data-note">Ezek már az Imperial Intelligence központi adatbázisában vannak. A lista a 100 legutóbb frissített rekordot mutatja; a forrásazonosító miatt az újraszinkron nem készít másolatot.</p>
+  <div class="business-record-list canonical-record-list">
+    {% for row in canonical_records %}
+    <a class="business-record-row" href="/workbench/{{ profile.module_key }}/canonical/{{ row.record_id }}">
+      <span class="status-badge {{ row.status }}">{{ row.status|replace('_', ' ') }}</span>
+      <div>
+        <strong>{{ row.canonical_name or row.external_key or row.record_id }}</strong>
+        <small>{{ row.entity_type|replace('_', ' ') }} · {{ row.project_id or 'nincs projektkapcsolat' }}</small>
+      </div>
+      <span class="priority-pill normal">migrált</span>
+      <time>{{ row.updated_at|dt }}</time>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<div class="business-grid">
+  <section class="workspace-card">
+    <div class="card-heading">
+      <div><span class="eyebrow">NYILVÁNTARTÁS</span><h2>{{ profile.entity_label }}</h2></div>
+      <a href="?include_archived={{ 'false' if include_archived else 'true' }}">
+        {{ 'Csak aktívak' if include_archived else 'Archívak is' }}
+      </a>
+    </div>
+    <div class="business-record-list">
+      {% for record in records %}
+      <a class="business-record-row" href="/workbench/{{ profile.module_key }}/records/{{ record.record_id }}">
+        <span class="status-badge {{ record.status }}">{{ record.status|replace('_', ' ') }}</span>
+        <div>
+          <strong>{{ record.title }}</strong>
+          <small>{{ record.record_type }} · {{ record.project_id or 'nincs projekt' }} ·
+            {{ record.assignee or 'nincs felelős' }}</small>
+        </div>
+        <span class="priority-pill {{ record.priority }}">{{ record.priority }}</span>
+        <time>{{ record.updated_at|dt }}</time>
+      </a>
+      {% else %}
+      <div class="empty-state"><b>Még nincs üzleti rekord.</b><span>Az első tétel az űrlappal hozható létre.</span></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="workspace-card business-create-card">
+    <div class="card-heading"><div><span class="eyebrow">ÚJ TÉTEL</span><h2>Adatfelvitel</h2></div></div>
+    <form class="business-form" method="post" action="/workbench/{{ profile.module_key }}/records">
+      <label>Megnevezés<input name="title" required minlength="2" maxlength="255"></label>
+      <label>Típus<input name="record_type" value="{{ profile.entity_label }}"></label>
+      <label>Leírás<textarea name="description" rows="3"></textarea></label>
+      <div class="form-grid-2">
+        <label>Projektazonosító<input name="project_id" placeholder="pl. IMP-..."></label>
+        <label>Ügyfélhivatkozás<input name="customer_reference"></label>
+        <label>Felelős<input name="assignee" placeholder="céges e-mail"></label>
+        <label>Határidő<input type="datetime-local" name="due_at"></label>
+        <label>Prioritás<select name="priority"><option>normal</option><option>low</option><option>high</option><option>critical</option></select></label>
+        <label>Induló állapot<input name="status" value="{{ profile.initial_status }}" readonly></label>
+        <label>Összeg / pénzügyi hatás (Ft)<input type="number" step="0.01" name="amount_huf" value="0"></label>
+      </div>
+      {% for field in profile.fields %}
+      <label>{{ field.label }}<input name="data_{{ field.key }}"></label>
+      {% endfor %}
+      <button class="primary-button" type="submit">Tétel létrehozása</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

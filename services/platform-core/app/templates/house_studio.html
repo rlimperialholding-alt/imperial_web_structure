@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}House Studio · Imperial Intelligence{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/house-studio.css?v={{ asset_version }}">
+
+<section class="hero house-studio-hero"><div>
+  <span class="eyebrow light">HOUSEPLAN · HB-GRID-V1</span>
+  <h1>Kötegelt típusház-generátor</h1>
+  <p>Determinisztikus, milliméter-alapú koncepciótervek valós helyiségpoligonokkal, szintkapcsolatokkal, SHA-256 geometria-aláírással és SVG-előnézettel.</p>
+</div></section>
+
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">FORRÁSJOGOK</span><h2>HouseSource revíziók</h2></div></div>
+  <p class="house-studio-note">Generálás csak a legújabb, jóváhagyott, nem lejárt és nem visszavont jogi revízióból indulhat. Új revíziót a készítőjétől eltérő jogosult hagyhat jóvá.</p>
+  {% if source_notice %}<div class="house-studio-success" role="status">{{ source_notice }}</div>{% endif %}
+  {% if house_permissions.source_create %}
+  <details class="house-studio-source-create"><summary>Új forrásjogi revízió</summary>
+    <form method="post" action="/house-studio/sources" class="house-studio-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Katalógusverzió *<select name="catalog_version_id" required>{% for house in houses %}<option value="{{ house.catalog_version_id }}">{{ house.house_id }} · {{ house.name }} · v{{ house.catalog_version }}</option>{% endfor %}</select></label>
+      <label>Jogalap *<select name="legal_basis" required><option value="owned">Saját tulajdon</option><option value="licensed">Licencelt</option><option value="public_domain">Közkincs</option><option value="customer_authorized">Ügyfél által engedélyezett</option><option value="unknown">Még tisztázatlan</option></select></label>
+      <label>Licenc hatálya *<textarea name="licence_scope" rows="3" maxlength="4000" required></textarea></label>
+      <label>Bizonyíték hivatkozása *<input name="evidence_ref" maxlength="1200" required></label>
+      <label>Bizonyíték leírása *<textarea name="evidence_text" rows="3" maxlength="10000" required></textarea></label>
+      <label>Lejárat (opcionális, Europe/Budapest)<input type="datetime-local" name="expires_at"></label>
+      <button class="gold" type="submit">Jogi ellenőrzésre küldés</button>
+    </form>
+  </details>
+  {% endif %}
+  <div class="house-studio-source-table" role="region" aria-label="HouseSource revíziók" tabindex="0"><table>
+    <thead><tr><th>Ház / revízió</th><th>Jogalap</th><th>Állapot</th><th>Hatály</th><th>Jóváhagyó</th><th>Művelet</th></tr></thead>
+    <tbody>{% for source in sources %}<tr>
+      <td><strong>{{ source.house_name }}</strong><br><code>{{ source.source_id }}</code></td><td>{{ source.legal_basis }}</td>
+      <td><span class="house-source-status status-{{ source.status }}">{{ source.status }}</span></td>
+      <td>{{ source.licence_scope }}{% if source.expires_at %}<br>Lejár: {{ source.expires_at|dt }}{% endif %}</td><td>{{ source.approved_by_subject or '—' }}</td>
+      <td>
+      {% if source.status == 'rights_review' and house_permissions.source_approve %}
+        <form method="post" action="/house-studio/sources/{{ source.source_id }}/approve"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Jóváhagyás</button></form>
+        <form method="post" action="/house-studio/sources/{{ source.source_id }}/block" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input name="reason" placeholder="Blokkolás indoka" required><button type="submit">Blokkolás</button></form>
+      {% elif source.status == 'approved' and house_permissions.source_revoke %}
+        <form method="post" action="/house-studio/sources/{{ source.source_id }}/revoke" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input name="reason" placeholder="Visszavonás indoka" required><button type="submit">Visszavonás</button></form>
+      {% else %}—{% endif %}
+      </td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">MUNKASOR</span><h2>Kötegek, tervek és PlanCheck feladatok</h2></div></div>
+  <form method="get" action="/house-studio" class="house-studio-form">
+    <label>Projekt<input name="project_id" value="{{ house_workspace.filters.project_id }}" placeholder="PROJECT-ID"></label>
+    <label>Kötegállapot<select name="batch_status"><option value="">Mind</option>{% for status in ['running','completed','partial','failed'] %}<option value="{{ status }}" {% if house_workspace.filters.batch_status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select></label>
+    <label>Tervállapot<select name="plan_status"><option value="">Mind</option>{% for status in ['plancheck_review','approved','rejected','rights_recheck','archived'] %}<option value="{{ status }}" {% if house_workspace.filters.plan_status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select></label>
+    <button type="submit">Szűrés</button>
+  </form>
+  <h3>Legutóbbi kötegek</h3>
+  <div class="house-studio-source-table"><table><thead><tr><th>Batch</th><th>Állapot</th><th>Létrejött</th><th>Hibás</th><th>Duplikált</th><th>Blokkolt</th><th>Művelet</th></tr></thead><tbody>
+  {% for batch in house_workspace.batches %}<tr>
+    <td><a href="/house-studio/batches/{{ batch.batch_id }}"><code>{{ batch.batch_id }}</code></a><br>{{ batch.created_at|dt }}</td><td>{{ batch.status }}</td><td>{{ batch.created_count }}</td><td>{{ batch.invalid_count }}</td><td>{{ batch.duplicate_count }}</td><td>{{ batch.blocked_count }}</td>
+    <td>{% if batch.status in ['failed','partial'] %}<form method="post" action="/house-studio/batches/{{ batch.batch_id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Újrapróbálás</button></form>{% else %}—{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="7">Nincs a szűrésnek megfelelő köteg.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <h3>HousePlan tervek</h3>
+  <div class="house-studio-source-table"><table><thead><tr><th>Terv</th><th>Projekt</th><th>Állapot</th><th>Verzió</th><th>Kapcsolatok</th></tr></thead><tbody>
+  {% for plan in house_workspace.plans %}<tr><td><a href="/house-studio/plans/{{ plan.plan_id }}"><strong>{{ plan.title }}</strong></a><br><code>{{ plan.plan_id }}</code></td><td>{{ plan.project_id }}</td><td>{{ plan.status }}</td><td>W/&quot;{{ plan.row_version }}&quot;</td><td><code>{{ plan.housebuild_case_id }}</code><br><code>{{ plan.plancheck_task_id }}</code></td></tr>{% else %}<tr><td colspan="5">Nincs a szűrésnek megfelelő terv.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <h3>PlanCheck munkasor</h3>
+  <div class="house-studio-source-table"><table><thead><tr><th>Feladat</th><th>Projekt</th><th>Felelős</th><th>Állapot</th></tr></thead><tbody>
+  {% for task in house_workspace.plancheck_tasks %}<tr><td>{{ task.title }}<br><code>{{ task.task_id }}</code></td><td>{{ task.project_id }}</td><td>{{ task.assignee }}</td><td>{{ task.status }}</td></tr>{% else %}<tr><td colspan="4">Nincs PlanCheck feladat.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">DRY-RUN</span><h2>1–100 terv ellenőrzése írás nélkül</h2></div></div>
+  <p class="house-studio-note">A dry-run nem hoz létre adatbázisrekordot. A sikeres eredmény 30 percig érvényes, felhasználóhoz és forrásverzióhoz kötött aláírást kap.</p>
+  {% if error %}<div class="house-studio-error" role="alert"><strong>A köteg nem futott le.</strong> {{ error }}</div>{% endif %}
+  <form method="post" action="/house-studio/dry-run" class="house-studio-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Kiadott katalógusforrás *<select name="source_house_id" required><option value="">Válasszon forrást…</option>{% for house in houses %}<option value="{{ house.house_id }}" {% if selected_house_id == house.house_id %}selected{% endif %}>{{ house.house_id }} · {{ house.name }} · v{{ house.catalog_version }}</option>{% endfor %}</select></label>
+    <label>Köteg JSON (1–100 objektum) *<textarea name="batch_json" rows="28" spellcheck="false" required>{{ batch_json }}</textarea></label>
+    <div class="form-action"><button class="gold" type="submit">Dry-run és SVG-előnézet</button></div>
+  </form>
+</section>
+
+{% if result %}
+<section class="kpi-grid house-studio-kpis" aria-label="Dry-run összesítés"><article><span>Feldolgozott</span><strong>{{ result.results|length }}</strong></article><article><span>Generálható</span><strong>{{ result.counts.ready }}</strong></article><article><span>Hibás</span><strong>{{ result.counts.invalid }}</strong></article><article><span>Duplikált</span><strong>{{ result.counts.duplicate }}</strong></article><article><span>Blokkolt</span><strong>{{ result.counts.blocked or 0 }}</strong></article></section>
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">EREDMÉNY</span><h2>Soronkénti ellenőrzés</h2></div></div>
+  <p><strong>Batch SHA-256:</strong> <code>{{ result.batchHash }}</code><br><strong>Dry-run lejár:</strong> {{ result.expiresAt }}</p>
+  <div class="house-studio-results">
+  {% for item in result.results %}<article class="house-studio-result status-{{ item.status }}"><header><span>#{{ item.rowNumber }}</span><strong>{{ item.status }}</strong></header>
+    {% if item.status == 'ready' %}<p><b>Input:</b> <code>{{ item.inputHash }}</code><br><b>Geometry:</b> <code data-geometry-signature="{{ item.geometrySignature }}">{{ item.geometrySignature }}</code>{% if item.warning %}<br><b>Figyelmeztetés:</b> {{ item.warning }} ({{ item.similarityScore }}){% endif %}</p><div class="house-studio-svg">{{ item.svg|safe }}</div>
+    {% elif item.status == 'duplicate' %}<p>{% if item.duplicatePlanId %}A terv már létezik: <code>{{ item.duplicatePlanId }}</code>.{% else %}A sor azonos a(z) #{{ item.duplicateOf }} sorral; új tervet nem hozna létre.{% endif %}</p>
+    {% else %}<p role="alert"><b>{{ item.errorCode }}</b>: {{ item.message }}</p>{% endif %}
+  </article>{% endfor %}
+  </div>
+  {% if result.executionAllowed and result.counts.ready > 0 %}<form method="post" action="/house-studio/execute" class="house-studio-execute"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="source_house_id" value="{{ selected_house_id }}"><input type="hidden" name="batch_json" value="{{ batch_json|e }}"><input type="hidden" name="dry_run_token" value="{{ result.dryRunToken }}"><input type="hidden" name="pricing_revision" value="preview:no-pricing:v1"><label>Idempotency key *<input name="idempotency_key" minlength="8" maxlength="160" value="houseplan-{{ result.batchHash[:24] }}" required></label><button class="gold" type="submit">Köteg végrehajtása és PlanCheck feladatok létrehozása</button></form>{% endif %}
+</section>
+{% endif %}
+
+{% if execution_result %}<section class="workspace-card"><div class="card-heading"><div><span class="eyebrow">VÉGREHAJTÁS</span><h2>{{ execution_result.status }} · {{ execution_result.batchId }}</h2></div></div><p>Létrejött: <strong>{{ execution_result.counts.created }}</strong> · Hibás: <strong>{{ execution_result.counts.invalid }}</strong> · Duplikált: <strong>{{ execution_result.counts.duplicate }}</strong> · Blokkolt: <strong>{{ execution_result.counts.blocked }}</strong>{% if execution_result.replayed %} · idempotens visszajátszás{% endif %}</p><div class="house-studio-results">{% for item in execution_result.results %}<article class="house-studio-result status-{{ item.status }}"><header><span>#{{ item.rowNumber }}</span><strong>{{ item.status }}</strong></header>{% if item.planId %}<p><b>PlanID:</b> <a href="/house-studio/plans/{{ item.planId }}"><code>{{ item.planId }}</code></a></p>{% endif %}{% if item.duplicatePlanId %}<p><b>Kapcsolt terv:</b> <code>{{ item.duplicatePlanId }}</code></p>{% endif %}{% if item.similarityScore %}<p><b>Hasonlóság:</b> {{ item.similarityScore }}</p>{% endif %}{% if item.message %}<p>{{ item.message }}</p>{% endif %}</article>{% endfor %}</div></section>{% endif %}
+{% endblock %}
