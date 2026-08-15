@@ -292,7 +292,7 @@ services:
       ENVIRONMENT: test
       DATABASE_URL: sqlite:////tmp/platform_core_test.db
       DEMO_RUNTIME_PATH: /tmp/platform_demo_runtime.json
-      SESSION_SECRET: local-test-session-key-not-for-production
+      SESSION_SECRET: test-session-secret-for-isolated-ci-only  # pragma: allowlist secret
       CONTENT_EXPERT_REVIEW_SECRET_FILE: /run/secrets/platform_expert_review_secret
       CONTENT_EXPERT_REVIEW_KEY_ID: test-expert-review-key-v1
       CONTENT_MARKETING_REVIEW_SECRET_FILE: /run/secrets/platform_marketing_review_secret
