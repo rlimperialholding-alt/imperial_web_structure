@@ -172,6 +172,8 @@ def test_house_designer_json_api_enforces_preconditions_and_replays(client):
     assert 'value="resize_room"' in editor.text
     assert 'value="remove_room"' in editor.text
     assert 'value="add_wall"' in editor.text
+    assert 'value="clone_level"' in editor.text
+    assert 'value="add_furniture"' in editor.text
     assert editor.text.count("<main") == 1
     assert 'class="skip-link" href="#main-content"' in editor.text
     assert 'id="main-content" tabindex="-1"' in editor.text
@@ -242,6 +244,81 @@ def test_house_designer_json_api_enforces_preconditions_and_replays(client):
     assert (
         restore_replay.json()["revision"]["revisionId"] == restored_design["revision"]["revisionId"]
     )
+
+
+def test_clone_level_html_command_creates_audited_revision(client):
+    csrf = _login_and_csrf(client)
+    created = client.post(
+        "/house-designer/sessions",
+        headers={"Origin": "http://testserver"},
+        data={
+            "csrf_token": csrf,
+            "command_id": str(uuid4()),
+            "title": "Klónozható ház",
+            "origin": "blank",
+            "width_mm": "10000",
+            "depth_mm": "8000",
+        },
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
+    detail_url = created.headers["location"]
+    page = client.get(detail_url)
+    revision_id = re.search(r'name="base_revision_id" value="([^"]+)"', page.text)
+    canonical_hash = re.search(r'name="base_canonical_sha256" value="([^"]+)"', page.text)
+    assert revision_id and canonical_hash
+
+    cloned = client.post(
+        f"{detail_url}/commands",
+        headers={"Origin": "http://testserver"},
+        data={
+            "csrf_token": csrf,
+            "command_id": str(uuid4()),
+            "command_type": "clone_level",
+            "base_revision_id": revision_id.group(1),
+            "base_canonical_sha256": canonical_hash.group(1),
+            "sourceLevelId": "L01",
+            "levelType": "full_storey",
+        },
+        follow_redirects=False,
+    )
+    assert cloned.status_code == 303
+    assert "error=" not in cloned.headers["location"]
+    changed = client.get(detail_url)
+    assert "L02" in changed.text
+    assert "Egy szint másolata új szintként került a tervbe." in changed.text
+    changed_revision_id = re.search(
+        r'name="base_revision_id" value="([^"]+)"', changed.text
+    )
+    changed_canonical_hash = re.search(
+        r'name="base_canonical_sha256" value="([^"]+)"', changed.text
+    )
+    assert changed_revision_id and changed_canonical_hash
+    furnished = client.post(
+        f"{detail_url}/commands",
+        headers={"Origin": "http://testserver"},
+        data={
+            "csrf_token": csrf,
+            "command_id": str(uuid4()),
+            "command_type": "add_furniture",
+            "base_revision_id": changed_revision_id.group(1),
+            "base_canonical_sha256": changed_canonical_hash.group(1),
+            "levelId": "L02",
+            "furnitureKind": "sofa",
+            "label": "Próbakanapé",
+            "xMm": "1000",
+            "yMm": "1000",
+            "widthMm": "2000",
+            "depthMm": "900",
+            "rotationDeg": "0",
+        },
+        follow_redirects=False,
+    )
+    assert furnished.status_code == 303
+    assert "error=" not in furnished.headers["location"]
+    furnished_page = client.get(detail_url)
+    assert "Próbakanapé" in furnished_page.text
+    assert 'class="hd-furniture"' in furnished_page.text
 
 
 def test_geometry_api_rejects_crossing_wall_and_outside_opening_atomically(client):

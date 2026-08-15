@@ -298,10 +298,12 @@ def _payload(form: Any, command_type: str) -> dict[str, Any]:
         "landingDepthMm",
         "pitchDeg",
         "northAngleDeg",
+        "rotationDeg",
     }
     fields_by_command = {
         "set_footprint": {"levelId", "widthMm", "depthMm"},
         "add_level": {"levelType"},
+        "clone_level": {"sourceLevelId", "levelType"},
         "remove_level": {"levelId"},
         "add_wall": {
             "levelId",
@@ -351,6 +353,26 @@ def _payload(form: Any, command_type: str) -> dict[str, Any]:
             "headroomMm",
             "landingDepthMm",
         },
+        "add_furniture": {
+            "levelId",
+            "furnitureId",
+            "furnitureKind",
+            "label",
+            "xMm",
+            "yMm",
+            "widthMm",
+            "depthMm",
+            "rotationDeg",
+        },
+        "move_furniture": {
+            "levelId",
+            "furnitureId",
+            "xMm",
+            "yMm",
+            "rotationDeg",
+        },
+        "resize_furniture": {"levelId", "furnitureId", "widthMm", "depthMm"},
+        "remove_furniture": {"levelId", "furnitureId"},
         "add_room": {
             "levelId",
             "roomId",

@@ -18,6 +18,18 @@ STAIR_GEOMETRY_VERSION = "hd-stair-geometry-v1"
 MAX_ROOMS_PER_LEVEL = 500
 MAX_WALLS_PER_LEVEL = 500
 MAX_OPENINGS_PER_LEVEL = 500
+MAX_FURNITURE_PER_LEVEL = 500
+FURNITURE_KINDS = {
+    "appliance",
+    "bed",
+    "cabinet",
+    "chair",
+    "custom",
+    "dining_table",
+    "kitchen_unit",
+    "sanitary",
+    "sofa",
+}
 
 
 class GeometryError(ValueError):
@@ -70,6 +82,7 @@ def apply_command_with_findings(
     handlers = {
         "set_footprint": _set_footprint,
         "add_level": _add_level,
+        "clone_level": _clone_level,
         "remove_level": _remove_level,
         "add_wall": _add_wall,
         "move_wall": _move_wall,
@@ -82,6 +95,10 @@ def apply_command_with_findings(
         "add_connection": _add_connection,
         "remove_connection": _remove_connection,
         "set_stair_geometry": _set_stair_geometry,
+        "add_furniture": _add_furniture,
+        "move_furniture": _move_furniture,
+        "resize_furniture": _resize_furniture,
+        "remove_furniture": _remove_furniture,
         "add_room": _add_room,
         "move_room": _move_room,
         "resize_room": _resize_room,
@@ -168,6 +185,48 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                 )
             )
             continue
+        furniture = level.get("furnitureLayer", [])
+        if not isinstance(furniture, list) or len(furniture) > MAX_FURNITURE_PER_LEVEL:
+            findings.append(
+                _finding(
+                    "furniture_collection_invalid",
+                    "BLOCKER",
+                    f"Egy szinten legfeljebb {MAX_FURNITURE_PER_LEVEL} bútorsegéd lehet.",
+                    f"{path}.furnitureLayer",
+                )
+            )
+            furniture = []
+        furniture_ids: set[str] = set()
+        for furniture_index, item in enumerate(furniture):
+            furniture_path = f"{path}.furnitureLayer[{furniture_index}]"
+            furniture_id = str(item.get("id") or "")
+            kind = str(item.get("kind") or "")
+            item_box = _furniture_box(item)
+            if (
+                not furniture_id
+                or furniture_id in furniture_ids
+                or kind not in FURNITURE_KINDS
+                or item_box is None
+            ):
+                findings.append(
+                    _finding(
+                        "furniture_invalid",
+                        "BLOCKER",
+                        "A bútorsegéd azonosítója, típusa, mérete vagy forgatása hibás.",
+                        furniture_path,
+                    )
+                )
+                continue
+            furniture_ids.add(furniture_id)
+            if not _contains(box, item_box):
+                findings.append(
+                    _finding(
+                        "furniture_outside",
+                        "BLOCKER",
+                        "A bútorsegéd nem kerülhet a szintkontúron kívülre.",
+                        furniture_path,
+                    )
+                )
         raw_rooms = level.get("rooms", [])
         room_boundary_boxes = (
             [
@@ -760,6 +819,7 @@ def adapt_houseplan_geometry(source: dict[str, Any]) -> dict[str, Any]:
                 ],
                 "connections": deepcopy(item.get("connections") or []),
                 "voids": [],
+                "furnitureLayer": deepcopy(item.get("furnitureLayer") or []),
                 "roof": None,
             }
         )
@@ -823,6 +883,7 @@ def _new_level(level_id: str, elevation_mm: int, width_mm: int, depth_mm: int) -
         "openings": [],
         "connections": [],
         "voids": [],
+        "furnitureLayer": [],
         "roof": None,
     }
 
@@ -892,6 +953,76 @@ def _add_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
             "id": f"VC-{len(levels) - 1:02d}",
             "coreId": core_id,
             "fromLevelId": source["id"],
+            "toLevelId": level_id,
+            "kind": "stair",
+        }
+    )
+
+
+def _clone_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
+    levels = geometry["levels"]
+    if len(levels) >= MAX_LEVELS:
+        raise GeometryError("level_limit", "Legfeljebb három szint hozható létre.", path="levels")
+    source = _level(geometry, str(payload["sourceLevelId"]))
+    if str(source.get("type") or "") == "attic":
+        raise GeometryError(
+            "attic_clone_invalid",
+            "Tetőtér fölé nem hozható létre új szint; előbb törölje vagy alakítsa át a tetőteret.",
+        )
+    source_box = _rectangle_box(source["outerBoundary"])
+    assert source_box is not None
+    target_type = str(payload.get("levelType") or "full_storey")
+    if target_type not in {"full_storey", "attic"}:
+        raise GeometryError("level_type_invalid", "A klónozott szint típusa nem támogatott.")
+
+    level_id = f"L{len(levels) + 1:02d}"
+    created = deepcopy(source)
+    created["id"] = level_id
+    created["type"] = target_type
+    created["elevationMm"] = len(levels) * 3_000
+    created["heightMm"] = int(source.get("heightMm") or 2_800)
+    created.pop("usableHeightZone", None)
+    if target_type == "attic":
+        inset = min(1_000, max(300, min(source_box[2], source_box[3]) // 8))
+        if source_box[2] - source_box[0] <= inset * 2 or source_box[3] - source_box[1] <= inset * 2:
+            raise GeometryError(
+                "attic_zone_unavailable",
+                "A szintkontúr túl kicsi a tetőtér hasznosmagassági zónájához.",
+            )
+        created["usableHeightZone"] = {
+            "minClearHeightMm": 1_900,
+            "polygon": _ring(
+                source_box[0] + inset,
+                source_box[1] + inset,
+                source_box[2] - inset,
+                source_box[3] - inset,
+            ),
+        }
+        created["roof"] = deepcopy(source.get("roof")) or {"type": "gable", "pitchDeg": 30}
+    else:
+        created["roof"] = None
+    levels.append(created)
+
+    core_id = str(payload.get("coreId") or "CORE-01")
+    if not geometry["verticalCores"]:
+        geometry["verticalCores"].append(
+            {
+                "id": core_id,
+                "kind": "stair",
+                "xMm": 1_000,
+                "yMm": 1_000,
+                "widthMm": 2_000,
+                "depthMm": 3_000,
+                "stairGeometry": _default_stair_geometry(),
+            }
+        )
+    else:
+        core_id = str(geometry["verticalCores"][0]["id"])
+    geometry["verticalConnections"].append(
+        {
+            "id": f"VC-{len(levels) - 1:02d}",
+            "coreId": core_id,
+            "fromLevelId": levels[-2]["id"],
             "toLevelId": level_id,
             "kind": "stair",
         }
@@ -1075,6 +1206,56 @@ def _set_stair_geometry(geometry: dict[str, Any], payload: dict[str, Any]) -> No
     }
 
 
+def _add_furniture(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
+    level = _level(geometry, str(payload["levelId"]))
+    items = level.setdefault("furnitureLayer", [])
+    furniture_id = str(payload.get("furnitureId") or _next_id(items, "F"))
+    if any(str(item.get("id")) == furniture_id for item in items):
+        raise GeometryError("furniture_exists", "A bútorsegéd azonosítója már létezik.")
+    items.append(
+        {
+            "id": furniture_id,
+            "kind": str(payload.get("furnitureKind") or "custom"),
+            "label": str(payload.get("label") or "Bútorsegéd")[:120],
+            "xMm": int(payload["xMm"]),
+            "yMm": int(payload["yMm"]),
+            "widthMm": int(payload["widthMm"]),
+            "depthMm": int(payload["depthMm"]),
+            "rotationDeg": int(payload.get("rotationDeg") or 0),
+        }
+    )
+
+
+def _move_furniture(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
+    item = _furniture(
+        _level(geometry, str(payload["levelId"])), str(payload["furnitureId"])
+    )
+    item["xMm"] = int(payload["xMm"])
+    item["yMm"] = int(payload["yMm"])
+    if "rotationDeg" in payload:
+        item["rotationDeg"] = int(payload["rotationDeg"])
+
+
+def _resize_furniture(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
+    item = _furniture(
+        _level(geometry, str(payload["levelId"])), str(payload["furnitureId"])
+    )
+    item["widthMm"] = int(payload["widthMm"])
+    item["depthMm"] = int(payload["depthMm"])
+
+
+def _remove_furniture(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
+    level = _level(geometry, str(payload["levelId"]))
+    furniture_id = str(payload["furnitureId"])
+    items = level.setdefault("furnitureLayer", [])
+    before = len(items)
+    level["furnitureLayer"] = [
+        item for item in items if str(item.get("id")) != furniture_id
+    ]
+    if len(level["furnitureLayer"]) == before:
+        raise GeometryError("furniture_not_found", "A bútorsegéd nem található.")
+
+
 def _add_room(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     level = _level(geometry, str(payload["levelId"]))
     room_id = str(payload["roomId"])
@@ -1168,6 +1349,15 @@ def _opening(level: dict[str, Any], opening_id: str) -> dict[str, Any]:
         if str(opening.get("id")) == opening_id:
             return opening
     raise GeometryError("opening_not_found", "A nyílás nem található.", path="openings")
+
+
+def _furniture(level: dict[str, Any], furniture_id: str) -> dict[str, Any]:
+    for item in level.get("furnitureLayer", []):
+        if str(item.get("id")) == furniture_id:
+            return item
+    raise GeometryError(
+        "furniture_not_found", "A bútorsegéd nem található.", path="furnitureLayer"
+    )
 
 
 def _next_id(items: list[dict[str, Any]], prefix: str) -> str:
@@ -1266,6 +1456,24 @@ def _wall_segment(wall: dict[str, Any]) -> tuple[int, int, int, int] | None:
     if segment[1] == segment[3] and segment[0] != segment[2]:
         return segment
     return None
+
+
+def _furniture_box(item: dict[str, Any]) -> tuple[int, int, int, int] | None:
+    try:
+        x = int(item["xMm"])
+        y = int(item["yMm"])
+        width = int(item["widthMm"])
+        depth = int(item["depthMm"])
+        rotation = int(item.get("rotationDeg") or 0)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not 100 <= width <= 20_000 or not 100 <= depth <= 20_000:
+        return None
+    if rotation not in {0, 90, 180, 270}:
+        return None
+    if rotation in {90, 270}:
+        width, depth = depth, width
+    return (x, y, x + width, y + depth)
 
 
 def _segment_length(segment: tuple[int, int, int, int]) -> int:

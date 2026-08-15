@@ -601,7 +601,12 @@ def _default_summary(command_type: str) -> str:
     labels = {
         "set_footprint": "Az épület kontúrja módosult.",
         "add_level": "Új szint került a tervbe.",
+        "clone_level": "Egy szint másolata új szintként került a tervbe.",
         "remove_level": "Egy szint törölve lett.",
+        "add_furniture": "Új bútorsegéd került a tervbe.",
+        "move_furniture": "Egy bútorsegéd helyzete módosult.",
+        "resize_furniture": "Egy bútorsegéd mérete módosult.",
+        "remove_furniture": "Egy bútorsegéd törölve lett.",
         "add_room": "Új helyiség került a tervbe.",
         "move_room": "Egy helyiség elmozdult.",
         "resize_room": "Egy helyiség mérete módosult.",

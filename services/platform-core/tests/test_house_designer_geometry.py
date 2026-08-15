@@ -256,6 +256,134 @@ def test_add_level_creates_vertical_core_and_connection():
     assert not [item for item in validate_geometry(geometry) if item["severity"] == "BLOCKER"]
 
 
+def test_clone_level_copies_content_without_mutating_source():
+    geometry = apply_command(
+        empty_geometry(),
+        "add_room",
+        {
+            "levelId": "L01",
+            "roomId": "R01",
+            "name": "Nappali",
+            "function": "living",
+            "xMm": 0,
+            "yMm": 0,
+            "widthMm": 4_000,
+            "depthMm": 3_000,
+        },
+    )
+    source_hash = canonical_sha256(geometry)
+    cloned = apply_command(
+        geometry,
+        "clone_level",
+        {"sourceLevelId": "L01", "levelType": "full_storey"},
+    )
+    assert canonical_sha256(geometry) == source_hash
+    assert [level["id"] for level in cloned["levels"]] == ["L01", "L02"]
+    assert cloned["levels"][1]["rooms"] == cloned["levels"][0]["rooms"]
+    assert cloned["levels"][1]["rooms"] is not cloned["levels"][0]["rooms"]
+    assert cloned["levels"][1]["roof"] is None
+    assert len(cloned["verticalConnections"]) == 1
+    assert not [item for item in validate_geometry(cloned) if item["severity"] == "BLOCKER"]
+
+
+def test_clone_level_can_create_attic_and_rejects_invalid_source_or_limit():
+    geometry = apply_command(
+        empty_geometry(),
+        "clone_level",
+        {"sourceLevelId": "L01", "levelType": "attic"},
+    )
+    assert geometry["levels"][1]["type"] == "attic"
+    assert geometry["levels"][1]["usableHeightZone"]["minClearHeightMm"] == 1_900
+    with pytest.raises(GeometryError) as attic:
+        apply_command(
+            geometry,
+            "clone_level",
+            {"sourceLevelId": "L02", "levelType": "full_storey"},
+        )
+    assert attic.value.code == "attic_clone_invalid"
+
+    three_levels = apply_command(empty_geometry(), "add_level", {"levelType": "full_storey"})
+    three_levels = apply_command(three_levels, "add_level", {"levelType": "full_storey"})
+    with pytest.raises(GeometryError) as limit:
+        apply_command(
+            three_levels,
+            "clone_level",
+            {"sourceLevelId": "L01", "levelType": "full_storey"},
+        )
+    assert limit.value.code == "level_limit"
+
+
+def test_furniture_helper_commands_are_bounded_atomic_and_cloneable():
+    geometry = apply_command(
+        empty_geometry(),
+        "add_furniture",
+        {
+            "levelId": "L01",
+            "furnitureKind": "sofa",
+            "label": "Kanapé",
+            "xMm": 1_000,
+            "yMm": 1_000,
+            "widthMm": 2_000,
+            "depthMm": 900,
+            "rotationDeg": 0,
+        },
+    )
+    item = geometry["levels"][0]["furnitureLayer"][0]
+    assert item["id"] == "F001"
+    moved = apply_command(
+        geometry,
+        "move_furniture",
+        {
+            "levelId": "L01",
+            "furnitureId": "F001",
+            "xMm": 2_000,
+            "yMm": 1_500,
+            "rotationDeg": 90,
+        },
+    )
+    resized = apply_command(
+        moved,
+        "resize_furniture",
+        {
+            "levelId": "L01",
+            "furnitureId": "F001",
+            "widthMm": 2_200,
+            "depthMm": 1_000,
+        },
+    )
+    assert resized["levels"][0]["furnitureLayer"][0]["rotationDeg"] == 90
+    cloned = apply_command(
+        resized,
+        "clone_level",
+        {"sourceLevelId": "L01", "levelType": "full_storey"},
+    )
+    assert cloned["levels"][1]["furnitureLayer"] == cloned["levels"][0]["furnitureLayer"]
+    assert cloned["levels"][1]["furnitureLayer"] is not cloned["levels"][0]["furnitureLayer"]
+
+    before_hash = canonical_sha256(resized)
+    with pytest.raises(GeometryError) as outside:
+        apply_command(
+            resized,
+            "move_furniture",
+            {
+                "levelId": "L01",
+                "furnitureId": "F001",
+                "xMm": 9_500,
+                "yMm": 7_500,
+                "rotationDeg": 0,
+            },
+        )
+    assert outside.value.code == "furniture_outside"
+    assert canonical_sha256(resized) == before_hash
+
+    removed = apply_command(
+        resized,
+        "remove_furniture",
+        {"levelId": "L01", "furnitureId": "F001"},
+    )
+    assert removed["levels"][0]["furnitureLayer"] == []
+
+
 def test_maximum_three_levels_and_attic_are_supported():
     geometry = apply_command(empty_geometry(), "add_level", {"levelType": "full_storey"})
     geometry = apply_command(geometry, "add_level", {"levelType": "attic"})
