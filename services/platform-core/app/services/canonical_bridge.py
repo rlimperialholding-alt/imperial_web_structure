@@ -29,6 +29,10 @@ from ..models import (
     TaskRecord,
     TechnicalCase,
 )
+from .canonical_sync_lease import (
+    heartbeat_canonical_sync_lease,
+    serialized_canonical_sync,
+)
 from .crm_transport import crm_service_headers
 
 SOURCE_SYSTEM = "imperial-intelligence-platform"
@@ -463,6 +467,7 @@ def _post_itep_event(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+@serialized_canonical_sync("itep-push")
 def push_platform_events_to_itep(
     db: Session,
     *,
@@ -530,9 +535,11 @@ def push_platform_events_to_itep(
             delivery.last_error = str(exc)[:2000]
             counts["failed"] += 1
         db.commit()
+        heartbeat_canonical_sync_lease()
     return counts
 
 
+@serialized_canonical_sync("itep-pull")
 def pull_itep_tasks_to_platform(
     db: Session,
     *,
@@ -610,6 +617,7 @@ def pull_itep_tasks_to_platform(
                     current.provenance_json = provenance
                     counts["updated"] += 1
             counts["source"] += 1
+        heartbeat_canonical_sync_lease()
         next_cursor = page.get("nextCursor")
         if next_cursor is None:
             break
@@ -620,6 +628,7 @@ def pull_itep_tasks_to_platform(
     return counts
 
 
+@serialized_canonical_sync("crm-push")
 def push_canonical_to_crm(
     db: Session,
     *,
@@ -703,6 +712,7 @@ def push_canonical_to_crm(
                 else:
                     summary["failed"] += 1
             db.commit()
+            heartbeat_canonical_sync_lease()
         except Exception as exc:
             for envelope in batch:
                 delivery = deliveries[envelope["eventId"]]
@@ -717,6 +727,7 @@ def push_canonical_to_crm(
     return summary
 
 
+@serialized_canonical_sync("crm-reconcile")
 def reconcile_canonical_with_crm(
     db: Session,
     *,
@@ -749,6 +760,7 @@ def reconcile_canonical_with_crm(
                             str(item.get("externalKey")),
                         )
                     ] = item
+            heartbeat_canonical_sync_lease()
             next_cursor = page.get("nextCursor")
             if next_cursor is None:
                 break

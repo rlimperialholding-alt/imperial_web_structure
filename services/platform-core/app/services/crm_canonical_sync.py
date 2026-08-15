@@ -17,6 +17,10 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import EnterpriseCanonicalRecord, ImportDataSource, ImportJob
+from .canonical_sync_lease import (
+    heartbeat_canonical_sync_lease,
+    serialized_canonical_sync,
+)
 from .crm_transport import crm_service_headers
 from .itep_finance import ItepFinanceError, incoming_invoices
 
@@ -258,6 +262,7 @@ def _source(db: Session) -> ImportDataSource:
     return row
 
 
+@serialized_canonical_sync("crm-import")
 def sync_crm_canonical(
     db: Session,
     *,
@@ -350,6 +355,7 @@ def sync_crm_canonical(
                     else:
                         entity_counts["unchanged"] += 1
                     entity_counts["source"] += 1
+                heartbeat_canonical_sync_lease()
                 next_cursor = page.get("nextCursor")
                 if next_cursor is None:
                     break
@@ -420,6 +426,7 @@ def sync_crm_canonical(
                 else:
                     itep_counts["unchanged"] += 1
                 itep_counts["source"] += 1
+            heartbeat_canonical_sync_lease()
             total_pages = payload.get("totalPages")
             if not isinstance(total_pages, int) or page_number >= total_pages:
                 break

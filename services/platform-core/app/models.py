@@ -3240,6 +3240,23 @@ class CanonicalReconciliationRun(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class CanonicalSyncLease(Base):
+    __tablename__ = "ic_canonical_sync_leases"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lease_key: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    holder_token: Mapped[str | None] = mapped_column(String(64), index=True)
+    acquired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0)
+    contention_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_contention_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class ImportCommitBatch(Base):
     __tablename__ = "ic_commit_batches"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -394,6 +394,7 @@ from .services.canonical_bridge import (
     push_platform_events_to_itep,
     reconcile_canonical_with_crm,
 )
+from .services.canonical_sync_lease import CanonicalSyncBusy, CanonicalSyncLeaseLost
 from .services.canonical_documents import (
     canonical_template_status,
     get_canonical_template,
@@ -1166,6 +1167,44 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Imperial Intelligence Control Center", version=__version__, lifespan=lifespan)
+
+
+def _audit_canonical_sync_runtime_exception(
+    request: Request,
+    exc: CanonicalSyncBusy | CanonicalSyncLeaseLost,
+    *,
+    action: str,
+) -> None:
+    with SessionLocal() as audit_db:
+        user = current_user(request, audit_db)
+        actor = user.email if user else "anonymous"
+        if user is None and request.url.path.startswith("/api/"):
+            actor = "internal-job"
+        audit(
+            audit_db,
+            actor=actor,
+            action=action,
+            entity_type="canonical_sync_lease",
+            entity_id=exc.lease_key,
+            after={"path": request.url.path},
+        )
+        audit_db.commit()
+
+
+@app.exception_handler(CanonicalSyncBusy)
+def canonical_sync_busy_handler(request: Request, exc: CanonicalSyncBusy):
+    _audit_canonical_sync_runtime_exception(
+        request, exc, action="canonical_sync.lease_busy"
+    )
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(CanonicalSyncLeaseLost)
+def canonical_sync_lease_lost_handler(request: Request, exc: CanonicalSyncLeaseLost):
+    _audit_canonical_sync_runtime_exception(
+        request, exc, action="canonical_sync.lease_lost"
+    )
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 app.add_middleware(SessionWriteOriginMiddleware)
 app.add_middleware(
     SessionMiddleware,

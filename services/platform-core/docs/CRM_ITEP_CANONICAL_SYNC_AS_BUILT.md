@@ -31,11 +31,27 @@ fail-closed konfliktus.
 - CRM/ITEP konfliktus, távoli elutasítás, sikertelen kézbesítés vagy nem PASS
   reconcile esetén a UI és az internal API HTTP 409/502 választ ad. A delivery
   és az auditrekord a hiba ellenére megmarad.
+- A 0070 migráció öt elkülönített adatbázis-lease-t seedel a CRM import/push/
+  reconcile és ITEP pull/push műveletekhez. Az acquire egyetlen feltételes
+  `UPDATE`, ezért nem lejárt tulajdonos mellett csak egy futás léphet tovább.
+  A 15 perces lease 5 percenként megújul; folyamatkiesés után lejárattal
+  visszavehető. A holder token megakadályozza, hogy egy régi futás az új
+  tulajdonos lease-ét megújítsa vagy felszabadítsa. A generáció, heartbeat,
+  contention és release időpontjai perzisztens operációs bizonyítékok.
+- Busy lease HTTP 409, elveszett lease HTTP 503, és mindkettő külön auditált
+  `canonical_sync.lease_*` esemény. Szolgáltatáshiba után a lease biztonságosan
+  felszabadul, így a delivery-állapot megőrzése mellett újrapróbálható.
 
 ## Bizonyíték – 2026-08-16
 
 - Célzott CRM–ITEP, route, credential és security regresszió: **31 passed, 1
   nem hibát okozó warning, 17,53 s**.
+- A 0070 lease-szelet kibővített célzott regressziója: **37 passed, 1 nem
+  hibát okozó warning, 24,76 s**. A friss adatbázis 0001→0070 migrációja és a
+  lease-séma + öt seedelt kulcs verifier PASS.
+- Az exact 0070 lease-változtatásokon futtatott teljes Platform Core
+  regresszió: **570 passed, 5 nem hibát okozó warning, 739,48 s**. A futás
+  pytest-cache és Python bytecode nélkül, külön JUnit-eredménnyel készült.
 - Az exact CRM–ITEP változtatásokon futtatott teljes Platform Core regresszió:
   **562 passed, 5 nem hibát okozó warning, 457,98 s**. A futás pytest-cache és
   Python bytecode nélkül, külön JUnit-eredménnyel készült.
@@ -61,8 +77,9 @@ fail-closed konfliktus.
 - Ebben a szeletben élő platform→CRM írás vagy teljes roundtrip nem futott;
   ezért a write receipt és a zero-diff reconcile még nem bizonyított az új
   exact kódon.
-- A párhuzamos sync/push futások explicit szerveroldali lease/serialization
-  bizonyítéka és PostgreSQL concurrency UAT még hiányzik.
+- A lease kód- és SQLite recovery/negatív bizonyítéka elkészült; tényleges,
+  két párhuzamos klienssel futtatott PostgreSQL concurrency UAT csak a 0070
+  Hetzner-migráció és exact image deploy után végezhető el.
 - A forrásból eltűnt vagy törölt CRM-rekordok tombstone/retention szerződése
   nincs ebben a repóban hitelesen dokumentálva; enélkül automatikus törlés vagy
   archiválás nem vezethető be.
