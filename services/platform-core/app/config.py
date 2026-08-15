@@ -299,10 +299,26 @@ class Settings:
             errors.append("Az ITEP_API_BASE_URL és az ITEP_IDENTITY_SHARED_SECRET együtt kötelező.")
         if self.itep_identity_shared_secret and len(self.itep_identity_shared_secret) < 32:
             errors.append("Az ITEP_IDENTITY_SHARED_SECRET legalább 32 karakteres legyen.")
+        if bool(self.crm_read_base_url) != bool(self.crm_read_token):
+            errors.append("A CRM_READ_BASE_URL és a CRM_READ_TOKEN együtt kötelező.")
+        if self.crm_read_token and len(self.crm_read_token) < 32:
+            errors.append("A CRM_READ_TOKEN legalább 32 karakteres legyen.")
         if bool(self.crm_write_base_url) != bool(self.crm_write_token):
             errors.append("A CRM_WRITE_BASE_URL és a CRM_WRITE_TOKEN együtt kötelező.")
         if self.crm_write_token and len(self.crm_write_token) < 32:
             errors.append("A CRM_WRITE_TOKEN legalább 32 karakteres legyen.")
+        if (
+            self.crm_read_token
+            and self.crm_write_token
+            and hmac.compare_digest(self.crm_read_token, self.crm_write_token)
+        ):
+            errors.append("A CRM olvasási és írási tokenje nem lehet azonos.")
+        if self.crm_sites_bypass_token and any(
+            hmac.compare_digest(self.crm_sites_bypass_token, token)
+            for token in (self.crm_read_token, self.crm_write_token)
+            if token
+        ):
+            errors.append("A CRM Sites hozzáférési tokenje nem lehet szolgáltatási token.")
         dpm_token_source = bool(self.dpm_auth_hs256_secret) or bool(
             self.itep_api_base_url and self.itep_identity_shared_secret
         )

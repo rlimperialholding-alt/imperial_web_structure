@@ -1134,6 +1134,7 @@ _INTERNAL_COMMUNICATION_ROLES = {item.id for item in ROLE_DEFINITIONS} - {
     "subcontractor",
 }
 _CALENDAR_APPROVER_ROLES = {"owner", "managing-director", "platform-admin"}
+_LEADERSHIP_ROLES = {"owner", "managing-director", "platform-admin"}
 _SALES_COMMERCIAL_INTERNAL_ROLES = {
     "owner",
     "managing-director",
@@ -8324,7 +8325,7 @@ def run_pilots_ui(
     request: Request, scenario: Annotated[str, Form()], db: Session = Depends(get_db)
 ):
     user = current_user(request, db)
-    if not user or user.role not in {"owner", "admin", "managing_director"}:
+    if not user or user.role not in _LEADERSHIP_ROLES:
         raise HTTPException(403)
     if scenario == "all":
         run_all_pilots(db)
@@ -8677,7 +8678,7 @@ def sync_crm_canonical_ui(request: Request, db: Session = Depends(get_db)):
     user = current_user(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    if user.role not in {"owner", "admin", "managing_director"}:
+    if user.role not in _LEADERSHIP_ROLES:
         raise HTTPException(403, "A kanonikus adatszinkron vezetői jogosultságot igényel.")
     try:
         result = sync_crm_canonical(db, actor=user.email)
@@ -8699,9 +8700,28 @@ def _canonical_sync_user(request: Request, db: Session) -> User:
     user = current_user(request, db)
     if not user:
         raise HTTPException(401, "A kanonikus rendszerszinkronhoz bejelentkezés szükséges.")
-    if user.role not in {"owner", "admin", "managing_director"}:
+    if user.role not in _LEADERSHIP_ROLES:
         raise HTTPException(403, "A kanonikus rendszerszinkron vezetői jogosultságot igényel.")
     return user
+
+
+def _enforce_canonical_result(result: dict[str, Any]) -> None:
+    if int(result.get("failed") or 0) > 0:
+        raise HTTPException(
+            502,
+            "A kanonikus rendszerszinkron egy vagy több kézbesítése sikertelen.",
+        )
+    if int(result.get("conflicts") or 0) > 0 or int(result.get("rejected") or 0) > 0:
+        raise HTTPException(
+            409,
+            "A kanonikus rendszerszinkron konfliktust vagy elutasított rekordot talált.",
+        )
+    status = result.get("status")
+    if status is not None and status != "passed":
+        raise HTTPException(
+            409,
+            "A kanonikus egyeztetés nem igazolta a két rendszer azonosságát.",
+        )
 
 
 @app.post("/imports/canonical/pull-itep")
@@ -8720,6 +8740,7 @@ def pull_itep_canonical_ui(request: Request, db: Session = Depends(get_db)):
         after=result,
     )
     db.commit()
+    _enforce_canonical_result(result)
     return RedirectResponse("/imports", status_code=303)
 
 
@@ -8736,8 +8757,7 @@ def push_itep_canonical_ui(request: Request, db: Session = Depends(get_db)):
         after=result,
     )
     db.commit()
-    if result["failed"]:
-        raise HTTPException(502, "Egy vagy több platformesemény ITEP-kézbesítése sikertelen.")
+    _enforce_canonical_result(result)
     return RedirectResponse("/imports", status_code=303)
 
 
@@ -8757,6 +8777,7 @@ def push_crm_canonical_ui(request: Request, db: Session = Depends(get_db)):
         after=result,
     )
     db.commit()
+    _enforce_canonical_result(result)
     return RedirectResponse("/imports", status_code=303)
 
 
@@ -8776,6 +8797,7 @@ def reconcile_crm_canonical_ui(request: Request, db: Session = Depends(get_db)):
         after=result,
     )
     db.commit()
+    _enforce_canonical_result(result)
     return RedirectResponse("/imports", status_code=303)
 
 
@@ -8945,7 +8967,7 @@ def commit_import_job_ui(
     db: Session = Depends(get_db),
 ):
     user = current_user(request, db)
-    if not user or user.role not in {"owner", "admin", "managing_director"}:
+    if not user or user.role not in _LEADERSHIP_ROLES:
         raise HTTPException(403)
     try:
         batch = commit_records(
@@ -8967,7 +8989,7 @@ def commit_import_job_ui(
 @app.post("/imports/batches/{batch_id}/rollback")
 def rollback_import_batch_ui(request: Request, batch_id: str, db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role not in {"owner", "admin", "managing_director"}:
+    if not user or user.role not in _LEADERSHIP_ROLES:
         raise HTTPException(403)
     try:
         batch = rollback_batch(db, batch_id, user.email)
@@ -9045,6 +9067,7 @@ def api_push_canonical_to_crm(db: Session = Depends(get_db)):
         after=result,
     )
     db.commit()
+    _enforce_canonical_result(result)
     return result
 
 
@@ -9065,6 +9088,7 @@ def api_pull_itep_tasks_to_platform(db: Session = Depends(get_db)):
         after=result,
     )
     db.commit()
+    _enforce_canonical_result(result)
     return result
 
 
@@ -9082,8 +9106,7 @@ def api_push_platform_events_to_itep(db: Session = Depends(get_db)):
         after=result,
     )
     db.commit()
-    if result["failed"]:
-        raise HTTPException(502, "Egy vagy több platformesemény ITEP-kézbesítése sikertelen.")
+    _enforce_canonical_result(result)
     return result
 
 
@@ -9104,6 +9127,7 @@ def api_reconcile_canonical_with_crm(db: Session = Depends(get_db)):
         after=result,
     )
     db.commit()
+    _enforce_canonical_result(result)
     return result
 
 
@@ -16058,7 +16082,7 @@ def import_tender_recipients_ui(request: Request, campaign_id: str, db: Session 
 @app.post("/tendermail/{campaign_id}/approve")
 def approve_tender_campaign_ui(request: Request, campaign_id: str, db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role not in {"owner", "admin", "managing_director"}:
+    if not user or user.role not in _LEADERSHIP_ROLES:
         raise HTTPException(403)
     try:
         approve_campaign(db, campaign_id, user.email)
@@ -16070,7 +16094,7 @@ def approve_tender_campaign_ui(request: Request, campaign_id: str, db: Session =
 @app.post("/tendermail/{campaign_id}/simulate")
 def simulate_tender_campaign_ui(request: Request, campaign_id: str, db: Session = Depends(get_db)):
     user = current_user(request, db)
-    if not user or user.role not in {"owner", "admin", "managing_director"}:
+    if not user or user.role not in _LEADERSHIP_ROLES:
         raise HTTPException(403)
     try:
         queue_campaign(db, campaign_id, simulate=True)

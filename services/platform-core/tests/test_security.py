@@ -114,6 +114,32 @@ def test_house_designer_site_encryption_requires_a_distinct_key():
     )
 
 
+def test_crm_read_connection_requires_a_paired_long_token():
+    missing = Settings(crm_read_base_url="https://crm.example.invalid", crm_read_token="")
+    short = Settings(
+        crm_read_base_url="https://crm.example.invalid",
+        crm_read_token="too-short",
+    )
+
+    assert any("CRM_READ_BASE_URL" in error for error in missing.validate())
+    assert any("CRM_READ_TOKEN legalább 32" in error for error in short.validate())
+
+
+def test_crm_read_write_and_sites_credentials_must_be_separate():
+    shared = "x" * 32
+    unsafe = Settings(
+        crm_read_base_url="https://crm.example.invalid",
+        crm_read_token=shared,
+        crm_write_base_url="https://crm.example.invalid",
+        crm_write_token=shared,
+        crm_sites_bypass_token=shared,
+    )
+
+    errors = unsafe.validate()
+    assert any("olvasási és írási tokenje nem lehet azonos" in error for error in errors)
+    assert any("Sites hozzáférési tokenje" in error for error in errors)
+
+
 def test_anonymous_ui_redirects(client):
     response = client.get("/", follow_redirects=False)
     assert response.status_code == 303
