@@ -25,6 +25,7 @@ os.environ.setdefault(
 os.environ.setdefault("SESSION_SECRET", "test-session-secret-which-is-long-enough")
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("TENDER_AV_MODE", "test")
+os.environ.setdefault("CARE_AV_MODE", "test")
 os.environ.setdefault(
     "CONTENT_EXPERT_REVIEW_SECRET",
     "test-only-expert-review-attestation-secret-which-is-long-enough",

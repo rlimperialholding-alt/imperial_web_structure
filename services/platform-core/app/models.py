@@ -1031,6 +1031,13 @@ class CareEvidence(Base):
     sha256: Mapped[str] = mapped_column(String(64), index=True)
     storage_path: Mapped[str] = mapped_column(String(1000))
     caption: Mapped[str | None] = mapped_column(Text)
+    scan_status: Mapped[str] = mapped_column(
+        String(30), default="legacy_unverified", index=True
+    )
+    scan_engine: Mapped[str | None] = mapped_column(String(120))
+    scan_engine_version: Mapped[str | None] = mapped_column(String(255))
+    scan_signature: Mapped[str | None] = mapped_column(String(255))
+    scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     uploaded_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     case: Mapped[CareCase] = relationship(back_populates="evidence")

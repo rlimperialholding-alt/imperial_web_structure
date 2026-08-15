@@ -6,6 +6,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.models import (
+    AuditLog,
     CareCase,
     CareEvidence,
     CustomerPortalAccess,
@@ -260,19 +261,100 @@ def test_care_evidence_is_type_checked_hashed_and_access_controlled(client, db):
     evidence = db.scalar(select(CareEvidence).where(CareEvidence.case_id_fk == row.id))
     assert evidence is not None
     assert len(evidence.sha256) == 64
+    assert evidence.scan_status == "clean"
+    assert evidence.scan_engine == "deterministic-test-scanner"
+    assert evidence.scan_engine_version == "1"
+    assert evidence.scanned_at is not None
     download = client.get(f"/imperial-care/evidence/{evidence.evidence_id}")
     assert download.status_code == 200
     assert download.content == png
+    assert db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "imperial_care.evidence.downloaded",
+            AuditLog.entity_id == evidence.evidence_id,
+        )
+    ) is not None
     Path(evidence.storage_path).write_bytes(png + b"tampered")
     tampered = client.get(f"/imperial-care/evidence/{evidence.evidence_id}")
     assert tampered.status_code == 409
-    assert "SHA-256" in tampered.text
+    assert "integritásbizonyítékkal" in tampered.text
+    assert db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "imperial_care.evidence.download_blocked",
+            AuditLog.entity_id == evidence.evidence_id,
+        )
+    ) is not None
+
+    Path(evidence.storage_path).write_bytes(png)
+    evidence.scan_status = "legacy_unverified"
+    db.commit()
+    assert client.get(f"/imperial-care/evidence/{evidence.evidence_id}").status_code == 409
+    evidence.scan_status = "clean"
+    db.commit()
 
     invalid = client.post(
         f"/imperial-care/{row.case_id}/evidence",
         files={"file": ("hamis.png", BytesIO(b"not-a-png"), "image/png")},
     )
     assert invalid.status_code == 400
+
+    infected = client.post(
+        f"/imperial-care/{row.case_id}/evidence",
+        files={
+            "file": (
+                "eicar.png",
+                BytesIO(
+                    b"\x89PNG\r\n\x1a\nEICAR-STANDARD-ANTIVIRUS-TEST-FILE"
+                ),
+                "image/png",
+            )
+        },
+    )
+    assert infected.status_code == 400
+    assert len(db.scalars(select(CareEvidence)).all()) == 1
+
+
+def test_care_evidence_upload_fails_closed_when_scanner_is_disabled(
+    client, db, monkeypatch
+):
+    row = _create_case(client, db)
+    monkeypatch.setenv("CARE_AV_MODE", "disabled")
+    response = client.post(
+        f"/imperial-care/{row.case_id}/evidence",
+        files={
+            "file": (
+                "hiba.png",
+                BytesIO(b"\x89PNG\r\n\x1a\ncare-uat"),
+                "image/png",
+            )
+        },
+    )
+    assert response.status_code == 503
+    assert db.scalar(select(CareEvidence)) is None
+    rejected = db.scalar(
+        select(AuditLog).where(AuditLog.action == "imperial_care.evidence.rejected")
+    )
+    assert rejected is not None and '"scan_status": "unavailable"' in rejected.after_json
+
+
+def test_care_synthetic_scanner_is_impossible_outside_test_environment(
+    client, db, monkeypatch
+):
+    row = _create_case(client, db)
+    monkeypatch.setenv("CARE_AV_MODE", "test")
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    response = client.post(
+        f"/imperial-care/{row.case_id}/evidence",
+        files={
+            "file": (
+                "hiba.png",
+                BytesIO(b"\x89PNG\r\n\x1a\ncare-uat"),
+                "image/png",
+            )
+        },
+    )
+    assert response.status_code == 503
+    assert db.scalar(select(CareEvidence)) is None
 
 
 def test_subcontractor_never_sees_internal_care_notes(client, db):

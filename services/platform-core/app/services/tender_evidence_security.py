@@ -128,10 +128,21 @@ def _clamav_scan(raw: bytes, host: str, port: int, timeout: float) -> TenderScan
     raise TenderScannerUnavailable("A ClamAV nem adott értelmezhető vizsgálati eredményt.")
 
 
-def scan_tender_evidence(raw: bytes) -> TenderScanResult:
-    """Return a clean verdict or fail closed; never persist an undecided payload."""
+def _scanner_setting(prefix: str, suffix: str, fallback_prefix: str | None = None) -> str:
+    value = os.getenv(f"{prefix}_{suffix}")
+    if value is None and fallback_prefix:
+        value = os.getenv(f"{fallback_prefix}_{suffix}")
+    return (value or "").strip()
 
-    mode = os.getenv("TENDER_AV_MODE", "disabled").strip().lower()
+
+def _scan_evidence(
+    raw: bytes,
+    *,
+    prefix: str,
+    label: str,
+    fallback_prefix: str | None = None,
+) -> TenderScanResult:
+    mode = _scanner_setting(prefix, "AV_MODE", fallback_prefix).lower() or "disabled"
     environment = os.getenv("ENVIRONMENT", "development").strip().lower()
     if mode == "test":
         if environment != "test":
@@ -144,13 +155,15 @@ def scan_tender_evidence(raw: bytes) -> TenderScanResult:
             )
         return TenderScanResult("clean", "deterministic-test-scanner", "1")
     if mode != "clamav":
-        raise TenderScannerUnavailable("A Tender AV-vizsgálat nincs engedélyezve.")
-    host = os.getenv("TENDER_CLAMAV_HOST", "").strip()
+        raise TenderScannerUnavailable(f"A {label} AV-vizsgálat nincs engedélyezve.")
+    host = _scanner_setting(prefix, "CLAMAV_HOST", fallback_prefix)
     if not host:
-        raise TenderScannerUnavailable("A TENDER_CLAMAV_HOST nincs konfigurálva.")
+        raise TenderScannerUnavailable(f"A {prefix}_CLAMAV_HOST nincs konfigurálva.")
     try:
-        port = int(os.getenv("TENDER_CLAMAV_PORT", "3310"))
-        timeout = float(os.getenv("TENDER_CLAMAV_TIMEOUT_SECONDS", "10"))
+        port = int(_scanner_setting(prefix, "CLAMAV_PORT", fallback_prefix) or "3310")
+        timeout = float(
+            _scanner_setting(prefix, "CLAMAV_TIMEOUT_SECONDS", fallback_prefix) or "10"
+        )
     except ValueError as exc:
         raise TenderScannerUnavailable(
             "Érvénytelen ClamAV port vagy timeout konfiguráció."
@@ -165,8 +178,25 @@ def scan_tender_evidence(raw: bytes) -> TenderScanResult:
         raise
     except (OSError, TenderScannerUnavailable) as exc:
         raise TenderScannerUnavailable(
-            "A Tender kártevőscanner nem érhető el megbízhatóan."
+            f"A {label} kártevőscanner nem érhető el megbízhatóan."
         ) from exc
+
+
+def scan_tender_evidence(raw: bytes) -> TenderScanResult:
+    """Return a clean Tender verdict or fail closed."""
+
+    return _scan_evidence(raw, prefix="TENDER", label="Tender")
+
+
+def scan_care_evidence(raw: bytes) -> TenderScanResult:
+    """Return a clean Care verdict, reusing shared Tender AV settings by default."""
+
+    return _scan_evidence(
+        raw,
+        prefix="CARE",
+        label="Care",
+        fallback_prefix="TENDER",
+    )
 
 
 def tender_av_configuration() -> dict[str, object]:

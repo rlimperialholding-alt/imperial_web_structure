@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import desc, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from ..audit import audit
@@ -24,6 +25,11 @@ from ..models import (
 )
 from ..schemas import EventIn
 from .integration import ingest_event
+from .tender_evidence_security import (
+    TenderMalwareDetected,
+    TenderScannerUnavailable,
+    scan_care_evidence,
+)
 
 INTERNAL_ROLES = frozenset(
     {"owner", "managing-director", "platform-admin", "project-manager", "technical-prep"}
@@ -48,6 +54,10 @@ ALLOWED_MIME = {
     "application/pdf": (b"%PDF-",),
 }
 MAX_EVIDENCE_BYTES = 10 * 1024 * 1024
+
+
+class CareEvidenceUnavailable(RuntimeError):
+    """Raised when stored customer evidence is not safe to release."""
 
 
 def utcnow() -> datetime:
@@ -497,10 +507,51 @@ def save_care_evidence(
     valid_header = any(raw.startswith(signature) for signature in signatures)
     if mime_type == "image/webp":
         valid_header = raw.startswith(b"RIFF") and raw[8:12] == b"WEBP"
-    if not valid_header:
-        raise ValueError("A fájl tartalma nem egyezik a megadott típussal.")
-    evidence_id = f"CARE-EV-{uuid.uuid4().hex[:12].upper()}"
     digest = hashlib.sha256(raw).hexdigest()
+    if not valid_header:
+        audit(
+            db,
+            actor=_email(user),
+            action="imperial_care.evidence.rejected",
+            entity_type="care_case",
+            entity_id=row.case_id,
+            after={
+                "sha256": digest,
+                "mime_type": mime_type,
+                "scan_status": "content_rejected",
+            },
+        )
+        db.commit()
+        raise ValueError("A fájl tartalma nem egyezik a megadott típussal.")
+    try:
+        scan = scan_care_evidence(raw)
+    except TenderMalwareDetected:
+        audit(
+            db,
+            actor=_email(user),
+            action="imperial_care.evidence.rejected",
+            entity_type="care_case",
+            entity_id=row.case_id,
+            after={"sha256": digest, "mime_type": mime_type, "scan_status": "infected"},
+        )
+        db.commit()
+        raise
+    except TenderScannerUnavailable:
+        audit(
+            db,
+            actor=_email(user),
+            action="imperial_care.evidence.rejected",
+            entity_type="care_case",
+            entity_id=row.case_id,
+            after={
+                "sha256": digest,
+                "mime_type": mime_type,
+                "scan_status": "unavailable",
+            },
+        )
+        db.commit()
+        raise
+    evidence_id = f"CARE-EV-{uuid.uuid4().hex[:12].upper()}"
     target_dir = storage_root / row.case_id
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"{evidence_id}_{_safe_file_name(file_name)}"
@@ -513,6 +564,11 @@ def save_care_evidence(
         sha256=digest,
         storage_path=str(target),
         caption=caption.strip() or None,
+        scan_status=scan.status,
+        scan_engine=scan.engine,
+        scan_engine_version=scan.engine_version,
+        scan_signature=scan.signature,
+        scanned_at=utcnow(),
         uploaded_by=_email(user),
     )
     db.add(evidence)
@@ -522,8 +578,62 @@ def save_care_evidence(
         action="imperial_care.evidence.added",
         entity_type="care_case",
         entity_id=row.case_id,
-        after={"evidence_id": evidence_id, "sha256": digest, "mime_type": mime_type},
+        after={
+            "evidence_id": evidence_id,
+            "sha256": digest,
+            "mime_type": mime_type,
+            "scan_status": scan.status,
+            "scan_engine": scan.engine,
+            "scan_engine_version": scan.engine_version,
+        },
     )
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        target.unlink(missing_ok=True)
+        raise
     db.refresh(evidence)
     return evidence
+
+
+def verified_care_evidence_path(
+    db: Session,
+    evidence: CareEvidence,
+    *,
+    storage_root: Path,
+    actor: str,
+) -> Path:
+    path = Path(evidence.storage_path).resolve()
+    root = storage_root.resolve()
+    failure: str | None = None
+    if evidence.scan_status != "clean":
+        failure = f"scan_status:{evidence.scan_status}"
+    elif not path.is_relative_to(root) or not path.is_file():
+        failure = "storage_path_unavailable"
+    elif hashlib.sha256(path.read_bytes()).hexdigest() != evidence.sha256:
+        failure = "sha256_mismatch"
+    if failure:
+        audit(
+            db,
+            actor=actor,
+            action="imperial_care.evidence.download_blocked",
+            entity_type="care_evidence",
+            entity_id=evidence.evidence_id,
+            after={"reason": failure},
+        )
+        db.commit()
+        raise CareEvidenceUnavailable(
+            "A bizonyíték nem rendelkezik érvényes tiszta scan- és "
+            "integritásbizonyítékkal."
+        )
+    audit(
+        db,
+        actor=actor,
+        action="imperial_care.evidence.downloaded",
+        entity_type="care_evidence",
+        entity_id=evidence.evidence_id,
+        after={"sha256": evidence.sha256},
+    )
+    db.commit()
+    return path

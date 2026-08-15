@@ -618,6 +618,7 @@ from .services.housevision import (
     workspace as housevision_workspace,
 )
 from .services.imperial_care import (
+    CareEvidenceUnavailable,
     add_care_message,
     care_case_for_user,
     care_evidence_for_user,
@@ -625,6 +626,7 @@ from .services.imperial_care import (
     create_care_case,
     save_care_evidence,
     transition_care_case,
+    verified_care_evidence_path,
 )
 from .services.import_center import (
     add_item,
@@ -5856,12 +5858,15 @@ def imperial_care_evidence_download(
         raise HTTPException(404, "A bizonyíték nem található.") from exc
     except PermissionError as exc:
         raise HTTPException(403) from exc
-    path = Path(evidence.storage_path).resolve()
-    root = CARE_EVIDENCE_DIR.resolve()
-    if not path.is_relative_to(root) or not path.is_file():
-        raise HTTPException(404, "A bizonyítékfájl nem érhető el.")
-    if hashlib.sha256(path.read_bytes()).hexdigest() != evidence.sha256:
-        raise HTTPException(409, "A bizonyítékfájl SHA-256 ellenőrzése sikertelen.")
+    try:
+        path = verified_care_evidence_path(
+            db,
+            evidence,
+            storage_root=CARE_EVIDENCE_DIR,
+            actor=user.email,
+        )
+    except CareEvidenceUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc
     return FileResponse(path, media_type=evidence.mime_type, filename=evidence.file_name)
 
 
@@ -5983,6 +5988,10 @@ async def imperial_care_evidence_upload(
         raise HTTPException(404) from exc
     except PermissionError as exc:
         raise HTTPException(403) from exc
+    except TenderScannerUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except TenderMalwareDetected as exc:
+        raise HTTPException(400, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse(f"/imperial-care/{case_id}#evidence", status_code=303)
