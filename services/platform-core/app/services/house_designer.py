@@ -14,8 +14,8 @@ from ..models import HouseDesignRevision, HouseDesignSession, HousePlanRecord
 from .house_designer_geometry import (
     GeometryError,
     adapt_houseplan_geometry,
-    apply_command,
-    canonical_sha256,
+    apply_command_with_findings,
+    canonical_sha256_normalized,
     empty_geometry,
     validate_geometry,
 )
@@ -235,6 +235,7 @@ def apply_session_command(
     geometry = json.loads(current.geometry_json)
     configuration = json.loads(current.configuration_json)
     site = decode_revision_site(current)
+    geometry_findings: list[dict[str, str]] | None = None
     try:
         if command_type == "restore_revision":
             target_revision_id = str(payload.get("targetRevisionId") or "").strip()
@@ -264,7 +265,9 @@ def apply_session_command(
         elif command_type == "set_site":
             site = _validated_site(payload)
         else:
-            geometry = apply_command(geometry, command_type, payload)
+            geometry, geometry_findings = apply_command_with_findings(
+                geometry, command_type, payload
+            )
     except GeometryError as error:
         raise HouseDesignerError(error.code, str(error)) from error
     next_revision_no = current.revision_no + 1
@@ -318,7 +321,23 @@ def apply_session_command(
         },
     )
     db.commit()
-    return session_detail(db, session_id, actor)
+    if geometry_findings is None:
+        geometry_findings = validate_geometry(geometry)
+    history = db.scalars(
+        select(HouseDesignRevision)
+        .where(HouseDesignRevision.session_id == session_id)
+        .order_by(desc(HouseDesignRevision.revision_no))
+        .limit(50)
+    ).all()
+    return _session_payload(
+        row,
+        revision,
+        geometry=geometry,
+        configuration=configuration,
+        site=site,
+        geometry_findings=geometry_findings,
+        history=history,
+    )
 
 
 def session_detail(db: Session, session_id: str, actor: ActorScope) -> dict[str, Any]:
@@ -348,6 +367,27 @@ def session_detail(db: Session, session_id: str, actor: ActorScope) -> dict[str,
         .order_by(desc(HouseDesignRevision.revision_no))
         .limit(50)
     ).all()
+    return _session_payload(
+        row,
+        revision,
+        geometry=geometry,
+        configuration=json.loads(revision.configuration_json),
+        site=decode_revision_site(revision),
+        geometry_findings=validate_geometry(geometry),
+        history=history,
+    )
+
+
+def _session_payload(
+    row: HouseDesignSession,
+    revision: HouseDesignRevision,
+    *,
+    geometry: dict[str, Any],
+    configuration: dict[str, Any],
+    site: dict[str, Any],
+    geometry_findings: list[dict[str, str]],
+    history: list[HouseDesignRevision],
+) -> dict[str, Any]:
     return {
         "sessionId": row.session_id,
         "tenantId": row.tenant_id,
@@ -364,9 +404,9 @@ def session_detail(db: Session, session_id: str, actor: ActorScope) -> dict[str,
             "revisionNo": revision.revision_no,
             "canonicalSha256": revision.canonical_sha256,
             "geometry": geometry,
-            "configuration": json.loads(revision.configuration_json),
-            "site": decode_revision_site(revision),
-            "geometryFindings": validate_geometry(geometry),
+            "configuration": configuration,
+            "site": site,
+            "geometryFindings": geometry_findings,
         },
         "history": [
             {
@@ -550,7 +590,7 @@ def _revision_hash(
 ) -> str:
     return _sha(
         {
-            "geometrySha256": canonical_sha256(geometry),
+            "geometrySha256": canonical_sha256_normalized(geometry),
             "configuration": configuration,
             "site": site,
         }

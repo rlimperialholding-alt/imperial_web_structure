@@ -70,7 +70,11 @@ def test_editor_command_p95_is_below_250_ms_with_200_objects():
         started = perf_counter()
         apply_command(geometry, "set_north", {"northAngleDeg": angle})
         samples.append(perf_counter() - started)
-    assert _p95(samples) < 0.250
+    p95 = _p95(samples)
+    assert p95 < 0.250, {
+        "p95_ms": round(p95 * 1_000, 3),
+        "samples_ms": [round(sample * 1_000, 3) for sample in samples],
+    }
 
 
 def test_editor_service_p95_includes_revision_audit_and_db_with_200_objects(db):
@@ -112,7 +116,11 @@ def test_editor_service_p95_includes_revision_audit_and_db_with_200_objects(db):
             payload={"northAngleDeg": angle},
         )
         samples.append(perf_counter() - started)
-    assert _p95(samples) < 0.250
+    p95 = _p95(samples)
+    assert p95 < 0.250, {
+        "p95_ms": round(p95 * 1_000, 3),
+        "samples_ms": [round(sample * 1_000, 3) for sample in samples],
+    }
 
 
 def test_compliance_p95_is_below_3_seconds_with_500_rules():

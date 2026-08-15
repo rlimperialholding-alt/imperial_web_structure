@@ -9,6 +9,7 @@ from pathlib import Path
 pytest_temp_root = Path(tempfile.gettempdir()) / f"iip_pytest_{os.getpid()}"
 pytest_temp_root.mkdir(parents=True, exist_ok=True)
 os.environ["PYTEST_DEBUG_TEMPROOT"] = str(pytest_temp_root)
+os.environ.setdefault("PLATFORM_RUNTIME_ROOT", str(pytest_temp_root / "runtime"))
 
 
 def _cleanup_pytest_temp_root() -> None:

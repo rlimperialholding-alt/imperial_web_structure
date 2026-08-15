@@ -5,6 +5,7 @@ from app.services.house_designer_geometry import (
     adapt_houseplan_geometry,
     apply_command,
     canonical_sha256,
+    canonical_sha256_normalized,
     empty_geometry,
     gross_area_m2,
     validate_geometry,
@@ -21,10 +22,21 @@ def _ring(width: int, depth: int) -> list[dict[str, int]]:
     ]
 
 
+def _rect(x: int, y: int, width: int, depth: int) -> list[dict[str, int]]:
+    return [
+        {"x": x, "y": y},
+        {"x": x + width, "y": y},
+        {"x": x + width, "y": y + depth},
+        {"x": x, "y": y + depth},
+        {"x": x, "y": y},
+    ]
+
+
 def test_blank_house_is_deterministic_and_measured_in_millimetres():
     first = empty_geometry(10_000, 8_000)
     second = empty_geometry(10_000, 8_000)
     assert canonical_sha256(first) == canonical_sha256(second)
+    assert canonical_sha256_normalized(first) == canonical_sha256(first)
     assert gross_area_m2(first) == 80.0
     assert first["units"] == "mm"
 
@@ -94,6 +106,38 @@ def test_room_command_is_atomic_and_rejects_overlap():
         )
     assert error.value.code == "room_overlap"
     assert canonical_sha256(geometry) == before_hash
+
+
+def test_room_overlap_sweep_handles_unsorted_rooms_and_touching_edges():
+    geometry = empty_geometry(10_000, 8_000)
+    geometry["levels"][0]["rooms"] = [
+        {
+            "id": "R-EDGE",
+            "name": "Érintkező",
+            "function": "other",
+            "polygon": _rect(2_000, 0, 2_000, 2_000),
+        },
+        {
+            "id": "R-CROSS",
+            "name": "Átfedő",
+            "function": "other",
+            "polygon": _rect(500, 500, 2_000, 1_000),
+        },
+        {
+            "id": "R-BASE",
+            "name": "Alap",
+            "function": "other",
+            "polygon": _rect(0, 0, 2_000, 2_000),
+        },
+    ]
+    overlaps = [
+        item for item in validate_geometry(geometry) if item["code"] == "room_overlap"
+    ]
+    assert len(overlaps) == 2
+    assert {item["path"] for item in overlaps} == {
+        "levels[0].rooms[0]",
+        "levels[0].rooms[1]",
+    }
 
 
 def test_room_cannot_leave_the_footprint():

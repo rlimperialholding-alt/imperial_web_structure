@@ -32,7 +32,7 @@ def empty_geometry(width_mm: int = 10_000, depth_mm: int = 8_000) -> dict[str, A
 
 
 def canonical_json(value: dict[str, Any]) -> str:
-    normalized = _normalize(deepcopy(value))
+    normalized = _normalize(value)
     return json.dumps(normalized, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
@@ -40,9 +40,23 @@ def canonical_sha256(value: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def canonical_sha256_normalized(value: dict[str, Any]) -> str:
+    """Hash a geometry already normalized by this module without another tree copy."""
+
+    payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def apply_command(
     geometry: dict[str, Any], command_type: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
+    result, _ = apply_command_with_findings(geometry, command_type, payload)
+    return result
+
+
+def apply_command_with_findings(
+    geometry: dict[str, Any], command_type: str, payload: dict[str, Any]
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
     result = deepcopy(geometry)
     handlers = {
         "set_footprint": _set_footprint,
@@ -64,7 +78,8 @@ def apply_command(
     blocker = next((item for item in findings if item["severity"] == "BLOCKER"), None)
     if blocker:
         raise GeometryError(blocker["code"], blocker["message"], path=blocker["path"])
-    return _normalize(result)
+    _sort_id_lists_in_place(result)
+    return result, findings
 
 
 def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
@@ -108,7 +123,7 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
             )
             continue
         rooms = level.get("rooms", [])
-        room_boxes: list[tuple[str, tuple[int, int, int, int]]] = []
+        room_boxes: list[tuple[str, tuple[int, int, int, int], str]] = []
         for room_index, room in enumerate(rooms):
             room_path = f"{path}.rooms[{room_index}]"
             room_id = str(room.get("id") or "")
@@ -132,7 +147,18 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                         room_path,
                     )
                 )
-            for other_id, other_box in room_boxes:
+            room_boxes.append((room_id, room_box, room_path))
+        # Sweep on the x axis instead of comparing every room with every other
+        # room.  The editor currently accepts axis-aligned rectangles, so rooms
+        # whose x intervals have already ended cannot overlap a later room.
+        # This keeps validation effectively linear for ordinary floor plans and
+        # removes allocation/GC spikes from the 200-object command path.
+        active: list[tuple[str, tuple[int, int, int, int]]] = []
+        for room_id, room_box, room_path in sorted(
+            room_boxes, key=lambda item: (item[1][0], item[1][2], item[0])
+        ):
+            active = [item for item in active if item[1][2] > room_box[0]]
+            for other_id, other_box in active:
                 if _overlaps(room_box, other_box):
                     findings.append(
                         _finding(
@@ -142,7 +168,7 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                             room_path,
                         )
                     )
-            room_boxes.append((room_id, room_box))
+            active.append((room_id, room_box))
         if not rooms:
             findings.append(
                 _finding(
@@ -495,3 +521,16 @@ def _normalize(value: Any) -> Any:
             return sorted(normalized, key=lambda item: str(item["id"]))
         return normalized
     return value
+
+
+def _sort_id_lists_in_place(value: Any) -> None:
+    if isinstance(value, dict):
+        for item in value.values():
+            _sort_id_lists_in_place(item)
+        return
+    if not isinstance(value, list):
+        return
+    for item in value:
+        _sort_id_lists_in_place(item)
+    if value and all(isinstance(item, dict) and "id" in item for item in value):
+        value.sort(key=lambda item: str(item["id"]))
