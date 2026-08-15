@@ -87,6 +87,16 @@ def test_one_floor_is_deterministic_canonical_and_area_balanced():
     assert level["connections"][0]["id"].startswith("C")
     assert any(row["roomB"] == "outside" for row in level["connections"])
     assert any(row["kind"] == "window" for row in level["openings"])
+    for wall_id in {row["wallId"] for row in level["openings"]}:
+        intervals = sorted(
+            (row["offset"], row["offset"] + row["width"])
+            for row in level["openings"]
+            if row["wallId"] == wall_id
+        )
+        assert all(
+            left[1] <= right[0]
+            for left, right in zip(intervals, intervals[1:], strict=False)
+        )
 
 
 def test_multi_floor_has_stable_overlapping_core_and_vertical_connection():

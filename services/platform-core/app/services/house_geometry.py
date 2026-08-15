@@ -411,6 +411,40 @@ def _shared_edge(left: _Rect, right: _Rect) -> tuple[tuple[int, int], tuple[int,
     return None
 
 
+def _available_opening_offset(
+    wall_id: str,
+    segment_start_mm: int,
+    segment_length_mm: int,
+    width_mm: int,
+    openings: list[dict[str, Any]],
+    *,
+    clearance_mm: int = 100,
+) -> int | None:
+    lower = segment_start_mm + clearance_mm
+    upper = segment_start_mm + segment_length_mm - width_mm - clearance_mm
+    if upper < lower:
+        return None
+    centre = (lower + upper) // 2
+    candidates = list(range(lower, upper + 1, 100))
+    if upper not in candidates:
+        candidates.append(upper)
+    candidates.sort(key=lambda value: (abs(value - centre), value))
+    occupied = [
+        (int(item["offset"]), int(item["offset"]) + int(item["width"]))
+        for item in openings
+        if item.get("wallId") == wall_id
+    ]
+    for candidate in candidates:
+        candidate_end = candidate + width_mm
+        if all(
+            candidate_end + clearance_mm <= occupied_start
+            or candidate >= occupied_end + clearance_mm
+            for occupied_start, occupied_end in occupied
+        ):
+            return candidate
+    return None
+
+
 def _level_geometry(
     level_no: int,
     width_mm: int,
@@ -662,12 +696,21 @@ def _level_geometry(
         if exterior is None or exterior[2] * GRID_MM < 1200:
             continue
         wall_id, start_cell, length_cells = exterior
+        window_offset = _available_opening_offset(
+            wall_id,
+            offset + start_cell * GRID_MM,
+            length_cells * GRID_MM,
+            1_200,
+            openings,
+        )
+        if window_offset is None:
+            continue
         openings.append(
             {
                 "id": f"O{opening_index:03d}",
                 "wallId": wall_id,
                 "kind": "window",
-                "offset": offset + start_cell * GRID_MM + (length_cells * GRID_MM - 1200) // 2,
+                "offset": window_offset,
                 "width": 1200,
                 "height": 1200,
                 "sill": 900,

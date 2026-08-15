@@ -171,6 +171,7 @@ def test_house_designer_json_api_enforces_preconditions_and_replays(client):
     assert 'value="move_room"' in editor.text
     assert 'value="resize_room"' in editor.text
     assert 'value="remove_room"' in editor.text
+    assert 'value="add_wall"' in editor.text
     assert editor.text.count("<main") == 1
     assert 'class="skip-link" href="#main-content"' in editor.text
     assert 'id="main-content" tabindex="-1"' in editor.text
@@ -241,6 +242,100 @@ def test_house_designer_json_api_enforces_preconditions_and_replays(client):
     assert (
         restore_replay.json()["revision"]["revisionId"] == restored_design["revision"]["revisionId"]
     )
+
+
+def test_geometry_api_rejects_crossing_wall_and_outside_opening_atomically(client):
+    csrf = _login_and_csrf(client)
+    base_headers = {
+        "Origin": "http://testserver",
+        "X-CSRF-Token": csrf,
+        "Content-Type": "application/json",
+    }
+    created = client.post(
+        "/api/v1/house-designer/sessions",
+        headers={**base_headers, "Idempotency-Key": str(uuid4())},
+        json={"title": "Geometry negative API", "origin": "blank"},
+    )
+    assert created.status_code == 200
+    design = created.json()
+    command_url = f"/api/v1/house-designer/sessions/{design['sessionId']}/commands"
+
+    wall = client.post(
+        command_url,
+        headers={
+            **base_headers,
+            "Idempotency-Key": str(uuid4()),
+            "If-Match": design["revision"]["canonicalSha256"],
+        },
+        json={
+            "baseRevisionId": design["revision"]["revisionId"],
+            "commandType": "add_wall",
+            "payload": {
+                "levelId": "L01",
+                "x1Mm": 0,
+                "y1Mm": 4_000,
+                "x2Mm": 10_000,
+                "y2Mm": 4_000,
+            },
+        },
+    )
+    assert wall.status_code == 200
+    wall_design = wall.json()
+    wall_id = wall_design["revision"]["geometry"]["levels"][0]["wallSegments"][0]["id"]
+    revision_hash = wall_design["revision"]["canonicalSha256"]
+    revision_id = wall_design["revision"]["revisionId"]
+
+    crossing = client.post(
+        command_url,
+        headers={
+            **base_headers,
+            "Idempotency-Key": str(uuid4()),
+            "If-Match": revision_hash,
+        },
+        json={
+            "baseRevisionId": revision_id,
+            "commandType": "add_wall",
+            "payload": {
+                "levelId": "L01",
+                "x1Mm": 5_000,
+                "y1Mm": 0,
+                "x2Mm": 5_000,
+                "y2Mm": 8_000,
+            },
+        },
+    )
+    assert crossing.status_code == 422
+    assert crossing.json()["detail"]["code"] == "wall_self_intersection"
+
+    outside = client.post(
+        command_url,
+        headers={
+            **base_headers,
+            "Idempotency-Key": str(uuid4()),
+            "If-Match": revision_hash,
+        },
+        json={
+            "baseRevisionId": revision_id,
+            "commandType": "add_opening",
+            "payload": {
+                "levelId": "L01",
+                "wallId": wall_id,
+                "offsetMm": 9_500,
+                "widthMm": 900,
+            },
+        },
+    )
+    assert outside.status_code == 422
+    assert outside.json()["detail"]["code"] == "opening_outside_wall"
+
+    current = client.get(f"/api/v1/house-designer/sessions/{design['sessionId']}")
+    assert current.status_code == 200
+    assert current.json()["revision"]["revisionId"] == revision_id
+    editor = client.get(f"/house-designer/sessions/{design['sessionId']}")
+    assert 'value="add_opening"' in editor.text
+    assert 'value="move_wall"' in editor.text
+    assert 'value="split_wall"' in editor.text
+    assert 'value="remove_wall"' in editor.text
 
 
 def test_render_api_idempotency_key_is_collision_safe(client):
