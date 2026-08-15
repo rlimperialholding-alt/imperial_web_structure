@@ -89,8 +89,8 @@ def _criteria(value: str | dict[str, Any] | None) -> dict[str, int]:
     return result
 
 
-def _package_query():
-    return select(TenderPackage).execution_options(populate_existing=True).options(
+def _package_query(*, for_update: bool = False):
+    query = select(TenderPackage).execution_options(populate_existing=True).options(
         selectinload(TenderPackage.invitations)
         .selectinload(TenderInvitation.bid)
         .selectinload(TenderBid.items),
@@ -101,10 +101,15 @@ def _package_query():
         selectinload(TenderPackage.line_items),
         selectinload(TenderPackage.clarification_requests),
     )
+    return query.with_for_update() if for_update else query
 
 
-def get_tender(db: Session, tender_id: str) -> TenderPackage:
-    row = db.scalar(_package_query().where(TenderPackage.tender_id == tender_id))
+def get_tender(
+    db: Session, tender_id: str, *, for_update: bool = False
+) -> TenderPackage:
+    row = db.scalar(
+        _package_query(for_update=for_update).where(TenderPackage.tender_id == tender_id)
+    )
     if row is None:
         raise KeyError(tender_id)
     return row
@@ -272,7 +277,7 @@ def add_invitation(
 ) -> TenderInvitation:
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs partnermeghívási jogosultság.")
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     if tender.status not in {"draft", "published"}:
         raise ValueError("Partner csak vázlat vagy közzétett tenderhez hívható meg.")
     email = partner_email.strip().lower()
@@ -340,7 +345,7 @@ def add_tender_line_item(
 ) -> TenderLineItem:
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs tendertétel-szerkesztési jogosultság.")
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     if tender.status != "draft":
         raise ValueError("Tendertétel csak vázlatban módosítható.")
     code = line_code.strip().upper()
@@ -403,7 +408,7 @@ def sync_mail_recipients(db: Session, tender_id: str, user: object) -> dict[str,
 
 
 def publish_tender(db: Session, tender_id: str, user: object) -> TenderPackage:
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs közzétételi jogosultság.")
     if tender.status != "draft":
@@ -454,7 +459,7 @@ def publish_tender(db: Session, tender_id: str, user: object) -> TenderPackage:
 
 
 def close_tender(db: Session, tender_id: str, user: object) -> TenderPackage:
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs tenderzárási jogosultság.")
     if tender.status != "published":
@@ -478,16 +483,25 @@ def close_tender(db: Session, tender_id: str, user: object) -> TenderPackage:
 
 
 def partner_workspace(
-    db: Session, tender_id: str, token: str, *, mark_viewed: bool = True
+    db: Session,
+    tender_id: str,
+    token: str,
+    *,
+    mark_viewed: bool = True,
+    for_update: bool = False,
 ) -> dict[str, Any]:
-    tender = get_tender(db, tender_id)
-    invitation = db.scalar(
+    lock_rows = mark_viewed or for_update
+    tender = get_tender(db, tender_id, for_update=lock_rows)
+    invitation_query = (
         select(TenderInvitation)
         .options(
             selectinload(TenderInvitation.bid).selectinload(TenderBid.items),
             selectinload(TenderInvitation.bid).selectinload(TenderBid.evidence),
         )
         .where(TenderInvitation.tender_id_fk == tender.id, TenderInvitation.access_token == token)
+    )
+    invitation = db.scalar(
+        invitation_query.with_for_update() if lock_rows else invitation_query
     )
     if invitation is None:
         recipient = db.scalar(
@@ -591,7 +605,7 @@ def manage_invitation_access(
 
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs tendermeghívó-kezelési jogosultság.")
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     invitation = db.scalar(
         select(TenderInvitation)
         .where(
@@ -754,7 +768,9 @@ def save_bid(
     summary: str,
     exclusions: str,
 ) -> TenderBid:
-    workspace = partner_workspace(db, tender_id, token, mark_viewed=False)
+    workspace = partner_workspace(
+        db, tender_id, token, mark_viewed=False, for_update=True
+    )
     tender: TenderPackage = workspace["tender"]
     invitation: TenderInvitation = workspace["invitation"]
     if not workspace["submission_open"]:
@@ -851,7 +867,9 @@ def save_bid(
 
 
 def submit_bid(db: Session, tender_id: str, token: str) -> TenderBid:
-    workspace = partner_workspace(db, tender_id, token, mark_viewed=False)
+    workspace = partner_workspace(
+        db, tender_id, token, mark_viewed=False, for_update=True
+    )
     invitation: TenderInvitation = workspace["invitation"]
     bid = invitation.bid
     if not workspace["submission_open"]:
@@ -888,7 +906,7 @@ def create_clarification_request(
 ) -> TenderClarificationRequest:
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs hiánypótlási jogosultság.")
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     bid = db.scalar(select(TenderBid).where(TenderBid.tender_id_fk == tender.id, TenderBid.bid_id == bid_id))
     if bid is None or bid.status != "submitted":
         raise ValueError("Hiánypótlás csak beadott ajánlathoz indítható.")
@@ -906,9 +924,15 @@ def create_clarification_request(
 
 
 def respond_clarification_request(db: Session, tender_id: str, token: str, request_id: str, *, response: str) -> TenderClarificationRequest:
-    workspace = partner_workspace(db, tender_id, token, mark_viewed=False)
+    workspace = partner_workspace(
+        db, tender_id, token, mark_viewed=False, for_update=True
+    )
     bid = workspace["invitation"].bid
-    row = db.scalar(select(TenderClarificationRequest).where(TenderClarificationRequest.request_id == request_id))
+    row = db.scalar(
+        select(TenderClarificationRequest)
+        .where(TenderClarificationRequest.request_id == request_id)
+        .with_for_update()
+    )
     if row is None or bid is None or row.bid_id_fk != bid.id:
         raise PermissionError("A hiánypótlás nem ehhez a meghíváshoz tartozik.")
     if row.status not in {"open", "answered"} or len(response.strip()) < 10:
@@ -924,7 +948,11 @@ def respond_clarification_request(db: Session, tender_id: str, token: str, reque
 def accept_clarification_request(db: Session, request_id: str, user: object, *, note: str) -> TenderClarificationRequest:
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs hiánypótlás-elfogadási jogosultság.")
-    row = db.scalar(select(TenderClarificationRequest).where(TenderClarificationRequest.request_id == request_id))
+    row = db.scalar(
+        select(TenderClarificationRequest)
+        .where(TenderClarificationRequest.request_id == request_id)
+        .with_for_update()
+    )
     if row is None:
         raise KeyError(request_id)
     if row.status != "answered" or len(note.strip()) < 5:
@@ -939,7 +967,9 @@ def accept_clarification_request(db: Session, request_id: str, user: object, *, 
 
 
 def withdraw_bid(db: Session, tender_id: str, token: str) -> TenderBid:
-    workspace = partner_workspace(db, tender_id, token, mark_viewed=False)
+    workspace = partner_workspace(
+        db, tender_id, token, mark_viewed=False, for_update=True
+    )
     bid = workspace["invitation"].bid
     if not workspace["submission_open"] or bid is None or bid.status != "submitted":
         raise ValueError("Csak határidőn belüli beadott ajánlat vonható vissza.")
@@ -959,7 +989,9 @@ def withdraw_bid(db: Session, tender_id: str, token: str) -> TenderBid:
 
 
 def decline_invitation(db: Session, tender_id: str, token: str, reason: str) -> TenderInvitation:
-    workspace = partner_workspace(db, tender_id, token, mark_viewed=False)
+    workspace = partner_workspace(
+        db, tender_id, token, mark_viewed=False, for_update=True
+    )
     invitation = workspace["invitation"]
     if invitation.bid and invitation.bid.status == "submitted":
         raise ValueError("Beadott ajánlat mellett a meghívás nem utasítható vissza.")
@@ -990,12 +1022,14 @@ def add_clarification(
     invitation_id: str = "",
     partner_visible: bool = True,
 ) -> TenderClarification:
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     if len(body.strip()) < 3:
         raise ValueError("A tisztázó kérdés vagy válasz nem lehet üres.")
     invitation: TenderInvitation | None
     if user is None:
-        workspace = partner_workspace(db, tender_id, token, mark_viewed=False)
+        workspace = partner_workspace(
+            db, tender_id, token, mark_viewed=False, for_update=True
+        )
         if not workspace["question_open"]:
             raise ValueError("A tisztázó kérdések határideje lejárt.")
         invitation = workspace["invitation"]
@@ -1056,7 +1090,9 @@ def save_bid_evidence(
     caption: str,
     storage_root: Path,
 ) -> TenderBidEvidence:
-    workspace = partner_workspace(db, tender_id, token, mark_viewed=False)
+    workspace = partner_workspace(
+        db, tender_id, token, mark_viewed=False, for_update=True
+    )
     bid = workspace["invitation"].bid
     if not workspace["submission_open"] or bid is None or bid.status not in {"draft", "withdrawn"}:
         raise ValueError("Melléklet csak nyitott tender mentett vázlatához tölthető fel.")
@@ -1231,7 +1267,7 @@ def evaluate_bid(
     recommendation: str,
     notes: str,
 ) -> TenderEvaluation:
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs ajánlatértékelési jogosultság.")
     if tender.status not in {"evaluation", "closed"}:
@@ -1295,7 +1331,7 @@ def evaluate_bid(
 def award_bid(
     db: Session, tender_id: str, bid_id: str, user: object, *, summary: str
 ) -> TenderPackage:
-    tender = get_tender(db, tender_id)
+    tender = get_tender(db, tender_id, for_update=True)
     if _role(user) not in DECISION_ROLES:
         raise PermissionError("Az eredményhirdetés vezetői döntési jogosultságot igényel.")
     if tender.status not in {"evaluation", "closed"}:

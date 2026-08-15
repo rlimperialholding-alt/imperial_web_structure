@@ -36,11 +36,15 @@ is fail-closed, a partnerportál azonban meghívólinkkel teljesen tesztelhető.
   tárolási gyökérútvonalat és az SHA-256-ot; eltérés vagy régi `legacy_unverified`
   rekord esetén a letöltés blokkolt és auditált.
 - A scan-állapot, engine, engine-verzió, időpont és opcionális malware-szignatúra
-  perzisztált. A 0066 migráció a régi fájlokat nem minősíti visszamenőleg tisztának.
+  perzisztált. A 0068 migráció a régi fájlokat nem minősíti visszamenőleg tisztának.
 - Minden létrehozás, mentés, beadás, visszavonás, tisztázás, értékelés és
   odaítélés auditnapló-bejegyzést készít.
 - Közzétételkor projekt-esemény és feladat keletkezik; eredményhirdetéskor a
   kapcsolódó esemény és feladat lezárul.
+- A tendercsomagot, meghívót és formális hiánypótlást módosító tranzakciók
+  PostgreSQL `FOR UPDATE` sorszintű zárral, egységes tender→meghívó sorrendben
+  futnak. Ez sorosítja az egyidejű mentés/beadás/visszavonás, linkcsere,
+  tenderzárás, értékelés és odaítélés állapotváltásait.
 
 ## Szerepkörök
 
@@ -59,3 +63,29 @@ Az éles mellékletkezeléshez `TENDER_AV_MODE=clamav`, elérhető, frissített 
 szolgáltatás és `TENDER_CLAMAV_HOST` szükséges. A determinisztikus teszt-scanner
 kizárólag `ENVIRONMENT=test` mellett indul; más környezetben fail-closed. A ClamAV
 szolgáltatás telepítéséig a mellékletfeltöltés szándékosan nem release-ready.
+
+## UAT- és release-állapot – 2026-08-15
+
+- Célzott szintetikus UAT: 17/17 PASS (`test_tender_portal.py`,
+  `test_tender_evidence_security.py`, `test_tender_mail.py`). Lefedett utak:
+  procurement/projektmenedzser, külső partner/alvállalkozó, tiltott belső
+  alvállalkozói hozzáférés, no-bid, visszavonás és új verzió, link
+  rotate/revoke/expire, melléklet-típus/AV/hash/scope, tisztázás, értékelés,
+  vezetői odaítélés, esemény/feladat és audit.
+- Teljes Platform Core regresszió azonos kódállapoton: 555/555 PASS, 5 ismert,
+  nem blokkoló dependency-warning, 2740,55 s. A futás nem írt pytest cache-t,
+  bytecode-ot, reportot, screenshotot vagy tartós tesztadatbázist.
+- Friss adatbázis-migráció 0001→0068 PASS; a sémaellenőrző mind a 12 kötelező
+  Tender-táblát és minden kötelező lifecycle/AV oszlopot megtalálta.
+- PostgreSQL zárolási SQL bizonyíték PASS: a módosító csomaglekérdezés `FOR
+  UPDATE` klauzussal fordul, az olvasási lekérdezés nélküle.
+- A szerver jelenlegi sémája 0064; éles kiadás előtt Hetzner-only mentés és
+  visszaállítás-ellenőrzés után 0065→0068 migráció szükséges. Ez jelenleg nem
+  történt meg.
+- Nyitott kiadási kapu: valódi ClamAV-adapter és frissítési/riasztási felügyelet.
+- Nyitott kiadási kapu: hitelesített levélküldő domain és provider-adapter.
+- Nyitott biztonsági kapu: a gateway és az alkalmazáskiszolgáló access logja
+  nem őrizheti meg a partnerlink `recipient` bearer értékét; ezt éles
+  meghívás előtt logkonfigurációval és negatív smoke-kal kell bizonyítani.
+- Nyitott UAT-kapu: támogatott asztali és mobil böngészőkön kézi
+  billentyűzetes/reszponzív ellenőrzés. Valódi tenderküldés továbbra sem engedett.

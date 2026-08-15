@@ -6,6 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 
 from app.models import (
     AuditLog,
@@ -20,7 +21,7 @@ from app.models import (
     TenderPackage,
     TenderPurchaseOrderPreparation,
 )
-from app.services.tender_portal import bid_comparison
+from app.services.tender_portal import _package_query, bid_comparison
 
 PASSWORD = "Imperial2026!"
 TENDER_ID = "TND-UAT-2026-001"
@@ -200,6 +201,14 @@ def test_partner_saves_itemized_bid_submits_and_cannot_edit_until_withdrawn(clie
     )
     db.refresh(bid)
     assert bid.version == 2 and bid.status == "draft"
+
+
+def test_tender_state_transition_query_uses_postgresql_row_lock():
+    unlocked = str(_package_query().compile(dialect=postgresql.dialect()))
+    locked = str(_package_query(for_update=True).compile(dialect=postgresql.dialect()))
+
+    assert "FOR UPDATE" not in unlocked
+    assert "FOR UPDATE" in locked
 
 
 def test_partner_clarification_private_internal_note_and_token_isolation(client, db):
