@@ -97,6 +97,121 @@ def test_blank_house_is_deterministic_and_measured_in_millimetres():
     assert first["units"] == "mm"
 
 
+def test_concave_polygon_footprint_is_canonical_measured_and_fail_closed():
+    points = "0,0;10000,0;10000,3000;6000,3000;6000,8000;0,8000"
+    geometry = apply_command(
+        empty_geometry(),
+        "set_footprint_polygon",
+        {"levelId": "L01", "points": points},
+    )
+    assert gross_area_m2(geometry) == 60.0
+    rotated = deepcopy(geometry)
+    ring = rotated["levels"][0]["outerBoundary"]
+    rotated["levels"][0]["outerBoundary"] = [*ring[2:-1], *ring[:3]]
+    assert canonical_sha256(rotated) == canonical_sha256(geometry)
+    assert not [item for item in validate_geometry(geometry) if item["severity"] == "BLOCKER"]
+
+    before_hash = canonical_sha256(geometry)
+    with pytest.raises(GeometryError) as outside:
+        apply_command(
+            geometry,
+            "add_room",
+            {
+                "levelId": "L01",
+                "roomId": "R-OUTSIDE-CONCAVITY",
+                "xMm": 7_000,
+                "yMm": 4_000,
+                "widthMm": 2_000,
+                "depthMm": 2_000,
+            },
+        )
+    assert outside.value.code == "room_outside"
+    assert canonical_sha256(geometry) == before_hash
+
+
+@pytest.mark.parametrize(
+    "points",
+    [
+        "0,0;8000,8000;0,8000;8000,0",
+        "0,0;0,8000;8000,8000;8000,0",
+    ],
+)
+def test_self_intersecting_or_clockwise_footprint_is_rejected(points: str):
+    with pytest.raises(GeometryError) as error:
+        apply_command(
+            empty_geometry(),
+            "set_footprint_polygon",
+            {"levelId": "L01", "points": points},
+        )
+    assert error.value.code == "footprint_invalid"
+
+
+def test_free_room_polygon_and_diagonal_wall_are_validated():
+    geometry = apply_command(
+        empty_geometry(),
+        "set_footprint_polygon",
+        {
+            "levelId": "L01",
+            "points": "0,0;10000,0;10000,3000;6000,3000;6000,8000;0,8000",
+        },
+    )
+    geometry = apply_command(
+        geometry,
+        "add_room",
+        {
+            "levelId": "L01",
+            "roomId": "R01",
+            "xMm": 0,
+            "yMm": 0,
+            "widthMm": 3_000,
+            "depthMm": 3_000,
+        },
+    )
+    geometry = apply_command(
+        geometry,
+        "set_room_polygon",
+        {
+            "levelId": "L01",
+            "roomId": "R01",
+            "points": "0,0;3000,0;3000,2000;2000,3000;0,3000",
+        },
+    )
+    with pytest.raises(GeometryError) as overlap:
+        apply_command(
+            geometry,
+            "add_room",
+            {
+                "levelId": "L01",
+                "roomId": "R02",
+                "xMm": 1_500,
+                "yMm": 1_500,
+                "widthMm": 2_000,
+                "depthMm": 2_000,
+            },
+        )
+    assert overlap.value.code == "room_overlap"
+    geometry = apply_command(
+        geometry,
+        "add_wall",
+        {
+            "levelId": "L01",
+            "x1Mm": 0,
+            "y1Mm": 0,
+            "x2Mm": 6_000,
+            "y2Mm": 8_000,
+        },
+    )
+    assert geometry["levels"][0]["rooms"][0]["polygon"][3] == {"x": 2000, "y": 3000}
+    assert not [item for item in validate_geometry(geometry) if item["severity"] == "BLOCKER"]
+    with pytest.raises(GeometryError) as rectangle_only:
+        apply_command(
+            geometry,
+            "resize_room",
+            {"levelId": "L01", "roomId": "R01", "widthMm": 2_000, "depthMm": 2_000},
+        )
+    assert rectangle_only.value.code == "room_shape_command_invalid"
+
+
 def test_released_houseplan_can_be_adapted_to_editable_geometry():
     source = {
         "unit": "mm",
@@ -128,6 +243,50 @@ def test_released_houseplan_can_be_adapted_to_editable_geometry():
     assert adapted["levels"][0]["rooms"][0]["function"] == "living"
     assert adapted["levels"][0]["roof"]["pitchDeg"] == 30.0
     assert gross_area_m2(adapted) == 80.0
+
+
+def test_released_houseplan_with_concave_polygons_remains_editable():
+    boundary = [
+        {"x": 0, "y": 0},
+        {"x": 10_000, "y": 0},
+        {"x": 10_000, "y": 3_000},
+        {"x": 6_000, "y": 3_000},
+        {"x": 6_000, "y": 8_000},
+        {"x": 0, "y": 8_000},
+        {"x": 0, "y": 0},
+    ]
+    room = [
+        {"x": 0, "y": 0},
+        {"x": 3_000, "y": 0},
+        {"x": 3_000, "y": 2_000},
+        {"x": 2_000, "y": 3_000},
+        {"x": 0, "y": 3_000},
+        {"x": 0, "y": 0},
+    ]
+    adapted = adapt_houseplan_geometry(
+        {
+            "unit": "mm",
+            "levels": [
+                {
+                    "id": "L01",
+                    "elevation": 0,
+                    "height": 2_800,
+                    "boundary": boundary,
+                    "rooms": [
+                        {"id": "R01", "name": "Sokszög", "type": "other", "polygon": room}
+                    ],
+                    "walls": [],
+                    "openings": [],
+                    "connections": [],
+                }
+            ],
+            "verticalCores": [],
+            "verticalConnections": [],
+        }
+    )
+    assert gross_area_m2(adapted) == 60.0
+    assert len(adapted["levels"][0]["outerBoundary"]) == 7
+    assert not [item for item in validate_geometry(adapted) if item["severity"] == "BLOCKER"]
 
 
 @pytest.mark.parametrize("level_count", [1, 2, 3])
@@ -495,6 +654,122 @@ def test_wall_opening_and_t_junction_commands_are_atomic_and_bounded():
             },
         )
     assert crossing.value.code == "wall_self_intersection"
+
+
+def test_diagonal_walls_use_metric_length_and_reject_interior_crossing():
+    geometry = apply_command(
+        empty_geometry(8_000, 8_000),
+        "add_wall",
+        {
+            "levelId": "L01",
+            "wallId": "W-DIAGONAL",
+            "x1Mm": 0,
+            "y1Mm": 0,
+            "x2Mm": 8_000,
+            "y2Mm": 8_000,
+        },
+    )
+    geometry = apply_command(
+        geometry,
+        "add_opening",
+        {
+            "levelId": "L01",
+            "wallId": "W-DIAGONAL",
+            "offsetMm": 9_000,
+            "widthMm": 900,
+        },
+    )
+    assert geometry["levels"][0]["openings"][0]["offsetMm"] == 9_000
+    with pytest.raises(GeometryError) as outside:
+        apply_command(
+            geometry,
+            "add_opening",
+            {
+                "levelId": "L01",
+                "wallId": "W-DIAGONAL",
+                "offsetMm": 11_200,
+                "widthMm": 300,
+            },
+        )
+    assert outside.value.code == "opening_outside_wall"
+    with pytest.raises(GeometryError) as crossing:
+        apply_command(
+            geometry,
+            "add_wall",
+            {
+                "levelId": "L01",
+                "x1Mm": 0,
+                "y1Mm": 8_000,
+                "x2Mm": 8_000,
+                "y2Mm": 0,
+            },
+        )
+    assert crossing.value.code == "wall_self_intersection"
+
+
+def test_diagonal_boundary_supports_an_outside_room_connection():
+    geometry = apply_command(
+        empty_geometry(8_000, 8_000),
+        "set_footprint_polygon",
+        {"levelId": "L01", "points": "0,0;8000,0;8000,6000;6000,8000;0,8000"},
+    )
+    geometry = apply_command(
+        geometry,
+        "add_room",
+        {
+            "levelId": "L01",
+            "roomId": "R01",
+            "function": "entrance",
+            "xMm": 6_000,
+            "yMm": 6_000,
+            "widthMm": 1_000,
+            "depthMm": 1_000,
+        },
+    )
+    geometry = apply_command(
+        geometry,
+        "set_room_polygon",
+        {
+            "levelId": "L01",
+            "roomId": "R01",
+            "points": "6000,6000;8000,6000;6000,8000",
+        },
+    )
+    geometry = apply_command(
+        geometry,
+        "add_wall",
+        {
+            "levelId": "L01",
+            "wallId": "W-ENTRY",
+            "x1Mm": 8_000,
+            "y1Mm": 6_000,
+            "x2Mm": 6_000,
+            "y2Mm": 8_000,
+        },
+    )
+    geometry = apply_command(
+        geometry,
+        "add_opening",
+        {
+            "levelId": "L01",
+            "openingId": "O-ENTRY",
+            "wallId": "W-ENTRY",
+            "offsetMm": 500,
+            "widthMm": 900,
+        },
+    )
+    geometry = apply_command(
+        geometry,
+        "add_connection",
+        {
+            "levelId": "L01",
+            "roomA": "R01",
+            "roomB": "outside",
+            "openingId": "O-ENTRY",
+        },
+    )
+    assert geometry["levels"][0]["connections"][0]["roomB"] == "outside"
+    assert not [item for item in validate_geometry(geometry) if item["severity"] == "BLOCKER"]
 
 
 def test_disconnected_upper_level_and_invalid_stair_fail_closed():

@@ -302,6 +302,7 @@ def _payload(form: Any, command_type: str) -> dict[str, Any]:
     }
     fields_by_command = {
         "set_footprint": {"levelId", "widthMm", "depthMm"},
+        "set_footprint_polygon": {"levelId", "points"},
         "add_level": {"levelType"},
         "clone_level": {"sourceLevelId", "levelType"},
         "remove_level": {"levelId"},
@@ -387,6 +388,7 @@ def _payload(form: Any, command_type: str) -> dict[str, Any]:
         "resize_room": {"levelId", "roomId", "widthMm", "depthMm"},
         "remove_room": {"levelId", "roomId"},
         "set_room_function": {"levelId", "roomId", "name", "function"},
+        "set_room_polygon": {"levelId", "roomId", "points"},
         "set_roof": {"levelId", "roofType", "pitchDeg"},
         "set_north": {"northAngleDeg"},
         "set_site": {

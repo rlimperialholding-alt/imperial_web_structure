@@ -267,6 +267,27 @@ def test_clone_level_html_command_creates_audited_revision(client):
     revision_id = re.search(r'name="base_revision_id" value="([^"]+)"', page.text)
     canonical_hash = re.search(r'name="base_canonical_sha256" value="([^"]+)"', page.text)
     assert revision_id and canonical_hash
+    polygon = client.post(
+        f"{detail_url}/commands",
+        headers={"Origin": "http://testserver"},
+        data={
+            "csrf_token": csrf,
+            "command_id": str(uuid4()),
+            "command_type": "set_footprint_polygon",
+            "base_revision_id": revision_id.group(1),
+            "base_canonical_sha256": canonical_hash.group(1),
+            "levelId": "L01",
+            "points": "0,0;10000,0;10000,3000;6000,3000;6000,8000;0,8000",
+        },
+        follow_redirects=False,
+    )
+    assert polygon.status_code == 303
+    assert "error=" not in polygon.headers["location"]
+    page = client.get(detail_url)
+    assert "10000,3000 6000,3000 6000,8000" in page.text
+    revision_id = re.search(r'name="base_revision_id" value="([^"]+)"', page.text)
+    canonical_hash = re.search(r'name="base_canonical_sha256" value="([^"]+)"', page.text)
+    assert revision_id and canonical_hash
 
     cloned = client.post(
         f"{detail_url}/commands",

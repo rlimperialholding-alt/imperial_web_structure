@@ -618,6 +618,7 @@ def _revision_hash(
 def _default_summary(command_type: str) -> str:
     labels = {
         "set_footprint": "Az épület kontúrja módosult.",
+        "set_footprint_polygon": "Az épület szabad poligon kontúrja módosult.",
         "add_level": "Új szint került a tervbe.",
         "clone_level": "Egy szint másolata új szintként került a tervbe.",
         "remove_level": "Egy szint törölve lett.",
@@ -630,6 +631,7 @@ def _default_summary(command_type: str) -> str:
         "resize_room": "Egy helyiség mérete módosult.",
         "remove_room": "Egy helyiség törölve lett.",
         "set_room_function": "A helyiség funkciója módosult.",
+        "set_room_polygon": "A helyiség szabad poligon kontúrja módosult.",
         "set_roof": "A tető paraméterei módosultak.",
         "set_north": "Az északi irány módosult.",
         "set_configuration": "A műszaki tartalom módosult.",

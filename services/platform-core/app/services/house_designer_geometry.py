@@ -19,6 +19,7 @@ MAX_ROOMS_PER_LEVEL = 500
 MAX_WALLS_PER_LEVEL = 500
 MAX_OPENINGS_PER_LEVEL = 500
 MAX_FURNITURE_PER_LEVEL = 500
+MAX_POLYGON_VERTICES = 200
 FURNITURE_KINDS = {
     "appliance",
     "bed",
@@ -81,6 +82,7 @@ def apply_command_with_findings(
     result = deepcopy(geometry)
     handlers = {
         "set_footprint": _set_footprint,
+        "set_footprint_polygon": _set_footprint_polygon,
         "add_level": _add_level,
         "clone_level": _clone_level,
         "remove_level": _remove_level,
@@ -104,6 +106,7 @@ def apply_command_with_findings(
         "resize_room": _resize_room,
         "remove_room": _remove_room,
         "set_room_function": _set_room_function,
+        "set_room_polygon": _set_room_polygon,
         "set_roof": _set_roof,
         "set_north": _set_north,
     }
@@ -174,17 +177,32 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                 )
             )
         boundary = level.get("outerBoundary")
-        box = _rectangle_box(boundary)
-        if box is None:
+        boundary_ring = _polygon_ring(boundary)
+        if boundary_ring is None:
             findings.append(
                 _finding(
                     "footprint_invalid",
                     "BLOCKER",
-                    "A szint kontúrja csak érvényes, zárt téglalap lehet ebben a kiadásban.",
+                    "A szint kontúrja pozitív területű, egyszerű, zárt, "
+                    "óramutató járásával ellentétes poligon lehet.",
                     f"{path}.outerBoundary",
                 )
             )
             continue
+        boundary_box = _polygon_box(boundary_ring)
+        if not (
+            MIN_DIMENSION_MM <= boundary_box[2] - boundary_box[0] <= MAX_DIMENSION_MM
+            and MIN_DIMENSION_MM <= boundary_box[3] - boundary_box[1] <= MAX_DIMENSION_MM
+        ):
+            findings.append(
+                _finding(
+                    "footprint_dimension_invalid",
+                    "BLOCKER",
+                    f"A kontúr kiterjedése tengelyenként {MIN_DIMENSION_MM}–"
+                    f"{MAX_DIMENSION_MM} mm lehet.",
+                    f"{path}.outerBoundary",
+                )
+            )
         furniture = level.get("furnitureLayer", [])
         if not isinstance(furniture, list) or len(furniture) > MAX_FURNITURE_PER_LEVEL:
             findings.append(
@@ -218,7 +236,7 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                 )
                 continue
             furniture_ids.add(furniture_id)
-            if not _contains(box, item_box):
+            if not _box_in_polygon(item_box, boundary_ring):
                 findings.append(
                     _finding(
                         "furniture_outside",
@@ -228,11 +246,11 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                     )
                 )
         raw_rooms = level.get("rooms", [])
-        room_boundary_boxes = (
+        room_boundaries = (
             [
-                room_box
+                room_ring
                 for room in raw_rooms
-                if (room_box := _rectangle_box(room.get("polygon"))) is not None
+                if (room_ring := _polygon_ring(room.get("polygon"))) is not None
             ]
             if isinstance(raw_rooms, list)
             else []
@@ -260,8 +278,7 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                     _finding(
                         "wall_invalid",
                         "BLOCKER",
-                        "A fal azonosítója vagy tengelyvonala hibás; csak vízszintes vagy "
-                        "függőleges, nem nulla hosszúságú fal támogatott.",
+                        "A fal azonosítója vagy nem nulla hosszúságú tengelyvonala hibás.",
                         wall_path,
                     )
                 )
@@ -276,9 +293,7 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                         wall_path,
                     )
                 )
-            if not _point_in_box((segment[0], segment[1]), box) or not _point_in_box(
-                (segment[2], segment[3]), box
-            ):
+            if not _segment_inside_polygon(segment, boundary_ring):
                 findings.append(
                     _finding(
                         "wall_outside",
@@ -303,8 +318,9 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                         )
                     )
             for endpoint in ((segment[0], segment[1]), (segment[2], segment[3])):
-                if _point_on_box_boundary(endpoint, box) or any(
-                    _point_on_box_boundary(endpoint, room_box) for room_box in room_boundary_boxes
+                if _point_on_polygon_boundary(endpoint, boundary_ring) or any(
+                    _point_on_polygon_boundary(endpoint, room_ring)
+                    for room_ring in room_boundaries
                 ):
                     continue
                 if not any(
@@ -435,14 +451,16 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                 )
             )
             rooms = []
-        room_boxes: list[tuple[str, tuple[int, int, int, int], str]] = []
-        room_box_by_id: dict[str, tuple[int, int, int, int]] = {}
+        room_boxes: list[
+            tuple[str, tuple[int, int, int, int], list[tuple[int, int]], str]
+        ] = []
+        room_ring_by_id: dict[str, list[tuple[int, int]]] = {}
         seen_room_ids: set[str] = set()
         for room_index, room in enumerate(rooms):
             room_path = f"{path}.rooms[{room_index}]"
             room_id = str(room.get("id") or "")
-            room_box = _rectangle_box(room.get("polygon"))
-            if not room_id or room_id in seen_room_ids or room_box is None:
+            room_ring = _polygon_ring(room.get("polygon"))
+            if not room_id or room_id in seen_room_ids or room_ring is None:
                 findings.append(
                     _finding(
                         "room_invalid",
@@ -453,8 +471,9 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                 )
                 continue
             seen_room_ids.add(room_id)
-            room_box_by_id[room_id] = room_box
-            if not _contains(box, room_box):
+            room_box = _polygon_box(room_ring)
+            room_ring_by_id[room_id] = room_ring
+            if not _polygon_contains_polygon(boundary_ring, room_ring):
                 findings.append(
                     _finding(
                         "room_outside",
@@ -463,19 +482,23 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                         room_path,
                     )
                 )
-            room_boxes.append((room_id, room_box, room_path))
+            room_boxes.append((room_id, room_box, room_ring, room_path))
         # Sweep on the x axis instead of comparing every room with every other
         # room.  The editor currently accepts axis-aligned rectangles, so rooms
         # whose x intervals have already ended cannot overlap a later room.
         # This keeps validation effectively linear for ordinary floor plans and
         # removes allocation/GC spikes from the 200-object command path.
-        active: list[tuple[str, tuple[int, int, int, int]]] = []
-        for room_id, room_box, room_path in sorted(
+        active: list[
+            tuple[str, tuple[int, int, int, int], list[tuple[int, int]]]
+        ] = []
+        for room_id, room_box, room_ring, room_path in sorted(
             room_boxes, key=lambda item: (item[1][0], item[1][2], item[0])
         ):
             active = [item for item in active if item[1][2] > room_box[0]]
-            for other_id, other_box in active:
-                if _overlaps(room_box, other_box):
+            for other_id, other_box, other_ring in active:
+                if _overlaps(room_box, other_box) and _polygons_overlap(
+                    room_ring, other_ring
+                ):
                     findings.append(
                         _finding(
                             "room_overlap",
@@ -484,8 +507,8 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                             room_path,
                         )
                     )
-            active.append((room_id, room_box))
-        room_ids = {room_id for room_id, _, _ in room_boxes}
+            active.append((room_id, room_box, room_ring))
+        room_ids = {room_id for room_id, _, _, _ in room_boxes}
         room_functions = {
             str(room.get("id") or ""): str(room.get("function") or "other") for room in rooms
         }
@@ -527,11 +550,11 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
             connection_wall = wall_by_id[connection_wall_id]
             connection_wall_thickness = wall_thickness_by_id[connection_wall_id]
             endpoints_match = all(
-                _segment_on_box_boundary(connection_wall, box)
+                _segment_on_polygon_boundary(connection_wall, boundary_ring)
                 if room_id == "outside"
-                else _segment_near_box_boundary(
+                else _segment_near_polygon_boundary(
                     connection_wall,
-                    room_box_by_id[room_id],
+                    room_ring_by_id[room_id],
                     connection_wall_thickness,
                 )
                 for room_id in (room_a, room_b)
@@ -598,13 +621,13 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                     )
                 )
             zone = level.get("usableHeightZone")
-            zone_box = _rectangle_box(zone.get("polygon") if isinstance(zone, dict) else None)
+            zone_ring = _polygon_ring(zone.get("polygon") if isinstance(zone, dict) else None)
             min_height = (
                 _integer_value(zone, "minClearHeightMm", default=0) if isinstance(zone, dict) else 0
             )
             if (
-                zone_box is None
-                or not _contains(box, zone_box)
+                zone_ring is None
+                or not _polygon_contains_polygon(boundary_ring, zone_ring)
                 or min_height < 1_900
                 or min_height > int(level.get("heightMm") or 0)
             ):
@@ -717,8 +740,8 @@ def _validate_vertical_geometry(
             int(core["yMm"]) + int(core["depthMm"]),
         )
         for linked_index in pair:
-            level_box = _rectangle_box(levels[linked_index].get("outerBoundary"))
-            if level_box is None or not _contains(level_box, core_box):
+            level_ring = _polygon_ring(levels[linked_index].get("outerBoundary"))
+            if level_ring is None or not _box_in_polygon(core_box, level_ring):
                 findings.append(
                     _finding(
                         "vertical_core_outside",
@@ -761,9 +784,9 @@ def _stair_geometry_valid(stair: dict[str, Any]) -> bool:
 def gross_area_m2(geometry: dict[str, Any]) -> float:
     area_mm2 = 0
     for level in geometry.get("levels", []):
-        box = _rectangle_box(level.get("outerBoundary"))
-        if box:
-            area_mm2 += (box[2] - box[0]) * (box[3] - box[1])
+        ring = _polygon_ring(level.get("outerBoundary"))
+        if ring:
+            area_mm2 += _polygon_area2(ring) / 2
     return round(area_mm2 / 1_000_000, 2)
 
 
@@ -778,19 +801,19 @@ def adapt_houseplan_geometry(source: dict[str, Any]) -> dict[str, Any]:
     source_levels = source["levels"]
     for index, item in enumerate(source_levels):
         boundary = item.get("boundary")
-        if _rectangle_box(boundary) is None:
+        if _polygon_ring(boundary) is None:
             raise GeometryError(
                 "template_boundary_unsupported",
-                "A típusterv nem téglalap alakú külső kontúrja még nem szerkeszthető.",
+                "A típusterv külső kontúrja nem érvényes egyszerű poligon.",
                 path=f"levels[{index}].boundary",
             )
         rooms = []
         for room_index, room in enumerate(item.get("rooms") or []):
             polygon = room.get("polygon")
-            if _rectangle_box(polygon) is None:
+            if _polygon_ring(polygon) is None:
                 raise GeometryError(
                     "template_room_unsupported",
-                    "A típusterv nem téglalap alakú helyisége még nem szerkeszthető.",
+                    "A típusterv helyiségkontúrja nem érvényes egyszerű poligon.",
                     path=f"levels[{index}].rooms[{room_index}].polygon",
                 )
             rooms.append(
@@ -903,22 +926,58 @@ def _set_footprint(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     level["outerBoundary"] = _ring(0, 0, width, depth)
 
 
+def _set_footprint_polygon(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
+    level = _level(geometry, str(payload.get("levelId") or "L01"))
+    if any(
+        level.get(collection)
+        for collection in ("rooms", "wallSegments", "openings", "connections", "furnitureLayer")
+    ):
+        raise GeometryError(
+            "footprint_has_objects",
+            "A szabad kontúr csak objektumok nélküli szinten módosítható.",
+        )
+    polygon = _payload_polygon(payload.get("points"))
+    ring = _polygon_ring(polygon)
+    if ring is None:
+        raise GeometryError(
+            "footprint_invalid",
+            "A kontúr pozitív területű, egyszerű és óramutató járásával ellentétes legyen.",
+        )
+    bounds = _polygon_box(ring)
+    _validate_dimension(bounds[2] - bounds[0], "outerBoundary.width")
+    _validate_dimension(bounds[3] - bounds[1], "outerBoundary.depth")
+    level["outerBoundary"] = _canonical_polygon(polygon)
+
+
 def _add_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     levels = geometry["levels"]
     if len(levels) >= MAX_LEVELS:
         raise GeometryError("level_limit", "Legfeljebb három szint hozható létre.", path="levels")
     source = levels[-1]
-    source_box = _rectangle_box(source["outerBoundary"])
-    assert source_box is not None
+    source_ring = _polygon_ring(source["outerBoundary"])
+    assert source_ring is not None
+    source_box = _polygon_box(source_ring)
     level_id = f"L{len(levels) + 1:02d}"
     if payload.get("levelType") == "attic":
         level_type = "attic"
     else:
         level_type = "full_storey"
-    created = _new_level(level_id, len(levels) * 3_000, source_box[2], source_box[3])
+    created = _new_level(
+        level_id,
+        len(levels) * 3_000,
+        source_box[2] - source_box[0],
+        source_box[3] - source_box[1],
+    )
+    created["outerBoundary"] = deepcopy(source["outerBoundary"])
     created["type"] = level_type
     if level_type == "attic":
-        inset = min(1_000, max(300, min(source_box[2], source_box[3]) // 8))
+        inset = min(
+            1_000,
+            max(
+                300,
+                min(source_box[2] - source_box[0], source_box[3] - source_box[1]) // 8,
+            ),
+        )
         if source_box[2] - source_box[0] <= inset * 2 or source_box[3] - source_box[1] <= inset * 2:
             raise GeometryError(
                 "attic_zone_unavailable",
@@ -969,8 +1028,9 @@ def _clone_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
             "attic_clone_invalid",
             "Tetőtér fölé nem hozható létre új szint; előbb törölje vagy alakítsa át a tetőteret.",
         )
-    source_box = _rectangle_box(source["outerBoundary"])
-    assert source_box is not None
+    source_ring = _polygon_ring(source["outerBoundary"])
+    assert source_ring is not None
+    source_box = _polygon_box(source_ring)
     target_type = str(payload.get("levelType") or "full_storey")
     if target_type not in {"full_storey", "attic"}:
         raise GeometryError("level_type_invalid", "A klónozott szint típusa nem támogatott.")
@@ -983,7 +1043,13 @@ def _clone_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     created["heightMm"] = int(source.get("heightMm") or 2_800)
     created.pop("usableHeightZone", None)
     if target_type == "attic":
-        inset = min(1_000, max(300, min(source_box[2], source_box[3]) // 8))
+        inset = min(
+            1_000,
+            max(
+                300,
+                min(source_box[2] - source_box[0], source_box[3] - source_box[1]) // 8,
+            ),
+        )
         if source_box[2] - source_box[0] <= inset * 2 or source_box[3] - source_box[1] <= inset * 2:
             raise GeometryError(
                 "attic_zone_unavailable",
@@ -1278,7 +1344,11 @@ def _add_room(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
 def _move_room(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     room = _room(_level(geometry, str(payload["levelId"])), str(payload["roomId"]))
     box = _rectangle_box(room["polygon"])
-    assert box is not None
+    if box is None:
+        raise GeometryError(
+            "room_shape_command_invalid",
+            "Szabad poligon helyiség a poligonpontok szerkesztésével mozgatható.",
+        )
     x, y = int(payload["xMm"]), int(payload["yMm"])
     room["polygon"] = _ring(x, y, x + box[2] - box[0], y + box[3] - box[1])
 
@@ -1286,7 +1356,11 @@ def _move_room(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
 def _resize_room(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     room = _room(_level(geometry, str(payload["levelId"])), str(payload["roomId"]))
     box = _rectangle_box(room["polygon"])
-    assert box is not None
+    if box is None:
+        raise GeometryError(
+            "room_shape_command_invalid",
+            "Szabad poligon helyiség a poligonpontok szerkesztésével méretezhető.",
+        )
     width, depth = int(payload["widthMm"]), int(payload["depthMm"])
     _validate_dimension(width, "widthMm")
     _validate_dimension(depth, "depthMm")
@@ -1306,6 +1380,18 @@ def _set_room_function(geometry: dict[str, Any], payload: dict[str, Any]) -> Non
     room = _room(_level(geometry, str(payload["levelId"])), str(payload["roomId"]))
     room["name"] = str(payload.get("name") or room["name"])
     room["function"] = str(payload["function"])
+
+
+def _set_room_polygon(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
+    room = _room(_level(geometry, str(payload["levelId"])), str(payload["roomId"]))
+    polygon = _payload_polygon(payload.get("points"))
+    if _polygon_ring(polygon) is None:
+        raise GeometryError(
+            "room_invalid",
+            "A helyiségkontúr pozitív területű, egyszerű és "
+            "óramutató járásával ellentétes legyen.",
+        )
+    room["polygon"] = _canonical_polygon(polygon)
 
 
 def _set_roof(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
@@ -1393,6 +1479,43 @@ def _adapt_polygon(value: Any) -> list[dict[str, int]]:
     return [_adapt_point(point) for point in value]
 
 
+def _payload_polygon(value: Any) -> list[dict[str, int]]:
+    if isinstance(value, str):
+        points: list[dict[str, int]] = []
+        try:
+            for raw_point in value.split(";"):
+                coordinates = [part.strip() for part in raw_point.split(",")]
+                if len(coordinates) != 2:
+                    raise ValueError
+                points.append({"x": int(coordinates[0]), "y": int(coordinates[1])})
+        except ValueError as error:
+            raise GeometryError(
+                "polygon_payload_invalid",
+                "A pontokat x,y;x,y formában kell megadni.",
+            ) from error
+    else:
+        points = _adapt_polygon(value)
+    if points and points[0] != points[-1]:
+        points.append(deepcopy(points[0]))
+    return points
+
+
+def _canonical_polygon(value: Any) -> list[dict[str, int]]:
+    points = _adapt_polygon(value)
+    if points and points[0] == points[-1]:
+        vertices = points[:-1]
+    else:
+        vertices = points
+    if not vertices:
+        return points
+    start = min(
+        range(len(vertices)),
+        key=lambda index: (vertices[index]["x"], vertices[index]["y"]),
+    )
+    rotated = vertices[start:] + vertices[:start]
+    return [*rotated, deepcopy(rotated[0])]
+
+
 def _adapt_wall(wall: dict[str, Any], index: int) -> dict[str, Any]:
     return {
         "id": str(wall.get("id") or f"W{index + 1:03d}"),
@@ -1451,11 +1574,7 @@ def _wall_segment(wall: dict[str, Any]) -> tuple[int, int, int, int] | None:
     except (GeometryError, KeyError, TypeError, ValueError):
         return None
     segment = (start["x"], start["y"], end["x"], end["y"])
-    if segment[0] == segment[2] and segment[1] != segment[3]:
-        return segment
-    if segment[1] == segment[3] and segment[0] != segment[2]:
-        return segment
-    return None
+    return segment if segment[:2] != segment[2:] else None
 
 
 def _furniture_box(item: dict[str, Any]) -> tuple[int, int, int, int] | None:
@@ -1476,8 +1595,8 @@ def _furniture_box(item: dict[str, Any]) -> tuple[int, int, int, int] | None:
     return (x, y, x + width, y + depth)
 
 
-def _segment_length(segment: tuple[int, int, int, int]) -> int:
-    return abs(segment[2] - segment[0]) + abs(segment[3] - segment[1])
+def _segment_length(segment: tuple[int, int, int, int]) -> float:
+    return ((segment[2] - segment[0]) ** 2 + (segment[3] - segment[1]) ** 2) ** 0.5
 
 
 def _point_in_box(point: tuple[int, int], box: tuple[int, int, int, int]) -> bool:
@@ -1514,42 +1633,283 @@ def _segment_near_box_boundary(
     return False
 
 
+def _segment_near_polygon_boundary(
+    segment: tuple[int, int, int, int],
+    ring: list[tuple[int, int]],
+    tolerance_mm: int,
+) -> bool:
+    return any(
+        _parallel_segments_overlap_within(
+            segment, (*first, *second), tolerance_mm=tolerance_mm
+        )
+        for first, second in zip(ring, ring[1:], strict=False)
+    )
+
+
+def _segment_on_polygon_boundary(
+    segment: tuple[int, int, int, int], ring: list[tuple[int, int]]
+) -> bool:
+    return any(
+        _parallel_segments_overlap_within(segment, (*first, *second), tolerance_mm=0)
+        for first, second in zip(ring, ring[1:], strict=False)
+    )
+
+
+def _parallel_segments_overlap_within(
+    left: tuple[int, int, int, int],
+    right: tuple[int, int, int, int],
+    *,
+    tolerance_mm: int,
+) -> bool:
+    left_dx, left_dy = left[2] - left[0], left[3] - left[1]
+    right_dx, right_dy = right[2] - right[0], right[3] - right[1]
+    if left_dx * right_dy != left_dy * right_dx:
+        return False
+    length_squared = left_dx * left_dx + left_dy * left_dy
+    if length_squared == 0:
+        return False
+    distance_numerator = abs(
+        left_dx * (right[1] - left[1]) - left_dy * (right[0] - left[0])
+    )
+    if distance_numerator > tolerance_mm * (length_squared**0.5):
+        return False
+    right_projections = (
+        (right[0] - left[0]) * left_dx + (right[1] - left[1]) * left_dy,
+        (right[2] - left[0]) * left_dx + (right[3] - left[1]) * left_dy,
+    )
+    return max(0, min(right_projections)) < min(length_squared, max(right_projections))
+
+
 def _point_on_segment(point: tuple[int, int], segment: tuple[int, int, int, int]) -> bool:
     x1, y1, x2, y2 = segment
     return (
         min(x1, x2) <= point[0] <= max(x1, x2)
         and min(y1, y2) <= point[1] <= max(y1, y2)
-        and ((x1 == x2 == point[0]) or (y1 == y2 == point[1]))
+        and (x2 - x1) * (point[1] - y1) == (y2 - y1) * (point[0] - x1)
     )
+
+
+def _polygon_ring(points: Any) -> list[tuple[int, int]] | None:
+    if not isinstance(points, list) or not 4 <= len(points) <= MAX_POLYGON_VERTICES + 1:
+        return None
+    try:
+        ring = [
+            (int(point["x"]), int(point["y"]))
+            if isinstance(point, dict)
+            else (int(point[0]), int(point[1]))
+            for point in points
+        ]
+    except (IndexError, KeyError, TypeError, ValueError):
+        return None
+    if ring[0] != ring[-1] or len(set(ring[:-1])) != len(ring) - 1:
+        return None
+    if any(left == right for left, right in zip(ring, ring[1:], strict=False)):
+        return None
+    area2 = _polygon_area2(ring)
+    if area2 <= 0:
+        return None
+    edges = [(*ring[index], *ring[index + 1]) for index in range(len(ring) - 1)]
+    for left_index, left in enumerate(edges):
+        for right_index in range(left_index + 1, len(edges)):
+            if right_index in {left_index + 1} or (
+                left_index == 0 and right_index == len(edges) - 1
+            ):
+                continue
+            if _segments_intersect(left, edges[right_index]):
+                return None
+    return ring
+
+
+def _polygon_area2(ring: list[tuple[int, int]]) -> int:
+    return sum(
+        left[0] * right[1] - right[0] * left[1]
+        for left, right in zip(ring, ring[1:], strict=False)
+    )
+
+
+def _polygon_box(ring: list[tuple[int, int]]) -> tuple[int, int, int, int]:
+    xs = [point[0] for point in ring[:-1]]
+    ys = [point[1] for point in ring[:-1]]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _orientation(
+    first: tuple[int, int], second: tuple[int, int], third: tuple[int, int]
+) -> int:
+    value = (second[0] - first[0]) * (third[1] - first[1]) - (
+        second[1] - first[1]
+    ) * (third[0] - first[0])
+    return (value > 0) - (value < 0)
+
+
+def _segments_intersect(
+    left: tuple[int, int, int, int], right: tuple[int, int, int, int]
+) -> bool:
+    left_start, left_end = (left[0], left[1]), (left[2], left[3])
+    right_start, right_end = (right[0], right[1]), (right[2], right[3])
+    orientations = (
+        _orientation(left_start, left_end, right_start),
+        _orientation(left_start, left_end, right_end),
+        _orientation(right_start, right_end, left_start),
+        _orientation(right_start, right_end, left_end),
+    )
+    if orientations[0] != orientations[1] and orientations[2] != orientations[3]:
+        return True
+    return (
+        (orientations[0] == 0 and _point_on_segment(right_start, left))
+        or (orientations[1] == 0 and _point_on_segment(right_end, left))
+        or (orientations[2] == 0 and _point_on_segment(left_start, right))
+        or (orientations[3] == 0 and _point_on_segment(left_end, right))
+    )
+
+
+def _point_in_polygon(
+    point: tuple[int, int], ring: list[tuple[int, int]], *, include_boundary: bool = True
+) -> bool:
+    edges = [(*ring[index], *ring[index + 1]) for index in range(len(ring) - 1)]
+    if any(_point_on_segment(point, edge) for edge in edges):
+        return include_boundary
+    inside = False
+    x, y = point
+    for first, second in zip(ring, ring[1:], strict=False):
+        if (first[1] > y) == (second[1] > y):
+            continue
+        crossing_x = first[0] + (y - first[1]) * (second[0] - first[0]) / (
+            second[1] - first[1]
+        )
+        if crossing_x > x:
+            inside = not inside
+    return inside
+
+
+def _point_on_polygon_boundary(point: tuple[int, int], ring: list[tuple[int, int]]) -> bool:
+    return any(
+        _point_on_segment(point, (*first, *second))
+        for first, second in zip(ring, ring[1:], strict=False)
+    )
+
+
+def _polygons_overlap(
+    left: list[tuple[int, int]], right: list[tuple[int, int]]
+) -> bool:
+    left_box = _rectangle_box(left)
+    right_box = _rectangle_box(right)
+    if left_box is not None and right_box is not None:
+        return _overlaps(left_box, right_box)
+    left_edges = [(*left[index], *left[index + 1]) for index in range(len(left) - 1)]
+    right_edges = [
+        (*right[index], *right[index + 1]) for index in range(len(right) - 1)
+    ]
+    for left_edge in left_edges:
+        left_start, left_end = left_edge[:2], left_edge[2:]
+        for right_edge in right_edges:
+            right_start, right_end = right_edge[:2], right_edge[2:]
+            if (
+                _orientation(left_start, left_end, right_start)
+                * _orientation(left_start, left_end, right_end)
+                < 0
+                and _orientation(right_start, right_end, left_start)
+                * _orientation(right_start, right_end, left_end)
+                < 0
+            ):
+                return True
+    if any(_point_in_polygon(point, right, include_boundary=False) for point in left[:-1]):
+        return True
+    if any(_point_in_polygon(point, left, include_boundary=False) for point in right[:-1]):
+        return True
+    return set(left[:-1]) == set(right[:-1])
+
+
+def _segment_inside_polygon(
+    segment: tuple[int, int, int, int], ring: list[tuple[int, int]]
+) -> bool:
+    endpoints = ((segment[0], segment[1]), (segment[2], segment[3]))
+    if not all(_point_in_polygon(point, ring) for point in endpoints):
+        return False
+    for first, second in zip(ring, ring[1:], strict=False):
+        edge = (*first, *second)
+        if all(_point_on_segment(endpoint, edge) for endpoint in endpoints):
+            return True
+        if not _segments_intersect(segment, edge):
+            continue
+        if _orientation(endpoints[0], endpoints[1], first) == _orientation(
+            endpoints[0], endpoints[1], second
+        ) == 0:
+            continue
+        if any(_point_on_segment(endpoint, edge) for endpoint in endpoints):
+            continue
+        return False
+    midpoint = (
+        (segment[0] + segment[2]) / 2,
+        (segment[1] + segment[3]) / 2,
+    )
+    return _point_in_polygon_float(midpoint, ring)
+
+
+def _point_in_polygon_float(point: tuple[float, float], ring: list[tuple[int, int]]) -> bool:
+    inside = False
+    x, y = point
+    for first, second in zip(ring, ring[1:], strict=False):
+        if (first[1] > y) == (second[1] > y):
+            continue
+        crossing_x = first[0] + (y - first[1]) * (second[0] - first[0]) / (
+            second[1] - first[1]
+        )
+        if crossing_x > x:
+            inside = not inside
+    return inside
+
+
+def _box_ring(box: tuple[int, int, int, int]) -> list[tuple[int, int]]:
+    return [
+        (box[0], box[1]),
+        (box[2], box[1]),
+        (box[2], box[3]),
+        (box[0], box[3]),
+        (box[0], box[1]),
+    ]
+
+
+def _polygon_contains_polygon(
+    outer: list[tuple[int, int]], inner: list[tuple[int, int]]
+) -> bool:
+    if not all(_point_in_polygon(point, outer) for point in inner[:-1]):
+        return False
+    return all(
+        _segment_inside_polygon((*inner[index], *inner[index + 1]), outer)
+        for index in range(len(inner) - 1)
+    )
+
+
+def _box_in_polygon(box: tuple[int, int, int, int], ring: list[tuple[int, int]]) -> bool:
+    return _polygon_contains_polygon(ring, _box_ring(box))
 
 
 def _segments_intersect_invalidly(
     left: tuple[int, int, int, int], right: tuple[int, int, int, int]
 ) -> bool:
-    left_horizontal = left[1] == left[3]
-    right_horizontal = right[1] == right[3]
-    if left_horizontal == right_horizontal:
-        if left_horizontal and left[1] != right[1]:
-            return False
-        if not left_horizontal and left[0] != right[0]:
-            return False
-        left_start, left_end = (
-            sorted((left[0], left[2])) if left_horizontal else sorted((left[1], left[3]))
+    if not _segments_intersect(left, right):
+        return False
+    left_start, left_end = (left[0], left[1]), (left[2], left[3])
+    right_start, right_end = (right[0], right[1]), (right[2], right[3])
+    if _orientation(left_start, left_end, right_start) == _orientation(
+        left_start, left_end, right_end
+    ) == 0:
+        axis = 0 if abs(left[2] - left[0]) >= abs(left[3] - left[1]) else 1
+        left_values = sorted((left_start[axis], left_end[axis]))
+        right_values = sorted((right_start[axis], right_end[axis]))
+        return max(left_values[0], right_values[0]) < min(left_values[1], right_values[1])
+    if any(
+        _point_on_segment(point, segment)
+        for point, segment in (
+            (left_start, right),
+            (left_end, right),
+            (right_start, left),
+            (right_end, left),
         )
-        right_start, right_end = (
-            sorted((right[0], right[2])) if right_horizontal else sorted((right[1], right[3]))
-        )
-        return max(left_start, right_start) < min(left_end, right_end)
-    horizontal = left if left_horizontal else right
-    vertical = right if left_horizontal else left
-    intersection = (vertical[0], horizontal[1])
-    if not _point_on_segment(intersection, horizontal) or not _point_on_segment(
-        intersection, vertical
     ):
         return False
-    horizontal_endpoints = {(horizontal[0], horizontal[1]), (horizontal[2], horizontal[3])}
-    vertical_endpoints = {(vertical[0], vertical[1]), (vertical[2], vertical[3])}
-    return intersection not in horizontal_endpoints and intersection not in vertical_endpoints
+    return True
 
 
 def _rectangle_box(points: Any) -> tuple[int, int, int, int] | None:
@@ -1595,6 +1955,14 @@ def _normalize(value: Any) -> Any:
         return {key: _normalize(value[key]) for key in sorted(value)}
     if isinstance(value, list):
         normalized = [_normalize(item) for item in value]
+        if (
+            len(normalized) >= 4
+            and all(
+                isinstance(item, dict) and set(item) == {"x", "y"} for item in normalized
+            )
+            and normalized[0] == normalized[-1]
+        ):
+            return _canonical_polygon(normalized)
         if normalized and all(isinstance(item, dict) and "id" in item for item in normalized):
             return sorted(normalized, key=lambda item: str(item["id"]))
         return normalized
