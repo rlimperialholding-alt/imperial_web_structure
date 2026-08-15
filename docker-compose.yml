@@ -123,6 +123,22 @@ services:
       CRM_SITES_BYPASS_TOKEN: ${PLATFORM_CRM_SITES_BYPASS_TOKEN:-}
       CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-live}
       CONTENT_EXTERNAL_PUBLISHING_ENABLED: ${PLATFORM_CONTENT_EXTERNAL_PUBLISHING_ENABLED:-false}
+      AUTONOMOUS_PUBLISHING_ENABLED: ${AUTONOMOUS_PUBLISHING_ENABLED:-false}
+      AUTONOMOUS_PUBLISHING_REGISTRY_FILE: /app/config/publishing/registry.json
+      AUTONOMOUS_PUBLISHING_SECRET_DIR: /run/secrets/publishing
+      AUTONOMOUS_PUBLISHING_KILL_SWITCH_FILE: /run/secrets/publishing/kill-switch
+      AUTONOMOUS_PUBLISHING_WORKER_ID: ${AUTONOMOUS_PUBLISHING_WORKER_ID:-imperial-publishing-worker}
+      AUTONOMOUS_PUBLISHING_POLL_SECONDS: ${AUTONOMOUS_PUBLISHING_POLL_SECONDS:-5}
+      AUTONOMOUS_PUBLISHING_LEASE_SECONDS: ${AUTONOMOUS_PUBLISHING_LEASE_SECONDS:-300}
+      GROWTH_OPS_ENABLED: ${GROWTH_OPS_ENABLED:-false}
+      GROWTH_OPS_REGISTRY_FILE: /app/config/growth/registry.json
+      GROWTH_OPS_SECRET_DIR: /run/secrets/growth
+      GROWTH_OPS_KILL_SWITCH_FILE: /run/secrets/growth/kill-switch
+      GROWTH_OPS_WORKER_ID: ${GROWTH_OPS_WORKER_ID:-imperial-growth-worker}
+      GROWTH_OPS_POLL_SECONDS: ${GROWTH_OPS_POLL_SECONDS:-30}
+      GROWTH_OPS_LEASE_SECONDS: ${GROWTH_OPS_LEASE_SECONDS:-300}
+      GROWTH_OPS_BASE_URL: ${GROWTH_OPS_BASE_URL:-}
+      GROWTH_OPS_TIMEZONE: ${GROWTH_OPS_TIMEZONE:-Europe/Budapest}
       MARKET_PUBLIC_FETCH_ENABLED: ${MARKET_PUBLIC_FETCH_ENABLED:-false}
       MARKET_EVIDENCE_KEK_FILE: /run/secrets/market_evidence_kek
       MARKET_EVIDENCE_KEY_ID: ${MARKET_EVIDENCE_KEY_ID:-mci-evidence-kek-v1}
@@ -161,6 +177,10 @@ services:
     volumes:
       - platform_core_runtime:/app/runtime
       - platform_core_data:/app/data
+      - ${AUTONOMOUS_PUBLISHING_REGISTRY_DIR:-./config/publishing}:/app/config/publishing:ro
+      - ${AUTONOMOUS_PUBLISHING_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/publishing}:/run/secrets/publishing:ro
+      - ${GROWTH_OPS_REGISTRY_DIR:-./config/growth}:/app/config/growth:ro
+      - ${GROWTH_OPS_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/growth}:/run/secrets/growth:ro
     secrets:
       - platform_db_password
       - platform_expert_review_secret
@@ -213,6 +233,86 @@ services:
     volumes:
       - platform_core_runtime:/app/runtime
       - platform_core_data:/app/data
+    secrets:
+      - platform_db_password
+      - platform_expert_review_secret
+      - platform_marketing_review_secret
+      - platform_copywriter_review_secret
+      - platform_visual_review_secret
+      - platform_campaign_package_secret
+      - platform_release_hmac_key
+      - market_evidence_kek
+      - house_designer_site_kek
+    networks:
+      - default
+      - integrated
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-runtime-init:
+        condition: service_completed_successfully
+
+  autonomous-publishing-worker:
+    image: ${PLATFORM_CORE_IMAGE:-imperial-platform-core:local}
+    build:
+      context: ./services/platform-core
+      target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "app.publishing_worker"]
+    environment: *platform-core-environment
+    volumes:
+      - platform_core_runtime:/app/runtime
+      - platform_core_data:/app/data
+      - ${AUTONOMOUS_PUBLISHING_REGISTRY_DIR:-./config/publishing}:/app/config/publishing:ro
+      - ${AUTONOMOUS_PUBLISHING_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/publishing}:/run/secrets/publishing:ro
+    secrets:
+      - platform_db_password
+      - platform_expert_review_secret
+      - platform_marketing_review_secret
+      - platform_copywriter_review_secret
+      - platform_visual_review_secret
+      - platform_campaign_package_secret
+      - platform_release_hmac_key
+      - market_evidence_kek
+      - house_designer_site_kek
+    networks:
+      - default
+      - integrated
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-runtime-init:
+        condition: service_completed_successfully
+
+  growth-ops-worker:
+    image: ${PLATFORM_CORE_IMAGE:-imperial-platform-core:local}
+    build:
+      context: ./services/platform-core
+      target: runtime
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "app.growth_worker"]
+    environment: *platform-core-environment
+    volumes:
+      - platform_core_runtime:/app/runtime
+      - platform_core_data:/app/data
+      - ${GROWTH_OPS_REGISTRY_DIR:-./config/growth}:/app/config/growth:ro
+      - ${GROWTH_OPS_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/growth}:/run/secrets/growth:ro
     secrets:
       - platform_db_password
       - platform_expert_review_secret
