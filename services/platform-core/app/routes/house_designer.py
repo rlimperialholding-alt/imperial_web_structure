@@ -390,6 +390,7 @@ def _payload(form: Any, command_type: str) -> dict[str, Any]:
         "set_room_function": {"levelId", "roomId", "name", "function"},
         "set_room_polygon": {"levelId", "roomId", "points"},
         "set_roof": {"levelId", "roofType", "pitchDeg"},
+        "set_roof_footprint": {"levelId", "points"},
         "set_north": {"northAngleDeg"},
         "set_site": {
             "municipalityCode",

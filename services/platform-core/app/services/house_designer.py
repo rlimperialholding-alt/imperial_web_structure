@@ -633,6 +633,7 @@ def _default_summary(command_type: str) -> str:
         "set_room_function": "A helyiség funkciója módosult.",
         "set_room_polygon": "A helyiség szabad poligon kontúrja módosult.",
         "set_roof": "A tető paraméterei módosultak.",
+        "set_roof_footprint": "A tető footprint-poligonja módosult.",
         "set_north": "Az északi irány módosult.",
         "set_configuration": "A műszaki tartalom módosult.",
         "set_site": "A telekadatok módosultak.",

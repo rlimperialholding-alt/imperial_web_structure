@@ -108,6 +108,7 @@ def apply_command_with_findings(
         "set_room_function": _set_room_function,
         "set_room_polygon": _set_room_polygon,
         "set_roof": _set_roof,
+        "set_roof_footprint": _set_roof_footprint,
         "set_north": _set_north,
     }
     handler = handlers.get(command_type)
@@ -190,6 +191,7 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
             )
             continue
         boundary_box = _polygon_box(boundary_ring)
+        boundary_rectangle = _rectangle_box(boundary)
         if not (
             MIN_DIMENSION_MM <= boundary_box[2] - boundary_box[0] <= MAX_DIMENSION_MM
             and MIN_DIMENSION_MM <= boundary_box[3] - boundary_box[1] <= MAX_DIMENSION_MM
@@ -246,15 +248,12 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                     )
                 )
         raw_rooms = level.get("rooms", [])
-        room_boundaries = (
-            [
-                room_ring
-                for room in raw_rooms
-                if (room_ring := _polygon_ring(room.get("polygon"))) is not None
-            ]
+        raw_room_rings = (
+            [_polygon_ring(room.get("polygon")) for room in raw_rooms]
             if isinstance(raw_rooms, list)
             else []
         )
+        room_boundaries = [room_ring for room_ring in raw_room_rings if room_ring is not None]
         walls = level.get("wallSegments", [])
         if not isinstance(walls, list) or len(walls) > MAX_WALLS_PER_LEVEL:
             findings.append(
@@ -459,7 +458,7 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
         for room_index, room in enumerate(rooms):
             room_path = f"{path}.rooms[{room_index}]"
             room_id = str(room.get("id") or "")
-            room_ring = _polygon_ring(room.get("polygon"))
+            room_ring = raw_room_rings[room_index]
             if not room_id or room_id in seen_room_ids or room_ring is None:
                 findings.append(
                     _finding(
@@ -473,7 +472,13 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
             seen_room_ids.add(room_id)
             room_box = _polygon_box(room_ring)
             room_ring_by_id[room_id] = room_ring
-            if not _polygon_contains_polygon(boundary_ring, room_ring):
+            room_rectangle = _rectangle_box(room.get("polygon"))
+            contained = (
+                _contains(boundary_rectangle, room_rectangle)
+                if boundary_rectangle is not None and room_rectangle is not None
+                else _polygon_contains_polygon(boundary_ring, room_ring)
+            )
+            if not contained:
                 findings.append(
                     _finding(
                         "room_outside",
@@ -610,6 +615,41 @@ def validate_geometry(geometry: dict[str, Any]) -> list[dict[str, str]]:
                     f"{path}.rooms",
                 )
             )
+        roof = level.get("roof")
+        if isinstance(roof, dict):
+            if index != len(levels) - 1:
+                findings.append(
+                    _finding(
+                        "roof_not_topmost",
+                        "BLOCKER",
+                        "Tetőgeometria csak a legfelső szinthez tartozhat.",
+                        f"{path}.roof",
+                    )
+                )
+            roof_footprint = roof.get("footprint")
+            if roof_footprint is None:
+                findings.append(
+                    _finding(
+                        "roof_footprint_missing",
+                        "WARNING",
+                        "A legacy tető még nem tartalmaz külön footprint-poligont.",
+                        f"{path}.roof.footprint",
+                    )
+                )
+            else:
+                roof_ring = _polygon_ring(roof_footprint)
+                if roof_ring is None or not _polygon_contains_polygon(
+                    roof_ring, boundary_ring
+                ):
+                    findings.append(
+                        _finding(
+                            "roof_footprint_invalid",
+                            "BLOCKER",
+                            "A tető footprintje érvényes egyszerű poligonként fedje le "
+                            "a legfelső szint kontúrját.",
+                            f"{path}.roof.footprint",
+                        )
+                    )
         if level_type == "attic":
             if index != len(levels) - 1:
                 findings.append(
@@ -852,6 +892,9 @@ def adapt_houseplan_geometry(source: dict[str, Any]) -> dict[str, Any]:
             "type": str(roof.get("kind") or "pitched"),
             "pitchDeg": round(int(roof.get("pitchMilliDegrees") or 0) / 1_000, 3),
             "ridgeAxis": roof.get("ridgeAxis"),
+            "footprint": _canonical_polygon(
+                roof.get("footprint") or levels[-1]["outerBoundary"]
+            ),
         }
     cores = []
     for index, core in enumerate(source.get("verticalCores") or []):
@@ -970,6 +1013,13 @@ def _add_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     )
     created["outerBoundary"] = deepcopy(source["outerBoundary"])
     created["type"] = level_type
+    previous_roof = deepcopy(source.get("roof")) if isinstance(source.get("roof"), dict) else None
+    source["roof"] = None
+    if previous_roof is not None:
+        created["roof"] = {
+            **previous_roof,
+            "footprint": deepcopy(created["outerBoundary"]),
+        }
     if level_type == "attic":
         inset = min(
             1_000,
@@ -992,7 +1042,11 @@ def _add_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
                 source_box[3] - inset,
             ),
         }
-        created["roof"] = {"type": "gable", "pitchDeg": 30}
+        created["roof"] = {
+            "type": str((previous_roof or {}).get("type") or "gable"),
+            "pitchDeg": int((previous_roof or {}).get("pitchDeg") or 30),
+            "footprint": deepcopy(created["outerBoundary"]),
+        }
     levels.append(created)
     core_id = str(payload.get("coreId") or "CORE-01")
     if not geometry["verticalCores"]:
@@ -1036,6 +1090,13 @@ def _clone_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
         raise GeometryError("level_type_invalid", "A klónozott szint típusa nem támogatott.")
 
     level_id = f"L{len(levels) + 1:02d}"
+    previous_top = levels[-1]
+    previous_roof = (
+        deepcopy(previous_top.get("roof"))
+        if isinstance(previous_top.get("roof"), dict)
+        else None
+    )
+    previous_top["roof"] = None
     created = deepcopy(source)
     created["id"] = level_id
     created["type"] = target_type
@@ -1064,9 +1125,20 @@ def _clone_level(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
                 source_box[3] - inset,
             ),
         }
-        created["roof"] = deepcopy(source.get("roof")) or {"type": "gable", "pitchDeg": 30}
+        created["roof"] = {
+            "type": str((previous_roof or {}).get("type") or "gable"),
+            "pitchDeg": int((previous_roof or {}).get("pitchDeg") or 30),
+            "footprint": deepcopy(created["outerBoundary"]),
+        }
     else:
-        created["roof"] = None
+        created["roof"] = (
+            {
+                **previous_roof,
+                "footprint": deepcopy(created["outerBoundary"]),
+            }
+            if previous_roof is not None
+            else None
+        )
     levels.append(created)
 
     core_id = str(payload.get("coreId") or "CORE-01")
@@ -1396,13 +1468,44 @@ def _set_room_polygon(geometry: dict[str, Any], payload: dict[str, Any]) -> None
 
 def _set_roof(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     level = _level(geometry, str(payload.get("levelId") or geometry["levels"][-1]["id"]))
+    if level is not geometry["levels"][-1]:
+        raise GeometryError("roof_not_topmost", "Tető csak a legfelső szinthez rendelhető.")
     roof_type = str(payload["roofType"])
     if roof_type not in {"flat", "gable", "hip", "shed"}:
         raise GeometryError("roof_type_invalid", "Nem támogatott tetőforma.")
     pitch = int(payload.get("pitchDeg") or (0 if roof_type == "flat" else 30))
     if not 0 <= pitch <= 60:
         raise GeometryError("roof_pitch_invalid", "A tető hajlásszöge 0–60 fok lehet.")
-    level["roof"] = {"type": roof_type, "pitchDeg": pitch}
+    existing = level.get("roof") if isinstance(level.get("roof"), dict) else {}
+    level["roof"] = {
+        "type": roof_type,
+        "pitchDeg": pitch,
+        "footprint": deepcopy(existing.get("footprint") or level["outerBoundary"]),
+    }
+
+
+def _set_roof_footprint(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
+    level = _level(geometry, str(payload.get("levelId") or geometry["levels"][-1]["id"]))
+    if level is not geometry["levels"][-1]:
+        raise GeometryError("roof_not_topmost", "Tető csak a legfelső szinthez rendelhető.")
+    roof = level.get("roof")
+    if not isinstance(roof, dict):
+        raise GeometryError(
+            "roof_missing", "A footprint megadása előtt válassza ki a tető típusát."
+        )
+    polygon = _payload_polygon(payload.get("points"))
+    roof_ring = _polygon_ring(polygon)
+    boundary_ring = _polygon_ring(level.get("outerBoundary"))
+    if (
+        roof_ring is None
+        or boundary_ring is None
+        or not _polygon_contains_polygon(roof_ring, boundary_ring)
+    ):
+        raise GeometryError(
+            "roof_footprint_invalid",
+            "A tető footprintje érvényes egyszerű poligonként fedje le a szintkontúrt.",
+        )
+    roof["footprint"] = _canonical_polygon(polygon)
 
 
 def _set_north(geometry: dict[str, Any], payload: dict[str, Any]) -> None:

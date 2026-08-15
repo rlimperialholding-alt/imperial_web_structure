@@ -571,10 +571,56 @@ def test_attic_has_bounded_usable_height_zone_and_must_remain_topmost():
     geometry = apply_command(empty_geometry(), "add_level", {"levelType": "attic"})
     attic = geometry["levels"][-1]
     assert attic["usableHeightZone"]["minClearHeightMm"] == 1_900
-    assert attic["roof"] == {"pitchDeg": 30, "type": "gable"}
+    assert attic["roof"]["type"] == "gable"
+    assert attic["roof"]["pitchDeg"] == 30
+    assert attic["roof"]["footprint"] == attic["outerBoundary"]
     with pytest.raises(GeometryError) as error:
         apply_command(geometry, "add_level", {"levelType": "full_storey"})
     assert error.value.code == "attic_not_topmost"
+
+
+def test_roof_footprint_covers_top_level_and_moves_with_added_level():
+    geometry = apply_command(
+        empty_geometry(),
+        "set_roof",
+        {"levelId": "L01", "roofType": "gable", "pitchDeg": 35},
+    )
+    assert geometry["levels"][0]["roof"]["footprint"] == geometry["levels"][0][
+        "outerBoundary"
+    ]
+    geometry = apply_command(
+        geometry,
+        "set_roof_footprint",
+        {
+            "levelId": "L01",
+            "points": "-300,-300;10300,-300;10300,8300;-300,8300",
+        },
+    )
+    before_hash = canonical_sha256(geometry)
+    with pytest.raises(GeometryError) as invalid:
+        apply_command(
+            geometry,
+            "set_roof_footprint",
+            {"levelId": "L01", "points": "0,0;9000,0;9000,7000;0,7000"},
+        )
+    assert invalid.value.code == "roof_footprint_invalid"
+    assert canonical_sha256(geometry) == before_hash
+
+    with_upper_level = apply_command(
+        geometry, "add_level", {"levelType": "full_storey"}
+    )
+    assert with_upper_level["levels"][0]["roof"] is None
+    assert with_upper_level["levels"][1]["roof"]["type"] == "gable"
+    assert with_upper_level["levels"][1]["roof"]["footprint"] == with_upper_level[
+        "levels"
+    ][1]["outerBoundary"]
+    with pytest.raises(GeometryError) as lower:
+        apply_command(
+            with_upper_level,
+            "set_roof",
+            {"levelId": "L01", "roofType": "flat", "pitchDeg": 0},
+        )
+    assert lower.value.code == "roof_not_topmost"
 
 
 def test_wall_opening_and_t_junction_commands_are_atomic_and_bounded():

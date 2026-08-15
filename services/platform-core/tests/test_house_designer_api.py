@@ -341,6 +341,54 @@ def test_clone_level_html_command_creates_audited_revision(client):
     assert "Próbakanapé" in furnished_page.text
     assert 'class="hd-furniture"' in furnished_page.text
     assert 'value="undo_revision"' in furnished_page.text
+    furnished_revision_id = re.search(
+        r'name="base_revision_id" value="([^"]+)"', furnished_page.text
+    )
+    furnished_canonical_hash = re.search(
+        r'name="base_canonical_sha256" value="([^"]+)"', furnished_page.text
+    )
+    assert furnished_revision_id and furnished_canonical_hash
+    roof = client.post(
+        f"{detail_url}/commands",
+        headers={"Origin": "http://testserver"},
+        data={
+            "csrf_token": csrf,
+            "command_id": str(uuid4()),
+            "command_type": "set_roof",
+            "base_revision_id": furnished_revision_id.group(1),
+            "base_canonical_sha256": furnished_canonical_hash.group(1),
+            "levelId": "L02",
+            "roofType": "gable",
+            "pitchDeg": "30",
+        },
+        follow_redirects=False,
+    )
+    assert roof.status_code == 303 and "error=" not in roof.headers["location"]
+    roof_page = client.get(detail_url)
+    assert 'value="set_roof_footprint"' in roof_page.text
+    roof_revision_id = re.search(
+        r'name="base_revision_id" value="([^"]+)"', roof_page.text
+    )
+    roof_canonical_hash = re.search(
+        r'name="base_canonical_sha256" value="([^"]+)"', roof_page.text
+    )
+    assert roof_revision_id and roof_canonical_hash
+    roof_footprint = client.post(
+        f"{detail_url}/commands",
+        headers={"Origin": "http://testserver"},
+        data={
+            "csrf_token": csrf,
+            "command_id": str(uuid4()),
+            "command_type": "set_roof_footprint",
+            "base_revision_id": roof_revision_id.group(1),
+            "base_canonical_sha256": roof_canonical_hash.group(1),
+            "levelId": "L02",
+            "points": "0,0;10000,0;10000,3000;6000,3000;6000,8000;0,8000",
+        },
+        follow_redirects=False,
+    )
+    assert roof_footprint.status_code == 303
+    assert "error=" not in roof_footprint.headers["location"]
 
 
 def test_json_api_undo_redo_is_linear_idempotent_and_fail_closed(client):
