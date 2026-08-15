@@ -405,6 +405,8 @@ def _payload(form: Any, command_type: str) -> dict[str, Any]:
             "stairType",
             "technicalPackage",
         },
+        "undo_revision": set(),
+        "redo_revision": set(),
         "restore_revision": {"targetRevisionId"},
     }
     allowed = fields_by_command.get(command_type)

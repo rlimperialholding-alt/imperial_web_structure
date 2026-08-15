@@ -319,6 +319,121 @@ def test_clone_level_html_command_creates_audited_revision(client):
     furnished_page = client.get(detail_url)
     assert "Próbakanapé" in furnished_page.text
     assert 'class="hd-furniture"' in furnished_page.text
+    assert 'value="undo_revision"' in furnished_page.text
+
+
+def test_json_api_undo_redo_is_linear_idempotent_and_fail_closed(client):
+    csrf = _login_and_csrf(client)
+    headers = {
+        "Origin": "http://testserver",
+        "X-CSRF-Token": csrf,
+        "Content-Type": "application/json",
+    }
+    created = client.post(
+        "/api/v1/house-designer/sessions",
+        headers={**headers, "Idempotency-Key": str(uuid4())},
+        json={"title": "Undo redo ház", "origin": "blank"},
+    ).json()
+    command_url = f"/api/v1/house-designer/sessions/{created['sessionId']}/commands"
+    unavailable_undo = client.post(
+        command_url,
+        headers={
+            **headers,
+            "Idempotency-Key": str(uuid4()),
+            "If-Match": created["revision"]["canonicalSha256"],
+        },
+        json={
+            "baseRevisionId": created["revision"]["revisionId"],
+            "commandType": "undo_revision",
+            "payload": {},
+        },
+    )
+    assert unavailable_undo.status_code == 409
+    assert unavailable_undo.json()["detail"]["code"] == "undo_revision_unavailable"
+    added = client.post(
+        command_url,
+        headers={
+            **headers,
+            "Idempotency-Key": str(uuid4()),
+            "If-Match": created["revision"]["canonicalSha256"],
+        },
+        json={
+            "baseRevisionId": created["revision"]["revisionId"],
+            "commandType": "add_room",
+            "payload": {
+                "levelId": "L01",
+                "roomId": "R01",
+                "xMm": 0,
+                "yMm": 0,
+                "widthMm": 4_000,
+                "depthMm": 3_000,
+            },
+        },
+    ).json()
+    undo_key = str(uuid4())
+    undo_request = {
+        "baseRevisionId": added["revision"]["revisionId"],
+        "commandType": "undo_revision",
+        "payload": {},
+    }
+    undone_response = client.post(
+        command_url,
+        headers={
+            **headers,
+            "Idempotency-Key": undo_key,
+            "If-Match": added["revision"]["canonicalSha256"],
+        },
+        json=undo_request,
+    )
+    assert undone_response.status_code == 200
+    undone = undone_response.json()
+    assert undone["revision"]["geometry"]["levels"][0]["rooms"] == []
+    assert undone["revision"]["commandType"] == "undo_revision"
+    undo_replay = client.post(
+        command_url,
+        headers={
+            **headers,
+            "Idempotency-Key": undo_key,
+            "If-Match": added["revision"]["canonicalSha256"],
+        },
+        json=undo_request,
+    )
+    assert undo_replay.status_code == 200
+    assert undo_replay.json()["revision"]["revisionId"] == undone["revision"]["revisionId"]
+
+    redone_response = client.post(
+        command_url,
+        headers={
+            **headers,
+            "Idempotency-Key": str(uuid4()),
+            "If-Match": undone["revision"]["canonicalSha256"],
+        },
+        json={
+            "baseRevisionId": undone["revision"]["revisionId"],
+            "commandType": "redo_revision",
+            "payload": {},
+        },
+    )
+    assert redone_response.status_code == 200
+    redone = redone_response.json()
+    assert len(redone["revision"]["geometry"]["levels"][0]["rooms"]) == 1
+    assert redone["revision"]["commandType"] == "redo_revision"
+
+    unavailable = client.post(
+        command_url,
+        headers={
+            **headers,
+            "Idempotency-Key": str(uuid4()),
+            "If-Match": redone["revision"]["canonicalSha256"],
+        },
+        json={
+            "baseRevisionId": redone["revision"]["revisionId"],
+            "commandType": "redo_revision",
+            "payload": {},
+        },
+    )
+    assert unavailable.status_code == 409
+    assert unavailable.json()["detail"]["code"] == "redo_revision_unavailable"
 
 
 def test_geometry_api_rejects_crossing_wall_and_outside_opening_atomically(client):

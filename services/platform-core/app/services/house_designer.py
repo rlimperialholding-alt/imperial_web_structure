@@ -237,8 +237,25 @@ def apply_session_command(
     site = decode_revision_site(current)
     geometry_findings: list[dict[str, str]] | None = None
     try:
-        if command_type == "restore_revision":
-            target_revision_id = str(payload.get("targetRevisionId") or "").strip()
+        if command_type in {"restore_revision", "undo_revision", "redo_revision"}:
+            if command_type == "undo_revision":
+                target_revision_id = str(current.predecessor_revision_id or "")
+                if not target_revision_id:
+                    raise HouseDesignerError(
+                        "undo_revision_unavailable",
+                        "Az első tervverzió előtt nincs visszavonható művelet.",
+                        status_code=409,
+                    )
+            elif command_type == "redo_revision":
+                if current.command_type != "undo_revision":
+                    raise HouseDesignerError(
+                        "redo_revision_unavailable",
+                        "Újraalkalmazás csak közvetlen visszavonás után lehetséges.",
+                        status_code=409,
+                    )
+                target_revision_id = str(current.predecessor_revision_id or "")
+            else:
+                target_revision_id = str(payload.get("targetRevisionId") or "").strip()
             target = db.scalar(
                 select(HouseDesignRevision).where(
                     HouseDesignRevision.session_id == session_id,
@@ -402,6 +419,7 @@ def _session_payload(
         "revision": {
             "revisionId": revision.revision_id,
             "revisionNo": revision.revision_no,
+            "commandType": revision.command_type,
             "canonicalSha256": revision.canonical_sha256,
             "geometry": geometry,
             "configuration": configuration,
@@ -616,6 +634,8 @@ def _default_summary(command_type: str) -> str:
         "set_north": "Az északi irány módosult.",
         "set_configuration": "A műszaki tartalom módosult.",
         "set_site": "A telekadatok módosultak.",
+        "undo_revision": "Az utolsó tervmódosítás visszavonva.",
+        "redo_revision": "A visszavont tervmódosítás újraalkalmazva.",
         "restore_revision": "Egy korábbi tervverzió tartalma visszaállítva.",
     }
     return labels.get(command_type, "A házterv módosult.")
