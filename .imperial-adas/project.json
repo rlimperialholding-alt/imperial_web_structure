@@ -28,7 +28,7 @@
     "restore": [
       {
         "name": "platform-core dependency restore",
-        "command": "python -m pip install --disable-pip-version-check -r services\\platform-core\\requirements.txt -r services\\platform-core\\requirements-dev.txt",
+        "command": "python -m pip install --disable-pip-version-check -r services/platform-core/requirements.txt -r services/platform-core/requirements-dev.txt",
         "requiredAtRisk": ["R2", "R3"],
         "timeoutSeconds": 1800
       }
@@ -36,7 +36,7 @@
     "build": [
       {
         "name": "platform-core compile",
-        "command": "python -m compileall -q services\\platform-core\\app services\\platform-core\\alembic",
+        "command": "python -m compileall -q services/platform-core/app services/platform-core/alembic",
         "requiredAtRisk": ["R1", "R2", "R3"],
         "timeoutSeconds": 1200
       }
@@ -45,16 +45,23 @@
     "lint": [
       {
         "name": "platform-core high-signal static check",
-        "command": "python -m ruff check services\\platform-core\\app services\\platform-core\\alembic --select E9,F",
+        "command": "python -m ruff check services/platform-core/app services/platform-core/alembic --select E9,F",
         "requiredAtRisk": ["R1", "R2", "R3"],
         "timeoutSeconds": 1200
       }
     ],
-    "typecheck": [],
+    "typecheck": [
+      {
+        "name": "platform-core full application mypy",
+        "command": "cd services/platform-core && python -m mypy app --config-file pyproject.toml",
+        "requiredAtRisk": ["R1", "R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
     "unit": [
       {
         "name": "platform-core full pytest suite",
-        "command": "cd services\\platform-core && python -m pytest -q",
+        "command": "cd services/platform-core && python -m pytest -q",
         "requiredAtRisk": ["R1", "R2", "R3"],
         "timeoutSeconds": 3600
       }
@@ -62,18 +69,25 @@
     "integration": [
       {
         "name": "critical cross-module integration suite",
-        "command": "cd services\\platform-core && python -m pytest -q tests\\test_canonical_sync_routes.py tests\\test_house_designer_submission.py tests\\test_imperial_care.py tests\\test_tender_portal.py tests\\test_autonomous_publishing.py tests\\test_growth_ops.py",
+        "command": "cd services/platform-core && python -m pytest -q tests/test_canonical_sync_routes.py tests/test_house_designer_submission.py tests/test_imperial_care.py tests/test_tender_portal.py tests/test_autonomous_publishing.py tests/test_growth_ops.py",
         "requiredAtRisk": ["R2", "R3"],
         "timeoutSeconds": 2400
       }
     ],
     "contract": [],
     "e2e": [],
-    "coverage": [],
+    "coverage": [
+      {
+        "name": "platform-core full application coverage",
+        "command": "cd services/platform-core && python -m pytest -q --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=80",
+        "requiredAtRisk": ["R1", "R2", "R3"],
+        "timeoutSeconds": 4200
+      }
+    ],
     "dependencyAudit": [
       {
         "name": "platform-core dependency audit",
-        "command": "python -m pip install --disable-pip-version-check pip-audit && python -m pip_audit -r services\\platform-core\\requirements.txt",
+        "command": "python -m pip install --disable-pip-version-check pip-audit && python -m pip_audit -r services/platform-core/requirements.txt",
         "requiredAtRisk": ["R2", "R3"],
         "timeoutSeconds": 1800
       }
@@ -81,7 +95,7 @@
     "sast": [
       {
         "name": "tracked-secret baseline verification",
-        "command": "cd services\\platform-core && python scripts\\check_secret_baseline.py",
+        "command": "cd services/platform-core && python scripts/check_secret_baseline.py",
         "requiredAtRisk": ["R2", "R3"],
         "timeoutSeconds": 1200
       }
@@ -90,7 +104,7 @@
     "migration": [
       {
         "name": "single alembic head",
-        "command": "cd services\\platform-core && python -m alembic heads",
+        "command": "cd services/platform-core && python scripts/check_single_alembic_head.py",
         "executionScope": "local-dry-run",
         "requiredAtRisk": ["R2", "R3"],
         "timeoutSeconds": 600
@@ -104,8 +118,8 @@
   },
   "ci": {
     "provider": "github",
-    "required": false,
-    "remoteAvailable": false,
+    "required": true,
+    "remoteAvailable": true,
     "requiredChecks": [
       "Imperial ADAS / Deterministic gates",
       "Imperial ADAS Semgrep / Semgrep",
@@ -113,6 +127,6 @@
     ],
     "branchProtectionRequired": true,
     "remoteCiRequiredForR3": true,
-    "localOnlyReason": "RECOVERY_BRANCH_NOT_PUSHED"
+    "repository": "rlimperialholding-alt/imperial_web_structure"
   }
 }
