@@ -21,7 +21,7 @@ def test_accepts_valid_synthetic_envelope(envelope):
 
 REJECTED = [
     ("missing field", {"task_id": "SYN-0001", "sequence": 1}, "missing required field: input_kind"),
-    ("unknown field", {**VALID[0], "extra": 5}, "unknown field: extra"),
+    ("unknown field", {**VALID[0], "extra": 5}, "envelope contains unknown fields"),
     ("short task id", {**VALID[0], "task_id": "SYN-123"}, "task_id must start"),
     ("long task id", {**VALID[0], "task_id": "SYN-12345"}, "task_id must start"),
     ("non-digit task id", {**VALID[0], "task_id": "SYN-12a4"}, "task_id must start"),
@@ -52,7 +52,7 @@ def test_error_list_is_stable_for_combined_failures():
     envelope = {"input_kind": "REAL", "sequence": True, "extra": 1}
     assert validator.validate_envelope(envelope) == [
         "missing required field: task_id",
-        "unknown field: extra",
+        "envelope contains unknown fields",
         "task_id must start with the SYN- prefix followed by exactly four digits",
         "input_kind must equal the synthetic marker",
         "sequence must be a positive integer and not a boolean",
@@ -100,3 +100,19 @@ def test_cli_rejects_non_json_file(tmp_path, capsys):
 def test_cli_requires_exactly_one_argument(capsys):
     assert validator.main([]) == 2
     assert "usage" in capsys.readouterr().err
+
+
+def test_unknown_field_name_is_never_echoed(tmp_path, capsys):
+    envelope = {**VALID[0], "opaque_field_x9": "opaque-value-x9"}
+    errors = validator.validate_envelope(envelope)
+    assert errors == ["envelope contains unknown fields"]
+    assert all("opaque_field_x9" not in error for error in errors)
+    assert run_cli(tmp_path, envelope) == 1
+    assert "opaque_field_x9" not in capsys.readouterr().err
+
+
+def test_multiple_unknown_fields_yield_one_generic_error():
+    first = {**VALID[0], "opaque_field_x9": 1, "extra": 2, "zzz_unknown": 3}
+    second = {**VALID[0], "zzz_unknown": 3, "extra": 2, "opaque_field_x9": 1}
+    assert validator.validate_envelope(first) == ["envelope contains unknown fields"]
+    assert validator.validate_envelope(second) == validator.validate_envelope(first)

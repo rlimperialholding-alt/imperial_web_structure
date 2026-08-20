@@ -20,11 +20,12 @@ def validate_envelope(envelope: object) -> list[str]:
         return errors
 
     missing = [name for name in EXPECTED_FIELDS if name not in envelope]
-    unknown = sorted(name for name in envelope if name not in EXPECTED_FIELDS)
     for name in missing:
         errors.append(f"missing required field: {name}")
-    for name in unknown:
-        errors.append(f"unknown field: {name}")
+
+    unknown = [name for name in envelope if name not in EXPECTED_FIELDS]
+    if unknown:
+        errors.append("envelope contains unknown fields")
 
     task_id = envelope.get("task_id")
     if not isinstance(task_id, str) or TASK_ID_PATTERN.fullmatch(task_id) is None:
