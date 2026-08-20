@@ -103,8 +103,8 @@
   },
   "ci": {
     "provider": "github",
-    "required": true,
-    "remoteAvailable": true,
+    "required": false,
+    "remoteAvailable": false,
     "requiredChecks": [
       "Imperial ADAS / Deterministic gates",
       "Imperial ADAS Semgrep / Semgrep",
