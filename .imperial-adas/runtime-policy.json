@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "2.1",
+  "status": "RECOVERY_RELEASE_STOP_LOCAL_VALIDATION_ONLY",
+  "productionMode": false,
+  "openTelemetry": {
+    "enabled": false,
+    "controlPlaneEnabled": true,
+    "applicationInstrumentationRequired": true,
+    "serviceName": "imperial-intelligence-platform-core",
+    "signals": ["traces", "metrics", "logs"],
+    "protocol": "http/protobuf",
+    "endpoint": "environment:OTEL_EXPORTER_OTLP_ENDPOINT"
+  },
+  "healthChecks": [],
+  "thresholds": {
+    "maxErrorRatePercent": 1,
+    "consecutiveFailuresBeforeRollback": 2,
+    "maxExternalApiFailurePercent": 2,
+    "maxP95LatencyMs": 1500,
+    "maxCostIncreasePercent": 20
+  },
+  "requiredBusinessMetrics": [
+    "outbox_pending_total",
+    "outbox_failed_total",
+    "canonical_sync_contention_total",
+    "care_open_cases_total",
+    "tender_active_invitations_total",
+    "publishing_external_writes_total"
+  ],
+  "businessMetrics": [],
+  "metricsJsonEndpoint": "",
+  "metricsSnapshotPath": "",
+  "reconciliation": {"enabled": false, "rules": []},
+  "canary": {"enabled": false, "automaticStopOnBreach": true, "minimumHealthyMinutesPerStage": 10, "stages": [1, 5, 25, 100]},
+  "automaticRollbackEnabled": false,
+  "deployCommand": "",
+  "rollbackCommand": "",
+  "forwardRecoveryCommand": ""
+}

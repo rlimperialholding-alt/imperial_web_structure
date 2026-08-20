@@ -1,0 +1,21 @@
+{
+    "schemaVersion":  "2.1",
+    "status":  "PROJECT_SPECIFIC_CASES_REQUIRED",
+    "cases":  [
+                  {
+                      "expected":  "idempotent",
+                      "description":  "Azonos input ismételt feldolgozása nem hozhat létre duplikált külső mellékhatást.",
+                      "id":  "no-duplicate-side-effect"
+                  },
+                  {
+                      "expected":  "denied",
+                      "description":  "Jogosulatlan felhasználó nem érhet el másik ügyfélhez tartozó adatot vagy műveletet.",
+                      "id":  "authorization-boundary"
+                  },
+                  {
+                      "expected":  "balanced",
+                      "description":  "Az input, feldolgozott és output darabszámok a dokumentált kivételekkel egyeznek.",
+                      "id":  "reconciliation"
+                  }
+              ]
+}

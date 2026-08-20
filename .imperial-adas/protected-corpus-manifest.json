@@ -1,0 +1,15 @@
+{
+    "schemaVersion":  "2.1",
+    "baselineVersion":  "2.1",
+    "generatedBy":  "OWNER_BOOTSTRAP",
+    "files":  [
+                  {
+                      "path":  ".imperial-adas/acceptance/business-golden-cases.template.json",
+                      "sha256":  "4efd6ddca788401f457fe4b4d692e00130c4c2906b6971732aa9d078e11b704d"
+                  },
+                  {
+                      "path":  ".imperial-adas/acceptance/README.md",
+                      "sha256":  "57cf6d2688adfa1c641e1bd54ae5967ceb41324fc14301a3d0b397d5133d2458"
+                  }
+              ]
+}
