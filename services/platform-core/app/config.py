@@ -119,6 +119,40 @@ class Settings:
     content_external_publishing_enabled: bool = (
         os.getenv("CONTENT_EXTERNAL_PUBLISHING_ENABLED", "false").lower() == "true"
     )
+    autonomous_publishing_enabled: bool = os.getenv(
+        "AUTONOMOUS_PUBLISHING_ENABLED", "false"
+    ).lower() == "true"
+    autonomous_publishing_registry_file: str = os.getenv(
+        "AUTONOMOUS_PUBLISHING_REGISTRY_FILE", "/app/config/publishing/registry.json"
+    )
+    autonomous_publishing_secret_dir: str = os.getenv(
+        "AUTONOMOUS_PUBLISHING_SECRET_DIR", "/run/secrets/publishing"
+    )
+    autonomous_publishing_kill_switch_file: str = os.getenv(
+        "AUTONOMOUS_PUBLISHING_KILL_SWITCH_FILE",
+        "/run/secrets/publishing/kill-switch",
+    )
+    autonomous_publishing_worker_id: str = os.getenv(
+        "AUTONOMOUS_PUBLISHING_WORKER_ID", "imperial-publishing-worker"
+    )
+    autonomous_publishing_poll_seconds: int = max(
+        1, min(60, int(os.getenv("AUTONOMOUS_PUBLISHING_POLL_SECONDS", "5")))
+    )
+    autonomous_publishing_lease_seconds: int = max(
+        30, min(3600, int(os.getenv("AUTONOMOUS_PUBLISHING_LEASE_SECONDS", "300")))
+    )
+    autonomous_publishing_http_timeout_seconds: int = max(
+        3, min(60, int(os.getenv("AUTONOMOUS_PUBLISHING_HTTP_TIMEOUT_SECONDS", "20")))
+    )
+    autonomous_publishing_heartbeat_stale_seconds: int = max(
+        15, min(600, int(os.getenv("AUTONOMOUS_PUBLISHING_HEARTBEAT_STALE_SECONDS", "90")))
+    )
+    growth_ops_enabled: bool = os.getenv("GROWTH_OPS_ENABLED", "false").lower() == "true"
+    growth_ops_registry_file: str = os.getenv(
+        "GROWTH_OPS_REGISTRY_FILE", "/app/config/growth/registry.json"
+    )
+    growth_ops_secret_dir: str = os.getenv("GROWTH_OPS_SECRET_DIR", "/run/secrets/growth")
+    growth_ops_base_url: str = os.getenv("GROWTH_OPS_BASE_URL", "").rstrip("/")
     content_image_factory_enabled: bool = (
         os.getenv("CONTENT_IMAGE_FACTORY_ENABLED", "false").lower() == "true"
     )
@@ -262,6 +296,28 @@ class Settings:
                     "Production környezetben az ALLOWED_HOSTS nem tartalmazhat "
                     "helyettesítő karaktert."
                 )
+            if self.autonomous_publishing_enabled:
+                registry = Path(self.autonomous_publishing_registry_file)
+                secret_dir = Path(self.autonomous_publishing_secret_dir)
+                if not registry.is_file():
+                    errors.append(
+                        "Autonomous publishinghez olvasható brand/channel registry kötelező."
+                    )
+                if not secret_dir.is_dir():
+                    errors.append(
+                        "Autonomous publishinghez kezelt publishing secret könyvtár kötelező."
+                    )
+                if not self.internal_job_token:
+                    errors.append("Autonomous publishinghez INTERNAL_JOB_TOKEN kötelező.")
+            if self.growth_ops_enabled:
+                if not Path(self.growth_ops_registry_file).is_file():
+                    errors.append("Growth Opshoz olvasható, kezelt registry kötelező.")
+                if not Path(self.growth_ops_secret_dir).is_dir():
+                    errors.append("Growth Opshoz kezelt secret könyvtár kötelező.")
+                if not self.growth_ops_base_url.startswith("https://"):
+                    errors.append("Growth Opshoz publikus HTTPS base URL kötelező.")
+                if not self.internal_job_token:
+                    errors.append("Growth Opshoz INTERNAL_JOB_TOKEN kötelező.")
             if self.content_external_publishing_enabled and not self.internal_job_token:
                 errors.append("Külső tartalompublikáláshoz INTERNAL_JOB_TOKEN kötelező.")
             if (

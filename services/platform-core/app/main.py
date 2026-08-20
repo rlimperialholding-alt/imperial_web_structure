@@ -28,6 +28,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .audit import audit
+from .autonomous_publishing.routes import router as autonomous_publishing_router
+from .autonomous_publishing.service import readiness as autonomous_publishing_readiness
 from .config import settings
 from .copy_gate.campaign_package import CampaignPackage
 from .copy_gate.models import (
@@ -52,6 +54,8 @@ from .copy_gate.models import (
 from .copy_gate.orchestrator import GENERATION_STAGES
 from .database import Base, SessionLocal, engine, get_db
 from .demo_runtime import DemoRuntimeError, demo_runtime
+from .growth_ops.routes import router as growth_ops_router
+from .growth_ops.service import readiness as growth_ops_readiness
 from .models import (
     BookingExperienceVersion,
     BookingRecord,
@@ -1238,6 +1242,8 @@ app.include_router(build_house_designer_router(templates))
 app.include_router(build_market_intelligence_router(templates))
 app.include_router(build_regulatory_admin_router(templates))
 app.include_router(build_typehouse_factory_router(templates))
+app.include_router(autonomous_publishing_router)
+app.include_router(growth_ops_router)
 
 
 class DemoActionIn(BaseModel):
@@ -1345,12 +1351,19 @@ def partner_auth_or_redirect(request: Request, db: Session):
 
 
 @app.get("/health")
-def health():
+def health(db: Session = Depends(get_db)):
+    publishing_ready, publishing = autonomous_publishing_readiness(db)
+    growth_ready, growth = growth_ops_readiness(db)
+    ready = publishing_ready and growth_ready
     return {
-        "status": "ok",
+        "status": "ok" if ready else "degraded",
         "service": "imperial-intelligence-control-center",
         "version": __version__,
         "platform_version": "5.0.0",
+        "autonomous_publishing": (
+            "disabled" if not publishing["enabled"] else "ready" if publishing_ready else "not_ready"
+        ),
+        "growth_ops": "disabled" if not growth["enabled"] else "ready" if growth_ready else "not_ready",
     }
 
 
@@ -3414,7 +3427,36 @@ def health_live():
 def health_ready(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
-        return {"status": "ready", "database": "ok"}
+        publishing_ready, publishing = autonomous_publishing_readiness(db)
+        growth_ready, growth = growth_ops_readiness(db)
+        if not publishing_ready or not growth_ready:
+            return JSONResponse(
+                {
+                    "status": "not_ready",
+                    "database": "ok",
+                    "autonomous_publishing": (
+                        "disabled"
+                        if not publishing["enabled"]
+                        else "ready"
+                        if publishing_ready
+                        else "not_ready"
+                    ),
+                    "growth_ops": (
+                        "disabled"
+                        if not growth["enabled"]
+                        else "ready"
+                        if growth_ready
+                        else "not_ready"
+                    ),
+                },
+                status_code=503,
+            )
+        return {
+            "status": "ready",
+            "database": "ok",
+            "autonomous_publishing": "disabled" if not publishing["enabled"] else "ready",
+            "growth_ops": "disabled" if not growth["enabled"] else "ready",
+        }
     except Exception as exc:
         return JSONResponse({"status": "not_ready", "error": str(exc)}, status_code=503)
 
