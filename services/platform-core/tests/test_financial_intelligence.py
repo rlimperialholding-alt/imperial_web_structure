@@ -1,6 +1,9 @@
 import json
+from types import SimpleNamespace
 
-from app.models import EnterpriseCanonicalRecord
+import pytest
+
+from app.models import EnterpriseCanonicalRecord, ProjectRegistry
 from app.services.financial_intelligence import finance_intelligence_dashboard
 
 
@@ -124,3 +127,59 @@ def test_finance_intelligence_page_is_role_protected_and_rendered(logged_in_clie
     assert response.status_code == 200
     assert "Cash-flow" in response.text
     assert "Pénzügyi intelligencia" in response.text
+
+
+def test_project_manager_finance_dashboard_is_deny_first_project_scoped(client, db):
+    own = ProjectRegistry(
+        project_id="FIN-PM-OWN",
+        name="Saját pénzügyi projekt",
+        responsible="project-manager@imperial.local",
+    )
+    foreign = ProjectRegistry(
+        project_id="FIN-PM-FOREIGN",
+        name="Idegen pénzügyi projekt",
+        responsible="other-manager@imperial.local",
+    )
+    db.add_all(
+        [
+            own,
+            foreign,
+            _record(
+                "FIN-PM-OWN-CF",
+                "cashflow_entry",
+                {"amount": "100", "direction": "inflow", "projectId": own.project_id},
+                own.project_id,
+            ),
+            _record(
+                "FIN-PM-FOREIGN-CF",
+                "cashflow_entry",
+                {"amount": "999", "direction": "inflow", "projectId": foreign.project_id},
+                foreign.project_id,
+            ),
+        ]
+    )
+    db.commit()
+    user = SimpleNamespace(
+        role="project-manager", email="project-manager@imperial.local"
+    )
+
+    data = finance_intelligence_dashboard(db, user=user)
+
+    assert data["source_counts"]["cashflow"] == 1
+    assert [row.project_id for row in data["projects"]] == [own.project_id]
+    with pytest.raises(PermissionError, match="felelősségi körében"):
+        finance_intelligence_dashboard(db, project_id=foreign.project_id, user=user)
+
+    login = client.post(
+        "/login",
+        data={
+            "email": "project-manager@imperial.local",
+            "password": "Imperial2026!",
+        },
+        follow_redirects=False,
+    )
+    assert login.status_code == 303
+    page = client.get("/financial/intelligence")
+    assert page.status_code == 200
+    assert own.name in page.text
+    assert foreign.name not in page.text

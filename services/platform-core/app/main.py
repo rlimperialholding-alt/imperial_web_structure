@@ -978,6 +978,7 @@ from .services.project_finance import (
     add_cashflow_line as add_project_finance_cashflow_line,
 )
 from .services.project_finance import (
+    FinanceConcurrencyError,
     clone_finance_plan,
     create_finance_plan,
     finance_approve_plan,
@@ -1410,7 +1411,10 @@ def financial_intelligence(
         return redirect
     if not can_access(user, "financial-control", "finance-intelligence"):
         raise HTTPException(403, "A pénzügyi intelligencia ehhez a szerepkörhöz nem érhető el.")
-    data = finance_intelligence_dashboard(db, project_id=project_id)
+    try:
+        data = finance_intelligence_dashboard(db, project_id=project_id, user=user)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     return templates.TemplateResponse(
         request=request,
         name="financial_intelligence.html",
@@ -1462,12 +1466,16 @@ def financial_plans_page(
         return redirect
     if not can_access(user, "financial-control", "finance-intelligence"):
         raise HTTPException(403)
+    try:
+        workspace = finance_plan_workspace(db, project_id=project_id, user=user)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     return templates.TemplateResponse(
         request=request,
         name="financial_plans.html",
         context={
             "user": user,
-            "data": finance_plan_workspace(db, project_id=project_id),
+            "data": workspace,
             "active": "finance-intelligence",
         },
     )
@@ -1493,6 +1501,8 @@ async def financial_plan_create(request: Request, db: Session = Depends(get_db))
         )
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+    except FinanceConcurrencyError as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse(f"/financial/plans/{row.plan_id}", status_code=303)
@@ -1505,7 +1515,10 @@ def financial_plan_detail(request: Request, plan_id: str, db: Session = Depends(
         return redirect
     if not can_access(user, "financial-control", "finance-intelligence"):
         raise HTTPException(403)
-    data = finance_plan_workspace(db)
+    try:
+        data = finance_plan_workspace(db, user=user)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     plans = cast(list[dict[str, Any]], data["plans"])
     item = next((entry for entry in plans if entry["row"].plan_id == plan_id), None)
     if not item:
@@ -1656,6 +1669,8 @@ def financial_plan_clone(request: Request, plan_id: str, db: Session = Depends(g
         raise HTTPException(404) from exc
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+    except FinanceConcurrencyError as exc:
+        raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse(f"/financial/plans/{clone.plan_id}", status_code=303)
@@ -7648,9 +7663,11 @@ def commercial_contract_workflow_page(
 ):
     user = _contract_workflow_user(request, db)
     try:
-        data = contract_workflow_detail(db, contract_id)
+        data = contract_workflow_detail(db, contract_id, user=user)
     except KeyError as exc:
         raise HTTPException(404, "A szerződés-életciklus nem található.") from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     return templates.TemplateResponse(
         request=request,
         name="contract_workflow.html",

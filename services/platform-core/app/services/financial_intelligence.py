@@ -16,7 +16,7 @@ from ..models import (
     ProjectRegistry,
 )
 from .financial_allocations import allocation_scope
-from .project_finance import plan_summary
+from .project_finance import finance_project_ids_for_user, plan_summary
 
 
 class InvoiceCurrencyTotals(TypedDict):
@@ -47,7 +47,23 @@ def _date(value: Any) -> date | None:
         return None
 
 
-def finance_intelligence_dashboard(db: Session, *, project_id: str | None = None) -> dict[str, Any]:
+def finance_intelligence_dashboard(
+    db: Session,
+    *,
+    project_id: str | None = None,
+    user: object | None = None,
+) -> dict[str, Any]:
+    allowed_project_ids = (
+        None if user is None else finance_project_ids_for_user(db, user)
+    )
+    if (
+        allowed_project_ids is not None
+        and project_id
+        and project_id not in allowed_project_ids
+    ):
+        raise PermissionError(
+            "A projekt nincs a felhasználó pénzügyi felelősségi körében."
+        )
     query = select(EnterpriseCanonicalRecord).where(EnterpriseCanonicalRecord.domain == "finance")
     records = list(db.scalars(query.order_by(EnterpriseCanonicalRecord.updated_at.desc())))
     today = date.today()
@@ -60,6 +76,8 @@ def finance_intelligence_dashboard(db: Session, *, project_id: str | None = None
     for row in records:
         data = _json(row.data_json)
         row_project_id = str(row.project_id or data.get("projectId") or "").strip() or None
+        if allowed_project_ids is not None and row_project_id not in allowed_project_ids:
+            continue
         if project_id and row_project_id != project_id:
             continue
         item: dict[str, Any] = {"record": row, "data": data, "project_id": row_project_id}
@@ -148,6 +166,10 @@ def finance_intelligence_dashboard(db: Session, *, project_id: str | None = None
     )
     if project_id:
         budget_query = budget_query.where(ModuleBusinessRecord.project_id == project_id)
+    if allowed_project_ids is not None:
+        budget_query = budget_query.where(
+            ModuleBusinessRecord.project_id.in_(allowed_project_ids)
+        )
     budget_records = list(
         db.scalars(budget_query.order_by(ModuleBusinessRecord.updated_at.desc()).limit(100))
     )
@@ -161,11 +183,20 @@ def finance_intelligence_dashboard(db: Session, *, project_id: str | None = None
     )
     if project_id:
         plan_query = plan_query.where(ProjectFinancePlan.project_id == project_id)
+    if allowed_project_ids is not None:
+        plan_query = plan_query.where(
+            ProjectFinancePlan.project_id.in_(allowed_project_ids)
+        )
     approved_plans = [
         {"row": row, "summary": plan_summary(row)}
         for row in db.scalars(plan_query.order_by(ProjectFinancePlan.updated_at.desc())).unique()
     ]
-    projects = list(db.scalars(select(ProjectRegistry).order_by(ProjectRegistry.name)))
+    project_query = select(ProjectRegistry)
+    if allowed_project_ids is not None:
+        project_query = project_query.where(
+            ProjectRegistry.project_id.in_(allowed_project_ids)
+        )
+    projects = list(db.scalars(project_query.order_by(ProjectRegistry.name)))
     warnings = []
     if cashflow and not any(
         item["direction"] in {"inflow", "income", "revenue"} for item in cashflow

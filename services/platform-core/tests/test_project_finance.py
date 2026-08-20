@@ -4,14 +4,20 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 
-from app.models import ProjectFinancePlan, ProjectObjectState, ProjectRegistry, TaskRecord
+import app.main as main_module
+from app.models import AuditLog, ProjectFinancePlan, ProjectObjectState, ProjectRegistry, TaskRecord
+from app.services import project_finance as finance_service
 from app.services.project_finance import (
+    FinanceConcurrencyError,
     add_budget_line,
     add_cashflow_line,
     clone_finance_plan,
     create_finance_plan,
     finance_approve_plan,
+    finance_plan_workspace,
     leadership_approve_plan,
     plan_summary,
     reject_finance_plan,
@@ -29,6 +35,7 @@ def _project(db, project_id: str) -> ProjectRegistry:
         name=f"Pénzügyi UAT {project_id}",
         customer_name="Teszt Ügyfél Kft.",
         status="active",
+        responsible="project-manager@imperial.local",
     )
     db.add(row)
     db.commit()
@@ -90,6 +97,136 @@ def _complete_draft(db, project_id: str, *, target: str = "20") -> ProjectFinanc
     )
     db.expire_all()
     return db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.id == plan.id))
+
+
+def test_finance_mutation_queries_compile_with_postgresql_row_locks():
+    captured = []
+
+    class CaptureSession:
+        def scalar(self, statement):
+            captured.append(statement)
+            return SimpleNamespace()
+
+    session = CaptureSession()
+    finance_service._plan(session, "FIN-LOCK-1")
+    finance_service._lock_project(session, "PROJECT-LOCK-1")
+
+    compiled = [
+        str(statement.compile(dialect=postgresql.dialect())).upper()
+        for statement in captured
+    ]
+    assert len(compiled) == 2
+    assert all("FOR UPDATE" in statement for statement in compiled)
+
+
+def test_finance_version_collision_is_409_ready_and_audited(db, monkeypatch):
+    project_id = "FIN-CONCURRENCY-1"
+    _project(db, project_id)
+    real_commit = db.commit
+    commit_calls = 0
+
+    def collide_once():
+        nonlocal commit_calls
+        commit_calls += 1
+        if commit_calls == 1:
+            raise IntegrityError("INSERT finance_project_plans", {}, RuntimeError("duplicate"))
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", collide_once)
+    with pytest.raises(FinanceConcurrencyError, match="frissítsen és próbálja újra"):
+        create_finance_plan(
+            db,
+            _user("project-manager"),
+            project_id=project_id,
+            currency="HUF",
+            contract_revenue_net="1000000",
+            approved_change_revenue_net="0",
+            contingency_net="0",
+            target_margin_percent="20",
+            forecast_note="Konkurens verzióütközés szintetikus bizonyítéka.",
+        )
+
+    assert db.scalar(
+        select(AuditLog).where(AuditLog.action == "finance_plan_concurrency_conflict")
+    ) is not None
+    assert db.scalar(
+        select(ProjectFinancePlan).where(ProjectFinancePlan.project_id == project_id)
+    ) is None
+
+
+def test_finance_version_collision_returns_http_409(logged_in_client, monkeypatch):
+    def collision(*_args, **_kwargs):
+        raise FinanceConcurrencyError("A pénzügyi tervverzió közben megváltozott.")
+
+    monkeypatch.setattr(main_module, "create_finance_plan", collision)
+    response = logged_in_client.post(
+        "/financial/plans",
+        data={
+            "project_id": "PROJECT-RACE",
+            "currency": "HUF",
+            "contract_revenue_net": "1",
+            "target_margin_percent": "1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 409
+
+
+def test_project_manager_finance_plan_commands_are_project_scoped(db):
+    own = ProjectRegistry(
+        project_id="FIN-SCOPE-OWN",
+        name="Saját tervprojekt",
+        responsible="project-manager@imperial.local",
+    )
+    foreign = ProjectRegistry(
+        project_id="FIN-SCOPE-FOREIGN",
+        name="Idegen tervprojekt",
+        responsible="other-manager@imperial.local",
+    )
+    db.add_all([own, foreign])
+    db.commit()
+    own_plan = create_finance_plan(
+        db,
+        _user("project-manager"),
+        project_id=own.project_id,
+        currency="HUF",
+        contract_revenue_net="1000",
+        approved_change_revenue_net="0",
+        contingency_net="0",
+        target_margin_percent="10",
+        forecast_note="Saját projekt pénzügyi terve.",
+    )
+    foreign_plan = create_finance_plan(
+        db,
+        _user("finance"),
+        project_id=foreign.project_id,
+        currency="HUF",
+        contract_revenue_net="1000",
+        approved_change_revenue_net="0",
+        contingency_net="0",
+        target_margin_percent="10",
+        forecast_note="Idegen projekt pénzügyi terve.",
+    )
+
+    workspace = finance_plan_workspace(db, user=_user("project-manager"))
+
+    assert [item["row"].plan_id for item in workspace["plans"]] == [own_plan.plan_id]
+    with pytest.raises(PermissionError, match="felelősségi körében"):
+        add_budget_line(
+            db,
+            foreign_plan.plan_id,
+            _user("project-manager"),
+            cost_code="FOREIGN",
+            category="Tiltott",
+            description="Idegen projekt sora",
+            budget_net="1",
+            committed_net="0",
+            actual_net="0",
+            estimate_to_complete_net="1",
+            source_type="test",
+            source_id="FOREIGN",
+        )
 
 
 def test_project_finance_full_approval_creates_tasks_and_project_state(db):

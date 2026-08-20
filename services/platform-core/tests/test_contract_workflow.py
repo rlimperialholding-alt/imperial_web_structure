@@ -8,11 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 
-from app.models import ContractWorkflowRecord, EventRecord
+from app.models import ContractWorkflowRecord, EventRecord, ProjectRegistry
+from app.services import contract_workflow as contract_service
 from app.services.commercial_integration import generate_contract_package
 from app.services.contract_workflow import (
     activate_contract,
+    contract_workflow_detail,
     record_contract_dispatch,
     record_signed_contract,
     review_contract,
@@ -53,6 +56,12 @@ def _generated(db, example: str = "customer_construction_valid.json", actor: str
         )
     )
     assert row is not None
+    project = db.scalar(
+        select(ProjectRegistry).where(ProjectRegistry.project_id == row.project_id)
+    )
+    assert project is not None
+    project.responsible = "project-manager@imperial.local"
+    db.commit()
     return row
 
 
@@ -90,6 +99,62 @@ def _approve_customer(db, row: ContractWorkflowRecord):
         decision="approve",
         note="A szerződés vezetői jóváhagyása megtörtént.",
     )
+
+
+def test_contract_mutation_query_compiles_with_postgresql_row_lock():
+    captured = []
+
+    class CaptureSession:
+        def scalar(self, statement):
+            captured.append(statement)
+            return SimpleNamespace()
+
+    session = CaptureSession()
+    contract_service._row(session, "CONTRACT-READ-1")
+    contract_service._row(session, "CONTRACT-WRITE-1", for_update=True)
+
+    read_sql, write_sql = (
+        str(statement.compile(dialect=postgresql.dialect())).upper()
+        for statement in captured
+    )
+    assert "FOR UPDATE" not in read_sql
+    assert "FOR UPDATE" in write_sql
+
+
+def test_project_manager_contract_detail_is_project_scoped(client, db):
+    row = _generated(db)
+    project = db.scalar(
+        select(ProjectRegistry).where(ProjectRegistry.project_id == row.project_id)
+    )
+    assert project is not None
+    project.responsible = "other-manager@imperial.local"
+    db.commit()
+    user = _user("project-manager")
+
+    with pytest.raises(PermissionError, match="felelősségi körében"):
+        contract_workflow_detail(db, row.contract_id, user=user)
+
+    login = client.post(
+        "/login",
+        data={
+            "email": "project-manager@imperial.local",
+            "password": "Imperial2026!",
+        },
+        follow_redirects=False,
+    )
+    assert login.status_code == 303
+    assert client.get(f"/commercial/contracts/{row.contract_id}").status_code == 403
+    assert (
+        client.post(
+            f"/commercial/contracts/{row.contract_id}/activate",
+            follow_redirects=False,
+        ).status_code
+        == 403
+    )
+
+    project.responsible = "project-manager@imperial.local"
+    db.commit()
+    assert client.get(f"/commercial/contracts/{row.contract_id}").status_code == 200
 
 
 def test_contract_generation_creates_durable_governed_workflow(db):

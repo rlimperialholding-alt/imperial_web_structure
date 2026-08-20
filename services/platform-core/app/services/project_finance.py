@@ -7,6 +7,7 @@ from typing import TypedDict
 from uuid import uuid4
 
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from ..audit import audit
@@ -18,10 +19,16 @@ from ..models import (
     ProjectRegistry,
     TaskRecord,
 )
+from .smart_calendar import calendar_project_ids_for_user
 
 EDIT_ROLES = {"owner", "platform-admin", "finance", "project-manager"}
 FINANCE_APPROVAL_ROLES = {"owner", "platform-admin", "finance"}
 LEADERSHIP_ROLES = {"owner", "managing-director", "platform-admin"}
+FINANCE_PORTFOLIO_ROLES = FINANCE_APPROVAL_ROLES | LEADERSHIP_ROLES
+
+
+class FinanceConcurrencyError(RuntimeError):
+    """Raised when another transaction wins a finance plan version race."""
 
 
 class CashflowSummaryRow(TypedDict):
@@ -72,10 +79,43 @@ def _plan(db: Session, plan_id: str) -> ProjectFinancePlan:
         )
         .execution_options(populate_existing=True)
         .where(ProjectFinancePlan.plan_id == plan_id)
+        .with_for_update()
     )
     if not row:
         raise KeyError(plan_id)
     return row
+
+
+def _lock_project(db: Session, project_id: str) -> ProjectRegistry:
+    row = db.scalar(
+        select(ProjectRegistry)
+        .where(ProjectRegistry.project_id == project_id)
+        .with_for_update()
+    )
+    if row is None:
+        raise ValueError("A ProjectID nem található a projekttörzsben.")
+    return row
+
+
+def _commit_new_version(
+    db: Session, *, actor: str, project_id: str, operation: str
+) -> None:
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        audit(
+            db,
+            actor=actor,
+            action="finance_plan_concurrency_conflict",
+            entity_type="project",
+            entity_id=project_id,
+            after={"operation": operation},
+        )
+        db.commit()
+        raise FinanceConcurrencyError(
+            "A pénzügyi tervverzió közben megváltozott; frissítsen és próbálja újra."
+        ) from exc
 
 
 def _require_role(user: object, allowed: set[str]) -> tuple[str, str]:
@@ -83,6 +123,25 @@ def _require_role(user: object, allowed: set[str]) -> tuple[str, str]:
     if role not in allowed:
         raise PermissionError("Ehhez a pénzügyi művelethez nincs jogosultsága.")
     return role, email
+
+
+def finance_project_ids_for_user(db: Session, user: object) -> set[str] | None:
+    role, _email = _identity(user)
+    if role in FINANCE_PORTFOLIO_ROLES:
+        return None
+    if role == "project-manager":
+        return calendar_project_ids_for_user(db, user)
+    return set()
+
+
+def _require_project_scope(
+    db: Session, user: object, project_id: str
+) -> None:
+    allowed = finance_project_ids_for_user(db, user)
+    if allowed is not None and project_id not in allowed:
+        raise PermissionError(
+            "A projekt nincs a felhasználó kanonikus projektmenedzseri felelősségi körében."
+        )
 
 
 def _require_draft(plan: ProjectFinancePlan) -> None:
@@ -147,17 +206,36 @@ def plan_summary(plan: ProjectFinancePlan) -> FinancePlanSummary:
     }
 
 
-def finance_plan_workspace(db: Session, *, project_id: str | None = None) -> dict[str, object]:
+def finance_plan_workspace(
+    db: Session,
+    *,
+    project_id: str | None = None,
+    user: object | None = None,
+) -> dict[str, object]:
     stmt = select(ProjectFinancePlan).options(
         selectinload(ProjectFinancePlan.budget_lines),
         selectinload(ProjectFinancePlan.cashflow_lines),
     )
     if project_id:
         stmt = stmt.where(ProjectFinancePlan.project_id == project_id)
+    allowed_project_ids = (
+        None if user is None else finance_project_ids_for_user(db, user)
+    )
+    if allowed_project_ids is not None:
+        if project_id and project_id not in allowed_project_ids:
+            raise PermissionError(
+                "A projekt nincs a felhasználó pénzügyi felelősségi körében."
+            )
+        stmt = stmt.where(ProjectFinancePlan.project_id.in_(allowed_project_ids))
     plans = db.scalars(stmt.order_by(desc(ProjectFinancePlan.updated_at))).unique().all()
+    project_stmt = select(ProjectRegistry)
+    if allowed_project_ids is not None:
+        project_stmt = project_stmt.where(
+            ProjectRegistry.project_id.in_(allowed_project_ids)
+        )
     return {
         "plans": [{"row": row, "summary": plan_summary(row)} for row in plans],
-        "projects": db.scalars(select(ProjectRegistry).order_by(ProjectRegistry.name)).all(),
+        "projects": db.scalars(project_stmt.order_by(ProjectRegistry.name)).all(),
         "project_id": project_id,
         "metrics": {
             "plans": len(plans),
@@ -182,8 +260,8 @@ def create_finance_plan(
 ) -> ProjectFinancePlan:
     _role, email = _require_role(user, EDIT_ROLES)
     project_id = project_id.strip()
-    if not db.scalar(select(ProjectRegistry).where(ProjectRegistry.project_id == project_id)):
-        raise ValueError("A ProjectID nem található a projekttörzsben.")
+    _require_project_scope(db, user, project_id)
+    _lock_project(db, project_id)
     open_plan = db.scalar(
         select(ProjectFinancePlan).where(
             ProjectFinancePlan.project_id == project_id,
@@ -227,7 +305,12 @@ def create_finance_plan(
         entity_id=row.plan_id,
         after={"project_id": project_id, "version": version},
     )
-    db.commit()
+    _commit_new_version(
+        db,
+        actor=email,
+        project_id=project_id,
+        operation="create_version",
+    )
     db.refresh(row)
     return row
 
@@ -249,6 +332,7 @@ def add_budget_line(
 ) -> ProjectFinanceBudgetLine:
     _role, email = _require_role(user, EDIT_ROLES)
     plan = _plan(db, plan_id)
+    _require_project_scope(db, user, plan.project_id)
     _require_draft(plan)
     cost_code, category, description = (
         cost_code.strip(),
@@ -302,6 +386,7 @@ def add_cashflow_line(
 ) -> ProjectFinanceCashflowLine:
     _role, email = _require_role(user, EDIT_ROLES)
     plan = _plan(db, plan_id)
+    _require_project_scope(db, user, plan.project_id)
     _require_draft(plan)
     if direction not in {"inflow", "outflow"}:
         raise ValueError("A cashflow iránya inflow vagy outflow lehet.")
@@ -354,6 +439,7 @@ def _validate_submission(plan: ProjectFinancePlan) -> FinancePlanSummary:
 def submit_finance_plan(db: Session, plan_id: str, user: object) -> ProjectFinancePlan:
     _role, email = _require_role(user, EDIT_ROLES)
     plan = _plan(db, plan_id)
+    _require_project_scope(db, user, plan.project_id)
     _require_draft(plan)
     _validate_submission(plan)
     plan.status = "review"
@@ -551,8 +637,10 @@ def reject_finance_plan(
 def clone_finance_plan(db: Session, plan_id: str, user: object) -> ProjectFinancePlan:
     _role, email = _require_role(user, EDIT_ROLES)
     source = _plan(db, plan_id)
+    _require_project_scope(db, user, source.project_id)
     if source.status in {"draft", "review", "finance_approved"}:
         raise ValueError("Nyitott tervet nem lehet új verzióra klónozni.")
+    _lock_project(db, source.project_id)
     if db.scalar(
         select(ProjectFinancePlan).where(
             ProjectFinancePlan.project_id == source.project_id,
@@ -622,6 +710,11 @@ def clone_finance_plan(db: Session, plan_id: str, user: object) -> ProjectFinanc
         before={"source_plan_id": source.plan_id},
         after={"project_id": clone.project_id, "version": version},
     )
-    db.commit()
+    _commit_new_version(
+        db,
+        actor=email,
+        project_id=source.project_id,
+        operation="clone_version",
+    )
     db.refresh(clone)
     return clone

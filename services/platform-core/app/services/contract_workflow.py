@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..models import ContractWorkflowRecord
+from .smart_calendar import assert_calendar_project_access
 
 COMMERCIAL_ROLES = {"owner", "managing-director", "finance", "sales"}
 TECHNICAL_ROLES = {"owner", "managing-director", "project-manager", "technical-prep"}
@@ -58,12 +59,22 @@ def _require(user: object, roles: set[str]) -> tuple[str, str]:
     return role, email
 
 
-def _row(db: Session, contract_id: str) -> ContractWorkflowRecord:
-    row = db.scalar(
-        select(ContractWorkflowRecord).where(
-            ContractWorkflowRecord.contract_id == contract_id
-        )
+def _require_project_scope(
+    db: Session, user: object, project_id: str
+) -> None:
+    if str(getattr(user, "role", "")) == "project-manager":
+        assert_calendar_project_access(db, user, project_id)
+
+
+def _row(
+    db: Session, contract_id: str, *, for_update: bool = False
+) -> ContractWorkflowRecord:
+    stmt = select(ContractWorkflowRecord).where(
+        ContractWorkflowRecord.contract_id == contract_id
     )
+    if for_update:
+        stmt = stmt.with_for_update()
+    row = db.scalar(stmt.execution_options(populate_existing=True))
     if row is None:
         raise KeyError(contract_id)
     return row
@@ -160,8 +171,12 @@ def list_contract_workflows(
     return list(db.scalars(stmt.order_by(desc(ContractWorkflowRecord.updated_at))).all())
 
 
-def contract_workflow_detail(db: Session, contract_id: str) -> dict[str, Any]:
+def contract_workflow_detail(
+    db: Session, contract_id: str, *, user: object | None = None
+) -> dict[str, Any]:
     row = _row(db, contract_id)
+    if user is not None:
+        _require_project_scope(db, user, row.project_id)
     payload = json.loads(row.payload_json)
     return {
         "row": row,
@@ -178,7 +193,8 @@ def submit_contract_review(
     db: Session, contract_id: str, user: object
 ) -> ContractWorkflowRecord:
     _role, email = _require(user, SUBMIT_ROLES)
-    row = _row(db, contract_id)
+    row = _row(db, contract_id, for_update=True)
+    _require_project_scope(db, user, row.project_id)
     if row.status != "generated":
         raise ValueError("Csak elkészült szerződéscsomag küldhető jóváhagyásra.")
     row.status = "review"
@@ -209,7 +225,8 @@ def review_contract(
     if gate not in GATE_FIELDS:
         raise ValueError("Ismeretlen szerződés-jóváhagyási kapu.")
     _role, email = _require(user, GATE_ROLES[gate])
-    row = _row(db, contract_id)
+    row = _row(db, contract_id, for_update=True)
+    _require_project_scope(db, user, row.project_id)
     if gate == "legal" and not row.legal_required:
         raise ValueError("Ehhez a szerződéstípushoz nem szükséges jogi kapu.")
     if row.status != "review":
@@ -260,7 +277,8 @@ def record_signed_contract(
     signed_at: datetime,
 ) -> ContractWorkflowRecord:
     _role, email = _require(user, SIGNED_ROLES)
-    row = _row(db, contract_id)
+    row = _row(db, contract_id, for_update=True)
+    _require_project_scope(db, user, row.project_id)
     if row.status != "approved":
         raise ValueError("Aláírt példány csak minden kötelező jóváhagyás után rögzíthető.")
     digest = document_sha256.strip().lower()
@@ -301,7 +319,8 @@ def record_contract_dispatch(
     electronic_attachment_sha256: str,
 ) -> ContractWorkflowRecord:
     _role, email = _require(user, DISPATCH_ROLES)
-    row = _row(db, contract_id)
+    row = _row(db, contract_id, for_update=True)
+    _require_project_scope(db, user, row.project_id)
     if row.status != "signed":
         raise ValueError("Kézbesítés csak az aláírt példány rögzítése után igazolható.")
     if not postal_tracking_number.strip() or not postal_proof_file_id.strip():
@@ -311,7 +330,9 @@ def record_contract_dispatch(
     recipient = electronic_recipient.strip().lower()
     digest = electronic_attachment_sha256.strip().lower()
     if not electronic_message_id.strip() or recipient != expected_recipient:
-        raise ValueError("Az elektronikus üzenetazonosító és a szerződés szerinti címzett kötelező.")
+        raise ValueError(
+            "Az elektronikus üzenetazonosító és a szerződés szerinti címzett kötelező."
+        )
     if not HASH_PATTERN.fullmatch(digest) or digest != row.signed_document_sha256:
         raise ValueError("Az elektronikusan kézbesített melléklet nem az aláírt példány.")
     postal_sent_at = _as_utc(postal_sent_at)
@@ -353,7 +374,8 @@ def activate_contract(
     db: Session, contract_id: str, user: object
 ) -> ContractWorkflowRecord:
     _role, email = _require(user, ACTIVATION_ROLES)
-    row = _row(db, contract_id)
+    row = _row(db, contract_id, for_update=True)
+    _require_project_scope(db, user, row.project_id)
     if row.status != "dispatched":
         raise ValueError("Munkakezdés csak kettős kézbesítési bizonyíték után engedélyezhető.")
     row.status = "active"
