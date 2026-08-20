@@ -6,7 +6,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-Channel = Literal["nim_cms", "wordpress", "facebook", "instagram", "analytics", "crm", "forum"]
+Channel = Literal[
+    "nim_cms",
+    "wordpress",
+    "facebook",
+    "instagram",
+    "linkedin",
+    "analytics",
+    "crm",
+    "forum",
+]
 Decision = Literal["PASS", "BLOCK", "REVIEW"]
 
 MANDATORY_GATES = {
@@ -75,7 +84,7 @@ class PublicationJobIn(BaseModel):
     body_html: str = Field(min_length=1, max_length=5_000_000)
     excerpt: str = Field(min_length=1, max_length=5000)
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
-    channels: list[Channel] = Field(min_length=1, max_length=7)
+    channels: list[Channel] = Field(min_length=1, max_length=8)
     channel_payloads: dict[str, dict[str, Any]]
     cms_route: Literal["NIM", "WORDPRESS"]
     idempotency_key: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -116,7 +125,7 @@ class PublicationJobIn(BaseModel):
         if expected_web not in self.channels or other_web in self.channels:
             raise ValueError("CMSRoute and web channel selection conflict")
         if (
-            any(channel in self.channels for channel in ("facebook", "instagram"))
+            any(channel in self.channels for channel in ("facebook", "instagram", "linkedin"))
             and expected_web not in self.channels
         ):
             raise ValueError("Social publication requires its canonical web channel")
@@ -125,7 +134,7 @@ class PublicationJobIn(BaseModel):
         if (
             any(
                 channel in self.channels
-                for channel in ("nim_cms", "wordpress", "facebook", "instagram")
+                for channel in ("nim_cms", "wordpress", "facebook", "instagram", "linkedin")
             )
             and not self.visual_asset_package_id
         ):
@@ -139,6 +148,28 @@ class PublicationJobIn(BaseModel):
             hashtag_count = len(re.findall(r"(?<!\w)#\w+", text, flags=re.UNICODE))
             if not 3 <= hashtag_count <= 8:
                 raise ValueError(f"{channel} copy must contain 3 to 8 hashtags")
+        if "linkedin" in self.channels:
+            payload = self.channel_payloads["linkedin"]
+            commentary = payload.get("commentary")
+            if not isinstance(commentary, str) or not commentary.strip():
+                raise ValueError("linkedin commentary is required")
+            if len(commentary.strip()) > 3000:
+                raise ValueError("linkedin commentary exceeds 3000 characters")
+            media_urn = payload.get("media_urn")
+            if media_urn is not None and not re.fullmatch(
+                r"urn:li:(?:image|video|document):[A-Za-z0-9_-]+", str(media_urn)
+            ):
+                raise ValueError("linkedin media_urn is invalid")
+            media_title = payload.get("media_title")
+            if media_title is not None and (
+                not isinstance(media_title, str)
+                or not media_title.strip()
+                or len(media_title) > 400
+            ):
+                raise ValueError("linkedin media_title is invalid")
+            disabled = payload.get("is_reshare_disabled_by_author")
+            if disabled is not None and not isinstance(disabled, bool):
+                raise ValueError("linkedin is_reshare_disabled_by_author must be boolean")
         if self.release_token_hash == "0" * 64:
             raise ValueError("release token hash is invalid")
         return self

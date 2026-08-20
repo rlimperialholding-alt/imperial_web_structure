@@ -1,0 +1,103 @@
+{
+  "version": "2026-08-20T15:47:00+02:00",
+  "source": "linkedin-page-registration-2026-08-08/execution-status-2026-08-15.md",
+  "credential_material": false,
+  "organizations": {
+    "IMPERIAL-HOLDING-GROUP": {
+      "display_name": "Imperial Holding Group",
+      "organization_id": "72111689",
+      "organization_urn": "urn:li:organization:72111689",
+      "public_slug": null,
+      "public_url": "https://www.linkedin.com/company/72111689/",
+      "registration_status": "EXISTING_ADMIN_VERIFIED"
+    },
+    "DANISH-FABRIK": {
+      "display_name": "Danish Fabrik",
+      "organization_id": "135624528",
+      "organization_urn": "urn:li:organization:135624528",
+      "public_slug": "danish-fabrik-hu",
+      "public_url": "https://www.linkedin.com/company/danish-fabrik-hu/",
+      "registration_status": "EXISTING_ADMIN_VERIFIED"
+    },
+    "BAUTICA": {
+      "display_name": "Bautica",
+      "organization_id": "138274263",
+      "organization_urn": "urn:li:organization:138274263",
+      "public_slug": "bautica-hu",
+      "public_url": "https://www.linkedin.com/company/bautica-hu/",
+      "registration_status": "EXISTING_ADMIN_VERIFIED"
+    },
+    "PREFAB": {
+      "display_name": "Prefab",
+      "organization_id": "138373985",
+      "organization_urn": "urn:li:organization:138373985",
+      "public_slug": "prefab-hu",
+      "public_url": "https://www.linkedin.com/company/prefab-hu/",
+      "registration_status": "EXISTING_ADMIN_VERIFIED"
+    },
+    "CASA-MODERNA": {
+      "display_name": "Casa Moderna",
+      "organization_id": "139304477",
+      "organization_urn": "urn:li:organization:139304477",
+      "public_slug": "casa-moderna-hu",
+      "public_url": "https://www.linkedin.com/company/casa-moderna-hu/",
+      "registration_status": "EXISTING_ADMIN_VERIFIED"
+    },
+    "TIMBERHAUS": {
+      "display_name": "TimberHaus",
+      "organization_id": "139434406",
+      "organization_urn": "urn:li:organization:139434406",
+      "public_slug": "timberhaus-hu",
+      "public_url": "https://www.linkedin.com/company/timberhaus-hu/",
+      "registration_status": "EXISTING_ADMIN_VERIFIED"
+    },
+    "PROPERTY360": {
+      "display_name": "Property360",
+      "organization_id": "139464418",
+      "organization_urn": "urn:li:organization:139464418",
+      "public_slug": "property360-hu",
+      "public_url": "https://www.linkedin.com/company/property360-hu/",
+      "registration_status": "EXISTING_ADMIN_VERIFIED"
+    },
+    "FAMILY-HOMES": {
+      "display_name": "Family Homes",
+      "organization_id": "141104050",
+      "organization_urn": "urn:li:organization:141104050",
+      "public_slug": "family-homes-hu",
+      "public_url": "https://www.linkedin.com/company/family-homes-hu/",
+      "registration_status": "CREATED_AND_ADMIN_VERIFIED"
+    },
+    "BUDAPESTI-MAGASEPITO-VALLALAT": {
+      "display_name": "Budapesti Magasépítő Vállalat",
+      "organization_id": "141154072",
+      "organization_urn": "urn:li:organization:141154072",
+      "public_slug": "budapesti-magasepito-vallalat-hu",
+      "public_url": "https://www.linkedin.com/company/budapesti-magasepito-vallalat-hu/",
+      "registration_status": "CREATED_AND_ADMIN_VERIFIED"
+    },
+    "EVERYDAY-HOMES": {
+      "display_name": "Everyday Homes",
+      "organization_id": "141544058",
+      "organization_urn": "urn:li:organization:141544058",
+      "public_slug": "everyday-homes-hu",
+      "public_url": "https://www.linkedin.com/company/everyday-homes-hu/",
+      "registration_status": "CREATED_AND_ADMIN_VERIFIED"
+    },
+    "RED-PROPERTY": {
+      "display_name": "RED Property",
+      "organization_id": "144593961",
+      "organization_urn": "urn:li:organization:144593961",
+      "public_slug": "red-property-hu",
+      "public_url": "https://www.linkedin.com/company/red-property-hu/",
+      "registration_status": "CREATED_AND_ADMIN_VERIFIED"
+    },
+    "BAUFREUND": {
+      "display_name": "BauFreund",
+      "organization_id": "144605983",
+      "organization_urn": "urn:li:organization:144605983",
+      "public_slug": "baufreund-hu",
+      "public_url": "https://www.linkedin.com/company/baufreund-hu/",
+      "registration_status": "CREATED_AND_ADMIN_VERIFIED"
+    }
+  }
+}

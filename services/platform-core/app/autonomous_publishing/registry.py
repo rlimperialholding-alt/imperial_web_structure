@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import json
+import re
 import stat
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from ..config import settings
 
-SUPPORTED_CHANNELS = {"nim_cms", "wordpress", "facebook", "instagram", "analytics", "crm", "forum"}
+SUPPORTED_CHANNELS = {
+    "nim_cms",
+    "wordpress",
+    "facebook",
+    "instagram",
+    "linkedin",
+    "analytics",
+    "crm",
+    "forum",
+}
 
 
 class RegistryError(ValueError):
@@ -70,9 +81,10 @@ class PublishingRegistry:
     def __init__(self, raw: dict[str, Any]) -> None:
         self.raw = raw
         self.version = str(raw.get("version") or "")
-        self.brands = raw.get("brands")
-        if not self.version or not isinstance(self.brands, dict) or not self.brands:
+        brands = raw.get("brands")
+        if not self.version or not isinstance(brands, dict) or not brands:
             raise RegistryError("Registry version and non-empty brands are required")
+        self.brands: dict[str, Any] = brands
         if str(raw.get("source")) in {"example", "sample", "demo"}:
             raise RegistryError("Example registry cannot be used for runtime composition")
         self._validate()
@@ -129,6 +141,20 @@ class PublishingRegistry:
                         or not config.get("official_api")
                     ):
                         raise RegistryError(f"Forum auto-post policy evidence missing: {brand_id}")
+                if channel == "linkedin":
+                    if parsed.hostname != "api.linkedin.com":
+                        raise RegistryError(
+                            f"LinkedIn API host must be api.linkedin.com: {brand_id}"
+                        )
+                    if not re.fullmatch(r"[1-9][0-9]*", str(config.get("organization_id") or "")):
+                        raise RegistryError(f"LinkedIn organization_id is invalid: {brand_id}")
+                    if not re.fullmatch(r"[0-9]{6}", str(config.get("api_version") or "")):
+                        raise RegistryError(f"Pinned LinkedIn API version is required: {brand_id}")
+                    public_slug = config.get("public_slug")
+                    if public_slug is not None and not re.fullmatch(
+                        r"[a-z0-9]+(?:-[a-z0-9]+)*", str(public_slug)
+                    ):
+                        raise RegistryError(f"LinkedIn public_slug is invalid: {brand_id}")
 
     def binding(self, brand_id: str, channel: str) -> Binding:
         brand = self.brands.get(brand_id)
@@ -140,6 +166,24 @@ class PublishingRegistry:
         secret: dict[str, Any] = {}
         if config.get("secret_ref"):
             secret = _load_json(_secret_path(str(config["secret_ref"])))
+        if channel == "linkedin":
+            if not secret.get("access_token"):
+                raise RegistryError(f"LinkedIn managed access token is missing: {brand_id}")
+            scopes = secret.get("granted_scopes")
+            if not isinstance(scopes, list) or "w_organization_social" not in scopes:
+                raise RegistryError(
+                    f"LinkedIn w_organization_social scope is not proven: {brand_id}"
+                )
+            expires_at = secret.get("expires_at")
+            try:
+                expires = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+                expires = expires if expires.tzinfo else expires.replace(tzinfo=UTC)
+            except (TypeError, ValueError) as exc:
+                raise RegistryError(
+                    f"LinkedIn token expiry evidence is invalid: {brand_id}"
+                ) from exc
+            if expires <= datetime.now(UTC):
+                raise RegistryError(f"LinkedIn managed access token is expired: {brand_id}")
         return Binding(
             brand_id=brand_id,
             domain=str(brand["domain"]),

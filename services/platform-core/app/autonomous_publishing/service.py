@@ -34,7 +34,7 @@ from .registry import PublishingRegistry, RegistryError, writes_unlocked
 from .schemas import MANDATORY_GATES, PublicationJobIn, PublicationJobReceipt
 
 WEB_CHANNELS = ("nim_cms", "wordpress")
-SOCIAL_CHANNELS = ("facebook", "instagram")
+SOCIAL_CHANNELS = ("facebook", "instagram", "linkedin")
 ATTRIBUTION_CHANNELS = ("analytics", "crm")
 
 EVENT_TYPES = {
@@ -683,7 +683,7 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
         else None
     )
     required = settings.autonomous_publishing_enabled
-    ready = database_ok and (not required or (registry_state.get("ready") and heartbeat_ok))
+    ready = bool(database_ok and (not required or (registry_state.get("ready") and heartbeat_ok)))
     return ready, {
         "enabled": required,
         "database": "ok" if database_ok else "failed",

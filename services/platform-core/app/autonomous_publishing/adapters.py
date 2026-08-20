@@ -652,6 +652,166 @@ class MetaAdapter(BaseAdapter):
         }
 
 
+class LinkedInAdapter(BaseAdapter):
+    channel = "linkedin"
+
+    def preflight(self, job: PublicationJobIn) -> None:
+        super().preflight(job)
+        if not self.binding.secret.get("access_token"):
+            raise RegistryError("LinkedIn managed access token is missing")
+        scopes = self.binding.secret.get("granted_scopes")
+        if not isinstance(scopes, list) or "w_organization_social" not in scopes:
+            raise RegistryError("LinkedIn w_organization_social scope is not proven")
+        organization_id = str(self.binding.config.get("organization_id") or "")
+        if not organization_id.isdigit() or organization_id.startswith("0"):
+            raise RegistryError("LinkedIn organization binding is missing")
+        version = str(self.binding.config.get("api_version") or "")
+        if len(version) != 6 or not version.isdigit():
+            raise RegistryError("Pinned LinkedIn API version is required")
+        slug = str(self.binding.config.get("public_slug") or "")
+        if slug and any(
+            character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in slug
+        ):
+            raise RegistryError("LinkedIn public page slug is invalid")
+
+    def _headers(self, *, method: str | None = None) -> dict[str, str]:
+        headers = {
+            "Authorization": f"Bearer {self.binding.secret['access_token']}",
+            "Linkedin-Version": str(self.binding.config["api_version"]),
+            "X-Restli-Protocol-Version": "2.0.0",
+            "Content-Type": "application/json",
+        }
+        if method:
+            headers["X-RestLi-Method"] = method
+        return headers
+
+    def _url(self, path: str) -> str:
+        return urljoin(self.binding.config["base_url"].rstrip("/") + "/", path.lstrip("/"))
+
+    def _author(self) -> str:
+        return f"urn:li:organization:{self.binding.config['organization_id']}"
+
+    def _commentary(self, job: PublicationJobIn) -> str:
+        payload = job.channel_payloads.get(self.channel, {})
+        commentary = str(payload.get("commentary") or "").strip()
+        canonical = str(job.canonical_url or "").strip()
+        if not canonical.startswith("https://"):
+            raise AdapterError("Verified canonical web URL is required before LinkedIn publish")
+        if canonical not in commentary:
+            commentary = f"{commentary}\n\n{canonical}".strip()
+        if not commentary or len(commentary) > 3000:
+            raise AdapterError("LinkedIn commentary is missing or exceeds 3000 characters")
+        return commentary
+
+    def _post_payload(self, job: PublicationJobIn) -> dict[str, Any]:
+        channel_payload = job.channel_payloads.get(self.channel, {})
+        payload: dict[str, Any] = {
+            "author": self._author(),
+            "commentary": self._commentary(job),
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
+            },
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": bool(
+                channel_payload.get("is_reshare_disabled_by_author", False)
+            ),
+        }
+        media_urn = channel_payload.get("media_urn")
+        if media_urn:
+            payload["content"] = {
+                "media": {
+                    "id": str(media_urn),
+                    "title": str(channel_payload.get("media_title") or job.title),
+                }
+            }
+        return payload
+
+    def _readback(self, job: PublicationJobIn, external_id: str) -> AdapterResult:
+        response = self.client.request(
+            self.channel,
+            "GET",
+            self._url(f"rest/posts/{quote(external_id, safe='')}"),
+            headers=self._headers(),
+            params={"viewContext": "READER"},
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-linkedin-readback",
+        )
+        data = json_response(response)
+        if str(data.get("author") or "") != self._author():
+            raise ReadbackError("LinkedIn organization author mismatch")
+        if str(data.get("commentary") or "").strip() != self._commentary(job):
+            raise ReadbackError("LinkedIn commentary readback mismatch")
+        if data.get("lifecycleState") != "PUBLISHED" or data.get("visibility") != "PUBLIC":
+            raise ReadbackError("LinkedIn public publication state is not proven")
+        distribution = data.get("distribution")
+        if (
+            not isinstance(distribution, dict)
+            or distribution.get("feedDistribution") != "MAIN_FEED"
+        ):
+            raise ReadbackError("LinkedIn main-feed distribution is not proven")
+        permalink = str(data.get("permalink") or "")
+        if not permalink.startswith("https://www.linkedin.com/"):
+            page_key = (
+                self.binding.config.get("public_slug") or self.binding.config["organization_id"]
+            )
+            permalink = f"https://www.linkedin.com/company/{page_key}/posts/"
+        return AdapterResult(
+            external_id=external_id,
+            public_url=permalink,
+            admin_url=(
+                "https://www.linkedin.com/company/"
+                f"{self.binding.config['organization_id']}/admin/page-posts/published/"
+            ),
+            content_hash=job.content_hash,
+            canonical_url=job.canonical_url,
+            readback=data,
+            published_at=datetime.now(UTC),
+        )
+
+    def publish(self, job: PublicationJobIn, key: str) -> AdapterResult:
+        self.preflight(job)
+        response = self.client.request(
+            self.channel,
+            "POST",
+            self._url("rest/posts"),
+            headers=self._headers(),
+            json_body=self._post_payload(job),
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-linkedin-publish",
+            max_attempts=1,
+        )
+        external_id = str(response.headers.get("x-restli-id") or "")
+        if not external_id.startswith(("urn:li:share:", "urn:li:ugcPost:")):
+            raise AdapterError("LinkedIn publish did not return a valid post URN")
+        return self._readback(job, external_id)
+
+    def rollback(self, job: PublicationJobIn, result: AdapterResult, reason: str) -> dict[str, Any]:
+        self.client.request(
+            self.channel,
+            "DELETE",
+            self._url(f"rest/posts/{quote(result.external_id, safe='')}"),
+            headers=self._headers(method="DELETE"),
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-linkedin-rollback",
+            max_attempts=3,
+        )
+        try:
+            self._readback(job, result.external_id)
+        except PublishingHttpError as exc:
+            if exc.status != 404:
+                raise
+        else:
+            raise ReadbackError("LinkedIn rollback readback still finds post")
+        return {
+            "rollback_id": f"RB-LINKEDIN-{result.external_id}",
+            "readback": {"deleted": True},
+            "reason": reason,
+        }
+
+
 class EventAdapter(BaseAdapter):
     def publish(self, job: PublicationJobIn, key: str) -> AdapterResult:
         self.preflight(job)
@@ -745,6 +905,8 @@ def build_adapter(binding: Binding, client: ProductionHttpClient) -> BaseAdapter
         return WordPressAdapter(binding, client)
     if binding.channel in {"facebook", "instagram"}:
         return MetaAdapter(binding, client, binding.channel)
+    if binding.channel == "linkedin":
+        return LinkedInAdapter(binding, client)
     if binding.channel in {"analytics", "crm"}:
         adapter = EventAdapter(binding, client)
         adapter.channel = binding.channel

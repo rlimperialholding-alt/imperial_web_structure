@@ -41,6 +41,12 @@ leads.
   Partial failure invokes reverse-order rollback and creates an auditable exception.
 - Facebook and Instagram variants require 3–8 hashtags. Forum output remains draft-only unless
   an official API and current platform-policy evidence are registered.
+- LinkedIn publication uses the versioned Posts API only after canonical web readback. The route
+  requires a managed OAuth token with proven `w_organization_social` scope, a non-expired token
+  timestamp, an exact organization ID, and a pinned `YYYYMM` API version. A successful `201` is
+  insufficient: the returned post URN is fetched with `viewContext=READER`, and author,
+  commentary, public lifecycle state and main-feed distribution must match before verification.
+  The create request is attempted once; ambiguous POST outcomes are never retried automatically.
 - WordPress uses a per-integration Application Password over HTTPS rather than a user's primary
   password. Official reference: https://developer.wordpress.org/rest-api/using-the-rest-api/authentication/
 - Two independent controls are required for writes: feature enablement plus the host-only
@@ -59,6 +65,7 @@ Secrets never belong in Git, Drive exports, logs or API responses.
   kill-switch
   <brand>-wordpress.json
   <brand>-meta.json
+  <brand>-linkedin.json
 
 /opt/imperial-intelligence/secrets/growth/
   kill-switch
@@ -73,6 +80,11 @@ Every JSON file and kill-switch file must be owned by the deployment operator/se
 have mode `0600`. Meta Ads reporting tokens do not satisfy Page/Instagram publishing
 permissions. Record Page ID, Instagram business account ID, system-user token and the granted
 publishing permissions only in the managed Meta secret.
+
+LinkedIn secrets contain an OAuth `access_token`, its `granted_scopes` metadata and `expires_at`.
+Never store or use a member's primary password. `w_organization_social` is a restricted product
+permission and the authenticated member must hold an eligible Page role. Page IDs and public
+slugs are non-secret and are maintained in `config/publishing/linkedin-organizations.json`.
 
 ## Release sequence
 
@@ -106,6 +118,9 @@ preserved. Otherwise leave the additive tables in place and disable both feature
 - Production CMS registry for every brand and its WordPress/NIM credentials.
 - Meta Page/Instagram publishing identities and permissions; existing Meta Ads read access is
   insufficient.
+- LinkedIn developer-app Community Management access, a managed OAuth token with
+  `w_organization_social`, and a current token-expiry record for every enabled Page. Registration
+  of a Page and browser admin access alone do not grant API publication capability.
 - Legal approval of the contact-basis policy and retention schedule.
 - Exact current migration head after concurrent Platform Core work is committed.
 

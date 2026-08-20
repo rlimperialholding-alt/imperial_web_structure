@@ -1,5 +1,5 @@
 {
-  "version": "2026-08-13T00:00:00Z",
+  "version": "2026-08-20T00:00:00Z",
   "source": "server-managed",
   "brands": {
     "FESZEK-TUZEP": {
@@ -17,6 +17,7 @@
         },
         "facebook": {"enabled": false},
         "instagram": {"enabled": false},
+        "linkedin": {"enabled": false},
         "analytics": {"enabled": false},
         "crm": {"enabled": false},
         "forum": {
