@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
+from app.growth_ops import deepseek as deepseek_service
 from app.growth_ops import service, wide_service
 from app.growth_ops.canonical_policy import (
     ACTIVE_CONTENT_BRANDS,
@@ -98,3 +99,44 @@ def test_daily_wide_run_creates_all_brand_obligations_and_fails_closed(db, tmp_p
     assert row.external_publication_status.startswith("blocked_until")
     assert len(db.scalars(select(DailyContentObligation)).all()) == len(ACTIVE_CONTENT_BRANDS) == 19
     assert len(db.scalars(select(CanonicalGrowthDailyRun)).all()) == 1
+
+
+def test_deepseek_json_requests_disable_default_thinking(db, monkeypatch):
+    cfg = SimpleNamespace(
+        deepseek_api_key_file="managed-by-test",
+        deepseek_base_url="https://api.deepseek.test",
+        deepseek_routine_model="deepseek-v4-flash",
+        deepseek_high_stakes_model="deepseek-v4-pro",
+        deepseek_monthly_budget_usd=25.0,
+        deepseek_input_usd_per_million=0.435,
+        deepseek_output_usd_per_million=0.87,
+    )
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": '{"ok":true}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+
+    def fake_post(_url, **kwargs):
+        captured.update(kwargs["json"])
+        return FakeResponse()
+
+    monkeypatch.setattr(deepseek_service, "settings", lambda: cfg)
+    monkeypatch.setattr(deepseek_service, "_api_key", lambda: "test-key")
+    monkeypatch.setattr(deepseek_service.httpx, "post", fake_post)
+    result = deepseek_service.complete_json(
+        db,
+        system_prompt="Return JSON.",
+        user_prompt="Health check.",
+        purpose="test",
+        run_id=None,
+    )
+
+    assert captured["thinking"] == {"type": "disabled"}
+    assert result.content == '{"ok":true}'

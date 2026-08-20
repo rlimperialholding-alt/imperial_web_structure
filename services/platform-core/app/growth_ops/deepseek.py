@@ -93,6 +93,7 @@ def complete_json(
             {"role": "user", "content": user_prompt},
         ],
         "response_format": {"type": "json_object"},
+        "thinking": {"type": "disabled"},
         "temperature": 0.2,
         "max_tokens": max(1, min(max_tokens, 8_000)),
     }
