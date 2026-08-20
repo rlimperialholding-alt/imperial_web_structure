@@ -91,6 +91,7 @@
       {
         "name": "single alembic head",
         "command": "cd services\\platform-core && python -m alembic heads",
+        "executionScope": "local-dry-run",
         "requiredAtRisk": ["R2", "R3"],
         "timeoutSeconds": 600
       }
