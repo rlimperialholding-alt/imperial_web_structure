@@ -1,8 +1,18 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..database import Base
@@ -123,6 +133,9 @@ class OutreachMessage(Base):
     unsubscribe_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     idempotency_key: Mapped[str] = mapped_column(String(64), index=True)
     payload_sha256: Mapped[str] = mapped_column(String(64))
+    release_token_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    release_approved_by: Mapped[str | None] = mapped_column(String(255))
+    release_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(30), default="queued", index=True)
     available_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True
@@ -165,3 +178,97 @@ class GrowthControlState(Base):
     reason: Mapped[str | None] = mapped_column(Text)
     changed_by: Mapped[str | None] = mapped_column(String(255))
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CanonicalGrowthDailyRun(Base):
+    __tablename__ = "canonical_growth_daily_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running','full','partial','blocked','failed')",
+            name="ck_canonical_growth_daily_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    local_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    spec_version: Mapped[str] = mapped_column(String(120), index=True)
+    source_manifest_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    source_route_catalog_size: Mapped[int] = mapped_column(Integer, default=0)
+    route_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    unique_leads: Mapped[int] = mapped_column(Integer, default=0)
+    question_topics: Mapped[int] = mapped_column(Integer, default=0)
+    content_brands: Mapped[int] = mapped_column(Integer, default=0)
+    iora_opportunities: Mapped[int] = mapped_column(Integer, default=0)
+    etdr_new_or_changed: Mapped[int] = mapped_column(Integer, default=0)
+    etdr_start_not_verified: Mapped[int] = mapped_column(Integer, default=0)
+    etdr_completion_not_verified: Mapped[int] = mapped_column(Integer, default=0)
+    internal_handoff_status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    external_publication_status: Mapped[str] = mapped_column(
+        String(40), default="blocked", index=True
+    )
+    external_outreach_status: Mapped[str] = mapped_column(String(40), default="blocked", index=True)
+    status: Mapped[str] = mapped_column(String(30), default="running", index=True)
+    gate_errors_json: Mapped[str] = mapped_column(Text, default="[]")
+    detail_json: Mapped[str] = mapped_column(Text, default="{}")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DailyContentObligation(Base):
+    __tablename__ = "daily_content_obligations"
+    __table_args__ = (
+        UniqueConstraint("local_date", "brand_id", name="uq_daily_content_brand"),
+        CheckConstraint(
+            "status IN ('pending','drafted','quarantined','release_passed','published','failed')",
+            name="ck_daily_content_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    brand_id: Mapped[str] = mapped_column(String(120), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    content_asset_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    evidence_json: Mapped[str] = mapped_column(Text, default="[]")
+    release_token_hash: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class QuestionRadarTopic(Base):
+    __tablename__ = "question_radar_topics"
+    __table_args__ = (
+        UniqueConstraint("local_date", "dedupe_hash", name="uq_question_radar_daily_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    question: Mapped[str] = mapped_column(Text)
+    brand_id: Mapped[str] = mapped_column(String(120), index=True)
+    use_case: Mapped[str] = mapped_column(String(120), index=True)
+    source_url: Mapped[str | None] = mapped_column(String(1500))
+    classification: Mapped[str] = mapped_column(String(40), default="observed")
+    dedupe_hash: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CanonicalLLMUsage(Base):
+    __tablename__ = "canonical_llm_usage"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    run_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    provider: Mapped[str] = mapped_column(String(40), index=True)
+    model: Mapped[str] = mapped_column(String(120), index=True)
+    purpose: Mapped[str] = mapped_column(String(80), index=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached_prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0)
+    response_sha256: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(30), default="completed", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

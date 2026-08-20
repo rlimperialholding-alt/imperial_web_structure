@@ -15,7 +15,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..audit import audit
+from ..config import settings as platform_settings
 from ..models import MailSendingDomain, MailSuppression
+from .canonical_policy import (
+    PARTNER_OUTREACH_ANCHOR,
+    assert_outreach_copy,
+    contains_no_monitoring_entity,
+)
 from .connectors import SourceError, fetch_source
 from .email import EmailDeliveryError, SMTPEmailAdapter
 from .models import (
@@ -26,7 +32,7 @@ from .models import (
     OutreachMessage,
 )
 from .registry import BrandBinding, GrowthRegistry, GrowthRegistryError, settings, writes_unlocked
-from .schemas import GrowthSignalIn, GrowthSignalReceipt, OutreachEventIn
+from .schemas import GrowthSignalIn, GrowthSignalReceipt, OutreachEventIn, OutreachReleaseIn
 
 
 def utcnow() -> datetime:
@@ -106,6 +112,8 @@ def _score(data: GrowthSignalIn) -> int:
 
 def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
     reasons: list[str] = []
+    if data.motor_key == "ivs":
+        reasons.append("iora_internal_executive_review_only")
     if score < 55:
         reasons.append("score_below_55")
     if utcnow() - _aware(data.detected_at) > timedelta(days=30):
@@ -175,7 +183,7 @@ def _render_message(
         raise GrowthRegistryError("HTTPS GROWTH_OPS_BASE_URL is required")
     template = _template(binding, step)
     values = _SafeValues(
-        company_name=signal.company_name or "Tisztelt Címzett",
+        company_name=signal.company_name or "Címzett",
         signal_summary=signal.summary,
         evidence_url=signal.evidence_url,
         location=signal.location or "",
@@ -184,7 +192,17 @@ def _render_message(
         unsubscribe_url=f"{settings().base_url}/growth/unsubscribe/{unsubscribe_token}",
     )
     subject = template["subject"].format_map(values).strip()
-    body = template["body"].format_map(values).strip()
+    # The partner-facing sentence is owner-authored and locked. Runtime registry
+    # templates may select the subject but cannot replace this body anchor.
+    body = (
+        f"Tisztelt {values['company_name']}!\n\n"
+        f"{PARTNER_OUTREACH_ANCHOR}\n\n"
+        f"A nyilvánosan elérhető projektinformáció röviden: {values['signal_summary']}\n"
+        f"Forrás: {values['evidence_url']}\n\n"
+        "Ha ez most nem aktuális, nincs további teendője. "
+        f"Leiratkozás: {values['unsubscribe_url']}"
+    )
+    assert_outreach_copy(body)
     if len(subject) < 3 or len(body) < 80 or values["unsubscribe_url"] not in body:
         raise GrowthRegistryError(
             "Rendered outreach must contain useful copy and the unsubscribe URL"
@@ -289,6 +307,18 @@ def ingest_signal(
     *,
     run_id: str | None = None,
 ) -> GrowthSignalReceipt:
+    hard_gate_values = "\n".join(
+        value
+        for value in (
+            data.company_name,
+            data.summary,
+            data.evidence_url,
+            data.public_contact_url,
+        )
+        if value
+    )
+    if contains_no_monitoring_entity(hard_gate_values):
+        raise GrowthRegistryError("no_monitoring_hard_gate_blocked")
     registry = GrowthRegistry.load()
     registry.validate_signal_source(
         source_id=data.source_id,
@@ -582,6 +612,57 @@ def _payload_matches(row: OutreachMessage) -> bool:
     )
 
 
+def _release_digest(row: OutreachMessage, approved_by: str) -> str:
+    key = platform_settings.imperial_release_hmac_key
+    if len(key) < 32:
+        raise GrowthRegistryError("IMPERIAL_RELEASE_HMAC_KEY is not configured")
+    value = canonical_json(
+        {
+            "outreach_id": row.outreach_id,
+            "payload_sha256": row.payload_sha256,
+            "approved_by": approved_by,
+        }
+    )
+    return hmac.new(key.encode(), value.encode(), hashlib.sha256).hexdigest()
+
+
+def release_outreach(
+    db: Session, outreach_id: str, data: OutreachReleaseIn
+) -> OutreachMessage:
+    row = db.scalar(select(OutreachMessage).where(OutreachMessage.outreach_id == outreach_id))
+    if not row:
+        raise KeyError(outreach_id)
+    if row.status != "queued":
+        raise GrowthRegistryError("Only queued outreach can be released")
+    if not hmac.compare_digest(row.payload_sha256, data.inspected_payload_sha256):
+        raise GrowthRegistryError("Inspected outreach payload hash does not match")
+    assert_outreach_copy(row.body_text)
+    row.release_approved_by = data.approved_by.strip()
+    row.release_approved_at = utcnow()
+    row.release_token_hash = _release_digest(row, row.release_approved_by)
+    audit(
+        db,
+        actor=row.release_approved_by,
+        action="growth_outreach_exact_payload_released",
+        entity_type="growth_outreach",
+        entity_id=row.outreach_id,
+        after={
+            "payload_sha256": row.payload_sha256,
+            "approval_note_sha256": hashlib.sha256(data.approval_note.encode()).hexdigest(),
+        },
+    )
+    db.commit()
+    return row
+
+
+def _release_matches(row: OutreachMessage) -> bool:
+    if not row.release_token_hash or not row.release_approved_by or not row.release_approved_at:
+        return False
+    return hmac.compare_digest(
+        row.release_token_hash, _release_digest(row, row.release_approved_by)
+    )
+
+
 def _trip_runtime_kill_switch() -> bool:
     try:
         Path("/app/runtime/growth-kill-switch").write_text("KILLED\n", encoding="utf-8")
@@ -600,6 +681,9 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             raise GrowthRegistryError("growth_writes_locked")
         if not _payload_matches(row):
             raise GrowthRegistryError("outreach_payload_hash_mismatch")
+        assert_outreach_copy(row.body_text)
+        if not _release_matches(row):
+            raise GrowthRegistryError("outreach_exact_payload_release_missing_or_invalid")
         if _recipient_suppressed(db, row.recipient_email):
             row.status = "suppressed"
             row.last_error = "global_suppression"
@@ -794,14 +878,29 @@ def heartbeat(
 
 
 def run_once(db: Session) -> dict[str, Any]:
+    from .wide_service import run_due as run_due_wide
+
+    wide_run = run_due_wide(db)
     if not settings().enabled:
         heartbeat(db, status="disabled")
-        return {"status": "disabled", "runs": 0, "followups": 0, "sent": 0}
+        return {
+            "status": "wide_shadow" if wide_run else "disabled",
+            "runs": 0,
+            "wide_run": wide_run.run_id if wide_run else None,
+            "followups": 0,
+            "sent": 0,
+        }
     heartbeat(db, status="healthy")
     runs = run_due_motors(db)
     followups = schedule_followups(db) if writes_unlocked() else 0
     sent = dispatch_batch(db) if writes_unlocked() else 0
-    result = {"status": "healthy", "runs": len(runs), "followups": followups, "sent": sent}
+    result = {
+        "status": "healthy",
+        "runs": len(runs),
+        "wide_run": wide_run.run_id if wide_run else None,
+        "followups": followups,
+        "sent": sent,
+    }
     heartbeat(db, status="healthy", detail=result)
     return result
 

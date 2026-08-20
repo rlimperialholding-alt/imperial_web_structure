@@ -1,0 +1,12 @@
+{
+  "spec_version": "2026-08-20-canonical-wide-v1",
+  "spreadsheet_id": "1ddn6e2EbuafPc_S9_eb6oetBQsp4iOO9cFuMD6sQ4H4",
+  "sheet_id": 959591161,
+  "sheet_name": "Útvonal-nyilvántartás",
+  "route_count": 25494,
+  "modified_time": "2026-08-20T11:39:45.518Z",
+  "catalog_sha256": "c2d6b7143cf49ac69aba514b63ba36673b931f5d108c876da5ac78cca2b95552",
+  "hash_basis": "canonical spreadsheet_id + sheet_id + route_count + Drive modified_time",
+  "sync_mode": "live_google_sheets_required",
+  "status": "CANONICAL_CONFIRMED"
+}

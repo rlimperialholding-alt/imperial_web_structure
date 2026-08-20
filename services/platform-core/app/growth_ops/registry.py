@@ -25,6 +25,16 @@ class GrowthSettings:
     lease_seconds: int
     base_url: str
     timezone: str
+    canonical_wide_enabled: bool
+    canonical_daily_at: str
+    canonical_manifest_file: str
+    deepseek_api_key_file: str
+    deepseek_base_url: str
+    deepseek_routine_model: str
+    deepseek_high_stakes_model: str
+    deepseek_monthly_budget_usd: float
+    deepseek_input_usd_per_million: float
+    deepseek_output_usd_per_million: float
 
 
 def settings() -> GrowthSettings:
@@ -40,6 +50,31 @@ def settings() -> GrowthSettings:
         lease_seconds=max(30, int(os.getenv("GROWTH_OPS_LEASE_SECONDS", "300"))),
         base_url=os.getenv("GROWTH_OPS_BASE_URL", "").rstrip("/"),
         timezone=os.getenv("GROWTH_OPS_TIMEZONE", "Europe/Budapest"),
+        canonical_wide_enabled=os.getenv("CANONICAL_GROWTH_ENABLED", "false").lower()
+        == "true",
+        canonical_daily_at=os.getenv("CANONICAL_GROWTH_DAILY_AT", "05:30"),
+        canonical_manifest_file=os.getenv(
+            "CANONICAL_SOURCE_MANIFEST_FILE", "/app/config/growth/source-ledger-manifest.json"
+        ),
+        deepseek_api_key_file=os.getenv(
+            "DEEPSEEK_API_KEY_FILE", "/run/secrets/growth/deepseek-api-key"
+        ),
+        deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip(
+            "/"
+        ),
+        deepseek_routine_model=os.getenv("DEEPSEEK_ROUTINE_MODEL", "deepseek-v4-flash"),
+        deepseek_high_stakes_model=os.getenv(
+            "DEEPSEEK_HIGH_STAKES_MODEL", "deepseek-v4-pro"
+        ),
+        deepseek_monthly_budget_usd=max(
+            0.0, float(os.getenv("DEEPSEEK_MONTHLY_BUDGET_USD", "0"))
+        ),
+        deepseek_input_usd_per_million=max(
+            0.0, float(os.getenv("DEEPSEEK_INPUT_USD_PER_MILLION", "0"))
+        ),
+        deepseek_output_usd_per_million=max(
+            0.0, float(os.getenv("DEEPSEEK_OUTPUT_USD_PER_MILLION", "0"))
+        ),
     )
 
 

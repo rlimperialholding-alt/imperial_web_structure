@@ -111,3 +111,23 @@ preserved. Otherwise leave the additive tables in place and disable both feature
 
 Until every relevant gate passes, `GROWTH_OPS_ENABLED=false` and
 `AUTONOMOUS_PUBLISHING_ENABLED=false` are the only release-approved settings.
+
+## 2026-08-20 canonical-wide release delta
+
+Revision `20260820_0073` adds a single, auditable daily run keyed to the 25,494-route Source
+Coverage Ledger. It creates all 19 daily Content Factory obligations before work begins and
+evaluates the 800 route / 100 lead / 80 question / 19 brand gates without manufacturing output.
+Below a gate, the run is `partial`; a blocked source is never a negative finding.
+
+The IORA path is permanently separated from the external outreach outbox. It produces an
+internal executive-review package for Právicz Anna only. Publication and internal handoff are
+parallel obligations: successful publication never suppresses the unchanged internal handoff.
+
+Partner-email release is now bound to the SHA-256 of the exact inspected artifact and the
+platform release HMAC. The owner-authored assistance/capacity sentence is verified again at
+queue and dispatch time. SMTP/provider readiness, tested delivery/readback, suppression,
+kill-switch and exact-artifact release must all pass; otherwise dispatch remains blocked.
+
+DeepSeek is available only through a mode-0600 server secret, explicit monthly budget and
+configurable input/output price rates. Every call stores model, purpose, token counts, estimated
+cost and response hash. A zero budget or missing rate/key fails closed.

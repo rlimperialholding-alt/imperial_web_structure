@@ -96,3 +96,11 @@ class GrowthControlIn(BaseModel):
 
     enabled: bool
     reason: str = Field(min_length=10, max_length=2000)
+
+
+class OutreachReleaseIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved_by: str = Field(min_length=3, max_length=255)
+    inspected_payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approval_note: str = Field(min_length=10, max_length=2000)
