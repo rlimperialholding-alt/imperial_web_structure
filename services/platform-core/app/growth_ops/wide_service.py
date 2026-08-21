@@ -25,9 +25,10 @@ from .canonical_policy import (
 from .models import (
     CanonicalGrowthDailyRun,
     DailyContentObligation,
-    GrowthRun,
     GrowthSignal,
     QuestionRadarTopic,
+    SourceCatalogRevision,
+    SourceCoverageAttempt,
 )
 from .registry import GrowthRegistryError, settings
 
@@ -96,9 +97,9 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
     start_utc = local_start.astimezone(UTC)
     row.route_attempts = int(
         db.scalar(
-            select(func.coalesce(func.sum(GrowthRun.attempted_sources), 0)).where(
-                GrowthRun.started_at >= start_utc
-            )
+            select(func.count())
+            .select_from(SourceCoverageAttempt)
+            .where(SourceCoverageAttempt.started_at >= start_utc)
         )
         or 0
     )
@@ -172,7 +173,7 @@ def run_due(db: Session, *, now: datetime | None = None) -> CanonicalGrowthDaily
     existing = db.scalar(
         select(CanonicalGrowthDailyRun).where(CanonicalGrowthDailyRun.local_date == local_day)
     )
-    if existing and existing.completed_at:
+    if existing and existing.completed_at and existing.status == "full":
         return None
     return refresh_daily_run(db, now=current)
 
@@ -189,6 +190,12 @@ def readiness(db: Session) -> dict[str, Any]:
     row = db.scalar(
         select(CanonicalGrowthDailyRun).where(CanonicalGrowthDailyRun.local_date == local_day)
     )
+    catalog = db.scalar(
+        select(SourceCatalogRevision)
+        .where(SourceCatalogRevision.status == "active")
+        .order_by(SourceCatalogRevision.imported_at.desc())
+        .limit(1)
+    )
     return {
         "enabled": settings().canonical_wide_enabled,
         "spec_version": SPEC_VERSION,
@@ -199,6 +206,13 @@ def readiness(db: Session) -> dict[str, Any]:
             "manifest": manifest_state,
             "manifest_sha256": manifest_hash,
             "catalog_modified_time": manifest.get("modified_time"),
+            "db_runtime": (
+                "active"
+                if catalog and catalog.route_count == SOURCE_LEDGER_ROUTE_COUNT
+                else "missing_or_incomplete"
+            ),
+            "db_catalog_sha256": catalog.catalog_sha256 if catalog else None,
+            "db_route_count": catalog.route_count if catalog else 0,
         },
         "daily_gates": {
             "route_attempts": 800,

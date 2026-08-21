@@ -272,3 +272,87 @@ class CanonicalLLMUsage(Base):
     response_sha256: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(30), default="completed", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SourceCatalogRevision(Base):
+    __tablename__ = "source_catalog_revisions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('importing','active','retired','failed')",
+            name="ck_source_catalog_revision_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    revision_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    spreadsheet_id: Mapped[str] = mapped_column(String(120), index=True)
+    sheet_id: Mapped[int] = mapped_column(Integer, index=True)
+    source_modified_time: Mapped[str] = mapped_column(String(80))
+    catalog_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    route_count: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default="importing", index=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SourceCoverageRoute(Base):
+    __tablename__ = "source_coverage_routes"
+    __table_args__ = (
+        UniqueConstraint("route_id", name="uq_source_coverage_route_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_key: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    route_id: Mapped[str] = mapped_column(String(180), index=True)
+    catalog_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    motor: Mapped[str] = mapped_column(String(160), index=True)
+    catalog_part: Mapped[str | None] = mapped_column(String(160), index=True)
+    country: Mapped[str | None] = mapped_column(String(120), index=True)
+    brand_fit: Mapped[str | None] = mapped_column(String(240), index=True)
+    category: Mapped[str | None] = mapped_column(String(240), index=True)
+    source_name: Mapped[str | None] = mapped_column(String(500))
+    source_type: Mapped[str | None] = mapped_column(String(120), index=True)
+    search_signal: Mapped[str | None] = mapped_column(Text)
+    route_url: Mapped[str] = mapped_column(String(3000))
+    base_url: Mapped[str | None] = mapped_column(String(3000))
+    route_mode: Mapped[str | None] = mapped_column(String(80), index=True)
+    priority: Mapped[str | None] = mapped_column(String(80), index=True)
+    validation: Mapped[str | None] = mapped_column(String(120), index=True)
+    catalog_status: Mapped[str | None] = mapped_column(String(120), index=True)
+    source_updated_value: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    source_row_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    source_record_json: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    success_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_result: Mapped[str | None] = mapped_column(String(80), index=True)
+    next_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class SourceCoverageAttempt(Base):
+    __tablename__ = "source_coverage_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('succeeded','blocked','failed','rejected')",
+            name="ck_source_coverage_attempt_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    route_key: Mapped[str] = mapped_column(String(500), index=True)
+    catalog_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    status: Mapped[str] = mapped_column(String(30), index=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, index=True)
+    response_sha256: Mapped[str | None] = mapped_column(String(64))
+    evidence_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_type: Mapped[str | None] = mapped_column(String(120), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

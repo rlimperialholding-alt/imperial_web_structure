@@ -5,8 +5,8 @@
   "sheet_name": "Útvonal-nyilvántartás",
   "route_count": 25494,
   "modified_time": "2026-08-20T11:39:45.518Z",
-  "catalog_sha256": "c2d6b7143cf49ac69aba514b63ba36673b931f5d108c876da5ac78cca2b95552",
-  "hash_basis": "canonical spreadsheet_id + sheet_id + route_count + Drive modified_time",
-  "sync_mode": "live_google_sheets_required",
+  "catalog_sha256": "c3410b63955faf7bbb2eda9ca170486cf7782d420b85029c835b44f9e2bbe224",
+  "hash_basis": "SHA-256 of the UTF-8 canonical route JSONL snapshot, one row per line",
+  "sync_mode": "hetzner_database_runtime_google_sheet_version_source_only",
   "status": "CANONICAL_CONFIRMED"
 }

@@ -21,8 +21,10 @@ is an evidence metric, never an instruction to manufacture leads or bypass conta
 
 ## Canonical wide daily layer (2026-08-20)
 
-The server-managed `source-ledger-manifest.json` binds runtime state to Google Sheet
-`1ddn6e2EbuafPc_S9_eb6oetBQsp4iOO9cFuMD6sQ4H4`, sheet ID `959591161`, with 25,494 routes.
+The server-managed `source-ledger-manifest.json` binds the imported database revision to
+Google Sheet `1ddn6e2EbuafPc_S9_eb6oetBQsp4iOO9cFuMD6sQ4H4`, sheet ID `959591161`, with
+25,494 routes. The Sheet is a version source only: normal daily operation reads the Hetzner
+database and requires neither Google authentication nor a workspace administrator.
 The daily layer is fail-closed and reports `partial` unless all of these gates are evidenced:
 
 - at least 800 actual route attempts;

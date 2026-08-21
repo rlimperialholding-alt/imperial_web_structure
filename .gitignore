@@ -3,6 +3,7 @@
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
+.codex-tmp/
 
 services/platform-core/data/*
 !services/platform-core/data/platform_demo_seed.json

@@ -28,6 +28,10 @@ class GrowthSettings:
     canonical_wide_enabled: bool
     canonical_daily_at: str
     canonical_manifest_file: str
+    canonical_route_scanning_enabled: bool
+    canonical_route_batch_size: int
+    canonical_route_timeout_seconds: float
+    canonical_route_max_response_bytes: int
     deepseek_api_key_file: str
     deepseek_base_url: str
     deepseek_routine_model: str
@@ -55,6 +59,23 @@ def settings() -> GrowthSettings:
         canonical_daily_at=os.getenv("CANONICAL_GROWTH_DAILY_AT", "05:30"),
         canonical_manifest_file=os.getenv(
             "CANONICAL_SOURCE_MANIFEST_FILE", "/app/config/growth/source-ledger-manifest.json"
+        ),
+        canonical_route_scanning_enabled=os.getenv(
+            "CANONICAL_ROUTE_SCANNING_ENABLED", "false"
+        ).lower()
+        == "true",
+        canonical_route_batch_size=max(
+            1, min(25, int(os.getenv("CANONICAL_ROUTE_BATCH_SIZE", "3")))
+        ),
+        canonical_route_timeout_seconds=max(
+            2.0, min(30.0, float(os.getenv("CANONICAL_ROUTE_TIMEOUT_SECONDS", "12")))
+        ),
+        canonical_route_max_response_bytes=max(
+            100_000,
+            min(
+                5_000_000,
+                int(os.getenv("CANONICAL_ROUTE_MAX_RESPONSE_BYTES", "1000000")),
+            ),
         ),
         deepseek_api_key_file=os.getenv(
             "DEEPSEEK_API_KEY_FILE", "/run/secrets/growth/deepseek-api-key"

@@ -878,8 +878,10 @@ def heartbeat(
 
 
 def run_once(db: Session) -> dict[str, Any]:
+    from .catalog import scan_due_routes
     from .wide_service import run_due as run_due_wide
 
+    route_scan = scan_due_routes(db)
     wide_run = run_due_wide(db)
     if not settings().enabled:
         heartbeat(db, status="disabled")
@@ -887,6 +889,7 @@ def run_once(db: Session) -> dict[str, Any]:
             "status": "wide_shadow" if wide_run else "disabled",
             "runs": 0,
             "wide_run": wide_run.run_id if wide_run else None,
+            "route_scan": route_scan,
             "followups": 0,
             "sent": 0,
         }
@@ -898,6 +901,7 @@ def run_once(db: Session) -> dict[str, Any]:
         "status": "healthy",
         "runs": len(runs),
         "wide_run": wide_run.run_id if wide_run else None,
+        "route_scan": route_scan,
         "followups": followups,
         "sent": sent,
     }
