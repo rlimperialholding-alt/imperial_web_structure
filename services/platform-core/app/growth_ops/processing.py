@@ -124,6 +124,7 @@ def process_source_attempt(
         "source_url": route.route_url,
         "route_context": _route_context(route)[:2000],
         "visible_source_text": text,
+        "limits": {"leads": 25, "questions": 25},
         "output_schema": {
             "leads": [
                 {
@@ -166,7 +167,7 @@ def process_source_attempt(
                 user_prompt=_json(prompt),
                 purpose="canonical_source_evidence_extraction",
                 run_id=attempt.run_id,
-                max_tokens=1400,
+                max_tokens=4000,
             )
             payload = json.loads(result.content)
             break
