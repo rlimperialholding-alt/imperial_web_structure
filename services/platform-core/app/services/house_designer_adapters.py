@@ -605,6 +605,9 @@ def accept_signed_result(
             provider_job_id or f"missing:{job.job_id}",
             ",".join(violations),
         )
+    # A missing ``issuedAt`` always appends the ``response_age`` violation above and
+    # returns through the gate before this point, so the timestamp is present here.
+    accepted_issued_at = issued_at or now
     if job.status != "DISPATCHED":
         violations.append("job_not_dispatched")
     if job.provider_job_id and job.provider_job_id != provider_job_id:
@@ -617,7 +620,7 @@ def accept_signed_result(
             payload,
             key_id,
             response_sha,
-            issued_at,
+            accepted_issued_at,
             provider_job_id,
             ",".join(violations),
         )
@@ -626,7 +629,15 @@ def accept_signed_result(
     except (HouseDesignerError, InvalidOperation, KeyError, TypeError, ValueError) as error:
         code = error.code if isinstance(error, HouseDesignerError) else "result_schema_invalid"
         return _reject_signed_result(
-            db, job, adapter, payload, key_id, response_sha, issued_at, provider_job_id, code
+            db,
+            job,
+            adapter,
+            payload,
+            key_id,
+            response_sha,
+            accepted_issued_at,
+            provider_job_id,
+            code,
         )
     receipt = HouseDesignerAdapterReceipt(
         receipt_id=_id("HDAREC"),
@@ -636,7 +647,7 @@ def accept_signed_result(
         key_id=key_id,
         request_sha256=job.request_sha256,
         response_sha256=response_sha,
-        issued_at=issued_at,
+        issued_at=accepted_issued_at,
         status="ACCEPTED",
         evidence_json=_json(payload),
     )
@@ -698,7 +709,7 @@ def _materialize_result(
         vat = Decimal(str(result["vatRate"]))
         if net_min <= 0 or net_max < net_min or vat < 0 or vat > 1:
             raise ValueError("invalid pricing bounds")
-        canonical = {
+        pricing_canonical = {
             "inputSha256": input_sha,
             "netMinHuf": str(net_min),
             "netMaxHuf": str(net_max),
@@ -707,7 +718,7 @@ def _materialize_result(
             "assumptions": _list(result, "assumptions"),
             "exclusions": _list(result, "exclusions"),
         }
-        row = HouseDesignEstimateSnapshot(
+        estimate_row = HouseDesignEstimateSnapshot(
             estimate_id=_id("HDE"),
             session_id=job.session_id,
             design_revision_id=job.design_revision_id,
@@ -717,17 +728,17 @@ def _materialize_result(
             vat_rate=vat,
             gross_min_huf=net_min * (Decimal("1") + vat),
             gross_max_huf=net_max * (Decimal("1") + vat),
-            line_items_json=_json(canonical["lineItems"]),
-            assumptions_json=_json(canonical["assumptions"]),
-            exclusions_json=_json(canonical["exclusions"]),
+            line_items_json=_json(pricing_canonical["lineItems"]),
+            assumptions_json=_json(pricing_canonical["assumptions"]),
+            exclusions_json=_json(pricing_canonical["exclusions"]),
             provider=adapter.provider,
             non_production=False,
             valid_until=valid_until,
-            canonical_sha256=_sha(canonical),
+            canonical_sha256=_sha(pricing_canonical),
             created_by=f"adapter:{adapter.key_id}",
         )
-        db.add(row)
-        return row.estimate_id
+        db.add(estimate_row)
+        return estimate_row.estimate_id
     if job.adapter_type == "capacity":
         minimum = int(result["durationMinWorkdays"])
         maximum = int(result["durationMaxWorkdays"])
@@ -737,7 +748,7 @@ def _materialize_result(
         latest = _parse_date(result.get("latestStart"))
         if earliest and latest and latest < earliest:
             raise ValueError("invalid start window")
-        canonical = {
+        schedule_canonical = {
             "inputSha256": input_sha,
             "earliestStart": str(earliest or ""),
             "latestStart": str(latest or ""),
@@ -746,7 +757,7 @@ def _materialize_result(
             "phases": _list(result, "phases"),
             "assumptions": _list(result, "assumptions"),
         }
-        row = HouseDesignScheduleSnapshot(
+        schedule_row = HouseDesignScheduleSnapshot(
             schedule_id=_id("HDT"),
             session_id=job.session_id,
             design_revision_id=job.design_revision_id,
@@ -755,17 +766,17 @@ def _materialize_result(
             latest_start=latest,
             duration_min_workdays=minimum,
             duration_max_workdays=maximum,
-            phases_json=_json(canonical["phases"]),
-            assumptions_json=_json(canonical["assumptions"]),
+            phases_json=_json(schedule_canonical["phases"]),
+            assumptions_json=_json(schedule_canonical["assumptions"]),
             capacity_snapshot_id=str(result.get("capacitySnapshotId") or "") or None,
             provider=adapter.provider,
             non_production=False,
             valid_until=valid_until,
-            canonical_sha256=_sha(canonical),
+            canonical_sha256=_sha(schedule_canonical),
             created_by=f"adapter:{adapter.key_id}",
         )
-        db.add(row)
-        return row.schedule_id
+        db.add(schedule_row)
+        return schedule_row.schedule_id
     asset_ref = str(result.get("assetRef") or "")
     asset_sha = str(result.get("assetSha256") or "")
     geometry_lock = str(result.get("geometryLockSha256") or "")
@@ -792,7 +803,7 @@ def _materialize_result(
         .where(HouseDesignRenderRevision.session_id == job.session_id)
         .order_by(desc(HouseDesignRenderRevision.revision_no))
     )
-    row = HouseDesignRenderRevision(
+    render_row = HouseDesignRenderRevision(
         render_id=_id("HDV"),
         session_id=job.session_id,
         design_revision_id=job.design_revision_id,
@@ -809,8 +820,8 @@ def _materialize_result(
         non_production=False,
         created_by=f"adapter:{adapter.key_id}",
     )
-    db.add(row)
-    return row.render_id
+    db.add(render_row)
+    return render_row.render_id
 
 
 def _provider_request(job: HouseDesignerAdapterJob) -> dict[str, Any]:

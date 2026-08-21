@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from starlette.datastructures import FormData, UploadFile
 
 from app.config import settings
 from app.database import get_db
@@ -236,8 +237,11 @@ def _api_call(function: Any, *args: Any, **kwargs: Any) -> Any:
 
 
 def _integer(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if value is None:
+        raise HTTPException(status_code=422, detail={"code": "integer_required", "field": key})
     try:
-        return int(payload.get(key))
+        return int(value)
     except (TypeError, ValueError) as error:
         raise HTTPException(
             status_code=422, detail={"code": "integer_required", "field": key}
@@ -252,6 +256,13 @@ def _integer_default(payload: dict[str, Any], key: str, default: int) -> int:
         raise HTTPException(
             status_code=422, detail={"code": "integer_required", "field": key}
         ) from error
+
+
+def _form_scalar(form: FormData, key: str) -> str | None:
+    value = form.get(key)
+    if isinstance(value, UploadFile):
+        raise TypeError("scalar form field expected, received a file upload")
+    return value
 
 
 def _form_integer(form: Any, key: str, default: int) -> int:
@@ -276,7 +287,7 @@ def _form_optional_integer(form: Any, key: str) -> int | None:
 
 def _optional_float(payload: dict[str, Any], key: str) -> float | None:
     value = payload.get(key)
-    if value in {None, ""}:
+    if value is None or value == "":
         return None
     try:
         return float(value)
@@ -418,7 +429,7 @@ def build_market_intelligence_router(templates: Jinja2Templates) -> APIRouter:
                     db,
                     actor=_actor(db, user),
                     target_id=target_id,
-                    row_version=int(form.get("row_version") or 0),
+                    row_version=int(_form_scalar(form, "row_version") or 0),
                     name=str(form.get("name") or ""),
                     origin=str(form.get("origin") or ""),
                     allowed_path=str(form.get("allowed_path") or "/"),
@@ -433,7 +444,7 @@ def build_market_intelligence_router(templates: Jinja2Templates) -> APIRouter:
                     db,
                     actor=_actor(db, user),
                     target_id=target_id,
-                    row_version=int(form.get("row_version") or 0),
+                    row_version=int(_form_scalar(form, "row_version") or 0),
                     action=action,
                     reason=str(form.get("reason") or ""),
                 )
@@ -565,8 +576,8 @@ def build_market_intelligence_router(templates: Jinja2Templates) -> APIRouter:
                 actor=_actor(db, user),
                 snapshot_id=str(form.get("snapshot_id") or ""),
                 statement=str(form.get("statement") or ""),
-                start_offset=int(form.get("start_offset") or 0),
-                end_offset=int(form.get("end_offset") or 0),
+                start_offset=int(_form_scalar(form, "start_offset") or 0),
+                end_offset=int(_form_scalar(form, "end_offset") or 0),
                 evidence_level=str(form.get("evidence_level") or "OBSERVED"),
                 method=str(form.get("method") or ""),
                 confidence=float(confidence_raw) if confidence_raw else None,
@@ -591,8 +602,8 @@ def build_market_intelligence_router(templates: Jinja2Templates) -> APIRouter:
                 channel=str(form.get("channel") or ""),
                 asset_type=str(form.get("asset_type") or ""),
                 title=str(form.get("title") or ""),
-                start_offset=int(form.get("start_offset") or 0),
-                end_offset=int(form.get("end_offset") or 0),
+                start_offset=int(_form_scalar(form, "start_offset") or 0),
+                end_offset=int(_form_scalar(form, "end_offset") or 0),
                 claims=[item.strip() for item in str(form.get("claims") or "").splitlines()],
             )
         except (MarketIntelligenceError, ValueError) as error:
@@ -617,8 +628,8 @@ def build_market_intelligence_router(templates: Jinja2Templates) -> APIRouter:
                 masked_quote=str(form.get("masked_quote") or ""),
                 theme=str(form.get("theme") or ""),
                 sentiment=str(form.get("sentiment") or ""),
-                start_offset=int(form.get("start_offset") or 0),
-                end_offset=int(form.get("end_offset") or 0),
+                start_offset=int(_form_scalar(form, "start_offset") or 0),
+                end_offset=int(_form_scalar(form, "end_offset") or 0),
             )
         except (MarketIntelligenceError, ValueError) as error:
             return _error_redirect(
@@ -797,7 +808,7 @@ def build_market_intelligence_router(templates: Jinja2Templates) -> APIRouter:
                     db,
                     actor=_actor(db, user),
                     pack_id=pack_id,
-                    row_version=int(form.get("row_version") or 0),
+                    row_version=int(_form_scalar(form, "row_version") or 0),
                     title=str(form.get("title") or ""),
                     summary=str(form.get("summary") or ""),
                     intended_use=str(form.get("intended_use") or ""),
@@ -809,7 +820,7 @@ def build_market_intelligence_router(templates: Jinja2Templates) -> APIRouter:
                     db,
                     actor=_actor(db, user),
                     pack_id=pack_id,
-                    row_version=int(form.get("row_version") or 0),
+                    row_version=int(_form_scalar(form, "row_version") or 0),
                     action=action,
                     reason=str(form.get("reason") or ""),
                 )

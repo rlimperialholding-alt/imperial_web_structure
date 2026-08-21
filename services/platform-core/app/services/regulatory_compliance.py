@@ -250,7 +250,8 @@ def _compare(measured: Any, operator: str, expected: Any) -> bool:
 def _compliance_facts(
     geometry: dict[str, Any], site: dict[str, Any], configuration: dict[str, Any]
 ) -> dict[str, Any]:
-    levels = geometry.get("levels") if isinstance(geometry.get("levels"), list) else []
+    raw_levels = geometry.get("levels")
+    levels: list[Any] = raw_levels if isinstance(raw_levels, list) else []
     ground_area = _polygon_area_m2(levels[0].get("outerBoundary")) if levels else None
     gross_area = Decimal(str(gross_area_m2(geometry))) if levels else None
     heights = [
@@ -259,8 +260,8 @@ def _compliance_facts(
         for level in levels
     ]
     rooms = [room for level in levels for room in (level.get("rooms") or [])]
-    room_areas = [_polygon_area_m2(room.get("polygon")) for room in rooms]
-    room_areas = [area for area in room_areas if area is not None]
+    measured_room_areas = [_polygon_area_m2(room.get("polygon")) for room in rooms]
+    room_areas = [area for area in measured_room_areas if area is not None]
     room_heights = [
         Decimal(str(int(level.get("heightMm") or 0))) / Decimal("1000")
         for level in levels
@@ -268,7 +269,8 @@ def _compliance_facts(
     ]
     roofs = [level.get("roof") for level in levels if isinstance(level.get("roof"), dict)]
     roof_pitches = [Decimal(str(roof["pitchDeg"])) for roof in roofs if "pitchDeg" in roof]
-    verified = site.get("verifiedFacts") if isinstance(site.get("verifiedFacts"), dict) else {}
+    raw_verified = site.get("verifiedFacts")
+    verified: dict[str, Any] = raw_verified if isinstance(raw_verified, dict) else {}
     plot_area = _decimal_fact(verified.get("plotAreaM2"))
     green_area = _decimal_fact(verified.get("greenAreaM2"))
     facts: dict[str, Any] = {
@@ -605,38 +607,39 @@ def _ruleset_binding_state(db: Session, ruleset: RegulatoryRuleSet, at: datetime
         )
     ).all()
     source_state: list[dict[str, Any]] = []
-    for row in sorted(sources, key=lambda item: item.source_snapshot_id):
-        latest_revision = db.scalar(
+    for source_row in sorted(sources, key=lambda item: item.source_snapshot_id):
+        latest_source_revision = db.scalar(
             select(func.max(RegulatorySourceSnapshot.revision)).where(
-                RegulatorySourceSnapshot.source_key == row.source_key
+                RegulatorySourceSnapshot.source_key == source_row.source_key
             )
         )
         source_state.append(
             {
-                "id": row.source_snapshot_id,
-                "key": row.source_key,
-                "revision": row.revision,
-                "latestRevision": latest_revision,
-                "status": row.status,
-                "securityStatus": row.security_status,
-                "effective": _aware(row.effective_from) <= at
-                and (row.effective_to is None or _aware(row.effective_to) >= at),
+                "id": source_row.source_snapshot_id,
+                "key": source_row.source_key,
+                "revision": source_row.revision,
+                "latestRevision": latest_source_revision,
+                "status": source_row.status,
+                "securityStatus": source_row.security_status,
+                "effective": _aware(source_row.effective_from) <= at
+                and (source_row.effective_to is None or _aware(source_row.effective_to) >= at),
             }
         )
     interpretation_state: list[dict[str, Any]] = []
-    for row in sorted(interpretations, key=lambda item: item.interpretation_id):
-        latest_revision = db.scalar(
+    for interpretation_row in sorted(interpretations, key=lambda item: item.interpretation_id):
+        latest_interpretation_revision = db.scalar(
             select(func.max(RegulatoryRuleInterpretation.revision)).where(
-                RegulatoryRuleInterpretation.source_snapshot_id == row.source_snapshot_id
+                RegulatoryRuleInterpretation.source_snapshot_id
+                == interpretation_row.source_snapshot_id
             )
         )
         interpretation_state.append(
             {
-                "id": row.interpretation_id,
-                "sourceId": row.source_snapshot_id,
-                "revision": row.revision,
-                "latestRevision": latest_revision,
-                "status": row.status,
+                "id": interpretation_row.interpretation_id,
+                "sourceId": interpretation_row.source_snapshot_id,
+                "revision": interpretation_row.revision,
+                "latestRevision": latest_interpretation_revision,
+                "status": interpretation_row.status,
             }
         )
     return {

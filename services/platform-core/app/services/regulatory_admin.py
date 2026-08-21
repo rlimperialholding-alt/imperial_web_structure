@@ -807,15 +807,15 @@ def _rules(value: dict[str, Any]) -> dict[str, Any]:
         raise RegulatoryAdminError("rule_key_unknown", f"Ismeretlen szabálymező: {sorted(unknown)}")
     result: dict[str, Any] = {}
     if value.get("maxStoreys") not in {None, ""}:
-        number = int(value["maxStoreys"])
-        if not 1 <= number <= 3:
+        max_storeys = int(value["maxStoreys"])
+        if not 1 <= max_storeys <= 3:
             raise RegulatoryAdminError("max_storeys_invalid", "A szintkorlát 1–3 lehet.")
-        result["maxStoreys"] = number
+        result["maxStoreys"] = max_storeys
     if value.get("maxGrossAreaM2") not in {None, ""}:
-        number = float(value["maxGrossAreaM2"])
-        if not 10 <= number <= 10_000:
+        max_gross_area_m2 = float(value["maxGrossAreaM2"])
+        if not 10 <= max_gross_area_m2 <= 10_000:
             raise RegulatoryAdminError("max_area_invalid", "A területkorlát érvénytelen.")
-        result["maxGrossAreaM2"] = number
+        result["maxGrossAreaM2"] = max_gross_area_m2
     roof_types = value.get("allowedRoofTypes")
     if roof_types:
         valid = {"gable", "hip", "flat", "shed"}

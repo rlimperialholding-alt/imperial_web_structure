@@ -2367,7 +2367,7 @@ def service_resource_list(db: Session, actor: MarketActor, resource: str) -> lis
     """Return one bounded service resource without loading unrelated evidence."""
     scope = (actor.tenant_id, actor.brand_id, actor.market_id)
     if resource == "source-targets":
-        rows = db.scalars(
+        target_rows = db.scalars(
             select(MarketSourceTarget)
             .where(
                 MarketSourceTarget.tenant_id == scope[0],
@@ -2377,9 +2377,9 @@ def service_resource_list(db: Session, actor: MarketActor, resource: str) -> lis
             .order_by(desc(MarketSourceTarget.updated_at))
             .limit(100)
         ).all()
-        return [_target_result(row) for row in rows]
+        return [_target_result(row) for row in target_rows]
     if resource == "capture-jobs":
-        rows = db.scalars(
+        capture_job_rows = db.scalars(
             select(MarketCaptureJob)
             .where(
                 MarketCaptureJob.tenant_id == scope[0],
@@ -2389,9 +2389,9 @@ def service_resource_list(db: Session, actor: MarketActor, resource: str) -> lis
             .order_by(desc(MarketCaptureJob.created_at))
             .limit(100)
         ).all()
-        return [_capture_job_result(row) for row in rows]
+        return [_capture_job_result(row) for row in capture_job_rows]
     if resource == "observations":
-        rows = db.scalars(
+        observation_rows = db.scalars(
             select(MarketObservation)
             .where(
                 MarketObservation.tenant_id == scope[0],
@@ -2401,7 +2401,7 @@ def service_resource_list(db: Session, actor: MarketActor, resource: str) -> lis
             .order_by(desc(MarketObservation.created_at))
             .limit(100)
         ).all()
-        return [_observation_result(row) for row in rows]
+        return [_observation_result(row) for row in observation_rows]
     if resource == "assets":
         return [
             _asset_result(row)
@@ -2433,7 +2433,7 @@ def service_resource_list(db: Session, actor: MarketActor, resource: str) -> lis
             ).all()
         ]
     if resource == "research-packs":
-        rows = db.scalars(
+        pack_rows = db.scalars(
             select(MarketResearchPack)
             .where(
                 MarketResearchPack.tenant_id == scope[0],
@@ -2443,7 +2443,7 @@ def service_resource_list(db: Session, actor: MarketActor, resource: str) -> lis
             .order_by(desc(MarketResearchPack.updated_at))
             .limit(100)
         ).all()
-        return [_pack_result(row) for row in rows]
+        return [_pack_result(row) for row in pack_rows]
     raise ValueError(f"Unsupported Market service resource: {resource}")
 
 
@@ -2556,8 +2556,9 @@ def _validation(
 def _validation_subject_hash(
     db: Session, actor: MarketActor, subject_type: str, subject_id: str
 ) -> str:
+    subject_row: MarketObservation | MarketResearchHypothesis | None
     if subject_type == "OBSERVATION":
-        row = db.scalar(
+        subject_row = db.scalar(
             select(MarketObservation).where(
                 MarketObservation.observation_id == subject_id,
                 MarketObservation.tenant_id == actor.tenant_id,
@@ -2566,7 +2567,7 @@ def _validation_subject_hash(
             )
         )
     elif subject_type == "HYPOTHESIS":
-        row = db.scalar(
+        subject_row = db.scalar(
             select(MarketResearchHypothesis).where(
                 MarketResearchHypothesis.hypothesis_id == subject_id,
                 MarketResearchHypothesis.tenant_id == actor.tenant_id,
@@ -2578,18 +2579,18 @@ def _validation_subject_hash(
         raise MarketIntelligenceError(
             "validation_subject_type_invalid", "Csak megfigyelés vagy hipotézis validálható."
         )
-    if row is None:
+    if subject_row is None:
         raise MarketIntelligenceError(
             "validation_subject_not_found", "A validáció tárgya nem található.", status_code=404
         )
-    return row.canonical_sha256
+    return subject_row.canonical_sha256
 
 
 def _promote_validated_subject(
     db: Session, actor: MarketActor, validation: MarketValidation
 ) -> None:
     if validation.subject_type == "OBSERVATION":
-        row = db.scalar(
+        observation_row = db.scalar(
             select(MarketObservation)
             .where(
                 MarketObservation.observation_id == validation.subject_id,
@@ -2599,13 +2600,16 @@ def _promote_validated_subject(
             )
             .with_for_update()
         )
-        if row is None or row.canonical_sha256 != validation.subject_sha256:
+        if (
+            observation_row is None
+            or observation_row.canonical_sha256 != validation.subject_sha256
+        ):
             raise MarketIntelligenceError(
                 "validation_subject_changed", "A megfigyelés megváltozott.", status_code=409
             )
-        row.evidence_level = "VALIDATED_INTERNAL"
+        observation_row.evidence_level = "VALIDATED_INTERNAL"
     elif validation.subject_type == "HYPOTHESIS":
-        row = db.scalar(
+        hypothesis_row = db.scalar(
             select(MarketResearchHypothesis)
             .where(
                 MarketResearchHypothesis.hypothesis_id == validation.subject_id,
@@ -2615,12 +2619,12 @@ def _promote_validated_subject(
             )
             .with_for_update()
         )
-        if row is None or row.canonical_sha256 != validation.subject_sha256:
+        if hypothesis_row is None or hypothesis_row.canonical_sha256 != validation.subject_sha256:
             raise MarketIntelligenceError(
                 "validation_subject_changed", "A hipotézis megváltozott.", status_code=409
             )
-        row.evidence_level = "VALIDATED_INTERNAL"
-        row.status = "VALIDATED"
+        hypothesis_row.evidence_level = "VALIDATED_INTERNAL"
+        hypothesis_row.status = "VALIDATED"
 
 
 def _invalidate_packs_for_snapshot(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -403,7 +404,7 @@ def _session_payload(
     configuration: dict[str, Any],
     site: dict[str, Any],
     geometry_findings: list[dict[str, str]],
-    history: list[HouseDesignRevision],
+    history: Sequence[HouseDesignRevision],
 ) -> dict[str, Any]:
     return {
         "sessionId": row.session_id,

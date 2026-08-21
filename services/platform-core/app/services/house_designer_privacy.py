@@ -111,29 +111,29 @@ def migrate_house_designer_site_encryption(db: Session) -> dict[str, int]:
     revisions = db.scalars(select(HouseDesignRevision).with_for_update()).all()
     encrypted_count = 0
     by_id: dict[str, dict[str, Any]] = {}
-    for row in revisions:
-        raw = json.loads(row.site_json)
+    for revision_row in revisions:
+        raw = json.loads(revision_row.site_json)
         if not isinstance(raw, dict):
             raise SitePrivacyError("site_json_invalid", "A tárolt telekadat nem JSON objektum.")
         if PRIVATE_SITE_ENVELOPE not in raw and any(field in raw for field in PRIVATE_SITE_FIELDS):
-            raw = protect_site(raw, row.revision_id)
-            row.site_json = _json(raw)
+            raw = protect_site(raw, revision_row.revision_id)
+            revision_row.site_json = _json(raw)
             encrypted_count += 1
-        by_id[row.revision_id] = unprotect_site(raw, row.revision_id)
+        by_id[revision_row.revision_id] = unprotect_site(raw, revision_row.revision_id)
 
     tokenized_count = 0
     verifications = db.scalars(select(HouseDesignSiteVerification).with_for_update()).all()
-    for row in verifications:
-        if row.parcel_number.startswith("h1:"):
+    for verification_row in verifications:
+        if verification_row.parcel_number.startswith("h1:"):
             continue
-        site = by_id.get(row.verified_revision_id)
+        site = by_id.get(verification_row.verified_revision_id)
         if site is None or not str(site.get("parcelNumber") or "").strip():
             raise SitePrivacyError(
                 "site_verification_cutover_failed",
                 "Az igazolási rekord HRSZ-azonosítója nem állítható elő.",
             )
-        row.parcel_number = verification_identity_token(
-            row.municipality_code, str(site["parcelNumber"])
+        verification_row.parcel_number = verification_identity_token(
+            verification_row.municipality_code, str(site["parcelNumber"])
         )
         tokenized_count += 1
 

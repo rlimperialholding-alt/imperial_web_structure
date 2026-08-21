@@ -822,7 +822,7 @@ def _stair_geometry_valid(stair: dict[str, Any]) -> bool:
 
 
 def gross_area_m2(geometry: dict[str, Any]) -> float:
-    area_mm2 = 0
+    area_mm2 = 0.0
     for level in geometry.get("levels", []):
         ring = _polygon_ring(level.get("outerBoundary"))
         if ring:

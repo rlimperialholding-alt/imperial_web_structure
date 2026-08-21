@@ -7,6 +7,7 @@ import socket
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -679,7 +680,7 @@ def auto_lock_geometry(db: Session, job_id: str, actor: str) -> HouseVisionGeome
         "nyílászáró-keret és ajtódizájn, terasz nem szerkezeti kialakítása, "
         "térkő, kert, növényzet, égbolt és fény",
         "forrásasset-készlet: "
-        + ", ".join(item["source_visual_id"] for item in evidence),
+        + ", ".join(str(item["source_visual_id"]) for item in evidence),
     ]
     payload = {
         "job_id": job_id,
@@ -852,7 +853,7 @@ def run_qa(db: Session, job_id: str, actor: str) -> HouseVisionQAReport:
         ):
             # A verified baseline is byte-identical to the accepted floorplan source.
             # Its fidelity is therefore exact even if a legacy row predates the metric.
-            latest_output.floorplan_fidelity = 1.0
+            latest_output.floorplan_fidelity = Decimal("1")
         if source.asset_type == "FLOORPLAN" and (
             latest_output.floorplan_fidelity or 0
         ) < FLOORPLAN_THRESHOLD:
@@ -1176,14 +1177,16 @@ def job_detail(db: Session, job_id: str) -> dict:
         }
         for report in qa_reports
     ]
-    comparison_rows = [
-        {
-            "source": source,
-            "revisions": output_revisions.get(source.source_visual_id, []),
-            "latest": (output_revisions.get(source.source_visual_id) or [None])[0],
-        }
-        for source in sources
-    ]
+    comparison_rows: list[dict[str, Any]] = []
+    for source in sources:
+        source_revisions = output_revisions.get(source.source_visual_id, [])
+        comparison_rows.append(
+            {
+                "source": source,
+                "revisions": source_revisions,
+                "latest": source_revisions[0] if source_revisions else None,
+            }
+        )
     return {
         "job": job,
         "result_count": job.output_count,

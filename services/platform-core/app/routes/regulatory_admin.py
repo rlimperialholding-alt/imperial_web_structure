@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from starlette.datastructures import FormData, UploadFile
 
 from app.database import get_db
 from app.models import User
@@ -68,15 +69,26 @@ def _actor(user: User) -> RegulatoryActor:
     )
 
 
-def _day(value: Any, *, optional: bool = False) -> datetime | None:
+def _day(value: Any) -> datetime:
     raw = str(value or "").strip()
-    if not raw and optional:
-        return None
     try:
         parsed = date.fromisoformat(raw)
     except ValueError as error:
         raise RegulatoryAdminError("date_invalid", "A hatály dátuma hibás.") from error
     return datetime.combine(parsed, time.min, tzinfo=ZoneInfo("Europe/Budapest")).astimezone(UTC)
+
+
+def _optional_day(value: Any) -> datetime | None:
+    if not str(value or "").strip():
+        return None
+    return _day(value)
+
+
+def _form_scalar(form: FormData, key: str) -> str | None:
+    value = form.get(key)
+    if isinstance(value, UploadFile):
+        raise TypeError("scalar form field expected, received a file upload")
+    return value
 
 
 def _redirect(error: RegulatoryAdminError) -> RedirectResponse:
@@ -116,7 +128,7 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
                 scope_key=str(form.get("scope_key") or ""),
                 source_url=str(form.get("source_url") or ""),
                 effective_from=_day(form.get("effective_from")),
-                effective_to=_day(form.get("effective_to"), optional=True),
+                effective_to=_optional_day(form.get("effective_to")),
                 content_sha256=str(form.get("content_sha256") or ""),
                 normalized_text_sha256=str(form.get("normalized_text_sha256") or ""),
                 storage_ref=str(form.get("storage_ref") or ""),
@@ -140,7 +152,7 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
                 db,
                 actor=_actor(user),
                 source_snapshot_id=source_id,
-                row_version=int(form.get("row_version") or 0),
+                row_version=int(_form_scalar(form, "row_version") or 0),
             )
         except RegulatoryAdminError as error:
             return _redirect(error)
@@ -159,7 +171,7 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
                 db,
                 actor=_actor(user),
                 source_snapshot_id=source_id,
-                row_version=int(form.get("row_version") or 0),
+                row_version=int(_form_scalar(form, "row_version") or 0),
             )
         except RegulatoryAdminError as error:
             return _redirect(error)
@@ -229,7 +241,7 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
                 db,
                 actor=_actor(user),
                 interpretation_id=interpretation_id,
-                row_version=int(form.get("row_version") or 0),
+                row_version=int(_form_scalar(form, "row_version") or 0),
                 action=action,
             )
         except RegulatoryAdminError as error:
@@ -251,7 +263,7 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
                 national_basis=str(form.get("national_basis") or "TÉKA"),
                 local_plan_basis=str(form.get("local_plan_basis") or ""),
                 effective_from=_day(form.get("effective_from")),
-                effective_to=_day(form.get("effective_to"), optional=True),
+                effective_to=_optional_day(form.get("effective_to")),
                 interpretation_ids=[str(item) for item in form.getlist("interpretation_ids")],
             )
         except (RegulatoryAdminError, TypeError, ValueError) as error:
@@ -277,7 +289,7 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
                 db,
                 actor=_actor(user),
                 ruleset_id=ruleset_id,
-                row_version=int(form.get("row_version") or 0),
+                row_version=int(_form_scalar(form, "row_version") or 0),
                 action=action,
             )
         except RegulatoryAdminError as error:

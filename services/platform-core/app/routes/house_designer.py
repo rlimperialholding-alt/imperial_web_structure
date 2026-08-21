@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.datastructures import FormData, UploadFile
 
 from app.config import settings
 from app.database import get_db
@@ -134,6 +135,13 @@ def _require_csrf(request: Request, form: Any) -> None:
     origin = str(request.headers.get("origin") or "")
     if origin and not origin.rstrip("/").endswith(f"//{request.url.netloc}"):
         raise HTTPException(status_code=403, detail="Eltérő Origin fejléc.")
+
+
+def _form_scalar(form: FormData, key: str) -> str | None:
+    value = form.get(key)
+    if isinstance(value, UploadFile):
+        raise TypeError("scalar form field expected, received a file upload")
+    return value
 
 
 def _require_json_write(request: Request) -> None:
@@ -472,8 +480,8 @@ def build_house_designer_router(templates: Jinja2Templates) -> APIRouter:
                 command_id=str(form.get("command_id") or ""),
                 origin=str(form.get("origin") or "blank"),
                 template_plan_id=str(form.get("template_plan_id") or "") or None,
-                width_mm=int(form.get("width_mm") or 10_000),
-                depth_mm=int(form.get("depth_mm") or 8_000),
+                width_mm=int(_form_scalar(form, "width_mm") or 10_000),
+                depth_mm=int(_form_scalar(form, "depth_mm") or 8_000),
             )
         except (HouseDesignerError, TypeError, ValueError) as error:
             code = getattr(error, "code", "invalid_input")
@@ -1076,7 +1084,7 @@ def build_house_designer_router(templates: Jinja2Templates) -> APIRouter:
                 actor_role=user.role,
                 action=str(form.get("action") or ""),
                 note=str(form.get("note") or ""),
-                expected_row_version=int(form.get("row_version") or 0),
+                expected_row_version=int(_form_scalar(form, "row_version") or 0),
                 idempotency_key=str(form.get("command_id") or ""),
                 booking_id=str(form.get("booking_id") or "") or None,
             )
@@ -1107,7 +1115,7 @@ def build_house_designer_router(templates: Jinja2Templates) -> APIRouter:
                 actor_role=user.role,
                 action="cancel",
                 note=str(form.get("note") or ""),
-                expected_row_version=int(form.get("row_version") or 0),
+                expected_row_version=int(_form_scalar(form, "row_version") or 0),
                 idempotency_key=str(form.get("command_id") or ""),
             )
         except (HouseDesignerError, TypeError, ValueError) as error:
@@ -1132,8 +1140,8 @@ def build_house_designer_router(templates: Jinja2Templates) -> APIRouter:
                 command_id=str(form.get("command_id") or ""),
                 origin=str(form.get("origin") or "blank"),
                 template_plan_id=str(form.get("template_plan_id") or "") or None,
-                width_mm=int(form.get("width_mm") or 10_000),
-                depth_mm=int(form.get("depth_mm") or 8_000),
+                width_mm=int(_form_scalar(form, "width_mm") or 10_000),
+                depth_mm=int(_form_scalar(form, "depth_mm") or 8_000),
             )
         except HouseDesignerError as error:
             return RedirectResponse(f"/house-designer?error={error.code}", status_code=303)

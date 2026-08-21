@@ -770,9 +770,10 @@ def _safe_fetch_html(url: str, *, expected_project_code: str | None) -> tuple[st
         if expected_project_code and project_code != expected_project_code:
             raise TypehouseError("SOURCE_IDENTITY_FAIL", "A redirect projektkódot változtatott.")
         parsed = urlsplit(canonical)
-        allowed = _resolved_public_addresses(parsed.hostname or "")
+        hostname = parsed.hostname or ""
+        allowed = _resolved_public_addresses(hostname)
         connection = http.client.HTTPSConnection(
-            parsed.hostname,
+            hostname,
             port=443,
             timeout=30,
             context=ssl.create_default_context(),
@@ -1074,7 +1075,7 @@ def process_job(db: Session, job_id: str, worker_id: str, fencing_token: int) ->
         ]
         _run_legacy_visual_pipeline(db, job, f"system:typehouse:{job.job_id}")
         if missing:
-            job.last_error_message += (
+            job.last_error_message = (job.last_error_message or "") + (
                 " Hiányzó, ember által ellenőrizendő forrásadatok: " + ", ".join(missing) + "."
             )
         job.finished_at = utcnow()
@@ -1292,7 +1293,9 @@ def workspace(db: Session) -> dict:
             select(HouseVisionFactoryJob.status, func.count()).group_by(
                 HouseVisionFactoryJob.status
             )
-        ).all()
+        )
+        .tuples()
+        .all()
     )
     return {
         "factory_jobs": jobs,

@@ -73,7 +73,11 @@ def _decode_restyle_provider_result(
     qa = result.get("qa")
     restyle_qa = result.get("restyle_qa")
     proof = result.get("geometry_proof")
-    if not all(isinstance(item, dict) for item in (qa, restyle_qa, proof)):
+    if (
+        not isinstance(qa, dict)
+        or not isinstance(restyle_qa, dict)
+        or not isinstance(proof, dict)
+    ):
         raise ValueError("Az Image Factory bizonyítékcsomagja hiányos.")
     required_qa = {
         "passed",
@@ -119,7 +123,12 @@ def _decode_restyle_provider_result(
     output_base64 = result.get("output_base64")
     mask_base64 = result.get("protected_mask_base64")
     output_sha256 = result.get("output_sha256")
-    if not all(isinstance(item, str) and item for item in (output_base64, mask_base64)):
+    if (
+        not isinstance(output_base64, str)
+        or not output_base64
+        or not isinstance(mask_base64, str)
+        or not mask_base64
+    ):
         raise ValueError("Az Image Factory kép- vagy maszkadata hiányzik.")
     if not isinstance(output_sha256, str) or len(output_sha256) != 64:
         raise ValueError("Az Image Factory képlenyomata érvénytelen.")
@@ -363,7 +372,7 @@ def verify_geometry_proof(
                 or box["y"] + box["height"] > image.height
             ):
                 return False
-            protected = image.crop(
+            protected_region = image.crop(
                 (
                     box["x"],
                     box["y"],
@@ -371,7 +380,7 @@ def verify_geometry_proof(
                     box["y"] + box["height"],
                 )
             )
-        return hashlib.sha256(protected.tobytes()).hexdigest() == proof[
+        return hashlib.sha256(protected_region.tobytes()).hexdigest() == proof[
             "protected_region_sha256"
         ]
     except (KeyError, StopIteration, TypeError, ValueError, OSError, json.JSONDecodeError):

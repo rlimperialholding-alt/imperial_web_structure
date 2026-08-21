@@ -1060,7 +1060,11 @@ def _session(
         and session.brand_id in actor.brand_ids
         and actor.can_read(session.owner_subject_id, session.project_id)
     )
-    if not readable or (owner_only and session.owner_subject_id != actor.subject_id):
+    if (
+        session is None
+        or not readable
+        or (owner_only and session.owner_subject_id != actor.subject_id)
+    ):
         raise HouseDesignerError("session_not_found", "A házterv nem található.", status_code=404)
     return session
 

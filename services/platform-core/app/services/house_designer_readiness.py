@@ -105,24 +105,19 @@ def house_designer_release_readiness(
         )
     ).all()
     adapter_by_type = {row.adapter_type: row for row in adapter_rows}
-    adapter_details = {
-        adapter_type: {
-            "active": adapter_type in adapter_by_type,
+    adapter_details: dict[str, dict[str, Any]] = {}
+    for adapter_type in REQUIRED_ADAPTERS:
+        adapter_row = adapter_by_type.get(adapter_type)
+        adapter_details[adapter_type] = {
+            "active": adapter_row is not None,
             "healthy": bool(
-                adapter_by_type.get(adapter_type)
-                and adapter_by_type[adapter_type].health_status == "HEALTHY"
-                and adapter_by_type[adapter_type].last_health_at is not None
-                and _aware(adapter_by_type[adapter_type].last_health_at)
-                >= now - ADAPTER_HEALTH_MAX_AGE
+                adapter_row is not None
+                and adapter_row.health_status == "HEALTHY"
+                and adapter_row.last_health_at is not None
+                and _aware(adapter_row.last_health_at) >= now - ADAPTER_HEALTH_MAX_AGE
             ),
-            "adapterId": (
-                adapter_by_type[adapter_type].adapter_id
-                if adapter_type in adapter_by_type
-                else None
-            ),
+            "adapterId": adapter_row.adapter_id if adapter_row is not None else None,
         }
-        for adapter_type in REQUIRED_ADAPTERS
-    }
     module_rows = db.scalars(
         select(ModuleRegistry).where(ModuleRegistry.module_key.in_(REQUIRED_INTEGRATIONS))
     ).all()

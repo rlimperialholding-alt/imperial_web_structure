@@ -53,6 +53,11 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _required_section(value: Any) -> dict[str, Any] | None:
+    """Return the registry section when it is a non-empty object, otherwise ``None``."""
+    return value if isinstance(value, dict) and value else None
+
+
 def _managed_secret(reference: str) -> Path:
     root = Path(settings().secret_dir).resolve()
     candidate = (root / reference).resolve()
@@ -114,19 +119,26 @@ class GrowthRegistry:
     def __init__(self, raw: dict[str, Any]) -> None:
         self.raw = raw
         self.version = str(raw.get("version") or "")
-        self.motors = raw.get("motors")
-        self.brands = raw.get("brands")
-        self.sources = raw.get("sources")
-        self.routing = raw.get("routing")
+        motors = _required_section(raw.get("motors"))
+        brands = _required_section(raw.get("brands"))
+        sources = _required_section(raw.get("sources"))
+        routing = _required_section(raw.get("routing"))
         if str(raw.get("source")) in {"example", "sample", "demo"}:
             raise GrowthRegistryError("Example registry cannot be used at runtime")
-        if not self.version or not all(
-            isinstance(value, dict) and value
-            for value in (self.motors, self.brands, self.sources, self.routing)
+        if (
+            not self.version
+            or motors is None
+            or brands is None
+            or sources is None
+            or routing is None
         ):
             raise GrowthRegistryError(
                 "Registry version, motors, brands, sources and routing are required"
             )
+        self.motors = motors
+        self.brands = brands
+        self.sources = sources
+        self.routing = routing
         self._validate()
 
     @classmethod
@@ -159,7 +171,7 @@ class GrowthRegistry:
             raise GrowthRegistryError(
                 "Construction motor daily raw review target must be at least 300"
             )
-        buckets = {"construction": set(), "distress": set(), "ivs": set()}
+        buckets: dict[str, set[str]] = {"construction": set(), "distress": set(), "ivs": set()}
         for source_id, source in self.sources.items():
             if not isinstance(source, dict):
                 raise GrowthRegistryError(f"Invalid source binding: {source_id}")

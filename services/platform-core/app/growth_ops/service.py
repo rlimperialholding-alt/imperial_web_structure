@@ -311,7 +311,7 @@ def ingest_signal(
     if existing:
         existing.last_seen_at = utcnow()
         db.commit()
-        outreach = db.scalar(
+        existing_outreach = db.scalar(
             select(OutreachMessage).where(
                 OutreachMessage.signal_id == existing.signal_id,
                 OutreachMessage.sequence_step == 0,
@@ -323,7 +323,7 @@ def ingest_signal(
             brand_id=existing.brand_id,
             score=existing.score,
             idempotent=True,
-            outreach_id=outreach.outreach_id if outreach else None,
+            outreach_id=existing_outreach.outreach_id if existing_outreach else None,
             reasons=json.loads(existing.rejection_reasons_json or "[]"),
         )
     score = _score(data)
@@ -852,14 +852,17 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
         if database_ok
         else 0
     )
-    ready = database_ok and (
-        not required
-        or (
-            registry_state.get("ready")
-            and senders_ok
-            and sources_ok
-            and heartbeat_ok
-            and writes_unlocked()
+    ready = bool(
+        database_ok
+        and (
+            not required
+            or (
+                registry_state.get("ready")
+                and senders_ok
+                and sources_ok
+                and heartbeat_ok
+                and writes_unlocked()
+            )
         )
     )
     return ready, {

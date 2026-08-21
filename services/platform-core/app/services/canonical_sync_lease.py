@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from functools import wraps
 from typing import Any, TypeVar
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import CursorResult, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -64,7 +64,7 @@ class LeaseHandle:
                 )
             )
             lease_db.commit()
-        if result.rowcount != 1:
+        if not isinstance(result, CursorResult) or result.rowcount != 1:
             raise CanonicalSyncLeaseLost(self.lease_key)
         self.heartbeat_at = now
 
@@ -86,7 +86,7 @@ class LeaseHandle:
                 )
             )
             lease_db.commit()
-        return result.rowcount == 1
+        return isinstance(result, CursorResult) and result.rowcount == 1
 
 
 _current_lease: ContextVar[LeaseHandle | None] = ContextVar(
@@ -142,7 +142,7 @@ def acquire_canonical_sync_lease(lease_key: str) -> LeaseHandle:
             )
         )
         lease_db.commit()
-        acquired = result.rowcount == 1
+        acquired = isinstance(result, CursorResult) and result.rowcount == 1
         if not acquired:
             lease_db.execute(
                 update(CanonicalSyncLease)

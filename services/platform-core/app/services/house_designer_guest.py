@@ -188,6 +188,10 @@ def resolve_guest_actor(
             HouseDesignGuestClaim.guest_session_hash == _token_hash(guest_session_token)
         )
     )
+    if claim is None:
+        raise HouseDesignerError(
+            "guest_session_not_found", "A vendégterv nem található.", status_code=404
+        )
     session = _valid_guest_session(db, claim, expected_session_id=expected_session_id)
     return ActorScope(
         subject_id=f"guest:{claim.claim_id}",
