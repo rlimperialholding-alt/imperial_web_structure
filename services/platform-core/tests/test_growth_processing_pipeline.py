@@ -161,13 +161,13 @@ def test_anonymous_project_and_inferred_question_are_retained_as_internal(db, mo
         ],
     }
     monkeypatch.setattr(processing, "settings", lambda: _settings())
-    monkeypatch.setattr(
-        processing,
-        "complete_json",
-        lambda *args, **kwargs: SimpleNamespace(
-            request_id="DS-PROJECT", content=json.dumps(response)
-        ),
-    )
+    captured = {}
+
+    def fake_complete(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(request_id="DS-PROJECT", content=json.dumps(response))
+
+    monkeypatch.setattr(processing, "complete_json", fake_complete)
     route = _route()
     route.route_key = "project-route"
     route.route_id = "PROJECT-ROUTE"
@@ -187,6 +187,8 @@ def test_anonymous_project_and_inferred_question_are_retained_as_internal(db, mo
     assert signal.company_name is None
     assert signal.status == "blocked"
     assert topic.classification == "inferred_from_evidence"
+    assert "question_kind=inferred_from_evidence" in captured["system_prompt"]
+    assert "kikövetkeztetett kérdést ne adj vissza" not in captured["system_prompt"]
 
 
 def test_content_factory_quarantines_all_nineteen_brands(db, monkeypatch):
