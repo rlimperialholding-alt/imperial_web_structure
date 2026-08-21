@@ -255,3 +255,26 @@ def test_internal_handoff_is_fixed_recipient_and_idempotent(db, monkeypatch):
     assert row.recipient_email == IORA_EXECUTIVE_EMAIL
     assert "IORA" in row.body_text
     assert "nem indult közvetlen megkeresés" in row.body_text
+
+
+def test_source_extraction_retries_one_transient_model_failure(db, monkeypatch):
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    calls = 0
+
+    def flaky_complete(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise processing.GrowthRegistryError("transient invalid model JSON")
+        return SimpleNamespace(request_id="DS-RETRY", content='{"leads":[],"questions":[]}')
+
+    monkeypatch.setattr(processing, "complete_json", flaky_complete)
+    route = _route()
+    attempt = _attempt()
+
+    result = processing.process_source_attempt(
+        db, route=route, attempt=attempt, text="Érvényes forrásszöveg egy projektről."
+    )
+
+    assert calls == 2
+    assert result == {"status": "completed", "leads": 0, "questions": 0}
