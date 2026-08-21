@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.connectors.safe_http import AddressResolver, SafeHttpClient, validate_url_path
 
 
 class IngatlanAPIError(RuntimeError):
@@ -21,13 +22,26 @@ class IngatlanConnector:
     The product/account must be enabled by ingatlan.com before production use.
     """
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        transport: httpx.BaseTransport | None = None,
+        resolver: AddressResolver | None = None,
+    ):
         self.base_url = settings.ingatlan_base_url.rstrip("/")
         self.username = settings.ingatlan_username
         self.password = settings.ingatlan_password.get_secret_value()
         self._token: str | None = None
         self._token_expires_at = 0.0
-        self.client = httpx.Client(timeout=60, headers={"Accept": "application/json"})
+        # A transport/resolver csak szintetikus, hálózatmentes tesztekben cserélhető.
+        self.client = SafeHttpClient(
+            self.base_url,
+            timeout=60,
+            default_headers={"Accept": "application/json"},
+            transport=transport,
+            resolver=resolver,
+        )
 
     def close(self) -> None:
         self.client.close()
@@ -56,7 +70,7 @@ class IngatlanConnector:
         if not self.username or not self.password:
             raise IngatlanAPIError("INGATLAN_USERNAME and INGATLAN_PASSWORD are required")
         response = self.client.post(
-            f"{self.base_url}/auth/login",
+            "/auth/login",
             json={"username": self.username, "password": self.password},
         )
         data = self._raise_for_jsend(response)
@@ -72,19 +86,14 @@ class IngatlanConnector:
         return {"Authorization": f"Bearer {self.login()}", "Content-Type": "application/json"}
 
     def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
-        response = self.client.request(
-            method,
-            f"{self.base_url}/{path.lstrip('/')}",
-            headers=self._headers(),
-            **kwargs,
-        )
+        # Az útvonal felhasználói/provider-vezérelt része csak biztonságos
+        # path-karakterekből állhat; a traversal kísérlet itt fail-closed leáll.
+        safe_path = validate_url_path(path)
+        response = self.client.request(method, safe_path, headers=self._headers(), **kwargs)
         if response.status_code == 401:
             self.login(force=True)
             response = self.client.request(
-                method,
-                f"{self.base_url}/{path.lstrip('/')}",
-                headers=self._headers(),
-                **kwargs,
+                method, safe_path, headers=self._headers(), **kwargs
             )
         return self._raise_for_jsend(response)
 

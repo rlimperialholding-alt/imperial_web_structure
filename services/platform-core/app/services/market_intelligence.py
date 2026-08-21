@@ -939,6 +939,17 @@ def process_public_capture_jobs(
     return stats
 
 
+def _verified_tls_context() -> ssl.SSLContext:
+    """Hitelesített TLS-kontextus, TLS 1.2 vagy újabb minimummal.
+
+    A publikus provider-fetch útvonalon kizárólag igazolt, modern TLS
+    használható; a TLS 1.0/1.1 és az SSL minden verziója tiltott.
+    """
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+
 def fetch_public_source(
     target: MarketSourceTarget,
     requested_url: str,
@@ -957,7 +968,7 @@ def fetch_public_source(
         connection: http.client.HTTPConnection
         raw_socket = socket.create_connection((str(source_ip), port), timeout=timeout_seconds)
         if parsed.scheme == "https":
-            context = ssl.create_default_context()
+            context = _verified_tls_context()
             tls_socket = context.wrap_socket(raw_socket, server_hostname=host)
             connection = http.client.HTTPSConnection(
                 host, port=port, timeout=timeout_seconds, context=context

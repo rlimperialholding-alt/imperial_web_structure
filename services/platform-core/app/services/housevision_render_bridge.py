@@ -6,6 +6,7 @@ import hashlib
 import http.client
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from ..models import (
     HouseVisionPackage,
     HouseVisionSourceAsset,
 )
+from .fs_guard import contained_path
 
 
 LEGACY_SAFE_RENDER_MODE = "GEOMETRY_SAFE_COMPOSITE_V1"
@@ -145,7 +147,12 @@ def _decode_restyle_provider_result(
 
 
 def _source_path(job_id: str, content_sha256: str) -> Path:
-    root = Path(settings.typehouse_factory_asset_root) / "legacy" / job_id / "source"
+    if re.fullmatch(r"[0-9a-f]{64}", content_sha256) is None:
+        raise ValueError("Érvénytelen forrás-képlenyomat.")
+    # A job_id felhasználói paraméter: csak kanonikus feloldás és konténment-
+    # ellenőrzés után érheti a fájlrendszert (traversal/symlink fail-closed).
+    root = contained_path(Path(settings.typehouse_factory_asset_root) / "legacy", job_id)
+    root = root / "source"
     matches = list(root.glob(f"*-{content_sha256[:16]}.*"))
     if len(matches) != 1:
         raise ValueError(f"A forrásfájl nem található egyértelműen: {content_sha256}")
@@ -454,7 +461,10 @@ def _generate_legacy_source_derivatives(db: Session, job_id: str, actor: str) ->
     ):
         raise ValueError("Legalább egy látványterv és egy alaprajz szükséges.")
 
-    output_dir = Path(settings.typehouse_factory_asset_root) / "legacy" / job_id / "geometry-safe"
+    output_dir = (
+        contained_path(Path(settings.typehouse_factory_asset_root) / "legacy", job_id)
+        / "geometry-safe"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "geometry-proof.json"
     previous_proofs: dict[str, dict] = {}
@@ -607,10 +617,8 @@ def generate_typehouse_renders(db: Session, job_id: str, actor: str) -> dict:
         raise ValueError("Legalább egy látványterv és egy alaprajz szükséges.")
 
     output_dir = (
-        Path(settings.typehouse_factory_asset_root)
-        / "legacy"
-        / job_id
-            / "restyle-v22"
+        contained_path(Path(settings.typehouse_factory_asset_root) / "legacy", job_id)
+        / "restyle-v22"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "geometry-proof.json"
@@ -836,7 +844,10 @@ def create_source_preserved_baseline(db: Session, job_id: str, actor: str) -> di
         )
         .order_by(HouseVisionSourceAsset.sequence)
     ).all()
-    output_dir = Path(settings.typehouse_factory_asset_root) / "legacy" / job_id / "baseline"
+    output_dir = (
+        contained_path(Path(settings.typehouse_factory_asset_root) / "legacy", job_id)
+        / "baseline"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     created = []
     provider_job_id = f"SOURCE_PRESERVED_BASELINE:{lock.content_sha256}"

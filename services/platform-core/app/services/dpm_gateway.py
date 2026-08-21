@@ -8,13 +8,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+import httpx
 import jwt
 
 from ..config import Settings, settings
+from .safe_http import AddressResolver, SafeHttpClient, SafeHttpError
 
 ADMIN_ROLES = frozenset({"owner", "managing-director", "platform-admin"})
 ALL_SCOPES = frozenset(
@@ -45,8 +44,19 @@ class DpmUserContext:
 
 
 class DpmGateway:
-    def __init__(self, app_settings: Settings = settings):
+    def __init__(
+        self,
+        app_settings: Settings = settings,
+        *,
+        transport: httpx.BaseTransport | None = None,
+        resolver: AddressResolver | None = None,
+        timeout: float = 8.0,
+    ):
         self.settings = app_settings
+        # A transport/resolver csak szintetikus, hálózatmentes tesztekben cserélhető.
+        self._transport = transport
+        self._resolver = resolver
+        self._timeout = timeout
 
     @property
     def configured(self) -> bool:
@@ -55,6 +65,14 @@ class DpmGateway:
             or self.settings.dpm_auth_hs256_secret
         )
         return bool(self.settings.dpm_api_base_url and token_source)
+
+    def _client(self, base_url: str) -> SafeHttpClient:
+        return SafeHttpClient(
+            base_url.rstrip("/"),
+            transport=self._transport,
+            resolver=self._resolver,
+            timeout=self._timeout,
+        )
 
     def _token(self, identity: DpmIdentity) -> str:
         if not self.configured:
@@ -78,28 +96,38 @@ class DpmGateway:
         )
 
     def _exchange_itep_token(self, identity: DpmIdentity) -> str:
-        request = Request(
-            f"{self.settings.itep_api_base_url.rstrip('/')}"
-            "/v1/auth/service-tokens/digital-project-managers",
-            data=b"{}",
-            headers={
-                **self._itep_identity_headers(identity),
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
         try:
-            with urlopen(request, timeout=8) as response:  # noqa: S310
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError as error:
+            client = self._client(self.settings.itep_api_base_url)
+        except SafeHttpError as error:
             raise DpmGatewayError(
-                error.code, "Az ITEP nem adott ki DPM hozzáférési tokent."
+                502, "Az ITEP DPM tokenváltás célja nem biztonságos."
             ) from error
-        except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        with client:
+            try:
+                response = client.post(
+                    "/v1/auth/service-tokens/digital-project-managers",
+                    json={},
+                    headers={
+                        **self._itep_identity_headers(identity),
+                        "Accept": "application/json",
+                    },
+                )
+            except SafeHttpError as error:
+                raise DpmGatewayError(
+                    502, "Az ITEP DPM tokenváltás célja nem biztonságos."
+                ) from error
+            except httpx.HTTPError as error:
+                raise DpmGatewayError(
+                    503, "Az ITEP DPM tokenváltás nem érhető el."
+                ) from error
+        if response.status_code != 200:
             raise DpmGatewayError(
-                503, "Az ITEP DPM tokenváltás nem érhető el."
-            ) from error
+                response.status_code, "Az ITEP nem adott ki DPM hozzáférési tokent."
+            )
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise DpmGatewayError(502, "Az ITEP hibás DPM tokenválaszt adott.") from error
         token = payload.get("accessToken") if isinstance(payload, dict) else None
         if not isinstance(token, str) or token.count(".") != 2:
             raise DpmGatewayError(502, "Az ITEP hibás DPM tokenválaszt adott.")
@@ -148,42 +176,52 @@ class DpmGateway:
         query: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
     ) -> Any:
-        query_string = urlencode(
-            {key: value for key, value in (query or {}).items() if value is not None}
-        )
-        url = f"{self.settings.dpm_api_base_url}{path}"
-        if query_string:
-            url = f"{url}?{query_string}"
-        body = None
+        # Az útvonal felhasználói-vezérelt része csak biztonságos
+        # path-karakterekből állhat; traversal kísérlet fail-closed leáll.
         headers = {
             "Authorization": f"Bearer {self._token(identity)}",
             "Accept": "application/json",
         }
+        kwargs: dict[str, Any] = {"headers": headers}
+        if query:
+            kwargs["params"] = {
+                key: value for key, value in query.items() if value is not None
+            }
         if payload is not None:
-            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        request = Request(url, data=body, headers=headers, method=method)
+            kwargs["json"] = payload
         try:
-            with urlopen(request, timeout=8) as response:  # noqa: S310
-                raw = response.read()
-        except HTTPError as error:
-            detail = f"DPM HTTP {error.code}"
-            try:
-                parsed = json.loads(error.read().decode("utf-8"))
-                detail = str(parsed.get("detail") or detail)
-            except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-                pass
-            raise DpmGatewayError(error.code, detail) from error
-        except (URLError, TimeoutError) as error:
+            client = self._client(self.settings.dpm_api_base_url)
+        except SafeHttpError as error:
             raise DpmGatewayError(
-                503, "A Digital Project Managers szolgáltatás nem érhető el."
+                502, "A Digital Project Managers cél nem biztonságos."
             ) from error
-        if not raw:
+        with client:
+            try:
+                response = client.request(method, path, **kwargs)
+            except SafeHttpError as error:
+                raise DpmGatewayError(
+                    502, "A Digital Project Managers cél nem biztonságos."
+                ) from error
+            except httpx.HTTPError as error:
+                raise DpmGatewayError(
+                    503, "A Digital Project Managers szolgáltatás nem érhető el."
+                ) from error
+        if response.status_code >= 400:
+            detail = f"DPM HTTP {response.status_code}"
+            try:
+                parsed = response.json()
+                detail = str(parsed.get("detail") or detail)
+            except (ValueError, AttributeError):
+                pass
+            raise DpmGatewayError(response.status_code, detail)
+        if not response.content:
             return None
         try:
-            return json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise DpmGatewayError(502, "A Digital Project Managers hibás választ adott.") from error
+            return response.json()
+        except ValueError as error:
+            raise DpmGatewayError(
+                502, "A Digital Project Managers hibás választ adott."
+            ) from error
 
     @staticmethod
     def admin_identity(subject: str) -> DpmIdentity:

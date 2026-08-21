@@ -24,6 +24,7 @@ from ..models import (
     TaskRecord,
 )
 from ..schemas import EventIn
+from .email_guard import is_valid_email
 from .integration import ingest_event
 from .tender_evidence_security import (
     TenderMalwareDetected,
@@ -406,7 +407,9 @@ def transition_care_case(
     if internal and status in {"triaged", "in_progress"} and not assigned_to.strip() and not row.assigned_to:
         raise ValueError("Triázshoz és feldolgozáshoz felelős kötelező.")
     assignee = assigned_to.strip().lower()
-    if assignee and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", assignee):
+    # Lineáris, korlátos validáció (ReDoS-mentes): a cím szerkezetét
+    # karakterenként ellenőrizzük, visszalépő reguláris kifejezés nélkül.
+    if assignee and not is_valid_email(assignee):
         raise ValueError("A felelős e-mail címe érvénytelen.")
     if status == "resolved" and len(resolution_summary.strip()) < 10:
         raise ValueError("Megoldásra állításhoz részletes megoldási összefoglaló kötelező.")

@@ -34,6 +34,7 @@ from ..schemas import (
     HouseVisionRightsPolicyIn,
     HouseVisionSourceAssetIn,
 )
+from .fs_guard import contained_path, require_contained
 from .housevision_source_ingest import SourceIngestError, ingest_page_assets
 
 ALLOWED_RIGHTS = {"owned", "licensed", "partner_permission", "open_license"}
@@ -471,7 +472,9 @@ def auto_ingest_source_assets(db: Session, job_id: str, actor: str) -> dict:
     remaining = max(0, policy.max_assets_per_page - len(existing))
     if remaining == 0:
         return {"added_count": 0, "total_count": len(existing), "status": job.status}
-    ingest_dir = Path(settings.typehouse_factory_asset_root) / "legacy" / job_id
+    # A job_id felhasználói paraméter: csak kanonikus feloldás és konténment-
+    # ellenőrzés után kerülhet a fájlrendszerre (traversal/symlink fail-closed).
+    ingest_dir = contained_path(Path(settings.typehouse_factory_asset_root) / "legacy", job_id)
     preexisting_paths = (
         {path.resolve() for path in ingest_dir.rglob("*") if path.is_file()}
         if ingest_dir.exists()
@@ -513,10 +516,12 @@ def auto_ingest_source_assets(db: Session, job_id: str, actor: str) -> dict:
         )
         db.add(row)
         added.append(row)
-        accepted_storage_refs.add(Path(item.storage_ref).resolve())
+        # Providerből származó storage_ref csak konténment-ellenőrzés után érhet
+        # fájlműveletet; a gyökéren kívüli útvonal fail-closed hibát ad.
+        accepted_storage_refs.add(require_contained(ingest_dir, item.storage_ref))
         existing_hashes.add(item.content_sha256)
     for item in imported:
-        storage_path = Path(item.storage_ref).resolve()
+        storage_path = require_contained(ingest_dir, item.storage_ref)
         if storage_path not in accepted_storage_refs and storage_path not in preexisting_paths:
             storage_path.unlink(missing_ok=True)
     all_count = len(existing) + len(added)

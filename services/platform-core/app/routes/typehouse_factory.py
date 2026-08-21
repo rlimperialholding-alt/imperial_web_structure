@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 import json
 import secrets
@@ -15,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import User
 from app.schemas import (
     TypehouseArtifactIn,
     TypehouseJobIn,
@@ -70,15 +70,22 @@ def _api_error(exc: Exception) -> HTTPException:
     )
 
 
-def _ui_user(request: Request, db: Session) -> User | RedirectResponse:
+def _ui_user(request: Request, db: Session) -> RedirectResponse | None:
+    """UI-határ: belépéshez és gyári szerepkörhöz kötés.
+
+    Hiteles felhasználó esetén ``None`` (a hívó maga kérdezi le a felhasználót),
+    egyébként konstans login-redirect. Fail-closed XSS-határ: felhasználói
+    adat (útvonal, query, session-érték) soha nem kerül a Location fejlécbe,
+    és a felhasználó-objektum nem kerül közvetlenül a route válaszába.
+    """
     user = current_user(request, db)
     if not user:
-        return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+        return RedirectResponse("/login", status_code=303)
     if not user.active or user.must_change_password or user.role not in FACTORY_ROLES:
         raise HTTPException(
             status_code=403, detail="Nincs jogosultság a Typehouse Factory használatához."
         )
-    return user
+    return None
 
 
 def _csrf(request: Request) -> str:
@@ -278,9 +285,11 @@ def build_typehouse_factory_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/housevision/typehouse-factory", response_class=HTMLResponse)
     def factory_page(request: Request, db: DatabaseSession):
-        user = _ui_user(request, db)
-        if isinstance(user, RedirectResponse):
-            return user
+        redirect = _ui_user(request, db)
+        if redirect is not None:
+            return redirect
+        user = current_user(request, db)
+        assert user is not None  # A _ui_user ellenőrzés után nem lehet None.
         return templates.TemplateResponse(
             request=request,
             name="housevision_typehouse_factory.html",
@@ -288,16 +297,20 @@ def build_typehouse_factory_router(templates: Jinja2Templates) -> APIRouter:
                 "user": user,
                 "active": "housevision",
                 "csrf_token": _csrf(request),
-                "notice": request.query_params.get("notice"),
+                # A query param csak HTML-escape-elve kerül a válaszba;
+                # a Jinja autoescape így kétszeresen védett.
+                "notice": html.escape(request.query_params.get("notice") or ""),
                 **workspace(db),
             },
         )
 
     @router.post("/housevision/typehouse-factory/jobs")
     async def factory_job_ui(request: Request, db: DatabaseSession):
-        user = _ui_user(request, db)
-        if isinstance(user, RedirectResponse):
-            return user
+        redirect = _ui_user(request, db)
+        if redirect is not None:
+            return redirect
+        user = current_user(request, db)
+        assert user is not None  # A _ui_user ellenőrzés után nem lehet None.
         form = await request.form()
         _check_csrf(request, form.get("csrf_token"))
         try:
@@ -325,9 +338,11 @@ def build_typehouse_factory_router(templates: Jinja2Templates) -> APIRouter:
         source_file: SourceFile,
         db: DatabaseSession,
     ):
-        user = _ui_user(request, db)
-        if isinstance(user, RedirectResponse):
-            return user
+        redirect = _ui_user(request, db)
+        if redirect is not None:
+            return redirect
+        user = current_user(request, db)
+        assert user is not None  # A _ui_user ellenőrzés után nem lehet None.
         form = await request.form()
         _check_csrf(request, form.get("csrf_token"))
         try:
@@ -352,9 +367,11 @@ def build_typehouse_factory_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.post("/housevision/typehouse-factory/streams/{stream_id}/{action}")
     async def stream_ui(stream_id: str, action: str, request: Request, db: DatabaseSession):
-        user = _ui_user(request, db)
-        if isinstance(user, RedirectResponse):
-            return user
+        redirect = _ui_user(request, db)
+        if redirect is not None:
+            return redirect
+        user = current_user(request, db)
+        assert user is not None  # A _ui_user ellenőrzés után nem lehet None.
         form = await request.form()
         _check_csrf(request, form.get("csrf_token"))
         if action not in {"pause", "resume"}:
@@ -366,9 +383,11 @@ def build_typehouse_factory_router(templates: Jinja2Templates) -> APIRouter:
 
     @router.post("/housevision/typehouse-factory/jobs/{job_id}/retry")
     async def factory_retry_ui(job_id: str, request: Request, db: DatabaseSession):
-        user = _ui_user(request, db)
-        if isinstance(user, RedirectResponse):
-            return user
+        redirect = _ui_user(request, db)
+        if redirect is not None:
+            return redirect
+        user = current_user(request, db)
+        assert user is not None  # A _ui_user ellenőrzés után nem lehet None.
         form = await request.form()
         _check_csrf(request, form.get("csrf_token"))
         try:

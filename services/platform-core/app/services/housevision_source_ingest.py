@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 from ..config import settings
+from .fs_guard import contained_path
 
 
 MAX_HTML_BYTES = 5 * 1024 * 1024
@@ -114,8 +115,11 @@ def _fetch(url: str, *, accept: str, max_bytes: int, source_url: str) -> tuple[s
         parsed = urlsplit(current)
         host = parsed.hostname or ""
         allowed = _public_addresses(host)
+        context = ssl.create_default_context()
+        # Publikus provider-fetch: kizárólag igazolt TLS 1.2+; SSL és TLS 1.0/1.1 tiltott.
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         connection = http.client.HTTPSConnection(
-            host, port=443, timeout=30, context=ssl.create_default_context()
+            host, port=443, timeout=30, context=context
         )
         try:
             target = parsed.path or "/"
@@ -321,7 +325,10 @@ def ingest_page_assets(source_url: str, job_id: str, limit: int) -> tuple[list[I
     if "html" not in content_type:
         raise SourceIngestError("A forrás nem HTML tartalom.")
     candidates = discover_asset_candidates(body, final_url, limit)
-    target = Path(settings.typehouse_factory_asset_root) / "legacy" / job_id / "source"
+    # A job_id felhasználói paraméter: csak kanonikus feloldás és konténment-
+    # ellenőrzés után kerülhet a fájlrendszerre (traversal/symlink fail-closed).
+    target = contained_path(Path(settings.typehouse_factory_asset_root) / "legacy", job_id)
+    target = target / "source"
     target.mkdir(parents=True, exist_ok=True)
     accepted: list[IngestedAsset] = []
     skipped: list[dict[str, str]] = []

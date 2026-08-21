@@ -22,6 +22,7 @@ from ..models import (
     ProjectRegistry,
     TenderPackage,
 )
+from .email_guard import is_valid_email
 
 INTERNAL_ROLES = frozenset(
     {"owner", "managing-director", "platform-admin", "project-manager", "finance", "technical-prep"}
@@ -143,7 +144,7 @@ def create_partner(
     company_name = company_name.strip()
     primary_email = primary_email.strip().lower()
     tax_number = re.sub(r"\s+", "", tax_number).upper()
-    if len(company_name) < 2 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", primary_email):
+    if len(company_name) < 2 or not is_valid_email(primary_email):
         raise ValueError("A partner neve és érvényes e-mail-címe kötelező.")
     existing = db.scalar(
         select(PartnerProfile).where(PartnerProfile.primary_email == primary_email)

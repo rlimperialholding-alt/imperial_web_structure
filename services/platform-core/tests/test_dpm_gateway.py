@@ -3,13 +3,24 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 from dataclasses import replace
 
+import httpx
 import jwt
+import pytest
 
 from app.config import settings
-from app.services.dpm_gateway import ALL_SCOPES, DpmGateway, DpmIdentity
+from app.services.dpm_gateway import ALL_SCOPES, DpmGateway, DpmGatewayError, DpmIdentity
+
+PRIVATE_ADDRESS = ipaddress.ip_address("10.40.40.40")
+
+
+def _resolver():
+    # Szintetikus, hálózatmentes DNS: a http://digital-project-managers:8000
+    # docker-host privát címre oldódik, ami az engedélyezett plaintext-határ.
+    return lambda host, port: {PRIVATE_ADDRESS}
 
 
 def configured_gateway() -> DpmGateway:
@@ -20,7 +31,8 @@ def configured_gateway() -> DpmGateway:
             dpm_auth_issuer="imperial-intelligence",
             dpm_auth_audience="digital-project-managers",
             dpm_auth_hs256_secret="test-dpm-secret-012345678901234567890123",
-        )
+        ),
+        resolver=_resolver(),
     )
 
 
@@ -48,8 +60,16 @@ def test_gateway_issues_short_lived_scoped_service_token() -> None:
     assert 0 < claims["exp"] - claims["iat"] <= 120
 
 
-def test_gateway_exchanges_a_signed_platform_identity_with_itep(monkeypatch) -> None:
+def test_gateway_exchanges_a_signed_platform_identity_with_itep() -> None:
     secret = "test-itep-identity-shared-secret-which-is-long-enough"
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v1/auth/service-tokens/digital-project-managers":
+            return httpx.Response(200, json={"accessToken": "header.payload.signature"})
+        return httpx.Response(404, json={"detail": "not found"})
+
     gateway = DpmGateway(
         replace(
             settings,
@@ -57,27 +77,10 @@ def test_gateway_exchanges_a_signed_platform_identity_with_itep(monkeypatch) -> 
             dpm_auth_hs256_secret="",
             itep_api_base_url="http://itep-api:3000",
             itep_identity_shared_secret=secret,
-        )
+        ),
+        transport=httpx.MockTransport(handler),
+        resolver=_resolver(),
     )
-    captured = {}
-
-    class Response:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return None
-
-        @staticmethod
-        def read():
-            return b'{"accessToken":"header.payload.signature"}'
-
-    def fake_urlopen(request, timeout):
-        captured["request"] = request
-        captured["timeout"] = timeout
-        return Response()
-
-    monkeypatch.setattr("app.services.dpm_gateway.urlopen", fake_urlopen)
     token = gateway._token(
         DpmIdentity(
             subject="pm@imperial.local",
@@ -87,15 +90,14 @@ def test_gateway_exchanges_a_signed_platform_identity_with_itep(monkeypatch) -> 
         )
     )
 
-    request = captured["request"]
+    request = requests[0]
     encoded = request.headers["X-imperial-identity"]
     expected = hmac.new(secret.encode(), encoded.encode(), hashlib.sha256).hexdigest()
     identity = json.loads(
         base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
     )
     assert token == "header.payload.signature"
-    assert captured["timeout"] == 8
-    assert request.full_url.endswith("/v1/auth/service-tokens/digital-project-managers")
+    assert request.url.path.endswith("/v1/auth/service-tokens/digital-project-managers")
     assert request.headers["X-imperial-identity-signature"] == f"sha256={expected}"
     assert identity["actorId"] == "pm@imperial.local"
     assert identity["roles"] == ["PROJECT_MANAGER"]
@@ -136,3 +138,116 @@ def test_owner_context_is_platform_admin_without_project_expansion() -> None:
     assert context.admin is True
     assert context.identity.role == "platform-admin"
     assert context.identity.project_ids == frozenset()
+
+
+class TestGatewayRequestHardening:
+    def _gateway(self, handler, dpm_url: str | None = None) -> DpmGateway:
+        return DpmGateway(
+            replace(
+                settings,
+                dpm_api_base_url=dpm_url or "http://digital-project-managers:8000",
+                dpm_auth_issuer="imperial-intelligence",
+                dpm_auth_audience="digital-project-managers",
+                dpm_auth_hs256_secret="test-dpm-secret-012345678901234567890123",
+            ),
+            transport=httpx.MockTransport(handler),
+            resolver=_resolver(),
+        )
+
+    def _identity(self) -> DpmIdentity:
+        return DpmIdentity(
+            subject="owner@example.test",
+            role="platform-admin",
+            scopes=ALL_SCOPES,
+            project_ids=frozenset(),
+        )
+
+    def test_traversal_path_fails_closed(self) -> None:
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json=[])
+
+        gateway = self._gateway(handler)
+        with pytest.raises(DpmGatewayError) as exc_info:
+            gateway.request("GET", "/api/v1/tasks/../../admin", self._identity())
+        assert exc_info.value.status_code == 502
+        assert seen == []
+
+    def test_encoded_traversal_path_fails_closed(self) -> None:
+        gateway = self._gateway(lambda request: httpx.Response(200, json=[]))
+        with pytest.raises(DpmGatewayError) as exc_info:
+            gateway.request("GET", "/api/v1/tasks/%2e%2e/admin", self._identity())
+        assert exc_info.value.status_code == 502
+
+    def test_absolute_url_in_path_fails_closed(self) -> None:
+        gateway = self._gateway(lambda request: httpx.Response(200, json=[]))
+        with pytest.raises(DpmGatewayError) as exc_info:
+            gateway.request("GET", "https://evil.example/api", self._identity())
+        assert exc_info.value.status_code == 502
+
+    def test_cross_origin_redirect_fails_closed(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(302, headers={"location": "https://evil.example/steal"})
+
+        gateway = self._gateway(handler)
+        with pytest.raises(DpmGatewayError) as exc_info:
+            gateway.request("GET", "/api/v1/agents", self._identity())
+        assert exc_info.value.status_code == 502
+
+    def test_public_resolving_http_origin_fails_closed(self) -> None:
+        def public_resolver(host, port):
+            return {ipaddress.ip_address("93.184.216.34")}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[])
+
+        gateway = DpmGateway(
+            replace(
+                settings,
+                dpm_api_base_url="http://digital-project-managers:8000",
+                dpm_auth_issuer="imperial-intelligence",
+                dpm_auth_audience="digital-project-managers",
+                dpm_auth_hs256_secret="test-dpm-secret-012345678901234567890123",
+            ),
+            transport=httpx.MockTransport(handler),
+            resolver=public_resolver,
+        )
+        with pytest.raises(DpmGatewayError) as exc_info:
+            gateway.request("GET", "/api/v1/agents", self._identity())
+        assert exc_info.value.status_code == 502
+
+    def test_valid_request_passes_query_and_payload(self) -> None:
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["method"] = request.method
+            captured["path"] = request.url.path
+            captured["query"] = dict(request.url.params)
+            captured["json"] = json.loads(request.content)
+            return httpx.Response(200, json={"done": True})
+
+        gateway = self._gateway(handler)
+        result = gateway.request(
+            "POST",
+            "/api/v1/tasks",
+            self._identity(),
+            query={"project_id": "P-5001", "empty": None},
+            payload={"title": "T1"},
+        )
+        assert result == {"done": True}
+        assert captured["method"] == "POST"
+        assert captured["path"] == "/api/v1/tasks"
+        assert captured["query"] == {"project_id": "P-5001"}
+        assert captured["json"] == {"title": "T1"}
+
+    def test_http_error_body_detail_is_forwarded(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(409, json={"detail": "A feladat zárolva."})
+
+        gateway = self._gateway(handler)
+        with pytest.raises(DpmGatewayError) as exc_info:
+            gateway.request("GET", "/api/v1/agents", self._identity())
+        assert exc_info.value.status_code == 409
+        assert "zárolva" in str(exc_info.value)

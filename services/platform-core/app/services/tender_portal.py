@@ -35,6 +35,8 @@ from ..models import (
     TenderPurchaseOrderPreparation,
 )
 from ..schemas import EventIn
+from .email_guard import is_valid_email
+from .fs_guard import contained_path
 from .integration import ingest_event
 from .partner_control import create_partner, eligibility_report
 from .tender_evidence_security import (
@@ -281,7 +283,9 @@ def add_invitation(
     if tender.status not in {"draft", "published"}:
         raise ValueError("Partner csak vázlat vagy közzétett tenderhez hívható meg.")
     email = partner_email.strip().lower()
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+    # Lineáris, korlátos validáció (ReDoS-mentes): a cím szerkezetét
+    # karakterenként ellenőrizzük, visszalépő reguláris kifejezés nélkül.
+    if not is_valid_email(email):
         raise ValueError("Érvénytelen partner e-mail-cím.")
     if len(company_name.strip()) < 2:
         raise ValueError("A partner cégneve kötelező.")
@@ -1142,7 +1146,9 @@ def save_bid_evidence(
         raise
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(file_name).name).strip("._") or "attachment"
     evidence_id = _id("TEV")
-    target_dir = storage_root / tender_id / bid.bid_id
+    # Felhasználói tender/bid azonosítóból képzett könyvtár csak kanonikus
+    # feloldás és konténment-ellenőrzés után érheti a fájlrendszert.
+    target_dir = contained_path(storage_root, tender_id, bid.bid_id)
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"{evidence_id}_{safe_name[:120]}"
     target.write_bytes(raw)

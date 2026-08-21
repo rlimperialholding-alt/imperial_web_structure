@@ -92,8 +92,48 @@ def _valid_https_url(value: str) -> bool:
         return False
 
 
+_EMAIL_MAX_LENGTH = 254
+_EMAIL_LOCAL_MAX = 64
+_EMAIL_LABEL_MAX = 63
+_EMAIL_LOCAL_EXTRA = frozenset("!#$%&'*+-/=?^_`{|}~.")
+
+
 def _valid_email(value: str) -> bool:
-    return bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value or ""))
+    """Linear, bounded e-mail validation (ReDoS-safe).
+
+    No regular expression is used: every part is scanned character by
+    character, so adversarial inputs cannot trigger polynomial backtracking.
+    Documented limits: total <= 254, local <= 64, domain <= 255,
+    label <= 63, TLD alphabetic with at least 2 characters.
+    """
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > _EMAIL_MAX_LENGTH
+    ):
+        return False
+    local, separator, domain = value.partition("@")
+    if (
+        not separator
+        or not local
+        or not domain
+        or len(local) > _EMAIL_LOCAL_MAX
+        or len(domain) > 255
+    ):
+        return False
+    if local[0] == "." or local[-1] == "." or ".." in local:
+        return False
+    if any(not (char.isalnum() or char in _EMAIL_LOCAL_EXTRA) for char in local):
+        return False
+    labels = domain.rstrip(".").split(".")
+    if len(labels) < 2 or any(not label or len(label) > _EMAIL_LABEL_MAX for label in labels):
+        return False
+    for label in labels:
+        if label[0] == "-" or label[-1] == "-":
+            return False
+        if any(not (char.isalnum() or char == "-") for char in label):
+            return False
+    return labels[-1].isalpha() and len(labels[-1]) >= 2
 
 
 def _valid_iso_date(value: Any) -> bool:

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import ipaddress
+from collections.abc import Callable
+
 import httpx
 
 from app.config import Settings
 from app.connectors.ingatlan import IngatlanConnector
+from app.connectors.safe_http import AddressResolver, SafeHttpClient
+
+PUBLIC_ADDRESS = ipaddress.ip_address("93.184.216.34")
 
 
 def settings() -> Settings:
@@ -12,6 +18,24 @@ def settings() -> Settings:
         ingatlan_base_url="https://apitest.ingatlan.com/v1",
         ingatlan_username="demo",
         ingatlan_password="secret",
+    )
+
+
+def _public_resolver() -> AddressResolver:
+    # Szintetikus, hálózatmentes DNS: publikus cím, a https-origin szabály szerint.
+    return lambda host, port: {PUBLIC_ADDRESS}
+
+
+def _connector(**kwargs: object) -> IngatlanConnector:
+    return IngatlanConnector(settings(), resolver=_public_resolver(), **kwargs)
+
+
+def _mock_client(connector: IngatlanConnector, handler: Callable) -> None:
+    connector.client.close()
+    connector.client = SafeHttpClient(
+        connector.base_url,
+        transport=httpx.MockTransport(handler),
+        resolver=_public_resolver(),
     )
 
 
@@ -35,9 +59,8 @@ def test_login_and_upsert_ad() -> None:
             )
         return httpx.Response(404, json={"status": "error", "message": "not found"})
 
-    connector = IngatlanConnector(settings())
-    connector.client.close()
-    connector.client = httpx.Client(transport=httpx.MockTransport(handler))
+    connector = _connector()
+    _mock_client(connector, handler)
     try:
         result = connector.upsert_ad(
             {
@@ -75,9 +98,8 @@ def test_unauthorized_request_refreshes_token_once() -> None:
             json={"status": "success", "data": {"ad": {"ownId": "IMP000001"}}},
         )
 
-    connector = IngatlanConnector(settings())
-    connector.client.close()
-    connector.client = httpx.Client(transport=httpx.MockTransport(handler))
+    connector = _connector()
+    _mock_client(connector, handler)
     try:
         result = connector.get_ad("IMP000001")
     finally:
@@ -89,7 +111,7 @@ def test_unauthorized_request_refreshes_token_once() -> None:
 
 
 def test_own_id_is_limited_to_fifteen_characters() -> None:
-    with IngatlanConnector(settings()) as connector:
+    with _connector() as connector:
         try:
             connector.upsert_ad({"ownId": "THIS-ID-IS-WAY-TOO-LONG"})
         except ValueError as exc:

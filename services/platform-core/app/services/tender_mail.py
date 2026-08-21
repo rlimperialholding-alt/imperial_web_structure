@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -16,8 +15,8 @@ from ..models import (
 from ..schemas import (
     DomainVerificationIn, MailEventIn, SendingDomainIn, TenderCampaignIn, TenderRecipientIn,
 )
+from .email_guard import is_valid_email
 
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 REQUIRED_TEMPLATE_TOKENS = ("{{tender_link}}", "{{unsubscribe_url}}")
 
 
@@ -42,7 +41,9 @@ def loads(value: str | None, fallback: Any) -> Any:
 
 def normalize_email(email: str) -> str:
     value = (email or "").strip().lower()
-    if not EMAIL_RE.fullmatch(value):
+    # Lineáris, korlátos validáció (ReDoS-mentes): a cím szerkezetét
+    # karakterenként ellenőrizzük, visszalépő reguláris kifejezés nélkül.
+    if not is_valid_email(value):
         raise ValueError(f"Érvénytelen e-mail-cím: {email}")
     return value
 
