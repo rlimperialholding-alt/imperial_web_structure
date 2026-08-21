@@ -138,6 +138,57 @@ def test_source_hard_gate_blocks_before_model(db, monkeypatch):
     assert "no_monitoring_hard_gate" in attempt.analysis_json
 
 
+def test_anonymous_project_and_inferred_question_are_retained_as_internal(db, monkeypatch):
+    text = "Új projekt: 140 m2 családi ház generálkivitelezése Győrben."
+    response = {
+        "leads": [
+            {
+                "organization_name": None,
+                "project_title": "140 m2 családi ház generálkivitelezése",
+                "summary": "Projektjelzés.",
+                "location": "Győr",
+                "evidence_excerpt": text,
+                "confidence": 82,
+                "urgency": 60,
+            }
+        ],
+        "questions": [
+            {
+                "question": "Milyen kivitelezési kapacitás szükséges a 140 m2-es házhoz?",
+                "question_kind": "inferred_from_evidence",
+                "evidence_excerpt": text,
+            }
+        ],
+    }
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(
+        processing,
+        "complete_json",
+        lambda *args, **kwargs: SimpleNamespace(
+            request_id="DS-PROJECT", content=json.dumps(response)
+        ),
+    )
+    route = _route()
+    route.route_key = "project-route"
+    route.route_id = "PROJECT-ROUTE"
+    attempt = _attempt()
+    attempt.attempt_id = "SCA-PROJECT"
+    attempt.route_key = route.route_key
+    db.add_all([route, attempt])
+    db.flush()
+
+    result = processing.process_source_attempt(db, route=route, attempt=attempt, text=text)
+    db.commit()
+
+    signal = db.scalar(select(GrowthSignal))
+    topic = db.scalar(select(QuestionRadarTopic))
+    assert result == {"status": "completed", "leads": 1, "questions": 1}
+    assert signal.subject_type == "project"
+    assert signal.company_name is None
+    assert signal.status == "blocked"
+    assert topic.classification == "inferred_from_evidence"
+
+
 def test_content_factory_quarantines_all_nineteen_brands(db, monkeypatch):
     local_day = date(2026, 8, 21)
     for brand in ACTIVE_CONTENT_BRANDS:

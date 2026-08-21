@@ -54,7 +54,7 @@ class GrowthSignal(Base):
         UniqueConstraint("source_id", "external_key", name="uq_growth_signal_source_external"),
         UniqueConstraint("dedupe_hash", name="uq_growth_signal_dedupe_hash"),
         CheckConstraint(
-            "subject_type IN ('organization','natural_person')",
+            "subject_type IN ('organization','natural_person','project')",
             name="ck_growth_signal_subject_type",
         ),
         CheckConstraint(

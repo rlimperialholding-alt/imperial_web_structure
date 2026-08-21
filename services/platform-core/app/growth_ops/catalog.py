@@ -12,7 +12,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -403,6 +403,7 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
             ),
         )
         .order_by(
+            case((SourceCoverageRoute.route_mode == "direct", 0), else_=1),
             SourceCoverageRoute.last_attempt_at.asc().nulls_first(),
             SourceCoverageRoute.priority.asc(),
             SourceCoverageRoute.id.asc(),
