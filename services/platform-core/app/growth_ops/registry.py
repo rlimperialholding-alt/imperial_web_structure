@@ -32,6 +32,12 @@ class GrowthSettings:
     canonical_route_batch_size: int
     canonical_route_timeout_seconds: float
     canonical_route_max_response_bytes: int
+    canonical_processing_enabled: bool
+    canonical_analysis_text_chars: int
+    canonical_content_factory_enabled: bool
+    canonical_internal_handoff_enabled: bool
+    canonical_internal_handoff_at: str
+    canonical_internal_handoff_secret_file: str
     deepseek_api_key_file: str
     deepseek_base_url: str
     deepseek_routine_model: str
@@ -76,6 +82,28 @@ def settings() -> GrowthSettings:
                 5_000_000,
                 int(os.getenv("CANONICAL_ROUTE_MAX_RESPONSE_BYTES", "1000000")),
             ),
+        ),
+        canonical_processing_enabled=os.getenv(
+            "CANONICAL_PROCESSING_ENABLED", "false"
+        ).lower()
+        == "true",
+        canonical_analysis_text_chars=max(
+            1_000, min(20_000, int(os.getenv("CANONICAL_ANALYSIS_TEXT_CHARS", "6000")))
+        ),
+        canonical_content_factory_enabled=os.getenv(
+            "CANONICAL_CONTENT_FACTORY_ENABLED", "false"
+        ).lower()
+        == "true",
+        canonical_internal_handoff_enabled=os.getenv(
+            "CANONICAL_INTERNAL_HANDOFF_ENABLED", "false"
+        ).lower()
+        == "true",
+        canonical_internal_handoff_at=os.getenv(
+            "CANONICAL_INTERNAL_HANDOFF_AT", "18:30"
+        ),
+        canonical_internal_handoff_secret_file=os.getenv(
+            "CANONICAL_INTERNAL_HANDOFF_SECRET_FILE",
+            "/run/secrets/growth/internal-handoff-smtp.json",
         ),
         deepseek_api_key_file=os.getenv(
             "DEEPSEEK_API_KEY_FILE", "/run/secrets/growth/deepseek-api-key"

@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime, time, timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -34,6 +35,35 @@ BLOCKED_MARKERS = (
     "jelentkezzen be",
     "paywall",
 )
+
+
+class _VisibleText(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.hidden = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() in {"script", "style", "noscript", "svg"}:
+            self.hidden += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() in {"script", "style", "noscript", "svg"} and self.hidden:
+            self.hidden -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self.hidden:
+            self.parts.append(data)
+
+
+def _visible_text(body_text: str, limit: int) -> str:
+    parser = _VisibleText()
+    try:
+        parser.feed(body_text)
+        value = " ".join(parser.parts)
+    except Exception:
+        value = re.sub(r"<[^>]+>", " ", body_text)
+    return re.sub(r"\s+", " ", value).strip()[:limit]
 
 
 def _canonical_json(value: Any) -> str:
@@ -314,6 +344,13 @@ def _fetch(route: SourceCoverageRoute) -> dict[str, Any]:
             "title": title,
             "host": parsed.hostname,
         },
+        # Transient only: the worker gives this bounded visible-text sample to the
+        # evidence extractor, but never persists the full fetched page body.
+        "analysis_text": _visible_text(
+            body_text, getattr(cfg, "canonical_analysis_text_chars", 6000)
+        )
+        if result_status == "succeeded"
+        else "",
     }
 
 
@@ -388,20 +425,26 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         result = _fetch(route)
         completed = datetime.now(UTC)
         status = str(result["status"])
-        db.add(
-            SourceCoverageAttempt(
-                attempt_id=f"SCA-{uuid4().hex[:20].upper()}",
-                route_key=route.route_key,
-                catalog_sha256=revision.catalog_sha256,
-                status=status,
-                http_status=result.get("http_status"),
-                response_sha256=result.get("response_sha256"),
-                evidence_json=_canonical_json(result.get("evidence") or {}),
-                error_type=result.get("error_type"),
-                started_at=started,
-                completed_at=completed,
-            )
+        attempt = SourceCoverageAttempt(
+            attempt_id=f"SCA-{uuid4().hex[:20].upper()}",
+            route_key=route.route_key,
+            catalog_sha256=revision.catalog_sha256,
+            status=status,
+            http_status=result.get("http_status"),
+            response_sha256=result.get("response_sha256"),
+            evidence_json=_canonical_json(result.get("evidence") or {}),
+            error_type=result.get("error_type"),
+            started_at=started,
+            completed_at=completed,
         )
+        db.add(attempt)
+        db.flush()
+        if status == "succeeded" and getattr(cfg, "canonical_processing_enabled", False):
+            from .processing import process_source_attempt
+
+            process_source_attempt(db, route=route, attempt=attempt, text=result["analysis_text"])
+        elif status != "succeeded":
+            attempt.analysis_status = "skipped"
         route.attempt_count += 1
         route.last_attempt_at = completed
         route.last_result = status

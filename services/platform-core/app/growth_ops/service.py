@@ -879,10 +879,16 @@ def heartbeat(
 
 def run_once(db: Session) -> dict[str, Any]:
     from .catalog import scan_due_routes
+    from .processing import generate_daily_content, send_internal_handoff
     from .wide_service import run_due as run_due_wide
 
     route_scan = scan_due_routes(db)
     wide_run = run_due_wide(db)
+    content_factory = generate_daily_content(db)
+    # Refresh counts after evidence extraction and content generation. This does
+    # not release or publish the quarantined assets.
+    wide_run = run_due_wide(db) or wide_run
+    internal_handoff = send_internal_handoff(db)
     if not settings().enabled:
         heartbeat(db, status="disabled")
         return {
@@ -890,6 +896,8 @@ def run_once(db: Session) -> dict[str, Any]:
             "runs": 0,
             "wide_run": wide_run.run_id if wide_run else None,
             "route_scan": route_scan,
+            "content_factory": content_factory,
+            "internal_handoff": internal_handoff,
             "followups": 0,
             "sent": 0,
         }
@@ -902,6 +910,8 @@ def run_once(db: Session) -> dict[str, Any]:
         "runs": len(runs),
         "wide_run": wide_run.run_id if wide_run else None,
         "route_scan": route_scan,
+        "content_factory": content_factory,
+        "internal_handoff": internal_handoff,
         "followups": followups,
         "sent": sent,
     }

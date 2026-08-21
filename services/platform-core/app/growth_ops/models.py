@@ -353,6 +353,39 @@ class SourceCoverageAttempt(Base):
     http_status: Mapped[int | None] = mapped_column(Integer, index=True)
     response_sha256: Mapped[str | None] = mapped_column(String(64))
     evidence_json: Mapped[str] = mapped_column(Text, default="{}")
+    analysis_status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    analysis_json: Mapped[str] = mapped_column(Text, default="{}")
+    analysis_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     error_type: Mapped[str | None] = mapped_column(String(120), index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CanonicalInternalHandoff(Base):
+    __tablename__ = "canonical_internal_handoffs"
+    __table_args__ = (
+        UniqueConstraint("local_date", "handoff_type", name="uq_canonical_handoff_day_type"),
+        CheckConstraint(
+            "status IN ('pending','sent','failed','blocked')",
+            name="ck_canonical_handoff_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    handoff_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    handoff_type: Mapped[str] = mapped_column(String(80), default="daily_executive", index=True)
+    recipient_email: Mapped[str] = mapped_column(String(320))
+    subject: Mapped[str] = mapped_column(String(500))
+    body_text: Mapped[str] = mapped_column(Text)
+    payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    counts_json: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    provider_message_id: Mapped[str | None] = mapped_column(String(500), index=True)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
