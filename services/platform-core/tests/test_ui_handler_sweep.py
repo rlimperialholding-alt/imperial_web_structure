@@ -41,6 +41,7 @@ from app.services.b2b_project_intake import (
     record_financial_review,
     record_technical_review,
 )
+from app.seed import DEMO_PASSWORD
 from app.services.technical_products import create_case, decide_case, get_case, review_gate, submit_case
 from app.services.website_content import register_site
 
@@ -49,7 +50,7 @@ def _login(client, email: str) -> None:
     client.cookies.clear()
     response = client.post(
         "/login",
-        data={"email": email, "password": "Imperial2026!"},
+        data={"email": email, "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert response.status_code == 303

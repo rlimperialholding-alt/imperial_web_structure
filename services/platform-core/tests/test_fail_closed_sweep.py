@@ -6,12 +6,17 @@ sorokkal: minden sor egy valós üzleti elutasítási szerződés (rossz
 szerepkör, hiányzó rekord, érvénytelen bemenet, hiányzó token), az
 elvárt HTTP-státusz explicit. A sorok a kalibrált tényleges
 viselkedést pinelik; 5xx-et egyetlen sor sem enged meg.
+
+Az útvonalakban az ``NX`` placeholder egyértelműen szintetikus,
+nem létező azonosítót jelöl (a korábbi ``NEM-LETEZIK`` rövid alakja).
 """
 
 from __future__ import annotations
 
 import json
 import os
+
+from app.seed import DEMO_PASSWORD
 
 
 def _load_rows():
@@ -50,7 +55,7 @@ def test_fail_closed_route_sweep(client):
             client.cookies.clear()
             response = client.post(
                 "/login",
-                data={"email": role, "password": "Imperial2026!"},
+                data={"email": role, "password": DEMO_PASSWORD},
                 follow_redirects=False,
             )
             assert response.status_code == 303, f"login failed for {role}"

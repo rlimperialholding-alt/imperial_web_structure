@@ -156,6 +156,11 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
             )
         except RegulatoryAdminError as error:
             return _redirect(error)
+        except (TypeError, ValueError) as error:
+            raise HTTPException(
+                status_code=400,
+                detail="Érvénytelen űrlapmező: a row_version skalár egész szám legyen.",
+            ) from error
         return RedirectResponse(
             "/house-designer/regulatory-admin?ok=source_approved#sources", status_code=303
         )
@@ -175,6 +180,11 @@ def build_regulatory_admin_router(templates: Jinja2Templates) -> APIRouter:
             )
         except RegulatoryAdminError as error:
             return _redirect(error)
+        except (TypeError, ValueError) as error:
+            raise HTTPException(
+                status_code=400,
+                detail="Érvénytelen űrlapmező: a row_version skalár egész szám legyen.",
+            ) from error
         return RedirectResponse(
             "/house-designer/regulatory-admin?ok=source_revoked#sources", status_code=303
         )

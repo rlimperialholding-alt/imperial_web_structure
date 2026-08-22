@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from uuid import uuid4
@@ -7,6 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models import RegulatoryComplianceRun
+from app.seed import DEMO_PASSWORD
 from app.services.house_designer import ActorScope, apply_session_command, create_session
 from app.services.house_designer_geometry import apply_command, empty_geometry
 from app.services.regulatory_admin import (
@@ -86,6 +88,61 @@ def test_regulatory_admin_ui_exposes_bounded_declarative_rule_input(client):
     assert "Deklaratív v2 szabályok" in response.text
     assert "legfeljebb 500" in response.text
     assert "MAX_BUILDING_HEIGHT" in response.text
+
+
+def _login_regulatory_reviewer(client) -> None:
+    login = client.post(
+        "/login",
+        data={"email": "legal@imperial.local", "password": DEMO_PASSWORD},
+        follow_redirects=False,
+    )
+    assert login.status_code == 303
+
+
+def _regulatory_csrf(client) -> str:
+    page = client.get("/house-designer/regulatory-admin")
+    assert page.status_code == 200
+    match = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    assert match
+    return match.group(1)
+
+
+@pytest.mark.parametrize("action", ["approve", "revoke"])
+def test_source_action_rejects_file_row_version_with_400(client, action):
+    """Nem skalár (fájl) row_version: kontrollált 4xx, nem 500."""
+    _login_regulatory_reviewer(client)
+    csrf = _regulatory_csrf(client)
+    response = client.post(
+        f"/house-designer/regulatory-admin/sources/SRC-NX/{action}",
+        data={"csrf_token": csrf},
+        files={"row_version": ("version.txt", b"1", "text/plain")},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("action", ["approve", "revoke"])
+def test_source_action_rejects_non_integer_row_version_with_400(client, action):
+    """Nem egész row_version: kontrollált 4xx, nem 500."""
+    _login_regulatory_reviewer(client)
+    csrf = _regulatory_csrf(client)
+    response = client.post(
+        f"/house-designer/regulatory-admin/sources/SRC-NX/{action}",
+        data={"csrf_token": csrf, "row_version": "nem-szam"},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("action", ["approve", "revoke"])
+def test_source_action_rejects_file_csrf_with_403(client, action):
+    """Nem skalár (fájl) csrf_token: fail-closed 4xx, nem 500."""
+    _login_regulatory_reviewer(client)
+    _regulatory_csrf(client)
+    response = client.post(
+        f"/house-designer/regulatory-admin/sources/SRC-NX/{action}",
+        data={"row_version": "1"},
+        files={"csrf_token": ("token.txt", b"x", "text/plain")},
+    )
+    assert response.status_code == 403
 
 
 def _verified_test_vector():

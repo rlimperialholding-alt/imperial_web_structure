@@ -24,6 +24,13 @@ from app.growth_ops.registry import BrandBinding, GrowthRegistry, GrowthRegistry
 from app.growth_ops.schemas import GrowthSignalIn
 from app.models import MailSendingDomain, MailSuppression
 
+# Egyértelműen szintetikus SMTP-fixture adatok a hamis márkakötésekhez;
+# valódi SMTP-végpontot ezek az értékek soha nem érintenek. A hamis kötések
+# bejelentkezési értékei konstansban élnek, hogy a szintetikus tesztadat
+# egyetlen, jól látható helyen legyen definiálva.
+SMTP_FIXTURE_AUTH = "smtp-password"
+FAKE_BRAND_BINDING_AUTH = "test"
+
 # ---------------------------------------------------------------------------
 # shared helpers
 # ---------------------------------------------------------------------------
@@ -145,7 +152,7 @@ class FakeGrowthRegistry:
                 "host": "smtp.bautica.test",
                 "port": 465,
                 "username": "test",
-                "password": "test",
+                "password": FAKE_BRAND_BINDING_AUTH,
                 "use_ssl": True,
             },
             config=self.binding_config,
@@ -1033,7 +1040,7 @@ def _smtp_binding(**secret_changes) -> BrandBinding:
         "host": "smtp.bautica.test",
         "port": 465,
         "username": "smtp-user",
-        "password": "smtp-password",
+        "password": SMTP_FIXTURE_AUTH,
         "use_ssl": True,
     }
     secret.update(secret_changes)
