@@ -12,3 +12,4 @@ services/platform-core/data/*
 !services/platform-core/data/calculation_sources/**
 services/platform-core/runtime/
 services/platform-core/integrations/contract_generator_v0_4/sample_output/
+**/.coverage*

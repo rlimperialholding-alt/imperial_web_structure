@@ -272,6 +272,15 @@ def _form_integer(form: Any, key: str, default: int) -> int:
         raise MarketIntelligenceError("invalid_number", "Hibás számérték.") from error
 
 
+def _form_scalar(form: FormData, key: str) -> str | None:
+    value = form.get(key)
+    if isinstance(value, UploadFile):
+        # Fail-closed: fájlfeltöltés skalár mezőre nem értelmezhető; a kezelő
+        # réteg ValueError-ként 400-as hibairányítással fogadja (nem 500).
+        raise ValueError("scalar form field expected, received a file upload")
+    return value
+
+
 def _optional_integer(payload: dict[str, Any], key: str) -> int | None:
     if key not in payload or payload.get(key) in {None, ""}:
         return None
@@ -450,6 +459,10 @@ def build_market_intelligence_router(templates: Jinja2Templates) -> APIRouter:
                 )
         except MarketIntelligenceError as error:
             return _error_redirect(error)
+        except ValueError:
+            return _error_redirect(
+                MarketIntelligenceError("invalid_number", "Hibás számérték.")
+            )
         return RedirectResponse(f"/market-intelligence?ok=target_{action}#targets", status_code=303)
 
     @router.post("/market-intelligence/snapshots")

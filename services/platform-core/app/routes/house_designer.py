@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -871,7 +872,13 @@ def build_house_designer_router(templates: Jinja2Templates) -> APIRouter:
         except HouseDesignerError as error:
             _raise_api_error(error)
         if result["job"]["status"] == "FAILED":
-            raise HTTPException(status_code=422, detail=result)
+            # Fail-closed 422: a hiba-részletnek JSON-szerializálhatónak kell
+            # lennie (a result datetime mezőket tartalmazhat), így a hívó
+            # tényleges 422-es elutasítást kap unhandled 500 helyett.
+            raise HTTPException(
+                status_code=422,
+                detail=json.loads(json.dumps(result, default=str)),
+            )
         return result
 
     @router.post("/api/v1/house-designer/sessions/{session_id}/approve")

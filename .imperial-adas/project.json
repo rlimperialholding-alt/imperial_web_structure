@@ -74,8 +74,22 @@
         "timeoutSeconds": 2400
       }
     ],
-    "contract": [],
-    "e2e": [],
+    "contract": [
+      {
+        "name": "critical contract suite",
+        "command": "cd services/platform-core && python -m pytest -q tests/test_contract_suite.py",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
+    "e2e": [
+      {
+        "name": "browserless critical-journey e2e suite",
+        "command": "cd services/platform-core && python -m pytest -q tests/test_e2e_suite.py",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
     "coverage": [
       {
         "name": "platform-core full application coverage",
