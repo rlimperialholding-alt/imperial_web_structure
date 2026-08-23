@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
+from alembic.config import Config
 from sqlalchemy import func, select
 
 from app.authority_reader.client import ETDRClient, ETDRPage, ETDRRecord, OENYClient, ReaderBlocked
@@ -111,6 +112,13 @@ def test_client_parses_exact_public_schema_and_query():
     assert page.records[0].process_number == "202600053739"
     assert seen[0].url.host == "alk.etdr.gov.hu"
     assert seen[0].url.params["$filter"] == "City eq 'Vöröstó'"
+
+
+def test_alembic_config_preserves_percent_encoded_database_password():
+    url = "value%2Fwith%25percent"
+    config = Config()
+    config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    assert config.get_main_option("sqlalchemy.url") == url
 
 
 @pytest.mark.parametrize(
