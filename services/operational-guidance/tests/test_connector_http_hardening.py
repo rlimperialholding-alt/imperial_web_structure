@@ -60,6 +60,25 @@ class _FakeCredentials:
         pass
 
 
+class _CloseTrackingTransport(httpx.BaseTransport):
+    """Szintetikus transport, amely a ``close()`` hívásokat számlálja.
+
+    A DirectusConnector lifecycle-tesztjei ezzel bizonyítják, hogy a kliens
+    normál és kivételes úton is pontosan egyszer zárul, és a duplikált
+    ``close()`` nem okoz újabb lezárási kísérletet.
+    """
+
+    def __init__(self, handler) -> None:
+        self._handler = handler
+        self.close_calls = 0
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        return self._handler(request)
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
 class TestDirectusHardening:
     def test_content_id_traversal_is_rejected_before_any_request(self) -> None:
         seen: list[httpx.Request] = []
@@ -75,7 +94,7 @@ class TestDirectusHardening:
             with pytest.raises(SafeHttpError):
                 connector.get_content("../admin")
         finally:
-            connector.client.close()
+            connector.close()
         assert seen == []
 
     def test_valid_content_id_is_sent(self) -> None:
@@ -91,9 +110,109 @@ class TestDirectusHardening:
         try:
             result = connector.get_content("42")
         finally:
-            connector.client.close()
+            connector.close()
         assert result == {"id": 7}
         assert paths == ["/items/content_items/42"]
+
+
+class TestDirectusLifecycle:
+    """A DirectusConnector explicit close()/context-manager életciklusa.
+
+    A kliens erőforrásai pontosan egyszer szabadulnak fel normál és
+    kivételes úton egyaránt; a duplikált close() idempotens, ``__del__``-re
+    a lifecycle nem támaszkodik.
+    """
+
+    def _connector(
+        self, handler=None
+    ) -> tuple[DirectusConnector, _CloseTrackingTransport]:
+        transport = _CloseTrackingTransport(handler or _ok_handler)
+        connector = DirectusConnector(
+            _settings(), transport=transport, resolver=_loopback_resolver()
+        )
+        return connector, transport
+
+    def test_close_is_idempotent_and_closes_exactly_once(self) -> None:
+        connector, transport = self._connector()
+        assert transport.close_calls == 0
+        connector.close()
+        assert transport.close_calls == 1
+        # A második close() nem okoz újabb lezárási kísérletet.
+        connector.close()
+        connector.close()
+        assert transport.close_calls == 1
+
+    def test_context_manager_closes_on_normal_exit(self) -> None:
+        connector, transport = self._connector()
+        with connector:
+            result = connector.get_content("42")
+        assert result == {"id": "/items/content_items/42"}
+        assert transport.close_calls == 1
+
+    def test_context_manager_closes_on_exception(self) -> None:
+        connector, transport = self._connector()
+        with pytest.raises(RuntimeError):
+            with connector:
+                raise RuntimeError("szintetikus üzleti hiba")
+        assert transport.close_calls == 1
+
+    def test_context_manager_closes_when_the_request_itself_fails(self) -> None:
+        def failing_handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("szintetikus kapcsolódási hiba")
+
+        transport = _CloseTrackingTransport(failing_handler)
+        connector = DirectusConnector(
+            _settings(), transport=transport, resolver=_loopback_resolver()
+        )
+        with pytest.raises(httpx.ConnectError):
+            with connector:
+                connector.get_content("42")
+        assert transport.close_calls == 1
+
+    def test_close_before_any_request_is_safe(self) -> None:
+        connector, transport = self._connector()
+        connector.close()
+        connector.close()
+        assert transport.close_calls == 1
+
+
+class TestDirectusWebsiteKeyContract:
+    """A website_key üzleti contractja 64 karakter (DB String(64)).
+
+    A PublicationJob.website_key oszlop és a 431439b9fde5 migráció
+    String(64)-et rögzít; a validátor határa ezzel konzisztens, ezért a
+    65. karaktertől fail-closed elutasítás történik, kérés nélkül.
+    """
+
+    def _connector_with_seen(self) -> tuple[DirectusConnector, list[httpx.Request]]:
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json={"data": [{"id": 1}]})
+
+        connector = DirectusConnector(
+            _settings(), transport=httpx.MockTransport(handler), resolver=_loopback_resolver()
+        )
+        return connector, seen
+
+    def test_64_char_website_key_is_accepted(self) -> None:
+        connector, seen = self._connector_with_seen()
+        try:
+            result = connector.get_website("k" * 64)
+        finally:
+            connector.close()
+        assert result == {"id": 1}
+        assert len(seen) == 1
+
+    def test_65_char_website_key_fails_closed_without_request(self) -> None:
+        connector, seen = self._connector_with_seen()
+        try:
+            with pytest.raises(SafeHttpError):
+                connector.get_website("k" * 65)
+        finally:
+            connector.close()
+        assert seen == []
 
 
 class TestGoogleBusinessHardening:
