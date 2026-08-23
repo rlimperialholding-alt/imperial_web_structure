@@ -19,6 +19,9 @@ class TestValidEmails:
             "first.last+tag@example.co.uk",
             "a@b.hu",
             "ügyfél@example.hu",
+            '"user"@example.com',
+            "user@123.123",
+            "user@münchen.de",
         ],
     )
     def test_accepted(self, email: str) -> None:
@@ -59,6 +62,42 @@ class TestInvalidEmails:
     def test_tender_mail_normalize_rejects(self) -> None:
         with pytest.raises(ValueError):
             normalize_email("user@@example.com")
+
+
+class TestBusinessEmailSubsetEdgeCases:
+    """Az elfogadott üzleti email-részhalmaz dokumentált peremeselei.
+
+    A döntések a korábbi üzleti szerződést (tender_portal, tender_mail,
+    partner_control, imperial_care közös ``[^@\s]+@[^@\s]+\.[^@\s]+``
+    validációja) követik; lásd az ``app/services/email_guard.py`` modul
+    docstringjét. Biztonsági validáció nem lazult.
+    """
+
+    def test_quoted_local_part_without_spaces_is_accepted(self) -> None:
+        # Az idézett local part a régi üzleti szerződésben érvényes volt.
+        assert is_valid_email('"user"@example.com')
+
+    def test_quoted_local_part_with_space_is_rejected(self) -> None:
+        # A szóköz soha nem volt megengedett (header-injekciós felület).
+        assert not is_valid_email('"john doe"@example.com')
+
+    def test_numeric_tld_is_accepted(self) -> None:
+        # A numerikus TLD a régi üzleti szerződésben érvényes volt.
+        assert is_valid_email("user@123.123")
+
+    def test_single_label_domain_is_rejected(self) -> None:
+        # Single-label domain sem a régi, sem az új szerződésben nem érvényes.
+        assert not is_valid_email("user@localhost")
+
+    def test_single_character_tld_is_rejected(self) -> None:
+        assert not is_valid_email("user@example.c")
+
+    def test_ip_literal_domain_is_rejected(self) -> None:
+        # 127.0.0.1: az utolsó label egykarakteres, ezért elutasított.
+        assert not is_valid_email("user@127.0.0.1")
+
+    def test_internationalized_domain_is_accepted(self) -> None:
+        assert is_valid_email("user@münchen.de")
 
 
 class TestAdversarialLength:

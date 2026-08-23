@@ -11,7 +11,21 @@ Dokumentált bemeneti korlátok (RFC 5321/5322 pragmatikus részhalmaz):
 - local part: legfeljebb 64 karakter,
 - domain: legfeljebb 255 karakter, legalább 2 label,
 - domain-label: legfeljebb 63 karakter, nem kezdődhet/végződhet kötőjellel,
-- az utolsó label (TLD) csak betűkből állhat, legalább 2 karakter hosszan.
+- az utolsó label (TLD) alfanumerikus (betű vagy számjegy), legalább 2 karakter
+  hosszan.
+
+Üzleti kompatibilitási döntések (repo-contracttal igazolt, 2026-08-23):
+- Az idézőjeles local part (pl. ``"user"@example.com``) elfogadott: a korábbi,
+  a tender_portal/tender_mail/partner_control/imperial_care folyamatokban
+  érvényben lévő ``[^@\s]+@[^@\s]+\.[^@\s]+`` üzleti szerződés elfogadta.
+- A numerikus TLD (pl. ``user@123.123``) elfogadott ugyanezen szerződés
+  alapján; az egykarakteres TLD (``user@example.c``) továbbra is elutasított.
+- A szóközt tartalmazó címek (``"john doe"@example.com``) és a single-label
+  domainek (``user@localhost``) a régi szerződés szerint sem voltak érvényesek,
+  ezért továbbra is elutasítottak.
+- A biztonsági korlátok (hosszkorlátok, szóköz- és vezérlőkarakter-tiltás,
+  pont- és kötőjelszabályok, label-szabályok) változatlanok; a ReDoS-mentes,
+  lineáris szkennelés megmaradt.
 """
 
 from __future__ import annotations
@@ -21,7 +35,9 @@ MAX_LOCAL_LENGTH = 64
 MAX_DOMAIN_LENGTH = 255
 MAX_LABEL_LENGTH = 63
 
-_LOCAL_EXTRA = frozenset("!#$%&'*+-/=?^_`{|}~.")
+# A ``"`` karakter a korábbi üzleti szerződés szerint része volt a local
+# partnak (idézett local part); szóköz és vezérlőkarakter továbbra is tiltott.
+_LOCAL_EXTRA = frozenset("!#$%&'*+-/=?^_`{|}~.\"")
 
 
 def is_valid_email(value: object) -> bool:
@@ -48,6 +64,6 @@ def is_valid_email(value: object) -> bool:
             return False
         if any(not (char.isalnum() or char == "-") for char in label):
             return False
-    if not labels[-1].isalpha() or len(labels[-1]) < 2:
+    if len(labels[-1]) < 2 or not labels[-1].isalnum():
         return False
     return True

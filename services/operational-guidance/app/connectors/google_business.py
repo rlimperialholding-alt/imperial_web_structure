@@ -22,6 +22,17 @@ GOOGLE_API_ORIGINS = frozenset(
         "https://mybusinessbusinessinformation.googleapis.com",
     }
 )
+# Erőforrás-azonosító szerződés (repo-bizonyítékkal rögzítve, 2026-08-23):
+# a Google Business Profile account/location/review azonosító kizárólag
+# decimális számjegyekből állhat (max. 30 jegy). A repó szerződése ezt a
+# szigorú alakot írja elő: a README szerint az azonosítók az API discovery
+# végpontjairól érkeznek, formátum-állítás nélkül, a connector-tesztek pedig
+# numerikus pozitív és nem-numerikus negatív eseteket rögzítenek. Alfanumerikus
+# formátumot előíró hiteles helyi bizonyíték nincs; az ettől eltérő érték
+# fail-closed módon, az URL-útvonalba illesztés ELŐTT elutasításra kerül.
+# Szélesítés kizárólag új repo-bizonyíték (döntési kapu) alapján történhet;
+# külső API-formátum nem lett kitalálva, production credential/API-hívás nem
+# érintett.
 GOOGLE_ID_RE = re.compile(r"[0-9]{1,30}")
 
 
