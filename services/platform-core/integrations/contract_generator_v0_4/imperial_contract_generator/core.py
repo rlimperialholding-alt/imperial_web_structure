@@ -95,7 +95,11 @@ def _valid_https_url(value: str) -> bool:
 _EMAIL_MAX_LENGTH = 254
 _EMAIL_LOCAL_MAX = 64
 _EMAIL_LABEL_MAX = 63
-_EMAIL_LOCAL_EXTRA = frozenset("!#$%&'*+-/=?^_`{|}~.")
+# A ``"`` karakter a korábbi üzleti szerződés szerint része volt a local
+# partnak (idézett local part); szóköz és vezérlőkarakter továbbra is tiltott.
+# A készlet és a TLD-szabály a központi ``email_guard.is_valid_email`` üzleti
+# részhalmazával azonos; a paritást a platform-core contractteszt rögzíti.
+_EMAIL_LOCAL_EXTRA = frozenset("!#$%&'*+-/=?^_`{|}~.\"")
 
 
 def _valid_email(value: str) -> bool:
@@ -104,7 +108,10 @@ def _valid_email(value: str) -> bool:
     No regular expression is used: every part is scanned character by
     character, so adversarial inputs cannot trigger polynomial backtracking.
     Documented limits: total <= 254, local <= 64, domain <= 255,
-    label <= 63, TLD alphabetic with at least 2 characters.
+    label <= 63, TLD alphanumeric with at least 2 characters. The accepted
+    business subset (quoted local part, numeric TLD) matches the central
+    ``email_guard.is_valid_email`` contract; single-label domains and
+    invalid cases stay fail-closed.
     """
     if (
         not isinstance(value, str)
@@ -133,7 +140,7 @@ def _valid_email(value: str) -> bool:
             return False
         if any(not (char.isalnum() or char == "-") for char in label):
             return False
-    return labels[-1].isalpha() and len(labels[-1]) >= 2
+    return labels[-1].isalnum() and len(labels[-1]) >= 2
 
 
 def _valid_iso_date(value: Any) -> bool:

@@ -8,6 +8,7 @@ from docx import Document
 
 from imperial_contract_generator.core import (
     ContractValidationError,
+    _valid_email,
     dispatch_gate,
     generate_invoice_rejection_doc,
     generate_package,
@@ -319,6 +320,44 @@ class ContractGeneratorTests(unittest.TestCase):
                 text = "\n".join(p.text for p in doc.paragraphs)
                 for marker in stale:
                     self.assertNotIn(marker, text, (contract["contract_type"], marker))
+
+
+class EmailBusinessContractTests(unittest.TestCase):
+    """Az email-érvényesítés üzleti részhalmazának peremeselei.
+
+    A kontraktus azonos a központi ``email_guard.is_valid_email`` üzleti
+    részhalmazával: idézett local part és numerikus TLD elfogadott;
+    single-label domain, egykarakteres TLD és érvénytelen cím fail-closed.
+    """
+
+    def test_accepted_business_subset(self):
+        for email in [
+            "partner@example.com",
+            "first.last+tag@example.co.uk",
+            "a@b.hu",
+            '"user"@example.com',
+            "user@123.123",
+            "user@münchen.de",
+        ]:
+            self.assertTrue(_valid_email(email), email)
+
+    def test_rejected_fail_closed_cases(self):
+        for email in [
+            "",
+            "not-an-email",
+            "@example.com",
+            "user@",
+            "user@@example.com",
+            "user name@example.com",
+            "user@example",
+            "user@localhost",
+            "user@example.c",
+            "user@exa..mple.com",
+            ".user@example.com",
+            "user@127.0.0.1",
+            '"john doe"@example.com',
+        ]:
+            self.assertFalse(_valid_email(email), email)
 
 
 if __name__ == "__main__":
