@@ -11,13 +11,17 @@ A tesztek egy szkriptelt fake backenddel bizonyítják, hogy:
   fail-closed leáll, kapcsolódás nélkül;
 - minden redirect ugrás új URL- és IP-validációt és új pinelést kap;
 - több A/AAAA rekord esetén a sorrend determinisztikus (IPv4 előbb), és egy
-  cím sikertelensége esetén a következő validált cím próbálkozik.
+  cím sikertelensége esetén a következő validált cím próbálkozik;
+- connect- vagy timeout-hiba után a következő validált cím próbálkozik,
+  kizárólag a validált listán belül; az utolsó hiba oka a záró kivételben
+  megmarad.
 """
 
 from __future__ import annotations
 
 import ipaddress
 
+import httpcore
 import pytest
 
 from app.connectors.safe_http import (
@@ -26,10 +30,13 @@ from app.connectors.safe_http import (
     SafeHttpClient,
     SafeHttpError,
     _PinnedNetworkBackend,
+    _ordered_candidates,
 )
 
 PUBLIC_V4 = ipaddress.ip_address("93.184.216.34")
+PUBLIC_V4_SECOND = ipaddress.ip_address("1.1.1.1")
 PUBLIC_V6 = ipaddress.ip_address("2606:2800:220:1:248:1893:25c8:1946")
+PUBLIC_V6_SECOND = ipaddress.ip_address("2606:4700:4700::1111")
 INTERNAL = ipaddress.ip_address("10.0.0.1")
 METADATA = ipaddress.ip_address("169.254.169.254")
 LOOPBACK = ipaddress.ip_address("127.0.0.1")
@@ -128,6 +135,29 @@ class _FailingIpv4Backend(_ScriptedBackend):
         self._session.connected.append((host, port))
         if host == str(PUBLIC_V4):
             raise OSError(f"szimulált kapcsolódási hiba: {host}")
+        return _ScriptedStream(self._session)
+
+
+class _ScriptedFailureBackend(_ScriptedBackend):
+    """Fake backend szkriptelt hibákkal: a kijelölt célra a megadott kivételt
+    dobja, minden más célra csatlakozik; DNS-feloldást nem végez."""
+
+    def __init__(self, session: _ScriptedSession, failures: dict[str, Exception]) -> None:
+        super().__init__(session)
+        self._failures = failures
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: object = None,
+    ) -> _ScriptedStream:
+        self._session.connected.append((host, port))
+        failure = self._failures.get(host)
+        if failure is not None:
+            raise failure
         return _ScriptedStream(self._session)
 
 
@@ -336,3 +366,128 @@ class TestRedirectPinning:
         with pytest.raises(SafeHttpError):
             client.get("/start")
         assert session.connected == [(str(PUBLIC_V4), 443)]
+
+
+class TestConnectTimeoutFallback:
+    """Connect/timeout hibák után a backend a következő validált címre lép.
+
+    Az első pinelt cím connect-timeoutot ad, a második sikeres; minden cím
+    hibája esetén determinisztikus, biztonságos kivétel keletkezik. Kizárólag
+    a validált címkészlet elemei kísérelhetők meg; valódi hálózat nincs.
+    """
+
+    def _client_with_failures(
+        self,
+        session: _ScriptedSession,
+        addresses: set,
+        failures: dict[str, Exception],
+    ) -> SafeHttpClient:
+        pins: dict[tuple[str, int], tuple[str, ...]] = {}
+        transport = PinnedTransport(
+            pins, backend=_ScriptedFailureBackend(session, failures)
+        )
+        return SafeHttpClient(
+            "https://provider.example/v1",
+            resolver=lambda host, port: addresses,
+            transport=transport,
+        )
+
+    def test_connect_timeout_on_first_ipv4_falls_back_to_second_ipv4(self) -> None:
+        # IPv4-only lista: az első pinelt cím ConnectTimeoutot ad,
+        # a második validált IPv4 cím sikeresen kapcsolódik.
+        addresses = {PUBLIC_V4, PUBLIC_V4_SECOND}
+        ordered = _ordered_candidates(addresses)
+        session = _ScriptedSession([RESPONSE_OK])
+        client = self._client_with_failures(
+            session, addresses, {ordered[0]: httpcore.ConnectTimeout("időtúllépés")}
+        )
+        try:
+            response = client.get("/start")
+            response.close()
+        finally:
+            client.close()
+        assert response.status_code == 200
+        assert session.connected == [(ordered[0], 443), (ordered[1], 443)]
+
+    def test_connect_timeout_on_ipv4_falls_back_to_validated_ipv6(self) -> None:
+        # Mixed lista: az IPv4 connect-timeout után a validált IPv6 próbálkozik.
+        session = _ScriptedSession([RESPONSE_OK])
+        client = self._client_with_failures(
+            session, {PUBLIC_V4, PUBLIC_V6}, {str(PUBLIC_V4): httpcore.ConnectTimeout("időtúllépés")}
+        )
+        try:
+            response = client.get("/start")
+            response.close()
+        finally:
+            client.close()
+        assert response.status_code == 200
+        assert session.connected == [(str(PUBLIC_V4), 443), (str(PUBLIC_V6), 443)]
+
+    def test_connect_timeout_on_first_ipv6_falls_back_to_second_ipv6(self) -> None:
+        # IPv6-only lista: az első pinelt IPv6 connect-timeout, a második sikeres.
+        addresses = {PUBLIC_V6, PUBLIC_V6_SECOND}
+        ordered = _ordered_candidates(addresses)
+        session = _ScriptedSession([RESPONSE_OK])
+        client = self._client_with_failures(
+            session, addresses, {ordered[0]: httpcore.ConnectTimeout("időtúllépés")}
+        )
+        try:
+            response = client.get("/start")
+            response.close()
+        finally:
+            client.close()
+        assert response.status_code == 200
+        assert session.connected == [(ordered[0], 443), (ordered[1], 443)]
+
+    def test_generic_timeout_exception_falls_back_to_next_candidate(self) -> None:
+        # A TimeoutException család (nem ConnectTimeout) is fallbacket indít.
+        session = _ScriptedSession([RESPONSE_OK])
+        client = self._client_with_failures(
+            session,
+            {PUBLIC_V4, PUBLIC_V6},
+            {str(PUBLIC_V4): httpcore.TimeoutException("időtúllépés")},
+        )
+        try:
+            response = client.get("/start")
+            response.close()
+        finally:
+            client.close()
+        assert response.status_code == 200
+        assert session.connected == [(str(PUBLIC_V4), 443), (str(PUBLIC_V6), 443)]
+
+    def test_connect_error_falls_back_to_next_candidate(self) -> None:
+        # A ConnectError (httpcore connect-család) is a következő címre lép.
+        session = _ScriptedSession([RESPONSE_OK])
+        client = self._client_with_failures(
+            session,
+            {PUBLIC_V4, PUBLIC_V6},
+            {str(PUBLIC_V4): httpcore.ConnectError("kapcsolódási hiba")},
+        )
+        try:
+            response = client.get("/start")
+            response.close()
+        finally:
+            client.close()
+        assert response.status_code == 200
+        assert session.connected == [(str(PUBLIC_V4), 443), (str(PUBLIC_V6), 443)]
+
+    def test_all_candidates_fail_raises_deterministic_connect_error_with_last_cause(self) -> None:
+        # Minden validált cím hibája esetén determinisztikus ConnectError
+        # keletkezik, amelynek oka az utolsó hiba; a kísérlet csak a validált
+        # listán belül marad, a determinisztikus IPv4 -> IPv6 sorrendben.
+        ordered = _ordered_candidates({PUBLIC_V4, PUBLIC_V6})
+        last_failure = OSError("utolsó szimulált hiba")
+        failures: dict[str, Exception] = {
+            ordered[0]: httpcore.ConnectTimeout("első hiba"),
+            ordered[1]: last_failure,
+        }
+        session = _ScriptedSession([])
+        backend = _PinnedNetworkBackend(
+            _ScriptedFailureBackend(session, failures),
+            {("provider.example", 443): ordered},
+        )
+        with pytest.raises(httpcore.ConnectError) as excinfo:
+            backend.connect_tcp("provider.example", 443)
+        assert "provider.example:443" in str(excinfo.value)
+        assert excinfo.value.__cause__ is last_failure
+        assert session.connected == [(ordered[0], 443), (ordered[1], 443)]

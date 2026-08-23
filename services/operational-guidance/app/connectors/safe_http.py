@@ -224,7 +224,9 @@ class _PinnedNetworkBackend(httpcore.NetworkBackend):
     ugyanazon validált címkészlet tartozik; a kapcsolat nem végez új
     DNS-feloldást. Validálatlan célra irányuló kapcsolódási kísérlet
     fail-closed hibát ad (így környezeti proxy vagy más megkerülés sem tud
-    a pinelt réteg mellett kapcsolódni).
+    a pinelt réteg mellett kapcsolódni). A validált címkészleten belül egy
+    connect- vagy timeout-hibás cím után a következő validált cím
+    próbálkozik; a záró hiba oka az utolsó hiba marad.
     """
 
     def __init__(
@@ -248,7 +250,7 @@ class _PinnedNetworkBackend(httpcore.NetworkBackend):
             raise SafeHttpError(
                 f"A kapcsolati cél IP-validáció nélkül maradt: {host}:{port}"
             )
-        last_error: OSError | None = None
+        last_error: Exception | None = None
         for target in pinned:
             try:
                 return self._delegate.connect_tcp(
@@ -258,7 +260,17 @@ class _PinnedNetworkBackend(httpcore.NetworkBackend):
                     local_address=local_address,
                     socket_options=socket_options,
                 )
-            except OSError as error:
+            except (
+                OSError,
+                httpcore.ConnectError,
+                httpcore.ConnectTimeout,
+                httpcore.TimeoutException,
+            ) as error:
+                # Az httpcore connect- és timeout-hibái (a ConnectTimeout a
+                # TimeoutException leszármazottja) nem OSError típusúak, ezért
+                # itt explicit módon kezeljük őket: egy validált cím
+                # időtúllépése után a következő validált cím próbálkozik;
+                # a ciklus a validált listán kívülre nem léphet.
                 last_error = error
         assert last_error is not None
         raise httpcore.ConnectError(
