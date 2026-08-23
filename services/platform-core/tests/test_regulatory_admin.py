@@ -145,6 +145,62 @@ def test_source_action_rejects_file_csrf_with_403(client, action):
     assert response.status_code == 403
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/house-designer/regulatory-admin/interpretations/INT-NX/submit_review",
+        "/house-designer/regulatory-admin/rulesets/RS-NX/submit_review",
+    ],
+)
+def test_transition_rejects_file_row_version_with_400(client, endpoint):
+    """Nem skalár (fájl) row_version a transition útvonalakon: kontrollált 4xx, nem 500."""
+    _login_regulatory_reviewer(client)
+    csrf = _regulatory_csrf(client)
+    response = client.post(
+        endpoint,
+        data={"csrf_token": csrf},
+        files={"row_version": ("version.txt", b"1", "text/plain")},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/house-designer/regulatory-admin/interpretations/INT-NX/submit_review",
+        "/house-designer/regulatory-admin/rulesets/RS-NX/submit_review",
+    ],
+)
+def test_transition_rejects_non_integer_row_version_with_400(client, endpoint):
+    """Nem egész row_version a transition útvonalakon: kontrollált 4xx, nem 500."""
+    _login_regulatory_reviewer(client)
+    csrf = _regulatory_csrf(client)
+    response = client.post(
+        endpoint,
+        data={"csrf_token": csrf, "row_version": "nem-szam"},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/house-designer/regulatory-admin/interpretations/INT-NX/submit_review",
+        "/house-designer/regulatory-admin/rulesets/RS-NX/submit_review",
+    ],
+)
+def test_transition_rejects_file_csrf_with_403(client, endpoint):
+    """Nem skalár (fájl) csrf_token a transition útvonalakon: fail-closed 4xx, nem 500."""
+    _login_regulatory_reviewer(client)
+    _regulatory_csrf(client)
+    response = client.post(
+        endpoint,
+        data={"row_version": "1"},
+        files={"csrf_token": ("token.txt", b"x", "text/plain")},
+    )
+    assert response.status_code == 403
+
+
 def _verified_test_vector():
     geometry = apply_command(
         empty_geometry(10_000, 8_000),

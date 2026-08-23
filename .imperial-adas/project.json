@@ -114,7 +114,15 @@
         "timeoutSeconds": 1200
       }
     ],
-    "staging": [],
+    "staging": [
+      {
+        "name": "local synthetic staging-smoke: auth/scope/CSRF, Market OFF external writes, HD/Tender/Care critical paths",
+        "command": "cd services/platform-core && python -m pytest -q tests/test_contract_suite.py tests/test_e2e_suite.py",
+        "executionScope": "local-dry-run",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
     "migration": [
       {
         "name": "single alembic head",

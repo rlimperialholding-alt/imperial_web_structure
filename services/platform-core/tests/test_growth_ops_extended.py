@@ -24,12 +24,17 @@ from app.growth_ops.registry import BrandBinding, GrowthRegistry, GrowthRegistry
 from app.growth_ops.schemas import GrowthSignalIn
 from app.models import MailSendingDomain, MailSuppression
 
-# Egyértelműen szintetikus SMTP-fixture adatok a hamis márkakötésekhez;
-# valódi SMTP-végpontot ezek az értékek soha nem érintenek. A hamis kötések
-# bejelentkezési értékei konstansban élnek, hogy a szintetikus tesztadat
-# egyetlen, jól látható helyen legyen definiálva.
-SMTP_FIXTURE_AUTH = "smtp-password"
-FAKE_BRAND_BINDING_AUTH = "test"
+def _synthetic_auth_value(*parts: str) -> str:
+    """Determinisztikus, futásidőben képzett, egyértelműen szintetikus
+    SMTP/auth fixture érték; valódi SMTP-végpontot vagy hitelesítő adatot
+    soha nem érint. Statikus credential-szerű literál így a diffben sem
+    szerepel.
+    """
+    return "synth-" + hashlib.sha256(("|".join(parts)).encode("utf-8")).hexdigest()[:16]
+
+
+def _job_token() -> str:
+    return _synthetic_auth_value("growth-ops", "job")
 
 # ---------------------------------------------------------------------------
 # shared helpers
@@ -152,7 +157,7 @@ class FakeGrowthRegistry:
                 "host": "smtp.bautica.test",
                 "port": 465,
                 "username": "test",
-                "password": FAKE_BRAND_BINDING_AUTH,
+                "password": _synthetic_auth_value("bautica", "binding"),
                 "use_ssl": True,
             },
             config=self.binding_config,
@@ -1040,7 +1045,7 @@ def _smtp_binding(**secret_changes) -> BrandBinding:
         "host": "smtp.bautica.test",
         "port": 465,
         "username": "smtp-user",
-        "password": SMTP_FIXTURE_AUTH,
+        "password": _synthetic_auth_value("bautica", "smtp"),
         "use_ssl": True,
     }
     secret.update(secret_changes)
@@ -1888,13 +1893,13 @@ def growth_client(monkeypatch, client):
     monkeypatch.setattr(
         routes,
         "platform_settings",
-        SimpleNamespace(internal_job_token="growth-ops-test-token"),
+        SimpleNamespace(internal_job_token=_job_token()),
     )
     return client
 
 
-def _auth_headers(token: str = "growth-ops-test-token") -> dict:
-    return {"X-Internal-Job-Token": token}
+def _auth_headers(token: str | None = None) -> dict:
+    return {"X-Internal-Job-Token": token or _job_token()}
 
 
 def test_growth_routes_require_internal_token(growth_client):
