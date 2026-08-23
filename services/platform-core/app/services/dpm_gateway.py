@@ -112,6 +112,14 @@ class DpmGateway:
                         "Accept": "application/json",
                     },
                 )
+                # A válasz statusát, törzsét és JSON-feldolgozását még a kliens
+                # context lezárása előtt puffereljük: lezárt kapcsolat után
+                # streaming/lazy választörzs már nem olvasható biztonságosan.
+                status_code = response.status_code
+                try:
+                    payload: Any = response.json()
+                except ValueError:
+                    payload = None
             except SafeHttpError as error:
                 raise DpmGatewayError(
                     502, "Az ITEP DPM tokenváltás célja nem biztonságos."
@@ -120,14 +128,12 @@ class DpmGateway:
                 raise DpmGatewayError(
                     503, "Az ITEP DPM tokenváltás nem érhető el."
                 ) from error
-        if response.status_code != 200:
+        if status_code != 200:
             raise DpmGatewayError(
-                response.status_code, "Az ITEP nem adott ki DPM hozzáférési tokent."
+                status_code, "Az ITEP nem adott ki DPM hozzáférési tokent."
             )
-        try:
-            payload = response.json()
-        except ValueError as error:
-            raise DpmGatewayError(502, "Az ITEP hibás DPM tokenválaszt adott.") from error
+        if payload is None:
+            raise DpmGatewayError(502, "Az ITEP hibás DPM tokenválaszt adott.")
         token = payload.get("accessToken") if isinstance(payload, dict) else None
         if not isinstance(token, str) or token.count(".") != 2:
             raise DpmGatewayError(502, "Az ITEP hibás DPM tokenválaszt adott.")
@@ -198,6 +204,15 @@ class DpmGateway:
         with client:
             try:
                 response = client.request(method, path, **kwargs)
+                # A válasz statusát, törzsét és JSON-feldolgozását még a kliens
+                # context lezárása előtt puffereljük: lezárt kapcsolat után
+                # streaming/lazy választörzs már nem olvasható biztonságosan.
+                status_code = response.status_code
+                content = response.content
+                try:
+                    parsed_json: Any = response.json()
+                except ValueError:
+                    parsed_json = None
             except SafeHttpError as error:
                 raise DpmGatewayError(
                     502, "A Digital Project Managers cél nem biztonságos."
@@ -206,22 +221,18 @@ class DpmGateway:
                 raise DpmGatewayError(
                     503, "A Digital Project Managers szolgáltatás nem érhető el."
                 ) from error
-        if response.status_code >= 400:
-            detail = f"DPM HTTP {response.status_code}"
-            try:
-                parsed = response.json()
-                detail = str(parsed.get("detail") or detail)
-            except (ValueError, AttributeError):
-                pass
-            raise DpmGatewayError(response.status_code, detail)
-        if not response.content:
+        if status_code >= 400:
+            detail = f"DPM HTTP {status_code}"
+            if isinstance(parsed_json, dict) and parsed_json.get("detail"):
+                detail = str(parsed_json["detail"])
+            raise DpmGatewayError(status_code, detail)
+        if not content:
             return None
-        try:
-            return response.json()
-        except ValueError as error:
+        if parsed_json is None:
             raise DpmGatewayError(
                 502, "A Digital Project Managers hibás választ adott."
-            ) from error
+            )
+        return parsed_json
 
     @staticmethod
     def admin_identity(subject: str) -> DpmIdentity:
