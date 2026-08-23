@@ -78,7 +78,7 @@ def test_declarative_rules_are_normalized_and_merged_by_unique_code():
 def test_regulatory_admin_ui_exposes_bounded_declarative_rule_input(client):
     login = client.post(
         "/login",
-        data={"email": "technical-prep@imperial.local", "password": "Imperial2026!"},
+        data={"email": "technical-prep@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

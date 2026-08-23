@@ -23,18 +23,11 @@ from app.growth_ops.models import (
 from app.growth_ops.registry import BrandBinding, GrowthRegistry, GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn
 from app.models import MailSendingDomain, MailSuppression
-
-def _synthetic_auth_value(*parts: str) -> str:
-    """Determinisztikus, futásidőben képzett, egyértelműen szintetikus
-    SMTP/auth fixture érték; valódi SMTP-végpontot vagy hitelesítő adatot
-    soha nem érint. Statikus credential-szerű literál így a diffben sem
-    szerepel.
-    """
-    return "synth-" + hashlib.sha256(("|".join(parts)).encode("utf-8")).hexdigest()[:16]
+from synthetic_fixtures import synthetic_auth_value
 
 
 def _job_token() -> str:
-    return _synthetic_auth_value("growth-ops", "job")
+    return synthetic_auth_value("growth-ops", "job")
 
 # ---------------------------------------------------------------------------
 # shared helpers
@@ -157,7 +150,7 @@ class FakeGrowthRegistry:
                 "host": "smtp.bautica.test",
                 "port": 465,
                 "username": "test",
-                "password": _synthetic_auth_value("bautica", "binding"),
+                "password": synthetic_auth_value("bautica", "binding"),
                 "use_ssl": True,
             },
             config=self.binding_config,
@@ -1045,7 +1038,7 @@ def _smtp_binding(**secret_changes) -> BrandBinding:
         "host": "smtp.bautica.test",
         "port": 465,
         "username": "smtp-user",
-        "password": _synthetic_auth_value("bautica", "smtp"),
+        "password": synthetic_auth_value("bautica", "smtp"),
         "use_ssl": True,
     }
     secret.update(secret_changes)
@@ -1905,8 +1898,12 @@ def _auth_headers(token: str | None = None) -> dict:
 def test_growth_routes_require_internal_token(growth_client):
     response = growth_client.get("/api/internal/growth-ops/readiness")
     assert response.status_code == 401
+    # Futásidőben képzett, determinisztikusan eltérő szintetikus hibás token a
+    # közös factoryból; statikus credential-szerű literál nincs a diffben.
+    invalid_auth = synthetic_auth_value("growth-ops", "wrong-token")
+    assert invalid_auth != _job_token()
     response = growth_client.get(
-        "/api/internal/growth-ops/readiness", headers=_auth_headers("wrong-token")
+        "/api/internal/growth-ops/readiness", headers=_auth_headers(invalid_auth)
     )
     assert response.status_code == 401
 

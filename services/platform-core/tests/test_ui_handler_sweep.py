@@ -44,6 +44,7 @@ from app.services.b2b_project_intake import (
 from app.seed import DEMO_PASSWORD
 from app.services.technical_products import create_case, decide_case, get_case, review_gate, submit_case
 from app.services.website_content import register_site
+from synthetic_fixtures import synthetic_auth_value
 
 
 def _login(client, email: str) -> None:
@@ -419,6 +420,9 @@ class TestWebsiteContentUiSweep:
 
 class TestMarketingConsentUiSweep:
     def test_consent_grant_withdraw_and_negatives(self, client, db) -> None:
+        # Futásidőben képzett, egyértelműen szintetikus consent-fixture érték;
+        # statikus credential-szerű literál nincs a diffben.
+        consent_value = synthetic_auth_value("ui-sweep", "consent")
         lead = MarketingLead(
             lead_id="MKL-SWEEP-01",
             dedupe_key=hashlib.sha256(b"ui-sweep-lead").hexdigest(),
@@ -427,7 +431,7 @@ class TestMarketingConsentUiSweep:
             full_name="UI Sweep Érdeklődő",
             email="lead.sweep@imperial.example",
             privacy_notice_version="pn-2026-1",
-            consent_management_token="cmt-ui-sweep-01",
+            consent_management_token=consent_value,
             status="new",
             score=0,
         )

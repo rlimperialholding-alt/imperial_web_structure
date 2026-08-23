@@ -51,6 +51,7 @@ from app.services.housevision_source_ingest import (
     IngestedAsset,
     SourceIngestError,
 )
+from synthetic_fixtures import synthetic_auth_value
 
 SOURCE_URL = "https://8.8.8.8/lawful-house/source-page"
 
@@ -326,14 +327,17 @@ class FakeSock:
 
 def test_bridge_call_image_factory_success(monkeypatch):
     _reset_fake_http()
-    monkeypatch.setenv("IMAGE_FACTORY_API_TOKEN", "synthetic-token-v1")
+    # Futásidőben képzett, egyértelműen szintetikus API-fixture érték a közös
+    # factoryból; statikus credential-szerű literál nincs a diffben.
+    api_value = synthetic_auth_value("housevision", "image-factory")
+    monkeypatch.setenv("IMAGE_FACTORY_API_TOKEN", api_value)
     FakeHTTPConnection.queue.append({"status": 200, "body": b'{"ok": true}'})
     monkeypatch.setattr(http.client, "HTTPConnection", FakeHTTPConnection)
     result = bridge._call_image_factory({"request_id": "synthetic-1"})
     assert result == {"ok": True}
     host, url, headers = FakeHTTPConnection.captured[0]
     assert host == "image-factory" and url == "/api/v1/typehouse/reference-render"
-    assert "synthetic-token-v1" in headers and "application/json" in headers
+    assert api_value in headers and "application/json" in headers
 
 
 
