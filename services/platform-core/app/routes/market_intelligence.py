@@ -258,13 +258,6 @@ def _integer_default(payload: dict[str, Any], key: str, default: int) -> int:
         ) from error
 
 
-def _form_scalar(form: FormData, key: str) -> str | None:
-    value = form.get(key)
-    if isinstance(value, UploadFile):
-        raise TypeError("scalar form field expected, received a file upload")
-    return value
-
-
 def _form_integer(form: Any, key: str, default: int) -> int:
     try:
         return int(form.get(key) or default)
