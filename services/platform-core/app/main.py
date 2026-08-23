@@ -28,6 +28,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .audit import audit
+from .authority_reader.routes import router as authority_reader_router
 from .autonomous_publishing.routes import router as autonomous_publishing_router
 from .autonomous_publishing.service import readiness as autonomous_publishing_readiness
 from .config import settings
@@ -1245,6 +1246,7 @@ app.include_router(build_regulatory_admin_router(templates))
 app.include_router(build_typehouse_factory_router(templates))
 app.include_router(autonomous_publishing_router)
 app.include_router(growth_ops_router)
+app.include_router(authority_reader_router)
 
 
 class DemoActionIn(BaseModel):

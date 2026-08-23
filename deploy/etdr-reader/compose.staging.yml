@@ -1,0 +1,131 @@
+name: ${COMPOSE_PROJECT_NAME:-imperial-etdr-reader-staging}
+
+x-reader-environment: &reader-environment
+  ENVIRONMENT: staging
+  DATABASE_HOST: reader-postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: etdr_reader
+  DATABASE_USER: etdr_reader
+  DATABASE_PASSWORD_FILE: /run/secrets/reader_db_password
+  INTERNAL_JOB_TOKEN_FILE: /run/secrets/reader_internal_token
+  AUTHORITY_READER_HMAC_KEY_FILE: /run/secrets/reader_hmac_key
+  AUTHORITY_READER_POLICY_EVIDENCE_FILE: /run/secrets/reader_policy_evidence
+  AUTHORITY_READER_ENABLED: ${AUTHORITY_READER_ENABLED:-false}
+  AUTHORITY_READER_POLICY_AUTHORIZED: ${AUTHORITY_READER_POLICY_AUTHORIZED:-false}
+  AUTHORITY_READER_OENY_ENABLED: ${AUTHORITY_READER_OENY_ENABLED:-false}
+  AUTHORITY_READER_ETDR_BASE_URL: https://alk.etdr.gov.hu
+  AUTHORITY_READER_ETDR_PUBLIC_URL: https://www.etdr.gov.hu
+  AUTHORITY_READER_OENY_BASE_URL: https://www.oeny.hu
+  AUTHORITY_READER_PAGE_SIZE: "100"
+  AUTHORITY_READER_REQUEST_DELAY_SECONDS: "2"
+  AUTHORITY_READER_OVERLAP_DAYS: "7"
+  AUTHORITY_READER_MAX_PAGES_PER_RUN: "10000"
+  AUTHORITY_READER_WORKER_ID: ${AUTHORITY_READER_WORKER_ID:-hetzner-staging-1}
+
+x-reader-service: &reader-service
+  image: ${READER_IMAGE:?READER_IMAGE is required}
+  restart: unless-stopped
+  init: true
+  environment: *reader-environment
+  secrets:
+    - reader_db_password
+    - reader_internal_token
+    - reader_hmac_key
+    - reader_policy_evidence
+  read_only: true
+  tmpfs:
+    - /tmp:size=32m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  mem_limit: 256m
+  cpus: 0.50
+
+services:
+  reader-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: etdr_reader
+      POSTGRES_USER: etdr_reader
+      POSTGRES_PASSWORD_FILE: /run/secrets/reader_db_password
+    secrets:
+      - reader_db_password
+    volumes:
+      - reader_postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etdr_reader -d etdr_reader"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    cpus: 0.50
+
+  reader-migrate:
+    <<: *reader-service
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    networks:
+      - backend
+    depends_on:
+      reader-postgres:
+        condition: service_healthy
+
+  reader-api:
+    <<: *reader-service
+    command: ["uvicorn", "app.authority_reader.standalone:app", "--host", "0.0.0.0", "--port", "8000"]
+    networks:
+      - backend
+      - egress
+    ports:
+      - "127.0.0.1:${READER_PORT:-8096}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')",
+        ]
+      interval: 10s
+      timeout: 4s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      reader-migrate:
+        condition: service_completed_successfully
+
+  reader-worker:
+    <<: *reader-service
+    command: ["python", "-m", "app.authority_reader_worker"]
+    networks:
+      - backend
+      - egress
+    depends_on:
+      reader-migrate:
+        condition: service_completed_successfully
+
+networks:
+  backend:
+    internal: true
+  egress: {}
+
+volumes:
+  reader_postgres_data: {}
+
+secrets:
+  reader_db_password:
+    file: ${READER_DB_PASSWORD_FILE:?READER_DB_PASSWORD_FILE is required}
+  reader_internal_token:
+    file: ${READER_INTERNAL_TOKEN_FILE:?READER_INTERNAL_TOKEN_FILE is required}
+  reader_hmac_key:
+    file: ${READER_HMAC_KEY_FILE:?READER_HMAC_KEY_FILE is required}
+  reader_policy_evidence:
+    file: ${READER_POLICY_EVIDENCE_FILE:?READER_POLICY_EVIDENCE_FILE is required}
