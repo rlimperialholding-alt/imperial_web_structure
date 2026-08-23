@@ -134,7 +134,15 @@
     ],
     "rollback": [],
     "forwardRecovery": [],
-    "reconciliation": [],
+    "reconciliation": [
+      {
+        "name": "platform-core local synthetic reconciliation",
+        "command": "cd services/platform-core && python scripts/reconciliation.py",
+        "executionScope": "local-dry-run",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1200
+      }
+    ],
     "performance": [],
     "cost": []
   },
