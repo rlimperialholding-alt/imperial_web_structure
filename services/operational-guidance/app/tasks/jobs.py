@@ -109,48 +109,50 @@ def snapshot_ingatlan_ids() -> list[dict[str, Any]]:
 @celery.task(name="app.tasks.jobs.unpublish_expired_content")
 def unpublish_expired_content() -> list[str]:
     settings = get_settings()
-    directus = DirectusConnector(settings)
-    now = datetime.now(UTC)
-    content_items = directus.list_expired_content(now)
-    created_jobs: list[str] = []
+    # A Directus-kliens lifecycle-ja explicit: a context manager minden normál
+    # és kivételes úton lezárja a HTTP-kapcsolatot (nincs persistent leak).
+    with DirectusConnector(settings) as directus:
+        now = datetime.now(UTC)
+        content_items = directus.list_expired_content(now)
+        created_jobs: list[str] = []
 
-    with SessionLocal() as db:
-        for content in content_items:
-            content_id = str(content["id"])
-            existing = db.scalar(
-                select(PublicationJob.id).where(
-                    PublicationJob.content_id == content_id,
-                    PublicationJob.status.in_(
-                        [PublicationStatus.queued, PublicationStatus.publishing]
-                    ),
-                    PublicationJob.request_payload["action"].as_string() == "unpublish",
+        with SessionLocal() as db:
+            for content in content_items:
+                content_id = str(content["id"])
+                existing = db.scalar(
+                    select(PublicationJob.id).where(
+                        PublicationJob.content_id == content_id,
+                        PublicationJob.status.in_(
+                            [PublicationStatus.queued, PublicationStatus.publishing]
+                        ),
+                        PublicationJob.request_payload["action"].as_string() == "unpublish",
+                    )
                 )
-            )
-            if existing:
-                continue
+                if existing:
+                    continue
 
-            batch_id = uuid.uuid4()
-            website_keys = content.get("website_keys") or []
-            if isinstance(website_keys, str):
-                website_keys = [website_keys]
-            jobs: list[PublicationJob] = []
-            for website_key in website_keys:
-                job = create_publication_job(
-                    db,
-                    PublicationCreate(
-                        batch_id=batch_id,
-                        content_id=content_id,
-                        website_key=str(website_key),
-                        action="unpublish",
-                        paths=content.get("paths") or [],
-                        tags=content.get("tags") or [],
-                    ),
-                )
-                jobs.append(job)
-                created_jobs.append(str(job.id))
+                batch_id = uuid.uuid4()
+                website_keys = content.get("website_keys") or []
+                if isinstance(website_keys, str):
+                    website_keys = [website_keys]
+                jobs: list[PublicationJob] = []
+                for website_key in website_keys:
+                    job = create_publication_job(
+                        db,
+                        PublicationCreate(
+                            batch_id=batch_id,
+                            content_id=content_id,
+                            website_key=str(website_key),
+                            action="unpublish",
+                            paths=content.get("paths") or [],
+                            tags=content.get("tags") or [],
+                        ),
+                    )
+                    jobs.append(job)
+                    created_jobs.append(str(job.id))
 
-            for job in jobs:
-                execute_publication(db, settings, str(job.id))
+                for job in jobs:
+                    execute_publication(db, settings, str(job.id))
 
     return created_jobs
 

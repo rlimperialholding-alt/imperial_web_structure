@@ -138,6 +138,18 @@ def _quoted_query(query: str) -> str:
     return quote(query, safe="=&%:@!$'()*+,;/?-._~")
 
 
+def _request_target(url: httpx.URL) -> bytes:
+    """A httpcore request-target bájtpontosan: raw path + opcionális ``?`` + raw query.
+
+    Az httpx 0.28 ``URL.raw_path`` dokumentált szerződése szerint a raw path
+    és a query együtt, már kódolt bájt sor formában szerepel benne; query
+    nélkül ``?`` sincs. A transport ezt bájtpontosan adja a hálózati rétegnek:
+    nincs dekódolás/újrakódolás, így a percent-kódolás, az ismétlődő kulcsok
+    és a paramétersorrend változatlan marad.
+    """
+    return url.raw_path
+
+
 def _check_url(
     url: str,
     *,
@@ -309,7 +321,10 @@ class PinnedTransport(httpx.BaseTransport):
                 scheme=request.url.raw_scheme,
                 host=request.url.raw_host,
                 port=request.url.port,
-                target=request.url.raw_path,
+                # A query-string a target része marad (path + ?query bájtpontosan):
+                # a params-argumentummal küldött kérések (pl. DPM request params)
+                # query nélkül sosem hagyhatják el a kliens.
+                target=_request_target(request.url),
             ),
             headers=request.headers.raw,
             content=request.stream,

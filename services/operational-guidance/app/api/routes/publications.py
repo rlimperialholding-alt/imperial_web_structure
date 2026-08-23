@@ -93,26 +93,28 @@ def directus_webhook(
     if event.payload.get("status") != "approved":
         return {"accepted": True, "jobs_created": 0}
 
-    directus = DirectusConnector(settings)
-    batch_id = uuid.uuid4()
-    count = 0
-    for content_id in event.keys:
-        content = directus.get_content(str(content_id))
-        if content.get("status") != "approved":
-            continue
-        website_keys = content.get("website_keys", [])
-        if isinstance(website_keys, str):
-            website_keys = [website_keys]
-        for website_key in website_keys:
-            request = PublicationCreate(
-                batch_id=batch_id,
-                content_id=str(content_id),
-                website_key=str(website_key),
-                paths=content.get("paths") or [],
-                tags=content.get("tags") or [],
-                publish_at=content.get("valid_from"),
-            )
-            job = create_publication_job(db, request)
-            _dispatch_job(job, request.publish_at, background_tasks)
-            count += 1
+    # A Directus-kliens lifecycle-ja explicit: a context manager minden normál
+    # és kivételes úton lezárja a HTTP-kapcsolatot (nincs persistent leak).
+    with DirectusConnector(settings) as directus:
+        batch_id = uuid.uuid4()
+        count = 0
+        for content_id in event.keys:
+            content = directus.get_content(str(content_id))
+            if content.get("status") != "approved":
+                continue
+            website_keys = content.get("website_keys", [])
+            if isinstance(website_keys, str):
+                website_keys = [website_keys]
+            for website_key in website_keys:
+                request = PublicationCreate(
+                    batch_id=batch_id,
+                    content_id=str(content_id),
+                    website_key=str(website_key),
+                    paths=content.get("paths") or [],
+                    tags=content.get("tags") or [],
+                    publish_at=content.get("valid_from"),
+                )
+                job = create_publication_job(db, request)
+                _dispatch_job(job, request.publish_at, background_tasks)
+                count += 1
     return {"accepted": True, "jobs_created": count}

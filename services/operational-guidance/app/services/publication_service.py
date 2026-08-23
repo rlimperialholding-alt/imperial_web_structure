@@ -56,44 +56,49 @@ def execute_publication(db: Session, settings: Settings, job_id: str) -> Publica
     db.commit()
 
     try:
-        directus = DirectusConnector(settings)
-        content = directus.get_content(job.content_id)
-        action = str(job.request_payload.get("action", "publish"))
-        allowed_statuses = {"approved", "published"}
-        if action == "unpublish":
-            allowed_statuses.add("archived")
-        if content.get("status") not in allowed_statuses:
-            raise PermissionError("Only approved or published Directus content may be distributed")
+        # A Directus-kliens lifecycle-ja explicit: a context manager a
+        # PermissionError/HTTP-hiba kivételes útján is lezárja a kapcsolatot.
+        with DirectusConnector(settings) as directus:
+            content = directus.get_content(job.content_id)
+            action = str(job.request_payload.get("action", "publish"))
+            allowed_statuses = {"approved", "published"}
+            if action == "unpublish":
+                allowed_statuses.add("archived")
+            if content.get("status") not in allowed_statuses:
+                raise PermissionError(
+                    "Only approved or published Directus content may be distributed"
+                )
 
-        request = job.request_payload
-        target_brand = resolve_target_brand(settings, job.website_key)
-        content_brand = str(content.get("brand_key") or "").strip()
-        if not content_brand:
-            raise PermissionError("Directus content requires brand_key before publication")
-        if content_brand != target_brand:
-            raise PermissionError(
-                f"Cross-brand publication blocked: content={content_brand}, target={target_brand}"
-            )
+            request = job.request_payload
+            target_brand = resolve_target_brand(settings, job.website_key)
+            content_brand = str(content.get("brand_key") or "").strip()
+            if not content_brand:
+                raise PermissionError("Directus content requires brand_key before publication")
+            if content_brand != target_brand:
+                raise PermissionError(
+                    f"Cross-brand publication blocked: content={content_brand}, "
+                    f"target={target_brand}"
+                )
 
-        payload: dict[str, Any] = {
-            "event_id": str(job.id),
-            "action": action,
-            "content_id": job.content_id,
-            "brand_key": target_brand,
-            "website_key": job.website_key,
-            "paths": request.get("paths", []),
-            "tags": request.get("tags", []),
-            "content": content,
-        }
-        response = WebsitePublisher(settings).publish(job.website_key, payload)
-        job.status = PublicationStatus.published
-        job.response_payload = response
-        job.published_at = datetime.now(UTC)
-        job.error_message = None
-        db.commit()
-        db.refresh(job)
-        _finish_directus_batch(db, directus, job, action)
-        return job
+            payload: dict[str, Any] = {
+                "event_id": str(job.id),
+                "action": action,
+                "content_id": job.content_id,
+                "brand_key": target_brand,
+                "website_key": job.website_key,
+                "paths": request.get("paths", []),
+                "tags": request.get("tags", []),
+                "content": content,
+            }
+            response = WebsitePublisher(settings).publish(job.website_key, payload)
+            job.status = PublicationStatus.published
+            job.response_payload = response
+            job.published_at = datetime.now(UTC)
+            job.error_message = None
+            db.commit()
+            db.refresh(job)
+            _finish_directus_batch(db, directus, job, action)
+            return job
     except Exception as exc:
         db.rollback()
         job = db.get(PublicationJob, primary_key)

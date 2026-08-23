@@ -27,6 +27,26 @@ class DirectusConnector:
         )
         # A transport/resolver csak szintetikus, hálózatmentes tesztekben cserélhető.
         self.client = SafeHttpClient(self.base_url, transport=transport, resolver=resolver)
+        self._closed = False
+
+    def close(self) -> None:
+        """A HTTP-kliens erőforrásainak idempotens, pontosan egyszeri lezárása.
+
+        A hívó réteg (taskok, service-ek, route-ok) minden normál és kivételes
+        úton context managerrel zár; a duplikált ``close()`` hívás nem okoz
+        hibát, és a lezárás kísérlete nem ismétlődik. ``__del__``-re a
+        lifecycle nem támaszkodik.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        self.client.close()
+
+    def __enter__(self) -> DirectusConnector:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}"} if self.token else {}
@@ -57,9 +77,12 @@ class DirectusConnector:
         return [dict(item) for item in response.json().get("data", [])]
 
     def get_website(self, website_key: str) -> dict[str, Any]:
-        website_key = validate_identifier(
-            website_key, label="Directus website kulcs", max_length=128
-        )
+        # A website_key üzleti contractja 64 karakter (a PublicationJob.website_key
+        # oszlop String(64) a modelben és a 431439b9fde5 migrációban); a validátor
+        # alapértelmezett MAX_IDENTIFIER_LENGTH=64 határa ezzel konzisztens.
+        # Ennél hosszabb kulcs nem létezhet a tárolt adatban, ezért fail-closed
+        # elutasul; a korábbi max_length=128 félrevezető túlengedés volt.
+        website_key = validate_identifier(website_key, label="Directus website kulcs")
         params = {"filter[key][_eq]": website_key, "limit": 1}
         response = self.client.get(
             f"/items/{self.website_collection}",
