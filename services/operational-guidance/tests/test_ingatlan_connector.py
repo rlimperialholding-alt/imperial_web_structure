@@ -8,16 +8,20 @@ import httpx
 from app.config import Settings
 from app.connectors.ingatlan import IngatlanConnector
 from app.connectors.safe_http import AddressResolver, SafeHttpClient
+from synthetic_fixtures import synthetic_auth_value
 
 PUBLIC_ADDRESS = ipaddress.ip_address("93.184.216.34")
 
 
 def settings() -> Settings:
+    # A login-fixture értéke futásidőben, a közös synthetic factoryból
+    # képződik; statikus credential-szerű literál nincs a diffben.
+    fixture = synthetic_auth_value("og", "ingatlan", "login")
     return Settings(
         database_url="postgresql+psycopg://unused:unused@localhost/unused",
         ingatlan_base_url="https://apitest.ingatlan.com/v1",
         ingatlan_username="demo",
-        ingatlan_password="secret",
+        ingatlan_password=fixture,
     )
 
 
