@@ -21,13 +21,9 @@ from app.models import (
     TenderInvitation,
     TenderPackage,
 )
+from app.seed import DEMO_PASSWORD
 from app.services.house_designer import ActorScope
 
-def _seeded_password() -> str:
-    return "Imperial" + "20" + "26" + "!"
-
-
-SEEDED = _seeded_password()
 CUSTOMER = "customer@imperial.local"
 
 
@@ -35,7 +31,7 @@ def _login(client, email: str) -> None:
     client.cookies.clear()
     response = client.post(
         "/login",
-        data={"email": email, "password": SEEDED},
+        data={"email": email, "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -229,6 +225,11 @@ class TestTenderInvitationE2EJourney:
             select(TenderInvitation).where(TenderInvitation.partner_email == "e2e.partner@example.com")
         )
         assert invitation is not None
+        # Determinisztikus stale-relationship őrszem: ezen a ponton a
+        # meghívóhoz még nem tartozik bid, így a korábban betöltött
+        # invitation.bid ORM-kapcsolat üres — a bid azonosítása a beadás
+        # után kizárólag friss explicit lekérdezéssel történik.
+        assert invitation.bid is None
         partner_code = invitation.access_token
 
         partner_page = client.get(f"/tender/TND-E2E-01?recipient={partner_code}")
@@ -255,8 +256,23 @@ class TestTenderInvitationE2EJourney:
             "/tender/TND-E2E-01/submit", data={"recipient": partner_code}, follow_redirects=False
         )
         assert submitted.status_code == 303
-        bid = db.scalar(select(TenderBid).where(TenderBid.bid_id == invitation.bid.bid_id))
-        assert bid is not None and bid.status == "submitted"
+        # Friss explicit bid-lekérdezés a beadás után: a session
+        # identitástérképét kiürítjük, a meghívót és a bidet is közvetlen
+        # SELECT-tel azonosítjuk — a bid létrehozása előtt betöltött
+        # invitation.bid relationshipre semmilyen lépés nem támaszkodik,
+        # így az azonosítás a session/relationship frissességtől független.
+        db.expire_all()
+        fresh_invitation = db.scalar(
+            select(TenderInvitation).where(
+                TenderInvitation.partner_email == "e2e.partner@example.com"
+            )
+        )
+        assert fresh_invitation is not None
+        bid = db.scalar(
+            select(TenderBid).where(TenderBid.invitation_id_fk == fresh_invitation.id)
+        )
+        assert bid is not None
+        assert bid.status == "submitted"
 
         closed = client.post("/tenders/TND-E2E-01/close", follow_redirects=False)
         assert closed.status_code == 303

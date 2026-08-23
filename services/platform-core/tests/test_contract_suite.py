@@ -36,6 +36,7 @@ from app.models import (
     TenderPackage,
     User,
 )
+from app.seed import DEMO_PASSWORD
 from app.services import house_designer_submission as submission_service
 from app.services.house_designer import ActorScope, create_session
 from app.services.house_designer_submission import HOUSE_DESIGN_NOTICE_VERSION
@@ -51,13 +52,8 @@ from app.services.tender_portal import (
     save_bid,
     submit_bid,
 )
+from synthetic_fixtures import synthetic_auth_value
 
-def _seeded_password() -> str:
-    """Futásidőben összeállított, tesztcélú seeded jelszó (tracked-secret szabály)."""
-    return "Imperial" + "20" + "26" + "!"
-
-
-SEEDED = _seeded_password()
 CUSTOMER = "customer@imperial.local"
 
 
@@ -65,7 +61,7 @@ def _login(client, email: str) -> None:
     client.cookies.clear()
     response = client.post(
         "/login",
-        data={"email": email, "password": SEEDED},
+        data={"email": email, "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -94,29 +90,35 @@ class TestAuthScopeCsrfContracts:
 
 
     def test_api_token_dependency_fails_closed(self, client, monkeypatch) -> None:
+        # Futásidőben képzett, egyértelműen szintetikus API-fixture érték a
+        # közös factoryból; statikus credential-szerű literál nincs a diffben.
+        api_value = synthetic_auth_value("contract", "api")
         monkeypatch.setattr(
             "app.security.settings",
-            replace(settings, api_token="placeholder-api-token-for-tests"),
+            replace(settings, api_token=api_value),
         )
         response = client.post("/api/events", json={})
         assert response.status_code == 401
         response = client.post(
             "/api/events",
             json={},
-            headers={"x-api-token": "placeholder-api-token-for-tests"},
+            headers={"x-api-token": api_value},
         )
         assert response.status_code != 401
 
     def test_internal_job_token_dependency_fails_closed(self, client, monkeypatch) -> None:
+        # Futásidőben képzett, egyértelműen szintetikus belső job-fixture
+        # érték a közös factoryból; statikus credential-szerű literál nincs.
+        job_value = synthetic_auth_value("contract", "internal-job")
         monkeypatch.setattr(
             "app.security.settings",
-            replace(settings, internal_job_token="placeholder-job-token-for-tests"),
+            replace(settings, internal_job_token=job_value),
         )
         response = client.post("/api/outbox/process")
         assert response.status_code == 401
         response = client.post(
             "/api/outbox/process",
-            headers={"x-internal-job-token": "placeholder-job-token-for-tests"},
+            headers={"x-internal-job-token": job_value},
         )
         assert response.status_code != 401
 
