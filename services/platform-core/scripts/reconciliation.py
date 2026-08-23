@@ -4,9 +4,15 @@ Kizárólag helyi, hálózatmentes, szintetikus egyeztetés; semmilyen távoli
 vagy production írás nem történik. A script determinisztikusan összeveti:
 
 1. a védett acceptance corpuszt az ADAS protected-corpus manifesttel (SHA-256);
-2. a tracked-secret baseline jelenlétét és auditálhatóságát;
-3. a SOURCE_LOCK kibocsátási rögzítést (alembic head, verziók);
-4. a seed-modullistát az in-memory adatbázis regiszterével;
+2. a tracked-secret baseline integritását a kanonikus
+   check_secret_baseline logikával (élő scan vs. auditált baseline;
+   stale-only eltérés dokumentált warning, minden más eltérés FAIL);
+3. a SOURCE_LOCK kibocsátási rögzítést (alembic head = a migrációs gráf
+   tényleges egyetlen feje, szigorú semver/date verzió-invariánsok);
+4. a seed-modullistát egy kizárólag a script által épített, privát
+   in-memory SQLite adatbázis regiszterével (az app engine/session
+   soha nem kerül felhasználásra, a DATABASE_URL környezeti változót a
+   script nem olvassa és nem írja);
 5. az Alembic migrációs gráf egyetlen fejét.
 
 Bármelyik eltérés nemnulla kilépési kóddal (fail-closed) zárul.
@@ -22,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -30,8 +37,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _APP_ROOT = _SCRIPT_DIR.parent
 _REPO_ROOT = _APP_ROOT.parents[1]
 sys.path.insert(0, str(_APP_ROOT))
+sys.path.insert(0, str(_SCRIPT_DIR))
 
-os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault(
     "PLATFORM_RUNTIME_ROOT",
@@ -40,9 +47,13 @@ os.environ.setdefault(
 
 from alembic.config import Config  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import create_engine, select  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.database import Base, SessionLocal, engine  # noqa: E402
+import check_secret_baseline  # noqa: E402
+
+from app.database import Base  # noqa: E402
 from app.models import ModuleRegistry  # noqa: E402
 from app.seed import MODULES, seed_database  # noqa: E402
 
@@ -66,9 +77,18 @@ SOURCE_LOCK = Path(
     )
 )
 
+_SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _alembic_heads() -> list[str]:
+    return ScriptDirectory.from_config(
+        Config(str(_APP_ROOT / "alembic.ini"))
+    ).get_heads()
 
 
 def _corpus_probe() -> None:
@@ -108,23 +128,12 @@ def _corpus_probe() -> None:
 
 
 def _secret_baseline_probe() -> None:
-    if not SECRETS_BASELINE.is_file():
-        raise SystemExit("reconciliation FAIL: tracked-secret baseline hianyzik.")
-    try:
-        document = json.loads(SECRETS_BASELINE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise SystemExit(
-            f"reconciliation FAIL: a secret baseline nem ertelmezheto JSON: {exc}"
-        ) from exc
-    results = document.get("results")
-    if not isinstance(results, dict):
-        raise SystemExit(
-            "reconciliation FAIL: a secret baseline 'results' szekcioja hianyos."
-        )
-    print(
-        f"reconciliation PASS: tracked-secret baseline jelen van "
-        f"({len(results)} auditalt fajl)."
+    status, message = check_secret_baseline.reconcile_tracked_secrets(
+        SECRETS_BASELINE
     )
+    if status != 0:
+        raise SystemExit(f"reconciliation FAIL: {message}")
+    print(f"reconciliation PASS: tracked-secret baseline: {message}")
 
 
 def _source_lock_probe() -> None:
@@ -138,31 +147,53 @@ def _source_lock_probe() -> None:
         raise SystemExit(
             f"reconciliation FAIL: a SOURCE_LOCK nem ertelmezheto JSON: {exc}"
         ) from exc
-    # Baseline-hiba külön megnevezve (nem elrejtve, nem automatikusan elfogadva):
-    # a SOURCE_LOCK release-időponti alembic_head rekordja elavult a migrációs
-    # gráf érvényes fejéhez képest. Az érvényes invariánst a migrációs gráf
-    # (check_single_alembic_head / Gate 6) hitelesíti; a reconciliation ezért
-    # az eltérést NOTE-ként rögzíti, a kaput nem ez az eltérés állítja meg.
-    if lock.get("alembic_head") != EXPECTED_HEAD:
-        print(
-            "reconciliation NOTE (baseline): SOURCE_LOCK alembic_head "
-            f"{lock.get('alembic_head')!r} elavult; ervenyes fej: {EXPECTED_HEAD}."
+    heads = _alembic_heads()
+    lock_head = lock.get("alembic_head")
+    if heads != [lock_head]:
+        raise SystemExit(
+            "reconciliation FAIL: SOURCE_LOCK alembic_head "
+            f"{lock_head!r} elter a migracios graf fejetol {heads!r}."
         )
     for key in ("platform_version", "application_version"):
-        if not lock.get(key):
-            raise SystemExit(f"reconciliation FAIL: SOURCE_LOCK {key} ures.")
+        value = lock.get(key)
+        if not isinstance(value, str) or not _SEMVER.fullmatch(value):
+            raise SystemExit(
+                f"reconciliation FAIL: SOURCE_LOCK {key} ervenytelen: {value!r}."
+            )
+    release_date = lock.get("release_date")
+    if not isinstance(release_date, str) or not _ISO_DATE.fullmatch(release_date):
+        raise SystemExit(
+            "reconciliation FAIL: SOURCE_LOCK release_date ervenytelen: "
+            f"{release_date!r}."
+        )
     print(
         "reconciliation PASS: SOURCE_LOCK verziok rogzitve "
-        f"(platform {lock['platform_version']}, app {lock['application_version']})."
+        f"(platform {lock['platform_version']}, app {lock['application_version']}, "
+        f"alembic_head {lock_head})."
     )
 
 
 def _registry_probe() -> None:
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        seed_database(db)
-        keys = set(db.scalars(select(ModuleRegistry.module_key)).all())
+    # Privát, kizárólag a script által épített in-memory SQLite: nem az app
+    # engine/SessionLocal, és a DATABASE_URL-t nem figyeli. Minden
+    # create/drop/seed művelet csak erre az ephemeral motorra irányul.
+    probe_engine = create_engine(
+        "sqlite://",
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    probe_session = sessionmaker(
+        bind=probe_engine, autoflush=False, expire_on_commit=False, future=True
+    )
+    try:
+        Base.metadata.drop_all(bind=probe_engine)
+        Base.metadata.create_all(bind=probe_engine)
+        with probe_session() as db:
+            seed_database(db)
+            keys = set(db.scalars(select(ModuleRegistry.module_key)).all())
+    finally:
+        probe_engine.dispose()
     expected = {module[0] for module in MODULES}
     missing = sorted(expected - keys)
     extra = sorted(keys - expected)
@@ -174,9 +205,7 @@ def _registry_probe() -> None:
 
 
 def _migration_probe() -> None:
-    heads = ScriptDirectory.from_config(
-        Config(str(_APP_ROOT / "alembic.ini"))
-    ).get_heads()
+    heads = _alembic_heads()
     if heads != [EXPECTED_HEAD]:
         raise SystemExit(
             f"reconciliation FAIL: alembic head {heads!r}, vart: {EXPECTED_HEAD}."
