@@ -45,20 +45,19 @@ os.environ.setdefault(
     str(Path(tempfile.gettempdir()) / f"iip_reconciliation_{os.getpid()}"),
 )
 
+import check_secret_baseline  # noqa: E402
 from alembic.config import Config  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
 from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-import check_secret_baseline  # noqa: E402
-
 from app.database import Base  # noqa: E402
 from app.models import ModuleRegistry  # noqa: E402
 from app.seed import MODULES, seed_database  # noqa: E402
 
 EXPECTED_HEAD = os.environ.get(
-    "II_RECON_EXPECTED_ALEMBIC_HEAD", "20260824_0074"
+    "II_RECON_EXPECTED_ALEMBIC_HEAD", "20260824_0075"
 )
 CORPUS_MANIFEST = Path(
     os.environ.get(

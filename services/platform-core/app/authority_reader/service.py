@@ -93,6 +93,13 @@ def readiness(db: Session, settings: ReaderSettings) -> tuple[bool, dict[str, An
         "schedule": "enabled" if policy_open and settings.schedule_enabled else "held",
         "detail_reader": "enabled" if policy_open and settings.detail_enabled else "held",
         "lead_export": "enabled" if policy_open and settings.lead_export_enabled else "held",
+        "sales_digest": (
+            "enabled"
+            if policy_open
+            and settings.sales_digest_enabled
+            and settings.sales_digest_authorized
+            else "held"
+        ),
         "oeny": "enabled" if policy_open and settings.oeny_enabled else "held",
         "errors": errors,
     }

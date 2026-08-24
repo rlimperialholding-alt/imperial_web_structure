@@ -18,6 +18,7 @@ from .models import (
     AuthorityReaderRun,
     AuthorityRecord,
     AuthorityRecordRevision,
+    AuthoritySalesDigest,
     AuthoritySignalOutbox,
 )
 from .service import process_details, process_enrichments, readiness, run_reader, run_summary
@@ -116,6 +117,39 @@ def list_runs(
         select(AuthorityReaderRun).order_by(desc(AuthorityReaderRun.started_at)).limit(limit)
     ).all()
     return {"items": [run_summary(row) for row in rows]}
+
+
+@router.get(
+    "/api/internal/authority-reader/sales-digests",
+    dependencies=[Depends(require_token)],
+)
+def list_sales_digests(
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    rows = db.scalars(
+        select(AuthoritySalesDigest)
+        .order_by(desc(AuthoritySalesDigest.digest_date))
+        .limit(limit)
+    ).all()
+    return {
+        "items": [
+            {
+                "digest_id": row.digest_id,
+                "digest_date": row.digest_date,
+                "status": row.status,
+                "item_count": row.item_count,
+                "verified_contact_count": row.verified_contact_count,
+                "payload_sha256": row.payload_sha256,
+                "recipients_sha256": row.recipients_sha256,
+                "gmail_message_id": row.gmail_message_id,
+                "attempt_count": row.attempt_count,
+                "last_error": row.last_error,
+                "sent_at": row.sent_at,
+            }
+            for row in rows
+        ]
+    }
 
 
 @router.get("/api/internal/authority-reader/runs/{run_id}", dependencies=[Depends(require_token)])

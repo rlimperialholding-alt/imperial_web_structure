@@ -10,8 +10,8 @@ audited database function through a dedicated role with no direct table privileg
 - Use an immutable image tag and verify its OCI revision label.
 - Keep `AUTHORITY_READER_ENABLED=false` and
   `AUTHORITY_READER_POLICY_AUTHORIZED=false` until written bulk-reuse authorization exists.
-- Schedule, detail reads and lead export each require a separate explicit `true`; all four runtime
-  switches default to closed independently.
+- Schedule, detail reads, lead export and the internal sales digest each require a separate
+  explicit `true`; every runtime switch defaults to closed independently.
 - Enabling also requires a mounted, unexpired policy-evidence JSON with authorization reference,
   approver, a bulk-reuse scope, and `valid_until`; its SHA-256 is exposed in readiness evidence.
 - Never bypass CAPTCHA, `403`, `429`, authentication, `robots.txt`, or a schema-drift block.
@@ -31,6 +31,13 @@ audited database function through a dedicated role with no direct table privileg
 - The lead bridge writes project-only, `blocked` and `internal_review_only` signals through a
   dedicated least-privilege PostgreSQL role. It has no delete permission and cannot create
   outreach records.
+- The daily sales digest is a separate least-privilege worker. It sends only to an expiring,
+  owner-approved internal recipient allowlist through the mounted Gmail OAuth credential. Each
+  local calendar date has one immutable payload hash and RFC 822 Message-ID; retries reconcile
+  Gmail Sent before sending, so an ambiguous response cannot silently duplicate a digest.
+- Each digest item contains the public project address, parcel number and official ÉTDR page.
+  ÉTDR does not provide a verified customer phone or email, so the digest states that contact
+  enrichment is unavailable instead of guessing or extracting personal data from linked files.
 - The platform-side extension has its own `20260824_0003` schema ledger and immutable delivery
   ledger. Its `SECURITY DEFINER` owner is a separate `NOLOGIN` role; runtime startup verifies the
   owner, function hash, fixed search path, ACLs and role attributes before processing anything.
@@ -43,6 +50,7 @@ audited database function through a dedicated role with no direct table privileg
 - `GET /` — aggregate, non-sensitive dashboard
 - `POST /api/internal/authority-reader/details/run`
 - `GET /api/internal/authority-reader/lead-feed`
+- `GET /api/internal/authority-reader/sales-digests`
 - Internal endpoints use `X-Internal-Job-Token`.
 
 The database migration is a separate one-shot Compose service. The API and worker never run an

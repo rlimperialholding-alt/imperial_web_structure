@@ -102,7 +102,7 @@ def test_reconciliation_command_passes_on_valid_repository() -> None:
     # Megnevezett baseline-megfigyelés (stale-only bejegyzések), nem elrejtve:
     assert "stale baseline entry/entries" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
-    assert "alembic_head 20260824_0074" in result.stdout
+    assert "alembic_head 20260824_0075" in result.stdout
 
 
 def test_reconciliation_fail_closed_on_corpus_sha_tamper(tmp_path: Path) -> None:
@@ -250,7 +250,7 @@ def test_reconciliation_fail_closed_on_source_lock_version_missing(
 ) -> None:
     synthetic = tmp_path / "lock.json"
     synthetic.write_text(
-        json.dumps({"alembic_head": "20260824_0074"}), encoding="utf-8"
+        json.dumps({"alembic_head": "20260824_0075"}), encoding="utf-8"
     )
     result = _run_reconciliation(II_RECON_SOURCE_LOCK=str(synthetic))
     assert result.returncode != 0
@@ -264,7 +264,7 @@ def test_reconciliation_fail_closed_on_source_lock_malformed_version(
     synthetic.write_text(
         json.dumps(
             {
-                "alembic_head": "20260824_0074",
+                "alembic_head": "20260824_0075",
                 "platform_version": "5.0.0",
                 "application_version": "release-candidate",
                 "release_date": "2026-07-19",
@@ -284,7 +284,7 @@ def test_reconciliation_fail_closed_on_source_lock_malformed_date(
     synthetic.write_text(
         json.dumps(
             {
-                "alembic_head": "20260824_0074",
+                "alembic_head": "20260824_0075",
                 "platform_version": "5.0.0",
                 "application_version": "1.5.0",
                 "release_date": "2026.07.19",

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -221,3 +222,53 @@ class AuthoritySignalOutbox(Base):
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AuthoritySalesDigest(Base):
+    __tablename__ = "authority_sales_digests"
+    __table_args__ = (
+        UniqueConstraint("digest_date", name="uq_authority_sales_digest_date"),
+        CheckConstraint(
+            "status IN ('pending','claimed','sent','skipped','retry','dead_letter')",
+            name="ck_authority_sales_digest_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    digest_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    digest_date: Mapped[date] = mapped_column(Date, index=True)
+    window_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    window_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    item_count: Mapped[int] = mapped_column(Integer, default=0)
+    verified_contact_count: Mapped[int] = mapped_column(Integer, default=0)
+    recipients_sha256: Mapped[str] = mapped_column(String(64))
+    payload_sha256: Mapped[str] = mapped_column(String(64))
+    message_rfc822_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    gmail_message_id: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
+    gmail_thread_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(120))
+    lease_owner: Mapped[str | None] = mapped_column(String(120), index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AuthoritySalesDigestItem(Base):
+    __tablename__ = "authority_sales_digest_items"
+    __table_args__ = (
+        UniqueConstraint("digest_id", "signal_outbox_id", name="uq_authority_digest_item"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    digest_id: Mapped[str] = mapped_column(
+        ForeignKey("authority_sales_digests.digest_id", ondelete="CASCADE"), index=True
+    )
+    signal_outbox_id: Mapped[int] = mapped_column(
+        ForeignKey("authority_signal_outbox.id", ondelete="RESTRICT"), index=True
+    )
+    item_payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    item_snapshot_json: Mapped[str] = mapped_column(Text)
+    contact_status: Mapped[str] = mapped_column(String(40), default="not_available", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

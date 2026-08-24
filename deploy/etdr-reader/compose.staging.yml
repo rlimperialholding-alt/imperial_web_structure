@@ -16,6 +16,13 @@ x-reader-environment: &reader-environment
   AUTHORITY_READER_DETAIL_ENABLED: ${AUTHORITY_READER_DETAIL_ENABLED:-false}
   AUTHORITY_READER_LEAD_EXPORT_ENABLED: ${AUTHORITY_READER_LEAD_EXPORT_ENABLED:-false}
   AUTHORITY_READER_SCHEDULE_ENABLED: ${AUTHORITY_READER_SCHEDULE_ENABLED:-false}
+  AUTHORITY_READER_SALES_DIGEST_ENABLED: ${AUTHORITY_READER_SALES_DIGEST_ENABLED:-false}
+  AUTHORITY_READER_SALES_DIGEST_AUTHORIZED: ${AUTHORITY_READER_SALES_DIGEST_AUTHORIZED:-false}
+  AUTHORITY_READER_SALES_DIGEST_HOUR: ${AUTHORITY_READER_SALES_DIGEST_HOUR:-14}
+  AUTHORITY_READER_SALES_DIGEST_MINUTE: ${AUTHORITY_READER_SALES_DIGEST_MINUTE:-0}
+  AUTHORITY_READER_SALES_DIGEST_TIMEZONE: ${AUTHORITY_READER_SALES_DIGEST_TIMEZONE:-Europe/Budapest}
+  AUTHORITY_READER_SALES_DIGEST_OAUTH_FILE: /run/secrets/sales_digest_google_oauth
+  AUTHORITY_READER_SALES_DIGEST_RECIPIENTS_FILE: /run/secrets/sales_digest_recipients
   AUTHORITY_READER_DETAIL_BATCH_SIZE: ${AUTHORITY_READER_DETAIL_BATCH_SIZE:-100}
   AUTHORITY_READER_LEAD_NEW_DAYS: ${AUTHORITY_READER_LEAD_NEW_DAYS:-120}
   AUTHORITY_READER_LEAD_STALLED_MIN_DAYS: ${AUTHORITY_READER_LEAD_STALLED_MIN_DAYS:-180}
@@ -158,6 +165,31 @@ services:
       reader-migrate:
         condition: service_completed_successfully
 
+  reader-sales-digest:
+    <<: *reader-service
+    command: ["python", "-m", "app.authority_reader.sales_digest"]
+    secrets:
+      - reader_db_password
+      - reader_internal_token
+      - reader_hmac_key
+      - reader_policy_evidence
+      - sales_digest_google_oauth
+      - sales_digest_recipients
+    networks:
+      - backend
+      - egress
+    mem_limit: 192m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.authority_reader.sales_digest", "--check"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      reader-migrate:
+        condition: service_completed_successfully
+
 networks:
   backend:
     internal: true
@@ -180,3 +212,7 @@ secrets:
     file: ${READER_POLICY_EVIDENCE_FILE:?READER_POLICY_EVIDENCE_FILE is required}
   platform_growth_db_password:
     file: ${PLATFORM_GROWTH_DB_PASSWORD_FILE:?PLATFORM_GROWTH_DB_PASSWORD_FILE is required}
+  sales_digest_google_oauth:
+    file: ${SALES_DIGEST_GOOGLE_OAUTH_FILE:?SALES_DIGEST_GOOGLE_OAUTH_FILE is required}
+  sales_digest_recipients:
+    file: ${SALES_DIGEST_RECIPIENTS_FILE:?SALES_DIGEST_RECIPIENTS_FILE is required}

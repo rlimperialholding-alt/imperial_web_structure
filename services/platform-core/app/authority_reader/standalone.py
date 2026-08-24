@@ -61,6 +61,11 @@ def dashboard():
         if settings.policy_authorized and settings.policy_evidence_valid
         else "ZÁRVA – érvényes írásos engedély szükséges"
     )
+    digest_gate = (
+        "ENGEDÉLYEZVE"
+        if settings.sales_digest_enabled and settings.sales_digest_authorized
+        else "ZÁRVA"
+    )
     return HTMLResponse(
         "<!doctype html><html lang='hu'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -75,8 +80,9 @@ def dashboard():
         f"<dt>Mélyített rekordok</dt><dd>{data['deep_records']}</dd>"
         f"<dt>Leadre vár</dt><dd>{data['lead_pending']}</dd>"
         f"<dt>Lead-generátorba átadva</dt><dd>{data['lead_delivered']}</dd>"
+        f"<dt>Napi értékesítési digest</dt><dd>{digest_gate}</dd>"
         f"<dt>Legutóbbi futás</dt><dd>{latest_text}</dd>"
         f"<dt>Automatizálási kapu</dt><dd class='stop'>{html.escape(gate)}</dd>"
-        "<dt>Adatvédelmi mód</dt><dd>Kapcsolati és természetes személyi adat nem kerül be.</dd>"
+        "<dt>Adatvédelmi mód</dt><dd>Kitalált vagy nem igazolt kapcsolati adat nem kerül be.</dd>"
         "</dl></main></body></html>"
     )

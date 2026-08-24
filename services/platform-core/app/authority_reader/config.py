@@ -70,6 +70,13 @@ class ReaderSettings:
     lead_new_days: int = 120
     lead_stalled_min_days: int = 180
     lead_stalled_max_days: int = 1095
+    sales_digest_enabled: bool = False
+    sales_digest_authorized: bool = False
+    sales_digest_hour: int = 14
+    sales_digest_minute: int = 0
+    sales_digest_timezone: str = "Europe/Budapest"
+    sales_digest_oauth_file: str = ""
+    sales_digest_recipients_file: str = ""
 
     @classmethod
     def from_env(cls) -> ReaderSettings:
@@ -136,6 +143,23 @@ class ReaderSettings:
                 180,
                 min(1825, int(os.getenv("AUTHORITY_READER_LEAD_STALLED_MAX_DAYS", "1095"))),
             ),
+            sales_digest_enabled=_bool("AUTHORITY_READER_SALES_DIGEST_ENABLED"),
+            sales_digest_authorized=_bool("AUTHORITY_READER_SALES_DIGEST_AUTHORIZED"),
+            sales_digest_hour=max(
+                0, min(23, int(os.getenv("AUTHORITY_READER_SALES_DIGEST_HOUR", "14")))
+            ),
+            sales_digest_minute=max(
+                0, min(59, int(os.getenv("AUTHORITY_READER_SALES_DIGEST_MINUTE", "0")))
+            ),
+            sales_digest_timezone=os.getenv(
+                "AUTHORITY_READER_SALES_DIGEST_TIMEZONE", "Europe/Budapest"
+            ).strip(),
+            sales_digest_oauth_file=os.getenv(
+                "AUTHORITY_READER_SALES_DIGEST_OAUTH_FILE", ""
+            ).strip(),
+            sales_digest_recipients_file=os.getenv(
+                "AUTHORITY_READER_SALES_DIGEST_RECIPIENTS_FILE", ""
+            ).strip(),
         )
 
     def errors(self) -> list[str]:
@@ -159,4 +183,14 @@ class ReaderSettings:
             errors.append("lead_export_requires_detail_reader")
         if self.lead_stalled_max_days <= self.lead_stalled_min_days:
             errors.append("lead_stalled_window_invalid")
+        if self.sales_digest_enabled and not self.sales_digest_authorized:
+            errors.append("sales_digest_authorization_required")
+        if self.sales_digest_enabled and not self.lead_export_enabled:
+            errors.append("sales_digest_requires_lead_export")
+        if self.sales_digest_enabled and (
+            not self.sales_digest_oauth_file or not self.sales_digest_recipients_file
+        ):
+            errors.append("sales_digest_secret_files_required")
+        if self.sales_digest_enabled and not self.sales_digest_timezone:
+            errors.append("sales_digest_timezone_required")
         return errors
