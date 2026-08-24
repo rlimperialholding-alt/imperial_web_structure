@@ -59,7 +59,7 @@ class ETDRRecord(BaseModel):
     city: str = Field(alias="City", min_length=1, max_length=200)
     street_type: str | None = Field(alias="StreetType", default=None, max_length=100)
     topographical_number: str | None = Field(
-        alias="TopographicalNumber", default=None, max_length=100
+        alias="TopographicalNumber", default=None, max_length=500
     )
     procedure_type: str = Field(alias="Type", min_length=1, max_length=500)
     process_number: str = Field(alias="ProcessNumber", pattern=r"^[0-9]{6,40}$")
@@ -110,7 +110,7 @@ class ETDRDetail(BaseModel):
     status: str = Field(min_length=1, max_length=500)
     submission_date: date
     property_address: str = Field(min_length=1, max_length=1000)
-    topographical_number: str | None = Field(default=None, max_length=100)
+    topographical_number: str | None = Field(default=None, max_length=500)
     authority_name: str = Field(min_length=1, max_length=1000)
     decisions: tuple[ETDRDecision, ...] = Field(max_length=100)
     documents: tuple[ETDRDocument, ...] = Field(max_length=100)

@@ -122,6 +122,17 @@ def test_client_accepts_official_nullable_construction_activity():
     assert "construction_activity" not in page.records[0].normalized()
 
 
+def test_client_accepts_bounded_official_multi_parcel_identifier():
+    multi_parcel = (
+        "759/2//759/3//760/2//760/3//761/1//761/2//762/1//762/2//763//764//"
+        "765//766//767//769//770//771//772//773//757"
+    )
+    client = mock_client(page_payload([raw_record(TopographicalNumber=multi_parcel)]))
+    with client:
+        page = client.fetch_page(skip=0, page_size=100, filter_expression="")
+    assert page.records[0].topographical_number == multi_parcel
+
+
 def test_reader_persists_nullable_construction_activity_as_empty_text(db):
     row = run_reader(
         db,
