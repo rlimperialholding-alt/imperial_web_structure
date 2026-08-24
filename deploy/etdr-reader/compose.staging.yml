@@ -13,6 +13,10 @@ x-reader-environment: &reader-environment
   AUTHORITY_READER_ENABLED: ${AUTHORITY_READER_ENABLED:-false}
   AUTHORITY_READER_POLICY_AUTHORIZED: ${AUTHORITY_READER_POLICY_AUTHORIZED:-false}
   AUTHORITY_READER_OENY_ENABLED: ${AUTHORITY_READER_OENY_ENABLED:-false}
+  AUTHORITY_READER_DETAIL_ENABLED: ${AUTHORITY_READER_DETAIL_ENABLED:-false}
+  AUTHORITY_READER_LEAD_EXPORT_ENABLED: ${AUTHORITY_READER_LEAD_EXPORT_ENABLED:-false}
+  AUTHORITY_READER_SCHEDULE_ENABLED: ${AUTHORITY_READER_SCHEDULE_ENABLED:-false}
+  AUTHORITY_READER_DETAIL_BATCH_SIZE: ${AUTHORITY_READER_DETAIL_BATCH_SIZE:-100}
   AUTHORITY_READER_ETDR_BASE_URL: https://alk.etdr.gov.hu
   AUTHORITY_READER_ETDR_PUBLIC_URL: https://www.etdr.gov.hu
   AUTHORITY_READER_OENY_BASE_URL: https://www.oeny.hu
@@ -118,10 +122,46 @@ services:
       reader-migrate:
         condition: service_completed_successfully
 
+  reader-lead-bridge:
+    <<: *reader-service
+    command: ["python", "-m", "app.authority_reader.lead_bridge"]
+    environment:
+      <<: *reader-environment
+      PLATFORM_GROWTH_DB_HOST: ${PLATFORM_GROWTH_DB_HOST:-platform-postgres}
+      PLATFORM_GROWTH_DB_PORT: ${PLATFORM_GROWTH_DB_PORT:-5432}
+      PLATFORM_GROWTH_DB_NAME: ${PLATFORM_GROWTH_DB_NAME:-imperial_platform}
+      PLATFORM_GROWTH_DB_USER: ${PLATFORM_GROWTH_DB_USER:-etdr_lead_bridge}
+      PLATFORM_GROWTH_DB_PASSWORD_FILE: /run/secrets/platform_growth_db_password
+      AUTHORITY_LEAD_BRIDGE_POLL_SECONDS: ${AUTHORITY_LEAD_BRIDGE_POLL_SECONDS:-60}
+      AUTHORITY_LEAD_BRIDGE_BATCH_SIZE: ${AUTHORITY_LEAD_BRIDGE_BATCH_SIZE:-100}
+    secrets:
+      - reader_db_password
+      - reader_internal_token
+      - reader_hmac_key
+      - reader_policy_evidence
+      - platform_growth_db_password
+    networks:
+      - backend
+      - platform_growth
+    mem_limit: 192m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.authority_reader.lead_bridge", "--check"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      reader-migrate:
+        condition: service_completed_successfully
+
 networks:
   backend:
     internal: true
   egress: {}
+  platform_growth:
+    external: true
+    name: ${PLATFORM_GROWTH_NETWORK:-imperial-staging_default}
 
 volumes:
   reader_postgres_data: {}
@@ -135,3 +175,5 @@ secrets:
     file: ${READER_HMAC_KEY_FILE:?READER_HMAC_KEY_FILE is required}
   reader_policy_evidence:
     file: ${READER_POLICY_EVIDENCE_FILE:?READER_POLICY_EVIDENCE_FILE is required}
+  platform_growth_db_password:
+    file: ${PLATFORM_GROWTH_DB_PASSWORD_FILE:?PLATFORM_GROWTH_DB_PASSWORD_FILE is required}

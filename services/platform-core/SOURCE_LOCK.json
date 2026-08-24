@@ -3,7 +3,7 @@
   "application_version": "1.5.0",
   "partner_field_version": "1.0.0",
   "release_date": "2026-07-19",
-  "alembic_head": "20260824_0073",
+  "alembic_head": "20260824_0074",
   "calculation_sources": [
     {
       "file": "Generalkivitelezo_ArTukor_Munkadij_Anyag_2026_07.xlsx",

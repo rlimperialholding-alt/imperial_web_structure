@@ -9,7 +9,7 @@ from sqlalchemy import select
 from .authority_reader.client import ReaderBlocked
 from .authority_reader.config import ReaderSettings
 from .authority_reader.models import AuthorityCheckpoint
-from .authority_reader.service import process_enrichments, run_reader
+from .authority_reader.service import process_details, process_enrichments, run_reader
 from .database import SessionLocal
 
 stopping = False
@@ -35,7 +35,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, request_stop)
     while not stopping:
         settings = ReaderSettings.from_env()
-        if settings.enabled and settings.policy_authorized:
+        if settings.enabled and settings.policy_authorized and settings.schedule_enabled:
             with SessionLocal() as db:
                 if due(db, settings):
                     checkpoint = db.scalar(
@@ -46,8 +46,16 @@ def main() -> None:
                     mode = "delta" if checkpoint and checkpoint.last_success_at else "baseline"
                     try:
                         run_reader(db, settings, mode=mode, trigger="schedule")
-                        if settings.oeny_enabled:
-                            process_enrichments(db, settings)
+                    except ReaderBlocked:
+                        pass
+                if settings.detail_enabled:
+                    try:
+                        process_details(db, settings)
+                    except ReaderBlocked:
+                        pass
+                if settings.oeny_enabled:
+                    try:
+                        process_enrichments(db, settings)
                     except ReaderBlocked:
                         pass
         deadline = time.monotonic() + settings.poll_seconds

@@ -58,7 +58,7 @@ from app.models import ModuleRegistry  # noqa: E402
 from app.seed import MODULES, seed_database  # noqa: E402
 
 EXPECTED_HEAD = os.environ.get(
-    "II_RECON_EXPECTED_ALEMBIC_HEAD", "20260824_0073"
+    "II_RECON_EXPECTED_ALEMBIC_HEAD", "20260824_0074"
 )
 CORPUS_MANIFEST = Path(
     os.environ.get(

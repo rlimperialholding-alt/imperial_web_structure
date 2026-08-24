@@ -4,7 +4,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 
-EXPECTED_HEAD = "20260824_0073"
+EXPECTED_HEAD = "20260824_0074"
 
 
 def main() -> int:

@@ -74,6 +74,10 @@ class AuthorityRecord(Base):
         CheckConstraint(
             "status IN ('active','excluded','quarantined')", name="ck_authority_record_status"
         ),
+        CheckConstraint(
+            "detail_status IN ('held','pending','current','blocked','failed')",
+            name="ck_authority_record_detail_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -89,6 +93,10 @@ class AuthorityRecord(Base):
     evidence_url: Mapped[str] = mapped_column(String(1500))
     current_revision_no: Mapped[int] = mapped_column(Integer, default=1)
     current_payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    current_detail_revision_no: Mapped[int] = mapped_column(Integer, default=0)
+    current_detail_payload_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    detail_status: Mapped[str] = mapped_column(String(30), default="held", index=True)
+    detail_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     status: Mapped[str] = mapped_column(String(30), default="active", index=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -111,6 +119,53 @@ class AuthorityRecordRevision(Base):
     payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
     normalized_json: Mapped[str] = mapped_column(Text)
     parser_version: Mapped[str] = mapped_column(String(40), default="etdr-v1")
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AuthorityDetailQueue(Base):
+    __tablename__ = "authority_detail_queue"
+    __table_args__ = (
+        UniqueConstraint("record_id", "listing_payload_sha256", name="uq_authority_detail_queue"),
+        CheckConstraint(
+            "status IN ('held','pending','claimed','completed','blocked','failed')",
+            name="ck_authority_detail_queue_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("authority_records.record_id", ondelete="CASCADE"), index=True
+    )
+    source_revision_id: Mapped[str] = mapped_column(String(120), index=True)
+    listing_payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="held", index=True)
+    reason_code: Mapped[str] = mapped_column(String(120), default="detail_policy_gate")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(120), index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class AuthorityDetailRevision(Base):
+    __tablename__ = "authority_detail_revisions"
+    __table_args__ = (
+        UniqueConstraint("record_id", "payload_sha256", name="uq_authority_detail_payload"),
+        UniqueConstraint("record_id", "revision_no", name="uq_authority_detail_number"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    detail_revision_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("authority_records.record_id", ondelete="CASCADE"), index=True
+    )
+    source_revision_id: Mapped[str] = mapped_column(String(120), index=True)
+    revision_no: Mapped[int] = mapped_column(Integer)
+    payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    normalized_json: Mapped[str] = mapped_column(Text)
+    parser_version: Mapped[str] = mapped_column(String(40), default="etdr-detail-v1")
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -159,4 +214,10 @@ class AuthoritySignalOutbox(Base):
     payload_json: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="held", index=True)
     reason_code: Mapped[str] = mapped_column(String(120), default="manual_promotion_required")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(120))
+    delivery_ref: Mapped[str | None] = mapped_column(String(120), index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(120), index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

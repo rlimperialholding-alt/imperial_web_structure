@@ -4,18 +4,29 @@ import hashlib
 import hmac
 import json
 import time
+import unicodedata
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
-from .client import ETDRClient, ETDRPage, ETDRRecord, OENYClient, ReaderBlocked
+from .client import (
+    ETDRClient,
+    ETDRDetail,
+    ETDRDetailClient,
+    ETDRPage,
+    ETDRRecord,
+    OENYClient,
+    ReaderBlocked,
+)
 from .config import ReaderSettings
 from .models import (
     AuthorityCheckpoint,
+    AuthorityDetailQueue,
+    AuthorityDetailRevision,
     AuthorityEnrichmentQueue,
     AuthorityReaderRun,
     AuthorityRecord,
@@ -25,6 +36,7 @@ from .models import (
 
 ClientFactory = Callable[[ReaderSettings], ETDRClient]
 OENYClientFactory = Callable[[ReaderSettings], OENYClient]
+DetailClientFactory = Callable[[ReaderSettings], ETDRDetailClient]
 
 
 def utcnow() -> datetime:
@@ -70,13 +82,17 @@ def _filter(mode: str, cutoff: datetime, since: datetime | None, town: str | Non
 def readiness(db: Session, settings: ReaderSettings) -> tuple[bool, dict[str, Any]]:
     db.scalar(select(func.count()).select_from(AuthorityCheckpoint))
     errors = settings.errors()
+    policy_open = settings.enabled and settings.policy_authorized and settings.policy_evidence_valid
     return not errors, {
         "reader": "ready" if not errors else "blocked",
         "enabled": settings.enabled,
         "policy_authorized": settings.policy_authorized,
         "policy_evidence_valid": settings.policy_evidence_valid,
         "policy_evidence_sha256": settings.policy_evidence_sha256 or None,
-        "oeny": "enabled" if settings.oeny_enabled else "held",
+        "schedule": "enabled" if policy_open and settings.schedule_enabled else "held",
+        "detail_reader": "enabled" if policy_open and settings.detail_enabled else "held",
+        "lead_export": "enabled" if policy_open and settings.lead_export_enabled else "held",
+        "oeny": "enabled" if policy_open and settings.oeny_enabled else "held",
         "errors": errors,
     }
 
@@ -166,6 +182,17 @@ def _upsert_record(
     )
     db.add(revision)
     db.flush()
+    detail_pending = settings.detail_enabled
+    row.detail_status = "pending" if detail_pending else "held"
+    db.add(
+        AuthorityDetailQueue(
+            record_id=row.record_id,
+            source_revision_id=revision.revision_id,
+            listing_payload_sha256=payload_hash,
+            status="pending" if detail_pending else "held",
+            reason_code="ready" if detail_pending else "detail_policy_gate",
+        )
+    )
     if item.topographical_number:
         db.add(
             AuthorityEnrichmentQueue(
@@ -359,6 +386,281 @@ def run_summary(row: AuthorityReaderRun) -> dict[str, Any]:
         "started_at": row.started_at,
         "completed_at": row.completed_at,
     }
+
+
+def _fold(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(character for character in normalized if not unicodedata.combining(character))
+
+
+def _lead_route(detail: ETDRDetail, record: AuthorityRecord) -> tuple[str, str]:
+    text_value = _fold(f"{detail.subject} {record.construction_activity} {record.procedure_type}")
+    routes = (
+        (("csarnok", "raktar", "uzem", "logisztikai", "ipari"), "hall", "prefab"),
+        (("bovit", "toldalek", "hozzaepites"), "extension", "bautica"),
+        (("felujit", "atalakit", "korszerusit", "tetoter"), "renovation", "bautica"),
+        (("belsoepit", "uzlet", "iroda", "vendeglato", "szalloda"), "fitout", "bautica"),
+        (("lako", "csaladi haz", "lakashaz"), "residential_construction", "bautica"),
+    )
+    for terms, signal_type, brand_id in routes:
+        if any(term in text_value for term in terms):
+            return signal_type, brand_id
+    return "construction_project", "bautica"
+
+
+def _lead_payload(
+    detail: ETDRDetail,
+    record: AuthorityRecord,
+    detail_payload_sha256: str,
+    detail_revision_id: str,
+    detail_revision_no: int,
+) -> dict[str, Any]:
+    signal_type, brand_id = _lead_route(detail, record)
+    decision = detail.decisions[-1] if detail.decisions else None
+    facts = [
+        detail.subject,
+        f"Eljárás: {detail.procedure_type}",
+        f"Státusz: {detail.status}",
+        f"Hatóság: {detail.authority_name}",
+    ]
+    if decision:
+        facts.append(
+            f"Legutóbbi döntés: {decision.decision_type} ({decision.decision_date.isoformat()})"
+        )
+        facts.append(decision.summary)
+    if detail.documents:
+        facts.append(f"Nyilvános dokumentumhivatkozások: {len(detail.documents)}")
+    status_folded = _fold(detail.status)
+    urgency = 80 if "folyamatban" in status_folded else 60
+    return {
+        "schema_version": "etdr-lead-v1",
+        "source_id": "authority:etdr_public",
+        "external_key": record.public_process_number,
+        "motor_key": "construction",
+        "source_bucket": "etdr",
+        "signal_type": signal_type,
+        "detected_at": _iso(record.submission_date),
+        "company_name": None,
+        "subject_type": "project",
+        "recipient_email": None,
+        "recipient_email_type": "none",
+        "contact_basis": "unknown",
+        "location": detail.property_address,
+        "summary": " | ".join(facts)[:5000],
+        "evidence_url": record.evidence_url,
+        "brand_id": brand_id,
+        "confidence": 90,
+        "urgency": urgency,
+        "source_payload_hash": detail_payload_sha256,
+        "revision_id": detail_revision_id,
+        "revision_no": detail_revision_no,
+        "rejection_reasons": [
+            "authority_source_no_outreach",
+            "contact_basis_unknown",
+            "internal_review_only",
+            "recipient_email_missing",
+        ],
+    }
+
+
+def _detail_matches_record(detail: ETDRDetail, record: AuthorityRecord) -> bool:
+    submitted = record.submission_date.date()
+    same_property = (
+        not record.topographical_number
+        or not detail.topographical_number
+        or _fold(record.topographical_number) == _fold(detail.topographical_number)
+    )
+    return (
+        detail.process_number == record.public_process_number
+        and detail.submission_date == submitted
+        and _fold(detail.procedure_type) == _fold(record.procedure_type)
+        and same_property
+    )
+
+
+def _promote_detail_queue(db: Session, settings: ReaderSettings) -> None:
+    rows = db.scalars(
+        select(AuthorityDetailQueue).where(AuthorityDetailQueue.status == "held")
+    ).all()
+    for queue in rows:
+        record = db.scalar(
+            select(AuthorityRecord).where(AuthorityRecord.record_id == queue.record_id)
+        )
+        if record and record.current_payload_sha256 == queue.listing_payload_sha256:
+            queue.status = "pending"
+            queue.reason_code = "ready"
+            queue.updated_at = utcnow()
+            record.detail_status = "pending"
+    if rows:
+        db.commit()
+
+
+def process_details(
+    db: Session,
+    settings: ReaderSettings,
+    *,
+    limit: int | None = None,
+    client_factory: DetailClientFactory = ETDRDetailClient,
+) -> dict[str, int]:
+    if not settings.enabled or not settings.policy_authorized or not settings.policy_evidence_valid:
+        raise ReaderBlocked("policy_authorization_required")
+    if not settings.detail_enabled:
+        raise ReaderBlocked("detail_reader_disabled")
+    _promote_detail_queue(db, settings)
+    now = utcnow()
+    db.execute(
+        update(AuthorityDetailQueue)
+        .where(
+            AuthorityDetailQueue.status == "claimed",
+            AuthorityDetailQueue.lease_expires_at < now,
+        )
+        .values(
+            status="pending",
+            reason_code="detail_lease_expired",
+            lease_owner=None,
+            lease_expires_at=None,
+            updated_at=now,
+        )
+    )
+    db.commit()
+    candidate_ids = db.scalars(
+        select(AuthorityDetailQueue.id)
+        .where(AuthorityDetailQueue.status == "pending")
+        .order_by(AuthorityDetailQueue.id)
+        .limit(max(1, min(limit or settings.detail_batch_size, 1000)))
+    ).all()
+    claim_owner = f"{settings.worker_id[:80]}:{uuid4().hex}"
+    counts = {"completed": 0, "unchanged": 0, "blocked": 0}
+    with client_factory(settings) as client:
+        for queue_id in candidate_ids:
+            claimed = db.execute(
+                update(AuthorityDetailQueue)
+                .where(
+                    AuthorityDetailQueue.id == queue_id,
+                    AuthorityDetailQueue.status == "pending",
+                )
+                .values(
+                    status="claimed",
+                    reason_code="detail_fetch_claimed",
+                    lease_owner=claim_owner,
+                    lease_expires_at=utcnow() + timedelta(seconds=settings.lease_seconds),
+                    updated_at=utcnow(),
+                )
+            )
+            db.commit()
+            if getattr(claimed, "rowcount", 0) != 1:
+                continue
+            queue = db.scalar(
+                select(AuthorityDetailQueue).where(
+                    AuthorityDetailQueue.id == queue_id,
+                    AuthorityDetailQueue.status == "claimed",
+                    AuthorityDetailQueue.lease_owner == claim_owner,
+                )
+            )
+            if not queue:
+                continue
+            record = db.scalar(
+                select(AuthorityRecord).where(AuthorityRecord.record_id == queue.record_id)
+            )
+            if not record or record.current_payload_sha256 != queue.listing_payload_sha256:
+                queue.status = "failed"
+                queue.reason_code = "stale_listing_revision"
+                queue.attempt_count += 1
+                queue.lease_owner = None
+                queue.lease_expires_at = None
+                queue.updated_at = utcnow()
+                db.commit()
+                continue
+            try:
+                detail = client.fetch_detail(record.public_process_number)
+                if not _detail_matches_record(detail, record):
+                    raise ReaderBlocked("detail_identity_mismatch")
+                normalized = detail.normalized()
+                payload_hash = sha(normalized)
+                existing = db.scalar(
+                    select(AuthorityDetailRevision).where(
+                        AuthorityDetailRevision.record_id == record.record_id,
+                        AuthorityDetailRevision.payload_sha256 == payload_hash,
+                    )
+                )
+                if existing:
+                    detail_revision = existing
+                    counts["unchanged"] += 1
+                else:
+                    record.current_detail_revision_no += 1
+                    detail_revision = AuthorityDetailRevision(
+                        detail_revision_id=f"etdrd-{uuid4().hex}",
+                        record_id=record.record_id,
+                        source_revision_id=queue.source_revision_id,
+                        revision_no=record.current_detail_revision_no,
+                        payload_sha256=payload_hash,
+                        normalized_json=canonical_json(normalized),
+                    )
+                    db.add(detail_revision)
+                    db.flush()
+                    counts["completed"] += 1
+                record.current_detail_payload_sha256 = payload_hash
+                record.detail_status = "current"
+                record.detail_checked_at = utcnow()
+                queue.status = "completed"
+                queue.reason_code = "detail_current"
+                queue.attempt_count += 1
+                queue.lease_owner = None
+                queue.lease_expires_at = None
+                queue.updated_at = utcnow()
+                lead = _lead_payload(
+                    detail,
+                    record,
+                    payload_hash,
+                    detail_revision.detail_revision_id,
+                    detail_revision.revision_no,
+                )
+                idempotency_key = sha({"record": record.record_id, "detail_payload": payload_hash})
+                outbox = db.scalar(
+                    select(AuthoritySignalOutbox).where(
+                        AuthoritySignalOutbox.idempotency_key == idempotency_key
+                    )
+                )
+                if not outbox:
+                    db.add(
+                        AuthoritySignalOutbox(
+                            idempotency_key=idempotency_key,
+                            record_id=record.record_id,
+                            revision_id=detail_revision.detail_revision_id,
+                            payload_sha256=sha(lead),
+                            payload_json=canonical_json(lead),
+                            status="pending" if settings.lead_export_enabled else "held",
+                            reason_code=(
+                                "ready_for_daily_lead_generator"
+                                if settings.lead_export_enabled
+                                else "lead_export_policy_gate"
+                            ),
+                        )
+                    )
+                db.commit()
+                time.sleep(settings.request_delay_seconds)
+            except ReaderBlocked as exc:
+                db.rollback()
+                blocked_queue = db.get(AuthorityDetailQueue, queue.id)
+                blocked_record = db.scalar(
+                    select(AuthorityRecord).where(AuthorityRecord.record_id == queue.record_id)
+                )
+                assert blocked_queue is not None
+                if blocked_queue.lease_owner != claim_owner:
+                    raise RuntimeError("detail_lease_lost") from exc
+                blocked_queue.status = "blocked"
+                blocked_queue.reason_code = exc.code
+                blocked_queue.attempt_count += 1
+                blocked_queue.lease_owner = None
+                blocked_queue.lease_expires_at = None
+                blocked_queue.updated_at = utcnow()
+                if blocked_record:
+                    blocked_record.detail_status = "blocked"
+                    blocked_record.detail_checked_at = utcnow()
+                db.commit()
+                counts["blocked"] += 1
+                raise
+    return counts
 
 
 def process_enrichments(

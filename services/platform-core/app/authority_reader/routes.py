@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 from datetime import UTC
 from typing import Annotated, Literal
 
@@ -12,8 +13,14 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .client import ReaderBlocked
 from .config import ReaderSettings
-from .models import AuthorityReaderRun, AuthorityRecord, AuthorityRecordRevision
-from .service import process_enrichments, readiness, run_reader, run_summary
+from .models import (
+    AuthorityDetailRevision,
+    AuthorityReaderRun,
+    AuthorityRecord,
+    AuthorityRecordRevision,
+    AuthoritySignalOutbox,
+)
+from .service import process_details, process_enrichments, readiness, run_reader, run_summary
 
 router = APIRouter()
 
@@ -88,6 +95,18 @@ def run_enrichments(
         raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
 
 
+@router.post("/api/internal/authority-reader/details/run", dependencies=[Depends(require_token)])
+def run_details(
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    db: Session = Depends(get_db),  # noqa: B008
+    settings: ReaderSettings = Depends(current_settings),  # noqa: B008
+):
+    try:
+        return process_details(db, settings, limit=limit)
+    except ReaderBlocked as exc:
+        raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
+
+
 @router.get("/api/internal/authority-reader/runs", dependencies=[Depends(require_token)])
 def list_runs(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -129,6 +148,8 @@ def list_records(
                 "submission_date": row.submission_date,
                 "evidence_url": row.evidence_url,
                 "revision_no": row.current_revision_no,
+                "detail_revision_no": row.current_detail_revision_no,
+                "detail_status": row.detail_status,
                 "status": row.status,
             }
             for row in rows
@@ -161,10 +182,93 @@ def list_revisions(record_id: str, db: Session = Depends(get_db)):  # noqa: B008
     }
 
 
+@router.get(
+    "/api/internal/authority-reader/records/{record_id}/details",
+    dependencies=[Depends(require_token)],
+)
+def list_details(record_id: str, db: Session = Depends(get_db)):  # noqa: B008
+    if not db.scalar(select(AuthorityRecord.id).where(AuthorityRecord.record_id == record_id)):
+        raise HTTPException(status_code=404, detail="record not found")
+    rows = db.scalars(
+        select(AuthorityDetailRevision)
+        .where(AuthorityDetailRevision.record_id == record_id)
+        .order_by(AuthorityDetailRevision.revision_no)
+    ).all()
+    return {
+        "items": [
+            {
+                "detail_revision_id": row.detail_revision_id,
+                "revision_no": row.revision_no,
+                "payload_sha256": row.payload_sha256,
+                "detail": json.loads(row.normalized_json),
+                "observed_at": row.observed_at,
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.get("/api/internal/authority-reader/lead-feed", dependencies=[Depends(require_token)])
+def lead_feed(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    db: Session = Depends(get_db),  # noqa: B008
+    settings: ReaderSettings = Depends(current_settings),  # noqa: B008
+):
+    if (
+        not settings.enabled
+        or not settings.policy_authorized
+        or not settings.policy_evidence_valid
+        or not settings.detail_enabled
+        or not settings.lead_export_enabled
+    ):
+        raise HTTPException(status_code=503, detail={"code": "lead_export_policy_gate"})
+    rows = db.scalars(
+        select(AuthoritySignalOutbox)
+        .where(AuthoritySignalOutbox.status == "pending")
+        .order_by(AuthoritySignalOutbox.id)
+        .limit(limit)
+    ).all()
+    return {
+        "schema_version": "etdr-lead-feed-v1",
+        "items": [
+            {
+                "idempotency_key": row.idempotency_key,
+                "payload_sha256": row.payload_sha256,
+                "payload": json.loads(row.payload_json),
+            }
+            for row in rows
+        ],
+    }
+
+
 def dashboard_data(db: Session) -> dict[str, object]:
     latest = db.scalar(select(AuthorityReaderRun).order_by(desc(AuthorityReaderRun.started_at)))
     return {
         "records": db.scalar(select(func.count()).select_from(AuthorityRecord)) or 0,
+        "deep_records": (
+            db.scalar(
+                select(func.count())
+                .select_from(AuthorityRecord)
+                .where(AuthorityRecord.detail_status == "current")
+            )
+            or 0
+        ),
+        "lead_pending": (
+            db.scalar(
+                select(func.count())
+                .select_from(AuthoritySignalOutbox)
+                .where(AuthoritySignalOutbox.status == "pending")
+            )
+            or 0
+        ),
+        "lead_delivered": (
+            db.scalar(
+                select(func.count())
+                .select_from(AuthoritySignalOutbox)
+                .where(AuthoritySignalOutbox.status == "delivered")
+            )
+            or 0
+        ),
         "latest": run_summary(latest) if latest else None,
         "generated_at": __import__("datetime").datetime.now(UTC),
     }

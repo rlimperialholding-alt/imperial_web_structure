@@ -63,6 +63,10 @@ class ReaderSettings:
     max_response_bytes: int
     max_pages_per_run: int
     lease_seconds: int
+    detail_enabled: bool = False
+    lead_export_enabled: bool = False
+    detail_batch_size: int = 100
+    schedule_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> ReaderSettings:
@@ -112,6 +116,12 @@ class ReaderSettings:
             lease_seconds=max(
                 60, min(7200, int(os.getenv("AUTHORITY_READER_LEASE_SECONDS", "600")))
             ),
+            detail_enabled=_bool("AUTHORITY_READER_DETAIL_ENABLED"),
+            lead_export_enabled=_bool("AUTHORITY_READER_LEAD_EXPORT_ENABLED"),
+            detail_batch_size=max(
+                1, min(1000, int(os.getenv("AUTHORITY_READER_DETAIL_BATCH_SIZE", "100")))
+            ),
+            schedule_enabled=_bool("AUTHORITY_READER_SCHEDULE_ENABLED"),
         )
 
     def errors(self) -> list[str]:
@@ -131,4 +141,6 @@ class ReaderSettings:
             errors.append("internal_token_too_short")
         if self.enabled and len(self.hmac_key) < 32:
             errors.append("hmac_key_too_short")
+        if self.lead_export_enabled and not self.detail_enabled:
+            errors.append("lead_export_requires_detail_reader")
         return errors
