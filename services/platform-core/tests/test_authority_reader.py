@@ -273,6 +273,24 @@ def test_countrywide_baseline_is_bounded_and_has_no_city_filter():
     assert "City eq" not in expression
 
 
+def test_policy_evidence_accepts_explicit_indefinite_authorization(tmp_path, monkeypatch):
+    evidence = tmp_path / "policy.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "authorization_reference": "owner-countrywide-authorization",
+                "approved_by": "workspace owner",
+                "scope": "bulk countrywide ETDR internal lead generation",
+                "authorization_duration": "indefinite",
+                "valid_until": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AUTHORITY_READER_POLICY_EVIDENCE_FILE", str(evidence))
+    assert ReaderSettings.from_env().policy_evidence_valid is True
+
+
 def test_pilot_is_persisted_with_held_enrichment_and_outbox(db):
     row = run_reader(
         db,

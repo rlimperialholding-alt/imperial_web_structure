@@ -12,8 +12,9 @@ audited database function through a dedicated role with no direct table privileg
   `AUTHORITY_READER_POLICY_AUTHORIZED=false` until written bulk-reuse authorization exists.
 - Schedule, detail reads, lead export and the internal sales digest each require a separate
   explicit `true`; every runtime switch defaults to closed independently.
-- Enabling also requires a mounted, unexpired policy-evidence JSON with authorization reference,
-  approver, a bulk-reuse scope, and `valid_until`; its SHA-256 is exposed in readiness evidence.
+- Enabling also requires mounted policy-evidence JSON with authorization reference, approver and
+  bulk-reuse scope. It may be explicitly `indefinite` or time-limited; its SHA-256 is exposed in
+  readiness evidence.
 - Never bypass CAPTCHA, `403`, `429`, authentication, `robots.txt`, or a schema-drift block.
 - The OÉNY queue and lead outbox remain `held` until all source-policy gates pass; exported leads
   are still `blocked` for internal review and can never create automatic outreach.
@@ -31,7 +32,7 @@ audited database function through a dedicated role with no direct table privileg
 - The lead bridge writes project-only, `blocked` and `internal_review_only` signals through a
   dedicated least-privilege PostgreSQL role. It has no delete permission and cannot create
   outreach records.
-- The daily sales digest is a separate least-privilege worker. It sends only to an expiring,
+- The daily sales digest is a separate least-privilege worker. It sends only to an explicitly
   owner-approved internal recipient allowlist through the mounted Gmail OAuth credential. Each
   local calendar date has one immutable payload hash and RFC 822 Message-ID; retries reconcile
   Gmail Sent before sending, so an ambiguous response cannot silently duplicate a digest.

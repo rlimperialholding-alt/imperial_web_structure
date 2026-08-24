@@ -13,11 +13,11 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
@@ -85,16 +85,19 @@ class DigestRecipients(BaseModel):
     schema_version: str = Field(pattern=r"^internal-sales-digest-v1$")
     purpose: str = Field(pattern=r"^internal_sales_digest$")
     approved_by: str = Field(min_length=2, max_length=200)
-    valid_until: datetime
+    authorization_duration: Literal["time_limited", "indefinite"] = "time_limited"
+    valid_until: datetime | None = None
     recipients: tuple[DigestRecipient, ...] = Field(min_length=1, max_length=20)
 
-    @field_validator("valid_until")
-    @classmethod
-    def future_expiry(cls, value: datetime) -> datetime:
-        aware = value if value.tzinfo else value.replace(tzinfo=UTC)
-        if aware <= datetime.now(UTC):
+    @model_validator(mode="after")
+    def valid_duration(self):
+        if self.authorization_duration == "indefinite":
+            if self.valid_until is not None:
+                raise ValueError("indefinite recipient approval must not expire")
+            return self
+        if self.valid_until is None or _aware(self.valid_until) <= datetime.now(UTC):
             raise ValueError("digest recipient approval expired")
-        return aware
+        return self
 
     @field_validator("recipients")
     @classmethod
@@ -173,7 +176,10 @@ def recipients_sha256(config: DigestRecipients) -> str:
                 "schema_version": config.schema_version,
                 "purpose": config.purpose,
                 "approved_by": config.approved_by,
-                "valid_until": _aware(config.valid_until).isoformat(),
+                "authorization_duration": config.authorization_duration,
+                "valid_until": (
+                    _aware(config.valid_until).isoformat() if config.valid_until else None
+                ),
                 "recipients": [item.model_dump() for item in config.recipients],
             }
         ).encode()

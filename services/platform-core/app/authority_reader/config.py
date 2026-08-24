@@ -28,14 +28,22 @@ def _policy_evidence() -> tuple[bool, str]:
     try:
         raw = path.read_bytes()
         payload = json.loads(raw)
-        valid_until = datetime.fromisoformat(str(payload["valid_until"]).replace("Z", "+00:00"))
-        valid_until = valid_until if valid_until.tzinfo else valid_until.replace(tzinfo=UTC)
-        required = ("authorization_reference", "approved_by", "scope", "valid_until")
-        valid = (
-            all(isinstance(payload.get(key), str) and payload[key].strip() for key in required)
-            and "bulk" in payload["scope"].casefold()
-            and valid_until > datetime.now(UTC)
-        )
+        required = ("authorization_reference", "approved_by", "scope")
+        base_valid = all(
+            isinstance(payload.get(key), str) and payload[key].strip() for key in required
+        ) and "bulk" in payload["scope"].casefold()
+        duration = payload.get("authorization_duration", "time_limited")
+        if duration == "indefinite":
+            duration_valid = payload.get("valid_until") is None
+        elif duration == "time_limited":
+            valid_until = datetime.fromisoformat(
+                str(payload["valid_until"]).replace("Z", "+00:00")
+            )
+            valid_until = valid_until if valid_until.tzinfo else valid_until.replace(tzinfo=UTC)
+            duration_valid = valid_until > datetime.now(UTC)
+        else:
+            duration_valid = False
+        valid = base_valid and duration_valid
         return valid, hashlib.sha256(raw).hexdigest()
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         return False, ""

@@ -25,6 +25,7 @@ from app.authority_reader.sales_digest import (
     create_digest,
     dispatch_digest,
     load_oauth,
+    load_recipients,
     run_once,
 )
 from app.authority_reader.service import canonical_json, sha
@@ -288,6 +289,19 @@ def test_digest_is_fail_closed_without_explicit_delivery_authorization(db, tmp_p
     active = _settings(tmp_path, sales_digest_authorized=False)
     with pytest.raises(DigestBlocked, match="sales_digest_policy_gate"):
         create_digest(db, active, force=True)
+
+
+def test_digest_accepts_explicit_indefinite_recipient_authorization(tmp_path):
+    active = _settings(tmp_path)
+    recipient_file = tmp_path / "recipients.json"
+    payload = json.loads(recipient_file.read_text(encoding="utf-8"))
+    payload["authorization_duration"] = "indefinite"
+    payload["valid_until"] = None
+    recipient_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    recipients = load_recipients(active)
+    assert recipients.authorization_duration == "indefinite"
+    assert recipients.valid_until is None
 
 
 def test_empty_digest_is_audited_but_not_emailed(db, tmp_path):
