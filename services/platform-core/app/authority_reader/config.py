@@ -67,6 +67,9 @@ class ReaderSettings:
     lead_export_enabled: bool = False
     detail_batch_size: int = 100
     schedule_enabled: bool = False
+    lead_new_days: int = 120
+    lead_stalled_min_days: int = 180
+    lead_stalled_max_days: int = 1095
 
     @classmethod
     def from_env(cls) -> ReaderSettings:
@@ -122,6 +125,17 @@ class ReaderSettings:
                 1, min(1000, int(os.getenv("AUTHORITY_READER_DETAIL_BATCH_SIZE", "100")))
             ),
             schedule_enabled=_bool("AUTHORITY_READER_SCHEDULE_ENABLED"),
+            lead_new_days=max(
+                1, min(365, int(os.getenv("AUTHORITY_READER_LEAD_NEW_DAYS", "120")))
+            ),
+            lead_stalled_min_days=max(
+                30,
+                min(730, int(os.getenv("AUTHORITY_READER_LEAD_STALLED_MIN_DAYS", "180"))),
+            ),
+            lead_stalled_max_days=max(
+                180,
+                min(1825, int(os.getenv("AUTHORITY_READER_LEAD_STALLED_MAX_DAYS", "1095"))),
+            ),
         )
 
     def errors(self) -> list[str]:
@@ -143,4 +157,6 @@ class ReaderSettings:
             errors.append("hmac_key_too_short")
         if self.lead_export_enabled and not self.detail_enabled:
             errors.append("lead_export_requires_detail_reader")
+        if self.lead_stalled_max_days <= self.lead_stalled_min_days:
+            errors.append("lead_stalled_window_invalid")
         return errors

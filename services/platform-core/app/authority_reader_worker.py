@@ -9,7 +9,12 @@ from sqlalchemy import select
 from .authority_reader.client import ReaderBlocked
 from .authority_reader.config import ReaderSettings
 from .authority_reader.models import AuthorityCheckpoint
-from .authority_reader.service import process_details, process_enrichments, run_reader
+from .authority_reader.service import (
+    process_details,
+    process_enrichments,
+    requalify_waiting_leads,
+    run_reader,
+)
 from .database import SessionLocal
 
 stopping = False
@@ -51,6 +56,7 @@ def main() -> None:
                 if settings.detail_enabled:
                     try:
                         process_details(db, settings)
+                        requalify_waiting_leads(db, settings)
                     except ReaderBlocked:
                         pass
                 if settings.oeny_enabled:

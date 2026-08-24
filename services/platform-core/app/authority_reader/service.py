@@ -6,6 +6,7 @@ import json
 import time
 import unicodedata
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -182,7 +183,13 @@ def _upsert_record(
     )
     db.add(revision)
     db.flush()
-    detail_pending = settings.detail_enabled
+    detail_candidate = _listing_may_qualify(
+        procedure_type=row.procedure_type,
+        submission_date=row.submission_date,
+        settings=settings,
+        as_of=now,
+    )
+    detail_pending = settings.detail_enabled and detail_candidate
     row.detail_status = "pending" if detail_pending else "held"
     db.add(
         AuthorityDetailQueue(
@@ -190,7 +197,15 @@ def _upsert_record(
             source_revision_id=revision.revision_id,
             listing_payload_sha256=payload_hash,
             status="pending" if detail_pending else "held",
-            reason_code="ready" if detail_pending else "detail_policy_gate",
+            reason_code=(
+                "ready"
+                if detail_pending
+                else (
+                    "detail_policy_gate"
+                    if detail_candidate
+                    else "lead_prefilter_not_candidate"
+                )
+            ),
         )
     )
     if item.topographical_number:
@@ -393,6 +408,166 @@ def _fold(value: str) -> str:
     return "".join(character for character in normalized if not unicodedata.combining(character))
 
 
+LEAD_POLICY_VERSION = "etdr-lead-v2"
+CONSTRUCTION_INTENT_TERMS = ("epitesi engedelyezesi", "egyszeru bejelent")
+NON_START_STATUS_TERMS = ("megszunt", "visszavon")
+REJECTED_STATUS_TERMS = ("elutasit", "ervenytelen")
+COMPLETION_TERMS = (
+    "hasznalatbavet",
+    "hasznalatba vet",
+    "epitesi munkalatok befejez",
+    "epitkezes befejez",
+)
+
+
+@dataclass(frozen=True)
+class LeadDecision:
+    eligible: bool
+    reason: str
+    confidence: int = 0
+    urgency: int = 0
+    evidence: tuple[str, ...] = ()
+    next_evaluate_at: datetime | None = None
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+def _age_days(submission_date: datetime, as_of: datetime) -> int:
+    return (_aware(as_of).date() - _aware(submission_date).date()).days
+
+
+def _is_construction_intent(procedure_type: str) -> bool:
+    folded = _fold(procedure_type)
+    return any(term in folded for term in CONSTRUCTION_INTENT_TERMS)
+
+
+def _is_completion_signal(record: AuthorityRecord) -> bool:
+    folded = _fold(f"{record.procedure_type} {record.construction_activity}")
+    return any(term in folded for term in COMPLETION_TERMS)
+
+
+def _parcel_key(value: str | None) -> str | None:
+    if not value:
+        return None
+    return "".join(character for character in _fold(value) if not character.isspace())
+
+
+def _listing_may_qualify(
+    *,
+    procedure_type: str,
+    submission_date: datetime,
+    settings: ReaderSettings,
+    as_of: datetime,
+) -> bool:
+    age = _age_days(submission_date, as_of)
+    return (
+        _is_construction_intent(procedure_type)
+        and 0 <= age <= settings.lead_stalled_max_days
+    )
+
+
+def _later_property_records(
+    db: Session,
+    record: AuthorityRecord,
+) -> tuple[AuthorityRecord, ...]:
+    parcel = _parcel_key(record.topographical_number)
+    if parcel is None:
+        return ()
+    candidates = db.scalars(
+        select(AuthorityRecord).where(
+            AuthorityRecord.source_key == record.source_key,
+            AuthorityRecord.city == record.city,
+            AuthorityRecord.record_id != record.record_id,
+            AuthorityRecord.status == "active",
+        )
+    ).all()
+    current_order = (_aware(record.submission_date), record.public_process_number)
+    return tuple(
+        candidate
+        for candidate in candidates
+        if _parcel_key(candidate.topographical_number) == parcel
+        and (_aware(candidate.submission_date), candidate.public_process_number) > current_order
+    )
+
+
+def _lead_decision(
+    db: Session,
+    settings: ReaderSettings,
+    detail: ETDRDetail,
+    record: AuthorityRecord,
+    *,
+    as_of: datetime | None = None,
+) -> LeadDecision:
+    evaluated_at = _aware(as_of or utcnow())
+    age = _age_days(record.submission_date, evaluated_at)
+    if not _is_construction_intent(record.procedure_type):
+        return LeadDecision(False, "unsupported_procedure")
+    if age < 0 or age > settings.lead_stalled_max_days:
+        return LeadDecision(False, "outside_recent_window")
+
+    later_records = _later_property_records(db, record)
+    if any(_is_construction_intent(candidate.procedure_type) for candidate in later_records):
+        return LeadDecision(False, "superseded_by_later_property_filing")
+    if any(_is_completion_signal(candidate) for candidate in later_records):
+        return LeadDecision(False, "later_completion_signal_found")
+
+    status = _fold(detail.status)
+    if any(term in status for term in REJECTED_STATUS_TERMS):
+        return LeadDecision(False, "rejected_or_invalid_procedure")
+    if any(term in status for term in NON_START_STATUS_TERMS):
+        return LeadDecision(
+            True,
+            "likely_not_started",
+            confidence=72,
+            urgency=65,
+            evidence=(
+                "construction_intent_procedure",
+                "procedure_discontinued_or_withdrawn",
+                "public_status_supports_non_start_indicator",
+            ),
+        )
+    if age <= settings.lead_new_days:
+        return LeadDecision(
+            True,
+            "new_submission",
+            confidence=92,
+            urgency=90 if age <= 30 else 80,
+            evidence=(
+                "construction_intent_procedure",
+                f"submission_within_{settings.lead_new_days}_days",
+                "latest_known_filing_for_same_property",
+            ),
+        )
+    if age < settings.lead_stalled_min_days:
+        next_evaluate_at = _aware(record.submission_date) + timedelta(
+            days=settings.lead_stalled_min_days
+        )
+        return LeadDecision(
+            False,
+            "waiting_for_no_completion_window",
+            next_evaluate_at=next_evaluate_at,
+        )
+    if _parcel_key(record.topographical_number) is None:
+        return LeadDecision(False, "stable_property_key_missing")
+    return LeadDecision(
+        True,
+        "no_completion_signal",
+        confidence=68,
+        urgency=70,
+        evidence=(
+            "construction_intent_procedure",
+            (
+                f"submission_between_{settings.lead_stalled_min_days}_and_"
+                f"{settings.lead_stalled_max_days}_days"
+            ),
+            "no_later_completion_signal_for_same_property",
+            "latest_known_filing_for_same_property",
+        ),
+    )
+
+
 def _lead_route(detail: ETDRDetail, record: AuthorityRecord) -> tuple[str, str]:
     text_value = _fold(f"{detail.subject} {record.construction_activity} {record.procedure_type}")
     routes = (
@@ -414,14 +589,19 @@ def _lead_payload(
     detail_payload_sha256: str,
     detail_revision_id: str,
     detail_revision_no: int,
+    qualification: LeadDecision,
 ) -> dict[str, Any]:
+    if not qualification.eligible:
+        raise ValueError("ineligible_lead_payload")
     signal_type, brand_id = _lead_route(detail, record)
     decision = detail.decisions[-1] if detail.decisions else None
     facts = [
+        f"Lead-indok: {qualification.reason}",
         detail.subject,
         f"Eljárás: {detail.procedure_type}",
         f"Státusz: {detail.status}",
         f"Hatóság: {detail.authority_name}",
+        f"Minősítési jelek: {', '.join(qualification.evidence)}",
     ]
     if decision:
         facts.append(
@@ -430,10 +610,10 @@ def _lead_payload(
         facts.append(decision.summary)
     if detail.documents:
         facts.append(f"Nyilvános dokumentumhivatkozások: {len(detail.documents)}")
-    status_folded = _fold(detail.status)
-    urgency = 80 if "folyamatban" in status_folded else 60
     return {
-        "schema_version": "etdr-lead-v1",
+        "schema_version": LEAD_POLICY_VERSION,
+        "lead_reason": qualification.reason,
+        "qualification_evidence": list(qualification.evidence),
         "source_id": "authority:etdr_public",
         "external_key": record.public_process_number,
         "motor_key": "construction",
@@ -449,8 +629,8 @@ def _lead_payload(
         "summary": " | ".join(facts)[:5000],
         "evidence_url": record.evidence_url,
         "brand_id": brand_id,
-        "confidence": 90,
-        "urgency": urgency,
+        "confidence": qualification.confidence,
+        "urgency": qualification.urgency,
         "source_payload_hash": detail_payload_sha256,
         "revision_id": detail_revision_id,
         "revision_no": detail_revision_no,
@@ -461,6 +641,64 @@ def _lead_payload(
             "recipient_email_missing",
         ],
     }
+
+
+def _queue_qualified_lead(
+    db: Session,
+    settings: ReaderSettings,
+    *,
+    detail: ETDRDetail,
+    record: AuthorityRecord,
+    detail_revision: AuthorityDetailRevision,
+    detail_payload_sha256: str,
+    qualification: LeadDecision,
+) -> bool:
+    existing_revision = db.scalar(
+        select(AuthoritySignalOutbox).where(
+            AuthoritySignalOutbox.revision_id == detail_revision.detail_revision_id
+        )
+    )
+    if existing_revision:
+        return False
+    lead = _lead_payload(
+        detail,
+        record,
+        detail_payload_sha256,
+        detail_revision.detail_revision_id,
+        detail_revision.revision_no,
+        qualification,
+    )
+    idempotency_key = sha(
+        {
+            "record": record.record_id,
+            "detail_payload": detail_payload_sha256,
+            "lead_policy": LEAD_POLICY_VERSION,
+            "lead_reason": qualification.reason,
+        }
+    )
+    existing = db.scalar(
+        select(AuthoritySignalOutbox).where(
+            AuthoritySignalOutbox.idempotency_key == idempotency_key
+        )
+    )
+    if existing:
+        return False
+    db.add(
+        AuthoritySignalOutbox(
+            idempotency_key=idempotency_key,
+            record_id=record.record_id,
+            revision_id=detail_revision.detail_revision_id,
+            payload_sha256=sha(lead),
+            payload_json=canonical_json(lead),
+            status="pending" if settings.lead_export_enabled else "held",
+            reason_code=(
+                f"ready_for_daily_lead_generator_{qualification.reason}"
+                if settings.lead_export_enabled
+                else "lead_export_policy_gate"
+            ),
+        )
+    )
+    return True
 
 
 def _detail_matches_record(detail: ETDRDetail, record: AuthorityRecord) -> bool:
@@ -480,17 +718,29 @@ def _detail_matches_record(detail: ETDRDetail, record: AuthorityRecord) -> bool:
 
 def _promote_detail_queue(db: Session, settings: ReaderSettings) -> None:
     rows = db.scalars(
-        select(AuthorityDetailQueue).where(AuthorityDetailQueue.status == "held")
+        select(AuthorityDetailQueue).where(
+            AuthorityDetailQueue.status == "held",
+            AuthorityDetailQueue.reason_code == "detail_policy_gate",
+        )
     ).all()
+    now = utcnow()
     for queue in rows:
         record = db.scalar(
             select(AuthorityRecord).where(AuthorityRecord.record_id == queue.record_id)
         )
         if record and record.current_payload_sha256 == queue.listing_payload_sha256:
-            queue.status = "pending"
-            queue.reason_code = "ready"
-            queue.updated_at = utcnow()
-            record.detail_status = "pending"
+            if _listing_may_qualify(
+                procedure_type=record.procedure_type,
+                submission_date=record.submission_date,
+                settings=settings,
+                as_of=now,
+            ):
+                queue.status = "pending"
+                queue.reason_code = "ready"
+                record.detail_status = "pending"
+            else:
+                queue.reason_code = "lead_prefilter_not_candidate"
+            queue.updated_at = now
     if rows:
         db.commit()
 
@@ -501,6 +751,7 @@ def process_details(
     *,
     limit: int | None = None,
     client_factory: DetailClientFactory = ETDRDetailClient,
+    as_of: datetime | None = None,
 ) -> dict[str, int]:
     if not settings.enabled or not settings.policy_authorized or not settings.policy_evidence_valid:
         raise ReaderBlocked("policy_authorization_required")
@@ -508,6 +759,7 @@ def process_details(
         raise ReaderBlocked("detail_reader_disabled")
     _promote_detail_queue(db, settings)
     now = utcnow()
+    evaluation_time = _aware(as_of or now)
     db.execute(
         update(AuthorityDetailQueue)
         .where(
@@ -603,39 +855,31 @@ def process_details(
                 record.detail_status = "current"
                 record.detail_checked_at = utcnow()
                 queue.status = "completed"
-                queue.reason_code = "detail_current"
+                qualification = _lead_decision(
+                    db,
+                    settings,
+                    detail,
+                    record,
+                    as_of=evaluation_time,
+                )
+                queue.reason_code = (
+                    f"lead_qualified_{qualification.reason}"
+                    if qualification.eligible
+                    else f"lead_{qualification.reason}"
+                )
                 queue.attempt_count += 1
                 queue.lease_owner = None
                 queue.lease_expires_at = None
                 queue.updated_at = utcnow()
-                lead = _lead_payload(
-                    detail,
-                    record,
-                    payload_hash,
-                    detail_revision.detail_revision_id,
-                    detail_revision.revision_no,
-                )
-                idempotency_key = sha({"record": record.record_id, "detail_payload": payload_hash})
-                outbox = db.scalar(
-                    select(AuthoritySignalOutbox).where(
-                        AuthoritySignalOutbox.idempotency_key == idempotency_key
-                    )
-                )
-                if not outbox:
-                    db.add(
-                        AuthoritySignalOutbox(
-                            idempotency_key=idempotency_key,
-                            record_id=record.record_id,
-                            revision_id=detail_revision.detail_revision_id,
-                            payload_sha256=sha(lead),
-                            payload_json=canonical_json(lead),
-                            status="pending" if settings.lead_export_enabled else "held",
-                            reason_code=(
-                                "ready_for_daily_lead_generator"
-                                if settings.lead_export_enabled
-                                else "lead_export_policy_gate"
-                            ),
-                        )
+                if qualification.eligible:
+                    _queue_qualified_lead(
+                        db,
+                        settings,
+                        detail=detail,
+                        record=record,
+                        detail_revision=detail_revision,
+                        detail_payload_sha256=payload_hash,
+                        qualification=qualification,
                     )
                 db.commit()
                 time.sleep(settings.request_delay_seconds)
@@ -660,6 +904,88 @@ def process_details(
                 db.commit()
                 counts["blocked"] += 1
                 continue
+    return counts
+
+
+def requalify_waiting_leads(
+    db: Session,
+    settings: ReaderSettings,
+    *,
+    limit: int = 500,
+    as_of: datetime | None = None,
+) -> dict[str, int]:
+    if not settings.enabled or not settings.policy_authorized or not settings.policy_evidence_valid:
+        raise ReaderBlocked("policy_authorization_required")
+    if not settings.detail_enabled:
+        raise ReaderBlocked("detail_reader_disabled")
+    evaluated_at = _aware(as_of or utcnow())
+    due_before = evaluated_at - timedelta(days=settings.lead_stalled_min_days)
+    queue_ids = db.scalars(
+        select(AuthorityDetailQueue.id)
+        .join(AuthorityRecord, AuthorityRecord.record_id == AuthorityDetailQueue.record_id)
+        .where(
+            AuthorityDetailQueue.status == "completed",
+            AuthorityDetailQueue.reason_code == "lead_waiting_for_no_completion_window",
+            AuthorityRecord.detail_status == "current",
+            AuthorityRecord.submission_date <= due_before,
+        )
+        .order_by(AuthorityDetailQueue.id)
+        .limit(max(1, min(limit, 2000)))
+    ).all()
+    counts = {"qualified": 0, "ineligible": 0}
+    for queue_id in queue_ids:
+        queue = db.get(AuthorityDetailQueue, queue_id)
+        if queue is None:
+            continue
+        record = db.scalar(
+            select(AuthorityRecord).where(AuthorityRecord.record_id == queue.record_id)
+        )
+        if record is None:
+            queue.status = "failed"
+            queue.reason_code = "lead_requalification_record_missing"
+            counts["ineligible"] += 1
+            db.commit()
+            continue
+        detail_revision = db.scalar(
+            select(AuthorityDetailRevision).where(
+                AuthorityDetailRevision.record_id == record.record_id,
+                AuthorityDetailRevision.revision_no == record.current_detail_revision_no,
+            )
+        )
+        if detail_revision is None:
+            queue.status = "failed"
+            queue.reason_code = "lead_requalification_revision_missing"
+            counts["ineligible"] += 1
+            db.commit()
+            continue
+        detail = ETDRDetail.model_validate(json.loads(detail_revision.normalized_json))
+        qualification = _lead_decision(
+            db,
+            settings,
+            detail,
+            record,
+            as_of=evaluated_at,
+        )
+        queue.reason_code = (
+            f"lead_qualified_{qualification.reason}"
+            if qualification.eligible
+            else f"lead_{qualification.reason}"
+        )
+        queue.updated_at = utcnow()
+        if qualification.eligible:
+            created = _queue_qualified_lead(
+                db,
+                settings,
+                detail=detail,
+                record=record,
+                detail_revision=detail_revision,
+                detail_payload_sha256=detail_revision.payload_sha256,
+                qualification=qualification,
+            )
+            counts["qualified"] += int(created)
+        else:
+            counts["ineligible"] += 1
+        db.commit()
     return counts
 
 

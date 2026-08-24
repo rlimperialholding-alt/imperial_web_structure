@@ -77,7 +77,13 @@ class LeadBridgeSettings:
 class ETDRLeadPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    schema_version: str = Field(pattern=r"^etdr-lead-v1$")
+    schema_version: str = Field(pattern=r"^etdr-lead-v2$")
+    lead_reason: Literal[
+        "new_submission",
+        "likely_not_started",
+        "no_completion_signal",
+    ]
+    qualification_evidence: list[str] = Field(min_length=3, max_length=8)
     source_id: str = Field(pattern=r"^authority:etdr_public$")
     external_key: str = Field(pattern=r"^[0-9]{6,40}$")
     motor_key: str = Field(pattern=r"^construction$")
@@ -127,6 +133,23 @@ class ETDRLeadPayload(BaseModel):
             raise ValueError("lead must remain internal-review-only")
         if (self.signal_type == "hall") != (self.brand_id == "prefab"):
             raise ValueError("lead route and brand do not match")
+        evidence = set(self.qualification_evidence)
+        if "construction_intent_procedure" not in evidence:
+            raise ValueError("construction intent evidence is required")
+        if f"Lead-indok: {self.lead_reason}" not in self.summary:
+            raise ValueError("lead reason must be visible in the platform summary")
+        if self.lead_reason == "new_submission" and not any(
+            item.startswith("submission_within_") for item in evidence
+        ):
+            raise ValueError("new submission evidence is required")
+        if self.lead_reason == "likely_not_started" and (
+            "procedure_discontinued_or_withdrawn" not in evidence
+        ):
+            raise ValueError("not-started evidence is required")
+        if self.lead_reason == "no_completion_signal" and (
+            "no_later_completion_signal_for_same_property" not in evidence
+        ):
+            raise ValueError("no-completion evidence is required")
         return self
 
 

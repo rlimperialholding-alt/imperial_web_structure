@@ -27,7 +27,15 @@ from app.authority_reader.models import (
     AuthoritySignalOutbox,
 )
 from app.authority_reader.routes import lead_feed
-from app.authority_reader.service import process_details, run_reader, sha
+from app.authority_reader.service import (
+    _lead_decision,
+    _listing_may_qualify,
+    canonical_json,
+    process_details,
+    requalify_waiting_leads,
+    run_reader,
+    sha,
+)
 from app.database import SessionLocal
 from app.growth_ops.models import GrowthSignal
 
@@ -274,11 +282,214 @@ def test_detail_pipeline_creates_strict_pending_lead(db):
     assert len(leads) == 1
     payload = json.loads(leads[0].payload_json)
     assert payload["subject_type"] == "project"
+    assert payload["schema_version"] == "etdr-lead-v2"
+    assert payload["lead_reason"] == "new_submission"
+    assert "construction_intent_procedure" in payload["qualification_evidence"]
     assert payload["recipient_email"] is None
     assert payload["contact_basis"] == "unknown"
     assert payload["revision_id"].startswith("etdrd-")
     assert payload["revision_no"] == 1
     assert payload["rejection_reasons"] == sorted(payload["rejection_reasons"])
+
+
+def _qualification_record(
+    db,
+    *,
+    process_number: str,
+    submitted_at: datetime,
+    parcel: str | None,
+    procedure_type: str = "Építési engedélyezési eljárás",
+    construction_activity: str = "Új lakóépület építése",
+) -> AuthorityRecord:
+    record = AuthorityRecord(
+        record_id=f"test-record-{process_number}",
+        source_key="etdr_public",
+        external_key_hmac=sha({"process_number": process_number}),
+        public_process_number=process_number,
+        city="Tesztváros",
+        topographical_number=parcel,
+        procedure_type=procedure_type,
+        construction_activity=construction_activity,
+        submission_date=submitted_at,
+        evidence_url=f"https://www.etdr.gov.hu/nyilvanos-adatok/{process_number}",
+        current_revision_no=1,
+        current_payload_sha256=sha({"listing": process_number}),
+    )
+    db.add(record)
+    db.flush()
+    return record
+
+
+def _qualification_detail(
+    record: AuthorityRecord,
+    *,
+    status: str = "Véglegessé vált döntés",
+) -> ETDRDetail:
+    return ETDRDetail(
+        process_number=record.public_process_number,
+        subject=record.construction_activity,
+        procedure_type=record.procedure_type,
+        status=status,
+        submission_date=record.submission_date.date(),
+        property_address=f"Tesztváros, hrsz. {record.topographical_number or 'nincs'}",
+        topographical_number=record.topographical_number,
+        authority_name="Teszt Vármegyei Kormányhivatal",
+        decisions=(),
+        documents=(),
+    )
+
+
+def test_lead_qualification_selects_new_and_recent_no_completion_signals(db):
+    as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    active = settings()
+    new_record = _qualification_record(
+        db,
+        process_number="202600000101",
+        submitted_at=as_of - timedelta(days=10),
+        parcel="101",
+    )
+    stalled_record = _qualification_record(
+        db,
+        process_number="202500000202",
+        submitted_at=as_of - timedelta(days=365),
+        parcel="202",
+    )
+
+    new_decision = _lead_decision(
+        db, active, _qualification_detail(new_record), new_record, as_of=as_of
+    )
+    stalled_decision = _lead_decision(
+        db, active, _qualification_detail(stalled_record), stalled_record, as_of=as_of
+    )
+    assert new_decision.eligible and new_decision.reason == "new_submission"
+    assert stalled_decision.eligible and stalled_decision.reason == "no_completion_signal"
+
+
+def test_lead_qualification_suppresses_duplicate_property_and_completed_project(db):
+    as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    active = settings()
+    older = _qualification_record(
+        db,
+        process_number="202500000301",
+        submitted_at=as_of - timedelta(days=365),
+        parcel="301",
+    )
+    _qualification_record(
+        db,
+        process_number="202600000302",
+        submitted_at=as_of - timedelta(days=5),
+        parcel="301",
+    )
+    completed_candidate = _qualification_record(
+        db,
+        process_number="202500000401",
+        submitted_at=as_of - timedelta(days=365),
+        parcel="401",
+    )
+    _qualification_record(
+        db,
+        process_number="202600000402",
+        submitted_at=as_of - timedelta(days=5),
+        parcel="401",
+        procedure_type="Használatbavételi eljárás",
+        construction_activity="Lakóépület használatbavétele",
+    )
+
+    duplicate = _lead_decision(
+        db, active, _qualification_detail(older), older, as_of=as_of
+    )
+    completed = _lead_decision(
+        db,
+        active,
+        _qualification_detail(completed_candidate),
+        completed_candidate,
+        as_of=as_of,
+    )
+    assert not duplicate.eligible
+    assert duplicate.reason == "superseded_by_later_property_filing"
+    assert not completed.eligible
+    assert completed.reason == "later_completion_signal_found"
+
+
+def test_lead_qualification_labels_recent_discontinued_project_as_likely_not_started(db):
+    as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    record = _qualification_record(
+        db,
+        process_number="202600000501",
+        submitted_at=as_of - timedelta(days=20),
+        parcel="501",
+    )
+    decision = _lead_decision(
+        db,
+        settings(),
+        _qualification_detail(record, status="Megszüntetve"),
+        record,
+        as_of=as_of,
+    )
+    assert decision.eligible
+    assert decision.reason == "likely_not_started"
+
+
+def test_listing_prefilter_excludes_completion_procedure():
+    as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    active = settings()
+    assert _listing_may_qualify(
+        procedure_type="Építési engedélyezési eljárás",
+        submission_date=as_of - timedelta(days=5),
+        settings=active,
+        as_of=as_of,
+    )
+    assert not _listing_may_qualify(
+        procedure_type="Használatbavételi eljárás",
+        submission_date=as_of - timedelta(days=5),
+        settings=active,
+        as_of=as_of,
+    )
+
+
+def test_waiting_record_is_requalified_when_no_completion_window_opens(db):
+    initial_as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    active = settings(lead_new_days=120, lead_stalled_min_days=180)
+    record = _qualification_record(
+        db,
+        process_number="202600000601",
+        submitted_at=initial_as_of - timedelta(days=150),
+        parcel="601",
+    )
+    detail = _qualification_detail(record)
+    payload_hash = sha(detail.normalized())
+    revision = AuthorityDetailRevision(
+        detail_revision_id="etdrd-" + "6" * 32,
+        record_id=record.record_id,
+        source_revision_id="etdrr-" + "6" * 32,
+        revision_no=1,
+        payload_sha256=payload_hash,
+        normalized_json=canonical_json(detail.normalized()),
+    )
+    db.add(revision)
+    record.current_detail_revision_no = 1
+    record.current_detail_payload_sha256 = payload_hash
+    record.detail_status = "current"
+    db.add(
+        AuthorityDetailQueue(
+            record_id=record.record_id,
+            source_revision_id=revision.source_revision_id,
+            listing_payload_sha256=record.current_payload_sha256,
+            status="completed",
+            reason_code="lead_waiting_for_no_completion_window",
+        )
+    )
+    db.commit()
+
+    assert requalify_waiting_leads(
+        db,
+        active,
+        as_of=initial_as_of + timedelta(days=31),
+    ) == {"qualified": 1, "ineligible": 0}
+    lead = db.scalar(
+        select(AuthoritySignalOutbox).where(AuthoritySignalOutbox.status == "pending")
+    )
+    assert json.loads(lead.payload_json)["lead_reason"] == "no_completion_signal"
 
 
 def test_detail_pipeline_continues_after_a_fail_closed_record(db):

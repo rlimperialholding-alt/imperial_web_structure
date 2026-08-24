@@ -19,6 +19,15 @@ audited database function through a dedicated role with no direct table privileg
   are still `blocked` for internal review and can never create automatic outreach.
 - The detail reader stores the public procedure subject, status, authority, decisions and document
   links, but never downloads the linked files automatically.
+- Lead export uses `etdr-lead-v2` qualification. It exports only construction-permit/simple-
+  notification filings that are either new (default: 120 days), recently discontinued, or
+  180–1095 days old without a later completion/use-occupancy signal for the same town and parcel.
+  A later construction filing supersedes an older filing for that property, so one project is not
+  emitted repeatedly under multiple process numbers.
+- “No completion signal” and “likely not started” are evidence labels, not claims about physical
+  site condition. Records lacking a stable parcel key are never inferred to be stalled.
+- Completion/use-occupancy, demolition, retention and other non-start procedures remain stored as
+  property-history evidence but are not exported as construction leads.
 - The lead bridge writes project-only, `blocked` and `internal_review_only` signals through a
   dedicated least-privilege PostgreSQL role. It has no delete permission and cannot create
   outreach records.
