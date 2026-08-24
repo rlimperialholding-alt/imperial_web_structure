@@ -8,7 +8,11 @@ isolation tests prove the command never connects to or mutates any database
 configured through ``DATABASE_URL``. The SOURCE_LOCK tests cover the complete
 required top-level version-field set (platform/application/partner_field/
 commercial_integration) with valid, missing, empty, wrong-type, malformed,
-and unexpected/tampered values.
+and unexpected/tampered values. Direct in-process probe tests are isolated
+from ambient ``II_RECON_EXPECTED_*`` values: the module under test always
+loads with the canonical pinned defaults, and a focused regression proves
+canonical validation still passes when the parent environment holds
+conflicting values.
 """
 
 from __future__ import annotations
@@ -36,6 +40,26 @@ REQUIRED_LOCK_VERSION_FIELDS = (
     "partner_field_version",
     "commercial_integration_version",
 )
+# A reconciliation script altal olvasott kornyezeti feluliras-kulcsok. A
+# direct in-process probe tesztek ezeket mindig torlik, hogy ambient
+# fejlesztoi/CI ertekek soha ne valtoztathassak meg a kanonikus vart
+# ertekeket (test-isolation, Review 1 LOW).
+_II_RECON_EXPECTED_ENV_KEYS = (
+    "II_RECON_EXPECTED_ALEMBIC_HEAD",
+    "II_RECON_EXPECTED_PLATFORM_VERSION",
+    "II_RECON_EXPECTED_APPLICATION_VERSION",
+    "II_RECON_EXPECTED_PARTNER_FIELD_VERSION",
+    "II_RECON_EXPECTED_COMMERCIAL_INTEGRATION_VERSION",
+)
+# A script pinelt defaultjai, exact a kanonikus SOURCE_LOCK.json ertekeivel.
+# Deterministikus bizonyitek; a ket oldal csak egyutt, auditált commitban
+# mozoghat, ezt a teszt kulon is vedi.
+CANONICAL_PINNED_LOCK_VERSIONS = {
+    "platform_version": "5.0.0",
+    "application_version": "1.5.0",
+    "partner_field_version": "1.0.0",
+    "commercial_integration_version": "1.0.0",
+}
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import check_secret_baseline  # noqa: E402
@@ -77,7 +101,12 @@ def _run_reconciliation(**env_overrides: str) -> subprocess.CompletedProcess[str
     )
 
 
-def _load_module() -> ModuleType:
+def _load_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    # Izolacio: minden direct probe-betoltes elott toroljuk az osszes
+    # II_RECON_EXPECTED_* valtozot, igy a modul mindig a kanonikus pinelt
+    # defaultokat latja, fuggetlenul a szulo kornyezettol.
+    for key in _II_RECON_EXPECTED_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
     spec = importlib.util.spec_from_file_location("reconciliation_under_test", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -221,7 +250,7 @@ def test_reconciliation_fail_closed_on_changed_baseline_entry(
 def test_secret_baseline_probe_maps_status_zero_to_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     monkeypatch.setattr(
         module.check_secret_baseline,
         "reconcile_tracked_secrets",
@@ -233,7 +262,7 @@ def test_secret_baseline_probe_maps_status_zero_to_pass(
 def test_secret_baseline_probe_maps_nonzero_to_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     monkeypatch.setattr(
         module.check_secret_baseline,
         "reconcile_tracked_secrets",
@@ -330,16 +359,45 @@ def test_reconciliation_fail_closed_on_source_lock_malformed_date(
 def test_source_lock_probe_passes_on_canonical_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     monkeypatch.setattr(module, "SOURCE_LOCK", SOURCE_LOCK_PATH)
     module._source_lock_probe()  # a kanonikus lock ervenyes, nem dobhat.
+
+
+def test_canonical_source_lock_matches_pinned_reconciliation_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Deterministikus bizonyitek: a kanonikus SOURCE_LOCK.json negy
+    # top-level verzioerteke exact egyezik a script pinelt defaultjaival;
+    # egyik oldal sem frissitheto neman, kulonben ez a teszt elbukik.
+    module = _load_module(monkeypatch)
+    assert module.EXPECTED_LOCK_VERSIONS == CANONICAL_PINNED_LOCK_VERSIONS
+    lock = _canonical_lock()
+    for field in REQUIRED_LOCK_VERSION_FIELDS:
+        assert lock[field] == CANONICAL_PINNED_LOCK_VERSIONS[field]
+
+
+def test_source_lock_probe_ignores_conflicting_ambient_expected_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ha a szulo kornyezet konfliktusos II_RECON_EXPECTED_* ertekeket
+    # allit be, a direct probe akkor is a kanonikus pinelt defaultokat
+    # hasznalja: a canonical lock validalasa PASS marad (Review 1 LOW).
+    monkeypatch.setenv("II_RECON_EXPECTED_ALEMBIC_HEAD", "99999999_9999")
+    for field in REQUIRED_LOCK_VERSION_FIELDS:
+        monkeypatch.setenv(f"II_RECON_EXPECTED_{field.upper()}", "9.9.9")
+    module = _load_module(monkeypatch)
+    assert module.EXPECTED_LOCK_VERSIONS == CANONICAL_PINNED_LOCK_VERSIONS
+    assert module.EXPECTED_HEAD == "20260816_0072"
+    monkeypatch.setattr(module, "SOURCE_LOCK", SOURCE_LOCK_PATH)
+    module._source_lock_probe()  # nem dobhat a konfliktusos ambient ellenere.
 
 
 @pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
 def test_source_lock_probe_fail_closed_on_missing_version_field(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     lock = _canonical_lock()
     lock.pop(field)
     monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
@@ -353,7 +411,7 @@ def test_source_lock_probe_fail_closed_on_missing_version_field(
 def test_source_lock_probe_fail_closed_on_empty_version_field(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     lock = _canonical_lock()
     lock[field] = ""
     monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
@@ -367,7 +425,7 @@ def test_source_lock_probe_fail_closed_on_empty_version_field(
 def test_source_lock_probe_fail_closed_on_wrong_type_version_field(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     lock = _canonical_lock()
     lock[field] = 1.0
     monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
@@ -387,7 +445,7 @@ def test_source_lock_probe_fail_closed_on_malformed_version_field(
     field: str,
     malformed: str,
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     lock = _canonical_lock()
     lock[field] = malformed
     monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
@@ -401,7 +459,7 @@ def test_source_lock_probe_fail_closed_on_malformed_version_field(
 def test_source_lock_probe_fail_closed_on_unexpected_version_field(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     lock = _canonical_lock()
     lock[field] = "9.9.9"
     monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
@@ -415,6 +473,20 @@ def test_reconciliation_passes_on_synthetic_valid_lock(tmp_path: Path) -> None:
     result = _run_reconciliation(
         II_RECON_SOURCE_LOCK=str(_write_lock(tmp_path, _canonical_lock()))
     )
+    assert result.returncode == 0, result.stderr
+    assert "minden lokalis" in result.stdout
+
+
+def test_reconciliation_passes_with_conflicting_ambient_expected_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Teljes parancs-szintu regresszio: konfliktusos ambient
+    # II_RECON_EXPECTED_* ertekek mellett a helper kitakaritja oket a
+    # subprocess kornyezetebol, a kanonikus egyeztetes igy is exit 0.
+    monkeypatch.setenv("II_RECON_EXPECTED_ALEMBIC_HEAD", "99999999_9999")
+    for field in REQUIRED_LOCK_VERSION_FIELDS:
+        monkeypatch.setenv(f"II_RECON_EXPECTED_{field.upper()}", "9.9.9")
+    result = _run_reconciliation()
     assert result.returncode == 0, result.stderr
     assert "minden lokalis" in result.stdout
 
@@ -469,7 +541,7 @@ def test_registry_probe_uses_private_engine_and_ignores_database_url(
 ) -> None:
     sentinel = tmp_path / "sentinel-production.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{sentinel.as_posix()}")
-    module = _load_module()
+    module = _load_module(monkeypatch)
     assert not hasattr(module, "engine")
     assert not hasattr(module, "SessionLocal")
     module._registry_probe()
@@ -479,7 +551,7 @@ def test_registry_probe_uses_private_engine_and_ignores_database_url(
 def test_registry_probe_fail_closed_on_extra_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = _load_module()
+    module = _load_module(monkeypatch)
     synthetic_extra = (
         "zz_synthetic_module",
         "Synthetic Module",
