@@ -185,6 +185,7 @@ def _upsert_record(
     db.flush()
     detail_candidate = _listing_may_qualify(
         procedure_type=row.procedure_type,
+        construction_activity=row.construction_activity,
         submission_date=row.submission_date,
         settings=settings,
         as_of=now,
@@ -415,6 +416,7 @@ REJECTED_STATUS_TERMS = ("elutasit", "ervenytelen")
 COMPLETION_TERMS = (
     "hasznalatbavet",
     "hasznalatba vet",
+    "hatosagi bizonyitvany",
     "epitesi munkalatok befejez",
     "epitkezes befejez",
 )
@@ -443,9 +445,13 @@ def _is_construction_intent(procedure_type: str) -> bool:
     return any(term in folded for term in CONSTRUCTION_INTENT_TERMS)
 
 
-def _is_completion_signal(record: AuthorityRecord) -> bool:
-    folded = _fold(f"{record.procedure_type} {record.construction_activity}")
+def _is_completion_text(procedure_type: str, construction_activity: str) -> bool:
+    folded = _fold(f"{procedure_type} {construction_activity}")
     return any(term in folded for term in COMPLETION_TERMS)
+
+
+def _is_completion_signal(record: AuthorityRecord) -> bool:
+    return _is_completion_text(record.procedure_type, record.construction_activity)
 
 
 def _parcel_key(value: str | None) -> str | None:
@@ -457,6 +463,7 @@ def _parcel_key(value: str | None) -> str | None:
 def _listing_may_qualify(
     *,
     procedure_type: str,
+    construction_activity: str,
     submission_date: datetime,
     settings: ReaderSettings,
     as_of: datetime,
@@ -464,6 +471,7 @@ def _listing_may_qualify(
     age = _age_days(submission_date, as_of)
     return (
         _is_construction_intent(procedure_type)
+        and not _is_completion_text(procedure_type, construction_activity)
         and 0 <= age <= settings.lead_stalled_max_days
     )
 
@@ -504,6 +512,8 @@ def _lead_decision(
     age = _age_days(record.submission_date, evaluated_at)
     if not _is_construction_intent(record.procedure_type):
         return LeadDecision(False, "unsupported_procedure")
+    if _is_completion_signal(record):
+        return LeadDecision(False, "current_completion_signal")
     if age < 0 or age > settings.lead_stalled_max_days:
         return LeadDecision(False, "outside_recent_window")
 
@@ -731,6 +741,7 @@ def _promote_detail_queue(db: Session, settings: ReaderSettings) -> None:
         if record and record.current_payload_sha256 == queue.listing_payload_sha256:
             if _listing_may_qualify(
                 procedure_type=record.procedure_type,
+                construction_activity=record.construction_activity,
                 submission_date=record.submission_date,
                 settings=settings,
                 as_of=now,

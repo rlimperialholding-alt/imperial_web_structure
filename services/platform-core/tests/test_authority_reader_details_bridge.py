@@ -430,18 +430,49 @@ def test_lead_qualification_labels_recent_discontinued_project_as_likely_not_sta
     assert decision.reason == "likely_not_started"
 
 
+def test_lead_qualification_rejects_completion_text_hidden_in_permit_type(db):
+    as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    record = _qualification_record(
+        db,
+        process_number="202500000551",
+        submitted_at=as_of - timedelta(days=365),
+        parcel="551",
+        construction_activity=(
+            "Lakóépület használatbavétel, hatósági bizonyítvány kérése"
+        ),
+    )
+    decision = _lead_decision(
+        db,
+        settings(),
+        _qualification_detail(record),
+        record,
+        as_of=as_of,
+    )
+    assert not decision.eligible
+    assert decision.reason == "current_completion_signal"
+
+
 def test_listing_prefilter_excludes_completion_procedure():
     as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
     active = settings()
     assert _listing_may_qualify(
         procedure_type="Építési engedélyezési eljárás",
+        construction_activity="Új lakóépület építése",
         submission_date=as_of - timedelta(days=5),
         settings=active,
         as_of=as_of,
     )
     assert not _listing_may_qualify(
         procedure_type="Használatbavételi eljárás",
+        construction_activity="Lakóépület használatbavétele",
         submission_date=as_of - timedelta(days=5),
+        settings=active,
+        as_of=as_of,
+    )
+    assert not _listing_may_qualify(
+        procedure_type="Építési engedélyezési eljárás",
+        construction_activity="Lakóépület használatbavétel, hatósági bizonyítvány kérése",
+        submission_date=as_of - timedelta(days=365),
         settings=active,
         as_of=as_of,
     )
