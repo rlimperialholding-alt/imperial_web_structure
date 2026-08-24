@@ -296,6 +296,23 @@ def test_empty_digest_is_audited_but_not_emailed(db, tmp_path):
     assert FakeAdapter.sent == []
 
 
+def test_digest_caps_countrywide_volume_without_losing_backlog(db, tmp_path):
+    now = datetime(2026, 8, 24, 13, tzinfo=UTC)
+    _lead(db, process_number="202600070301", created_at=now - timedelta(hours=2))
+    _lead(db, process_number="202600070302", created_at=now - timedelta(hours=1))
+    active = _settings(tmp_path, sales_digest_max_items=1)
+
+    first = create_digest(db, active, now=now, force=True)
+    assert first is not None and first.item_count == 1
+    first.status = "sent"
+    db.commit()
+
+    second = create_digest(db, active, now=now + timedelta(days=1), force=True)
+    assert second is not None and second.item_count == 1
+    item_ids = db.scalars(select(AuthoritySalesDigestItem.signal_outbox_id)).all()
+    assert len(set(item_ids)) == 2
+
+
 def test_gmail_adapter_uses_refresh_token_reconciles_and_sends(tmp_path):
     active = _settings(tmp_path)
     requests: list[httpx.Request] = []

@@ -80,6 +80,7 @@ class ETDRLeadPayload(BaseModel):
     schema_version: str = Field(pattern=r"^etdr-lead-v2$")
     lead_reason: Literal[
         "new_submission",
+        "recently_authorized",
         "likely_not_started",
         "no_completion_signal",
     ]
@@ -142,6 +143,10 @@ class ETDRLeadPayload(BaseModel):
             item.startswith("submission_within_") for item in evidence
         ):
             raise ValueError("new submission evidence is required")
+        if self.lead_reason == "recently_authorized" and not any(
+            item.startswith("positive_permit_decision_within_") for item in evidence
+        ):
+            raise ValueError("recent permit evidence is required")
         if self.lead_reason == "likely_not_started" and (
             "procedure_discontinued_or_withdrawn" not in evidence
         ):

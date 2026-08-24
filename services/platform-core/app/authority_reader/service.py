@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import and_, case, func, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from .client import (
@@ -65,7 +65,14 @@ def _iso(value: datetime) -> str:
     return aware.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-def _filter(mode: str, cutoff: datetime, since: datetime | None, town: str | None) -> str:
+def _filter(
+    mode: str,
+    cutoff: datetime,
+    since: datetime | None,
+    town: str | None,
+    *,
+    baseline_lookback_days: int,
+) -> str:
     parts: list[str] = []
     if mode == "pilot":
         if not town or len(town.strip()) < 2:
@@ -76,6 +83,10 @@ def _filter(mode: str, cutoff: datetime, since: datetime | None, town: str | Non
         if since is None:
             raise ValueError("delta_since_required")
         parts.append(f"SubmissionDate ge {_iso(since)}")
+    elif mode == "baseline":
+        parts.append(
+            f"SubmissionDate ge {_iso(cutoff - timedelta(days=baseline_lookback_days))}"
+        )
     parts.append(f"SubmissionDate le {_iso(cutoff)}")
     return " and ".join(parts)
 
@@ -160,6 +171,7 @@ def _upsert_record(
             public_process_number=item.process_number,
             city=item.city,
             topographical_number=item.topographical_number,
+            parcel_key=_parcel_key(item.topographical_number),
             procedure_type=item.procedure_type,
             construction_activity=item.construction_activity or "",
             submission_date=item.submission_date,
@@ -175,6 +187,7 @@ def _upsert_record(
         row.current_payload_sha256 = payload_hash
         row.city = item.city
         row.topographical_number = item.topographical_number
+        row.parcel_key = _parcel_key(item.topographical_number)
         row.procedure_type = item.procedure_type
         row.construction_activity = item.construction_activity or ""
         row.submission_date = item.submission_date
@@ -312,7 +325,13 @@ def run_reader(
     since = last_success - timedelta(days=settings.overlap_days) if last_success else None
     if mode == "delta" and since is None:
         since = now - timedelta(days=settings.overlap_days)
-    expression = resume.get("filter") or _filter(mode, cutoff, since, town)
+    expression = resume.get("filter") or _filter(
+        mode,
+        cutoff,
+        since,
+        town,
+        baseline_lookback_days=settings.lead_stalled_max_days,
+    )
     skip = int(resume.get("skip", 0))
     cursor = {
         "mode": mode,
@@ -420,6 +439,8 @@ LEAD_POLICY_VERSION = "etdr-lead-v2"
 CONSTRUCTION_INTENT_TERMS = ("epitesi engedelyezesi", "egyszeru bejelent")
 NON_START_STATUS_TERMS = ("megszunt", "visszavon")
 REJECTED_STATUS_TERMS = ("elutasit", "ervenytelen")
+POSITIVE_PERMIT_TERMS = ("engedely", "engedelyezes", "engedelyezett")
+NEGATIVE_DECISION_TERMS = ("elutasit", "megszunt", "visszavon", "ervenytelen", "megtagad")
 COMPLETION_TERMS = (
     "hasznalatbavet",
     "hasznalatba vet",
@@ -496,6 +517,13 @@ def _later_property_records(
             AuthorityRecord.city == record.city,
             AuthorityRecord.record_id != record.record_id,
             AuthorityRecord.status == "active",
+            or_(
+                AuthorityRecord.parcel_key == parcel,
+                and_(
+                    AuthorityRecord.parcel_key.is_(None),
+                    AuthorityRecord.topographical_number == record.topographical_number,
+                ),
+            ),
         )
     ).all()
     current_order = (_aware(record.submission_date), record.public_process_number)
@@ -505,6 +533,19 @@ def _later_property_records(
         if _parcel_key(candidate.topographical_number) == parcel
         and (_aware(candidate.submission_date), candidate.public_process_number) > current_order
     )
+
+
+def _recent_positive_permit(detail: ETDRDetail, as_of: datetime, days: int) -> bool:
+    cutoff = _aware(as_of).date() - timedelta(days=days)
+    for decision in detail.decisions:
+        folded = _fold(f"{decision.decision_type} {decision.summary}")
+        if (
+            cutoff <= decision.decision_date <= _aware(as_of).date()
+            and any(term in folded for term in POSITIVE_PERMIT_TERMS)
+            and not any(term in folded for term in NEGATIVE_DECISION_TERMS)
+        ):
+            return True
+    return False
 
 
 def _lead_decision(
@@ -543,6 +584,18 @@ def _lead_decision(
                 "construction_intent_procedure",
                 "procedure_discontinued_or_withdrawn",
                 "public_status_supports_non_start_indicator",
+            ),
+        )
+    if _recent_positive_permit(detail, evaluated_at, settings.lead_new_days):
+        return LeadDecision(
+            True,
+            "recently_authorized",
+            confidence=95,
+            urgency=95,
+            evidence=(
+                "construction_intent_procedure",
+                f"positive_permit_decision_within_{settings.lead_new_days}_days",
+                "latest_known_filing_for_same_property",
             ),
         )
     if age <= settings.lead_new_days:
@@ -793,10 +846,16 @@ def process_details(
         )
     )
     db.commit()
+    recent_cutoff = evaluation_time - timedelta(days=settings.lead_new_days)
     candidate_ids = db.scalars(
         select(AuthorityDetailQueue.id)
+        .join(AuthorityRecord, AuthorityRecord.record_id == AuthorityDetailQueue.record_id)
         .where(AuthorityDetailQueue.status == "pending")
-        .order_by(AuthorityDetailQueue.id)
+        .order_by(
+            case((AuthorityRecord.submission_date >= recent_cutoff, 0), else_=1),
+            AuthorityRecord.submission_date.desc(),
+            AuthorityDetailQueue.id,
+        )
         .limit(max(1, min(limit or settings.detail_batch_size, 1000)))
     ).all()
     claim_owner = f"{settings.worker_id[:80]}:{uuid4().hex}"

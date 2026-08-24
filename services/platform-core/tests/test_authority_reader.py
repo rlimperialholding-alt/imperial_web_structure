@@ -20,7 +20,7 @@ from app.authority_reader.models import (
     AuthoritySignalOutbox,
 )
 from app.authority_reader.routes import current_settings
-from app.authority_reader.service import process_enrichments, run_reader
+from app.authority_reader.service import _filter, process_enrichments, run_reader
 from app.main import app
 
 
@@ -246,6 +246,20 @@ def test_policy_gate_stops_before_network(db):
         )
     assert called is False
     assert db.scalar(select(func.count()).select_from(AuthorityReaderRun)) == 0
+
+
+def test_countrywide_baseline_is_bounded_and_has_no_city_filter():
+    cutoff = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    expression = _filter(
+        "baseline",
+        cutoff,
+        None,
+        None,
+        baseline_lookback_days=1095,
+    )
+    assert "SubmissionDate ge 2023-08-25T12:00:00Z" in expression
+    assert "SubmissionDate le 2026-08-24T12:00:00Z" in expression
+    assert "City eq" not in expression
 
 
 def test_pilot_is_persisted_with_held_enrichment_and_outbox(db):

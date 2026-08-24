@@ -283,8 +283,9 @@ def test_detail_pipeline_creates_strict_pending_lead(db):
     payload = json.loads(leads[0].payload_json)
     assert payload["subject_type"] == "project"
     assert payload["schema_version"] == "etdr-lead-v2"
-    assert payload["lead_reason"] == "new_submission"
+    assert payload["lead_reason"] == "recently_authorized"
     assert "construction_intent_procedure" in payload["qualification_evidence"]
+    assert "positive_permit_decision_within_120_days" in payload["qualification_evidence"]
     assert payload["recipient_email"] is None
     assert payload["contact_basis"] == "unknown"
     assert payload["revision_id"].startswith("etdrd-")
@@ -428,6 +429,31 @@ def test_lead_qualification_labels_recent_discontinued_project_as_likely_not_sta
     )
     assert decision.eligible
     assert decision.reason == "likely_not_started"
+
+
+def test_lead_qualification_prioritizes_recent_positive_permit_decision(db):
+    as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    record = _qualification_record(
+        db,
+        process_number="202600000511",
+        submitted_at=as_of - timedelta(days=60),
+        parcel="511",
+    )
+    detail = _qualification_detail(record).model_copy(
+        update={
+            "decisions": (
+                ETDRDecision(
+                    decision_type="Építési engedély",
+                    decision_date=date(2026, 8, 20),
+                    summary="Új lakóépület építésének engedélyezése",
+                ),
+            )
+        }
+    )
+    decision = _lead_decision(db, settings(), detail, record, as_of=as_of)
+    assert decision.eligible
+    assert decision.reason == "recently_authorized"
+    assert "positive_permit_decision_within_120_days" in decision.evidence
 
 
 def test_lead_qualification_rejects_completion_text_hidden_in_permit_type(db):

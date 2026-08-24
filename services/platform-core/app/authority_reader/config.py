@@ -74,6 +74,7 @@ class ReaderSettings:
     sales_digest_authorized: bool = False
     sales_digest_hour: int = 14
     sales_digest_minute: int = 0
+    sales_digest_max_items: int = 200
     sales_digest_timezone: str = "Europe/Budapest"
     sales_digest_oauth_file: str = ""
     sales_digest_recipients_file: str = ""
@@ -150,6 +151,9 @@ class ReaderSettings:
             ),
             sales_digest_minute=max(
                 0, min(59, int(os.getenv("AUTHORITY_READER_SALES_DIGEST_MINUTE", "0")))
+            ),
+            sales_digest_max_items=max(
+                1, min(500, int(os.getenv("AUTHORITY_READER_SALES_DIGEST_MAX_ITEMS", "200")))
             ),
             sales_digest_timezone=os.getenv(
                 "AUTHORITY_READER_SALES_DIGEST_TIMEZONE", "Europe/Budapest"

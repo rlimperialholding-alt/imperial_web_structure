@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
-from sqlalchemy import select, update
+from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
@@ -499,11 +499,15 @@ def create_digest(
             AuthoritySignalOutbox.reason_code == "daily_lead_generator_imported",
             AuthoritySignalOutbox.created_at <= evaluated_at,
             AuthoritySignalOutbox.payload_json.contains('"schema_version":"etdr-lead-v2"'),
+            ~exists(
+                select(AuthoritySalesDigestItem.id).where(
+                    AuthoritySalesDigestItem.signal_outbox_id == AuthoritySignalOutbox.id
+                )
+            ),
         )
         .order_by(AuthorityRecord.submission_date.desc(), AuthorityRecord.public_process_number)
+        .limit(settings.sales_digest_max_items)
     )
-    if window_start:
-        statement = statement.where(AuthoritySignalOutbox.created_at > window_start)
     rows = db.execute(statement).all()
     snapshots = [_item_snapshot(outbox, record, detail) for outbox, record, detail in rows]
     payload_hash = _digest_payload_hash(
@@ -587,6 +591,7 @@ def _render_digest(
     html_rows: list[str] = []
     labels = {
         "new_submission": "új feltöltés",
+        "recently_authorized": "frissen engedélyezett",
         "likely_not_started": "valószínűleg el sem indult",
         "no_completion_signal": "nincs későbbi befejezési jel",
     }

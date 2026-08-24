@@ -88,6 +88,7 @@ class AuthorityRecord(Base):
     public_process_number: Mapped[str] = mapped_column(String(40), index=True)
     city: Mapped[str] = mapped_column(String(200), index=True)
     topographical_number: Mapped[str | None] = mapped_column(String(100), index=True)
+    parcel_key: Mapped[str | None] = mapped_column(String(100), index=True)
     procedure_type: Mapped[str] = mapped_column(String(500), index=True)
     construction_activity: Mapped[str] = mapped_column(Text)
     submission_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

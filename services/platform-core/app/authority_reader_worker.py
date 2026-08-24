@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import signal
 import time
 from datetime import UTC, datetime, timedelta
@@ -27,6 +28,10 @@ def request_stop(_signum, _frame) -> None:
 
 def due(db, settings: ReaderSettings) -> bool:
     checkpoint = db.get(AuthorityCheckpoint, "etdr_public")
+    if checkpoint:
+        cursor = json.loads(checkpoint.cursor_json or "{}")
+        if cursor.get("mode") in {"baseline", "delta"}:
+            return True
     if not checkpoint or not checkpoint.last_success_at:
         return True
     last = checkpoint.last_success_at
@@ -48,7 +53,10 @@ def main() -> None:
                             AuthorityCheckpoint.source_key == "etdr_public"
                         )
                     )
-                    mode = "delta" if checkpoint and checkpoint.last_success_at else "baseline"
+                    cursor = json.loads(checkpoint.cursor_json or "{}") if checkpoint else {}
+                    mode = cursor.get("mode")
+                    if mode not in {"baseline", "delta"}:
+                        mode = "delta" if checkpoint and checkpoint.last_success_at else "baseline"
                     try:
                         run_reader(db, settings, mode=mode, trigger="schedule")
                     except ReaderBlocked:
