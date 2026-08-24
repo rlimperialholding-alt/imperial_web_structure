@@ -228,6 +228,25 @@ def test_digest_payload_tamper_is_dead_lettered_before_gmail(db, tmp_path):
     assert FakeAdapter.sent == []
 
 
+def test_digest_approval_evidence_change_is_dead_lettered_before_gmail(db, tmp_path):
+    now = datetime(2026, 8, 24, 13, tzinfo=UTC)
+    _lead(db, process_number="202600070210", created_at=now)
+    active = _settings(tmp_path)
+    digest = create_digest(db, active, now=now, force=True)
+    assert digest is not None
+    recipient_file = tmp_path / "recipients.json"
+    payload = json.loads(recipient_file.read_text(encoding="utf-8"))
+    payload["approved_by"] = "changed-after-freeze"
+    recipient_file.write_text(json.dumps(payload), encoding="utf-8")
+    digest.status = "claimed"
+    db.commit()
+
+    result = dispatch_digest(db, active, digest, adapter_factory=FakeAdapter)
+    assert result.status == "dead_letter"
+    assert result.last_error == "digest_recipients_changed"
+    assert FakeAdapter.sent == []
+
+
 def test_digest_reconciles_ambiguous_prior_send_without_duplicate(db, tmp_path):
     now = datetime(2026, 8, 24, 13, tzinfo=UTC)
     _lead(db, process_number="202600070209", created_at=now)

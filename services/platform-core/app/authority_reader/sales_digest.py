@@ -172,6 +172,7 @@ def recipients_sha256(config: DigestRecipients) -> str:
             {
                 "schema_version": config.schema_version,
                 "purpose": config.purpose,
+                "approved_by": config.approved_by,
                 "valid_until": _aware(config.valid_until).isoformat(),
                 "recipients": [item.model_dump() for item in config.recipients],
             }
@@ -720,6 +721,37 @@ def check(settings: ReaderSettings, *, network: bool = False) -> dict[str, Any]:
     }
 
 
+def verify_latest(settings: ReaderSettings) -> dict[str, Any]:
+    _assert_digest_gate(settings)
+    with SessionLocal() as db:
+        digest = db.scalar(
+            select(AuthoritySalesDigest)
+            .where(AuthoritySalesDigest.status == "sent")
+            .order_by(AuthoritySalesDigest.sent_at.desc(), AuthoritySalesDigest.id.desc())
+            .limit(1)
+        )
+        if digest is None or not digest.gmail_message_id:
+            raise DigestBlocked("sales_digest_sent_message_missing")
+        message_rfc822_id = digest.message_rfc822_id
+        expected_gmail_message_id = digest.gmail_message_id
+        digest_id = digest.digest_id
+        item_count = digest.item_count
+    with GmailDigestAdapter(load_oauth(settings)) as adapter:
+        sender_domain = adapter.preflight().rsplit("@", 1)[-1]
+        receipt = adapter.find_sent(message_rfc822_id)
+    if receipt is None:
+        raise DigestBlocked("sales_digest_not_found_in_sent")
+    if not hmac.compare_digest(receipt.message_id, expected_gmail_message_id):
+        raise DigestBlocked("sales_digest_gmail_message_mismatch")
+    return {
+        "status": "verified",
+        "digest_id": digest_id,
+        "item_count": item_count,
+        "gmail_message_id_sha256": hashlib.sha256(receipt.message_id.encode()).hexdigest(),
+        "sender_domain": sender_domain,
+    }
+
+
 stopping = False
 
 
@@ -733,10 +765,14 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--preflight", action="store_true")
     parser.add_argument("--run-now", action="store_true")
+    parser.add_argument("--verify-latest", action="store_true")
     args = parser.parse_args()
     settings = ReaderSettings.from_env()
     if args.check or args.preflight:
         print(canonical_json(check(settings, network=args.preflight)))
+        return
+    if args.verify_latest:
+        print(canonical_json(verify_latest(settings)))
         return
     if args.run_now:
         with SessionLocal() as db:
