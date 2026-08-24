@@ -282,13 +282,12 @@ class GmailDigestAdapter:
         finally:
             response.close()
 
-    def find_sent(self, message_rfc822_id: str) -> GmailReceipt | None:
-        normalized_rfc822_id = message_rfc822_id.strip("<>")
+    def find_sent(self, digest_id: str) -> GmailReceipt | None:
         try:
             response = self.gmail.get(
                 "/gmail/v1/users/me/messages",
                 headers=self._headers(),
-                params={"q": f"in:sent rfc822msgid:{normalized_rfc822_id}", "maxResults": 2},
+                params={"q": f'in:sent "{digest_id}"', "maxResults": 2},
             )
         except (SafeHttpError, httpx.HTTPError) as exc:
             raise DigestBlocked("gmail_reconcile_transport_error", retry_safe=True) from exc
@@ -312,12 +311,15 @@ class GmailDigestAdapter:
         finally:
             response.close()
 
-    def get_sent(self, gmail_message_id: str, message_rfc822_id: str) -> GmailReceipt:
+    def get_sent(self, gmail_message_id: str, digest_id: str) -> GmailReceipt:
         try:
             response = self.gmail.get(
                 f"/gmail/v1/users/me/messages/{gmail_message_id}",
                 headers=self._headers(),
-                params={"format": "metadata", "metadataHeaders": "Message-ID"},
+                params={
+                    "format": "metadata",
+                    "metadataHeaders": "X-Imperial-Digest-ID",
+                },
             )
         except (SafeHttpError, httpx.HTTPError) as exc:
             raise DigestBlocked("gmail_verify_transport_error", retry_safe=True) from exc
@@ -334,18 +336,18 @@ class GmailDigestAdapter:
                 if isinstance(message_payload, dict)
                 else []
             )
-            header_values = [
+            digest_header_values = [
                 item.get("value")
                 for item in headers
                 if isinstance(item, dict)
-                and str(item.get("name", "")).lower() == "message-id"
+                and str(item.get("name", "")).lower() == "x-imperial-digest-id"
             ]
             if (
                 response_id != gmail_message_id
                 or not isinstance(thread_id, str)
                 or not isinstance(label_ids, list)
                 or "SENT" not in label_ids
-                or header_values != [message_rfc822_id]
+                or digest_header_values != [digest_id]
             ):
                 raise DigestBlocked("gmail_verify_invalid_response")
             return GmailReceipt(response_id, thread_id, reconciled=True)
@@ -565,7 +567,8 @@ def _claim_digest(db: Session, settings: ReaderSettings) -> AuthoritySalesDigest
     row.lease_owner = settings.worker_id
     row.lease_expires_at = now + timedelta(seconds=settings.lease_seconds)
     row.attempt_count += 1
-    row.last_error = None
+    if row.last_error not in {"gmail_send_ambiguous", "gmail_reconcile_pending"}:
+        row.last_error = None
     db.commit()
     return row
 
@@ -616,6 +619,7 @@ def _render_digest(
     plain_parts.append(
         "A 'nincs későbbi befejezési jel' nyilvántartási indikátor, nem helyszíni bizonyíték."
     )
+    plain_parts.extend(["", f"Kézbesítési azonosító: {digest.digest_id}"])
     body_text = "\n".join(plain_parts)
     body_html = (
         "<!doctype html><html lang='hu'><body>"
@@ -625,7 +629,8 @@ def _render_digest(
         "<th>Kapcsolat</th><th>Forrás</th></tr></thead><tbody>"
         + "".join(html_rows)
         + "</tbody></table><p><strong>Figyelem:</strong> a befejezési jel hiánya "
-        "nyilvántartási indikátor, nem helyszíni bizonyíték.</p></body></html>"
+        "nyilvántartási indikátor, nem helyszíni bizonyíték.</p>"
+        f"<p>Kézbesítési azonosító: {html.escape(digest.digest_id)}</p></body></html>"
     )
     return subject, body_text, body_html
 
@@ -697,8 +702,13 @@ def dispatch_digest(
     try:
         with adapter_factory(load_oauth(settings)) as adapter:
             sender = adapter.preflight()
-            receipt = adapter.find_sent(digest.message_rfc822_id)
+            receipt = adapter.find_sent(digest.digest_id)
             if receipt is None:
+                if digest.last_error in {
+                    "gmail_send_ambiguous",
+                    "gmail_reconcile_pending",
+                }:
+                    raise DigestBlocked("gmail_reconcile_pending", retry_safe=True)
                 receipt = adapter.send(
                     _mime_message(
                         digest,
@@ -750,7 +760,7 @@ def check(settings: ReaderSettings, *, network: bool = False) -> dict[str, Any]:
     if network:
         with GmailDigestAdapter(secret) as adapter:
             sender_domain = adapter.preflight().rsplit("@", 1)[-1]
-            adapter.find_sent("<etdr-digest-preflight-never-sent@digest.imperialholding.hu>")
+            adapter.find_sent("ETDR-DIGEST-PREFLIGHT-NEVER-SENT")
     with SessionLocal() as db:
         db.scalar(select(AuthoritySalesDigest.id).limit(1))
     return {
@@ -773,13 +783,12 @@ def verify_latest(settings: ReaderSettings) -> dict[str, Any]:
         )
         if digest is None or not digest.gmail_message_id:
             raise DigestBlocked("sales_digest_sent_message_missing")
-        message_rfc822_id = digest.message_rfc822_id
         expected_gmail_message_id = digest.gmail_message_id
         digest_id = digest.digest_id
         item_count = digest.item_count
     with GmailDigestAdapter(load_oauth(settings)) as adapter:
         sender_domain = adapter.preflight().rsplit("@", 1)[-1]
-        receipt = adapter.get_sent(expected_gmail_message_id, message_rfc822_id)
+        receipt = adapter.get_sent(expected_gmail_message_id, digest_id)
     if not hmac.compare_digest(receipt.message_id, expected_gmail_message_id):
         raise DigestBlocked("sales_digest_gmail_message_mismatch")
     return {

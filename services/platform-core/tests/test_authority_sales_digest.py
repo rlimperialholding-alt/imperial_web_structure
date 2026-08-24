@@ -203,6 +203,7 @@ def test_digest_sends_each_day_once_and_contains_only_verified_public_fields(db,
     assert "1234 Tesztváros, Minta utca 7." in body
     assert "nincs ellenőrzött üzleti e-mail/telefon" in body
     assert "https://www.etdr.gov.hu/nyilvanos-adatok/202600070207" in body
+    assert first.digest_id in body
 
 
 def test_digest_payload_tamper_is_dead_lettered_before_gmail(db, tmp_path):
@@ -266,6 +267,23 @@ def test_digest_reconciles_ambiguous_prior_send_without_duplicate(db, tmp_path):
     assert FakeAdapter.sent == []
 
 
+def test_digest_never_resends_after_ambiguous_gmail_transport(db, tmp_path):
+    now = datetime(2026, 8, 24, 13, tzinfo=UTC)
+    _lead(db, process_number="202600070211", created_at=now)
+    active = _settings(tmp_path)
+    digest = create_digest(db, active, now=now, force=True)
+    assert digest is not None
+    digest.status = "claimed"
+    digest.attempt_count = 1
+    digest.last_error = "gmail_send_ambiguous"
+    db.commit()
+
+    result = dispatch_digest(db, active, digest, adapter_factory=FakeAdapter)
+    assert result.status == "retry"
+    assert result.last_error == "gmail_reconcile_pending"
+    assert FakeAdapter.sent == []
+
+
 def test_digest_is_fail_closed_without_explicit_delivery_authorization(db, tmp_path):
     active = _settings(tmp_path, sales_digest_authorized=False)
     with pytest.raises(DigestBlocked, match="sales_digest_policy_gate"):
@@ -300,8 +318,8 @@ def test_gmail_adapter_uses_refresh_token_reconciles_and_sends(tmp_path):
                     "payload": {
                         "headers": [
                             {
-                                "name": "Message-ID",
-                                "value": "<digest-test@digest.imperialholding.hu>",
+                                "name": "X-Imperial-Digest-ID",
+                                "value": "ETDR-DIGEST-TEST",
                             }
                         ]
                     },
@@ -323,10 +341,10 @@ def test_gmail_adapter_uses_refresh_token_reconciles_and_sends(tmp_path):
         resolver=resolver,
     ) as adapter:
         assert adapter.preflight() == "info@imperialholding.hu"
-        assert adapter.find_sent("<digest-test@digest.imperialholding.hu>") is None
+        assert adapter.find_sent("ETDR-DIGEST-TEST") is None
         receipt = adapter.send(b"Message-ID: <digest-test@digest.imperialholding.hu>\r\n\r\nTest")
         verified = adapter.get_sent(
-            receipt.message_id, "<digest-test@digest.imperialholding.hu>"
+            receipt.message_id, "ETDR-DIGEST-TEST"
         )
     assert receipt.message_id == "sent-id"
     assert verified.thread_id == "thread-id"
