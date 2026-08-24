@@ -153,7 +153,7 @@ def _upsert_record(
             city=item.city,
             topographical_number=item.topographical_number,
             procedure_type=item.procedure_type,
-            construction_activity=item.construction_activity,
+            construction_activity=item.construction_activity or "",
             submission_date=item.submission_date,
             evidence_url=(f"{settings.etdr_public_url}/nyilvanos-adatok/{item.process_number}"),
             current_revision_no=1,
@@ -168,7 +168,7 @@ def _upsert_record(
         row.city = item.city
         row.topographical_number = item.topographical_number
         row.procedure_type = item.procedure_type
-        row.construction_activity = item.construction_activity
+        row.construction_activity = item.construction_activity or ""
         row.submission_date = item.submission_date
         row.last_seen_at = now
         outcome = "updated"

@@ -114,6 +114,29 @@ def test_client_parses_exact_public_schema_and_query():
     assert seen[0].url.params["$filter"] == "City eq 'Vöröstó'"
 
 
+def test_client_accepts_official_nullable_construction_activity():
+    client = mock_client(page_payload([raw_record(ConstructionActivity=None)]))
+    with client:
+        page = client.fetch_page(skip=0, page_size=100, filter_expression="City eq 'Óbudavár'")
+    assert page.records[0].construction_activity is None
+    assert "construction_activity" not in page.records[0].normalized()
+
+
+def test_reader_persists_nullable_construction_activity_as_empty_text(db):
+    row = run_reader(
+        db,
+        settings(),
+        mode="pilot",
+        town="Óbudavár",
+        trigger="test",
+        client_factory=factory(one_page(record(ConstructionActivity=None))),
+    )
+    assert row.status == "completed"
+    stored = db.scalar(select(AuthorityRecord))
+    assert stored is not None
+    assert stored.construction_activity == ""
+
+
 def test_alembic_config_preserves_percent_encoded_database_password():
     url = "value%2Fwith%25percent"
     config = Config()

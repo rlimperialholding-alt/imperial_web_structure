@@ -49,7 +49,11 @@ class ReaderBlocked(RuntimeError):
 class ETDRRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True, str_strip_whitespace=True)
 
-    construction_activity: str = Field(alias="ConstructionActivity", min_length=1, max_length=5000)
+    # The official OData feed keeps this key in the exact schema but legitimately returns
+    # null for some public procedures. The detail page remains the authoritative project subject.
+    construction_activity: str | None = Field(
+        alias="ConstructionActivity", default=None, min_length=1, max_length=5000
+    )
     street: str | None = Field(alias="Street", default=None, max_length=500)
     house_number: str | None = Field(alias="HouseNumber", default=None, max_length=100)
     city: str = Field(alias="City", min_length=1, max_length=200)
@@ -63,7 +67,12 @@ class ETDRRecord(BaseModel):
     full_address: str | None = Field(alias="FullAddress", default=None, max_length=1000)
 
     @field_validator(
-        "street", "house_number", "street_type", "topographical_number", "full_address"
+        "construction_activity",
+        "street",
+        "house_number",
+        "street_type",
+        "topographical_number",
+        "full_address",
     )
     @classmethod
     def empty_to_none(cls, value: str | None) -> str | None:
