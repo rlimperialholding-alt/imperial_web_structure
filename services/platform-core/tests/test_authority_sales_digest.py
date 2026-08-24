@@ -290,6 +290,23 @@ def test_gmail_adapter_uses_refresh_token_reconciles_and_sends(tmp_path):
         requests.append(request)
         if request.url.path.endswith("/profile"):
             return httpx.Response(200, json={"emailAddress": "info@imperialholding.hu"})
+        if request.url.path.endswith("/sent-id"):
+            return httpx.Response(
+                200,
+                json={
+                    "id": "sent-id",
+                    "threadId": "thread-id",
+                    "labelIds": ["SENT"],
+                    "payload": {
+                        "headers": [
+                            {
+                                "name": "Message-ID",
+                                "value": "<digest-test@digest.imperialholding.hu>",
+                            }
+                        ]
+                    },
+                },
+            )
         if request.method == "GET":
             return httpx.Response(200, json={"resultSizeEstimate": 0})
         raw = json.loads(request.content)["raw"]
@@ -308,6 +325,10 @@ def test_gmail_adapter_uses_refresh_token_reconciles_and_sends(tmp_path):
         assert adapter.preflight() == "info@imperialholding.hu"
         assert adapter.find_sent("<digest-test@digest.imperialholding.hu>") is None
         receipt = adapter.send(b"Message-ID: <digest-test@digest.imperialholding.hu>\r\n\r\nTest")
+        verified = adapter.get_sent(
+            receipt.message_id, "<digest-test@digest.imperialholding.hu>"
+        )
     assert receipt.message_id == "sent-id"
+    assert verified.thread_id == "thread-id"
     assert requests[0].url.host == "oauth2.googleapis.com"
     assert requests[-1].url.host == "gmail.googleapis.com"

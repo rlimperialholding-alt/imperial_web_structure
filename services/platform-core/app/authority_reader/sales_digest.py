@@ -283,11 +283,12 @@ class GmailDigestAdapter:
             response.close()
 
     def find_sent(self, message_rfc822_id: str) -> GmailReceipt | None:
+        normalized_rfc822_id = message_rfc822_id.strip("<>")
         try:
             response = self.gmail.get(
                 "/gmail/v1/users/me/messages",
                 headers=self._headers(),
-                params={"q": f"in:sent rfc822msgid:{message_rfc822_id}", "maxResults": 2},
+                params={"q": f"in:sent rfc822msgid:{normalized_rfc822_id}", "maxResults": 2},
             )
         except (SafeHttpError, httpx.HTTPError) as exc:
             raise DigestBlocked("gmail_reconcile_transport_error", retry_safe=True) from exc
@@ -308,6 +309,46 @@ class GmailDigestAdapter:
             if not isinstance(message_id, str) or not isinstance(thread_id, str):
                 raise DigestBlocked("gmail_reconcile_invalid_response")
             return GmailReceipt(message_id, thread_id, reconciled=True)
+        finally:
+            response.close()
+
+    def get_sent(self, gmail_message_id: str, message_rfc822_id: str) -> GmailReceipt:
+        try:
+            response = self.gmail.get(
+                f"/gmail/v1/users/me/messages/{gmail_message_id}",
+                headers=self._headers(),
+                params={"format": "metadata", "metadataHeaders": "Message-ID"},
+            )
+        except (SafeHttpError, httpx.HTTPError) as exc:
+            raise DigestBlocked("gmail_verify_transport_error", retry_safe=True) from exc
+        try:
+            if response.status_code != 200:
+                raise DigestBlocked("gmail_verify_rejected")
+            payload = self._response_json(response, "gmail_verify")
+            response_id = payload.get("id")
+            thread_id = payload.get("threadId")
+            label_ids = payload.get("labelIds", [])
+            message_payload = payload.get("payload", {})
+            headers = (
+                message_payload.get("headers", [])
+                if isinstance(message_payload, dict)
+                else []
+            )
+            header_values = [
+                item.get("value")
+                for item in headers
+                if isinstance(item, dict)
+                and str(item.get("name", "")).lower() == "message-id"
+            ]
+            if (
+                response_id != gmail_message_id
+                or not isinstance(thread_id, str)
+                or not isinstance(label_ids, list)
+                or "SENT" not in label_ids
+                or header_values != [message_rfc822_id]
+            ):
+                raise DigestBlocked("gmail_verify_invalid_response")
+            return GmailReceipt(response_id, thread_id, reconciled=True)
         finally:
             response.close()
 
@@ -738,9 +779,7 @@ def verify_latest(settings: ReaderSettings) -> dict[str, Any]:
         item_count = digest.item_count
     with GmailDigestAdapter(load_oauth(settings)) as adapter:
         sender_domain = adapter.preflight().rsplit("@", 1)[-1]
-        receipt = adapter.find_sent(message_rfc822_id)
-    if receipt is None:
-        raise DigestBlocked("sales_digest_not_found_in_sent")
+        receipt = adapter.get_sent(expected_gmail_message_id, message_rfc822_id)
     if not hmac.compare_digest(receipt.message_id, expected_gmail_message_id):
         raise DigestBlocked("sales_digest_gmail_message_mismatch")
     return {
