@@ -19,8 +19,8 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "UPDATE authority_records SET parcel_key = "
-            "lower(replace(replace(replace(topographical_number, ' ', ''), "
-            "char(9), ''), char(10), '')) WHERE topographical_number IS NOT NULL"
+            "lower(replace(topographical_number, ' ', '')) "
+            "WHERE topographical_number IS NOT NULL"
         )
     )
     op.create_index("ix_authority_records_parcel_key", "authority_records", ["parcel_key"])
