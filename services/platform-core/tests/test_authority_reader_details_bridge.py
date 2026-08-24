@@ -201,6 +201,55 @@ class DetailClient:
         )
 
 
+class TwoRecordListClient:
+    def __init__(self, _settings: ReaderSettings) -> None:
+        self.used = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return None
+
+    def fetch_page(self, **_kwargs) -> ETDRPage:
+        assert not self.used
+        self.used = True
+        records = tuple(
+            ETDRRecord.model_validate(
+                {
+                    "ConstructionActivity": "Gazdasági épület építése",
+                    "Street": None,
+                    "HouseNumber": None,
+                    "City": "Óbudavár",
+                    "StreetType": None,
+                    "TopographicalNumber": topographical_number,
+                    "Type": "Építési engedélyezési eljárás",
+                    "ProcessNumber": process_number,
+                    "SubmissionDate": "2026-07-29T12:00:00+02:00",
+                    "FullAddress": "8272 Óbudavár",
+                }
+            )
+            for process_number, topographical_number in (
+                ("202600000001", "241"),
+                ("202600000002", "242"),
+            )
+        )
+        return ETDRPage(total=2, records=records, payload_sha256="b" * 64)
+
+
+class FirstBlockedDetailClient(DetailClient):
+    def fetch_detail(self, process_number: str) -> ETDRDetail:
+        if process_number == "202600000001":
+            raise ReaderBlocked("detail_schema_drift")
+        detail = super().fetch_detail(process_number)
+        return detail.model_copy(
+            update={
+                "process_number": process_number,
+                "topographical_number": "242",
+            }
+        )
+
+
 def test_detail_pipeline_creates_strict_pending_lead(db):
     active = settings()
     run_reader(
@@ -230,6 +279,39 @@ def test_detail_pipeline_creates_strict_pending_lead(db):
     assert payload["revision_id"].startswith("etdrd-")
     assert payload["revision_no"] == 1
     assert payload["rejection_reasons"] == sorted(payload["rejection_reasons"])
+
+
+def test_detail_pipeline_continues_after_a_fail_closed_record(db):
+    active = settings()
+    run_reader(
+        db,
+        active,
+        mode="pilot",
+        town="Óbudavár",
+        trigger="test",
+        client_factory=TwoRecordListClient,
+    )
+
+    assert process_details(db, active, client_factory=FirstBlockedDetailClient) == {
+        "completed": 1,
+        "unchanged": 0,
+        "blocked": 1,
+    }
+    queues = db.scalars(select(AuthorityDetailQueue).order_by(AuthorityDetailQueue.id)).all()
+    records = db.scalars(
+        select(AuthorityRecord).order_by(AuthorityRecord.public_process_number)
+    ).all()
+    assert [queue.status for queue in queues] == ["blocked", "completed"]
+    assert [record.detail_status for record in records] == ["blocked", "current"]
+    assert db.scalar(select(func.count()).select_from(AuthorityDetailRevision)) == 1
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(AuthoritySignalOutbox)
+            .where(AuthoritySignalOutbox.status == "pending")
+        )
+        == 1
+    )
 
 
 def test_detail_pipeline_recovers_only_expired_claim(db):

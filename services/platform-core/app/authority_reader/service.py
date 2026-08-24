@@ -659,7 +659,7 @@ def process_details(
                     blocked_record.detail_checked_at = utcnow()
                 db.commit()
                 counts["blocked"] += 1
-                raise
+                continue
     return counts
 
 
