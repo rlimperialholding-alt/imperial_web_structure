@@ -456,6 +456,26 @@ def test_lead_qualification_prioritizes_recent_positive_permit_decision(db):
     assert "positive_permit_decision_within_120_days" in decision.evidence
 
 
+def test_lead_qualification_labels_suspended_project_as_likely_interrupted(db):
+    as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
+    record = _qualification_record(
+        db,
+        process_number="202600000512",
+        submitted_at=as_of - timedelta(days=45),
+        parcel="512",
+    )
+    decision = _lead_decision(
+        db,
+        settings(),
+        _qualification_detail(record, status="Eljárás felfüggesztve"),
+        record,
+        as_of=as_of,
+    )
+    assert decision.eligible
+    assert decision.reason == "likely_interrupted"
+    assert "procedure_suspended_paused_or_interrupted" in decision.evidence
+
+
 def test_lead_qualification_rejects_completion_text_hidden_in_permit_type(db):
     as_of = datetime(2026, 8, 24, 12, tzinfo=UTC)
     record = _qualification_record(

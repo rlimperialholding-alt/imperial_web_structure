@@ -592,6 +592,7 @@ def _render_digest(
     labels = {
         "new_submission": "új feltöltés",
         "recently_authorized": "frissen engedélyezett",
+        "likely_interrupted": "valószínűleg félbeszakadt vagy szünetel",
         "likely_not_started": "valószínűleg el sem indult",
         "no_completion_signal": "nincs későbbi befejezési jel",
     }

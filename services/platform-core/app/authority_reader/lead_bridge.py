@@ -81,6 +81,7 @@ class ETDRLeadPayload(BaseModel):
     lead_reason: Literal[
         "new_submission",
         "recently_authorized",
+        "likely_interrupted",
         "likely_not_started",
         "no_completion_signal",
     ]
@@ -147,6 +148,10 @@ class ETDRLeadPayload(BaseModel):
             item.startswith("positive_permit_decision_within_") for item in evidence
         ):
             raise ValueError("recent permit evidence is required")
+        if self.lead_reason == "likely_interrupted" and (
+            "procedure_suspended_paused_or_interrupted" not in evidence
+        ):
+            raise ValueError("interrupted procedure evidence is required")
         if self.lead_reason == "likely_not_started" and (
             "procedure_discontinued_or_withdrawn" not in evidence
         ):

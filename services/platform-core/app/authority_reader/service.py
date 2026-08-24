@@ -438,6 +438,7 @@ def _fold(value: str) -> str:
 LEAD_POLICY_VERSION = "etdr-lead-v2"
 CONSTRUCTION_INTENT_TERMS = ("epitesi engedelyezesi", "egyszeru bejelent")
 NON_START_STATUS_TERMS = ("megszunt", "visszavon")
+INTERRUPTED_STATUS_TERMS = ("felfuggeszt", "szunetel", "felbeszak")
 REJECTED_STATUS_TERMS = ("elutasit", "ervenytelen")
 POSITIVE_PERMIT_TERMS = ("engedely", "engedelyezes", "engedelyezett")
 NEGATIVE_DECISION_TERMS = ("elutasit", "megszunt", "visszavon", "ervenytelen", "megtagad")
@@ -574,6 +575,18 @@ def _lead_decision(
     status = _fold(detail.status)
     if any(term in status for term in REJECTED_STATUS_TERMS):
         return LeadDecision(False, "rejected_or_invalid_procedure")
+    if any(term in status for term in INTERRUPTED_STATUS_TERMS):
+        return LeadDecision(
+            True,
+            "likely_interrupted",
+            confidence=78,
+            urgency=82,
+            evidence=(
+                "construction_intent_procedure",
+                "procedure_suspended_paused_or_interrupted",
+                "public_status_supports_interruption_indicator",
+            ),
+        )
     if any(term in status for term in NON_START_STATUS_TERMS):
         return LeadDecision(
             True,
