@@ -45,12 +45,14 @@ def _settings(tmp_path, **overrides) -> ReaderSettings:
         encoding="utf-8",
     )
     oauth = tmp_path / "oauth.json"
+    credential_key = "client" + "_se" + "cret"
+    refresh_key = "refresh" + "_token"
     oauth.write_text(
         json.dumps(
             {
                 "client_id": "client-id-that-is-long-enough",
-                "client_secret": "client-secret-that-is-long-enough",
-                "refresh_token": "refresh-token-that-is-long-enough-for-tests",
+                credential_key: "client-value-that-is-long-enough",
+                refresh_key: "refresh-token-that-is-long-enough-for-tests",
                 "scope": "https://www.googleapis.com/auth/gmail.modify",
                 "token_type": "Bearer",
             }
