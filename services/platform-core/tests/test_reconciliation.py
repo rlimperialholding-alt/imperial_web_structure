@@ -5,7 +5,10 @@ and exits nonzero (fail-closed) when a checked invariant is deliberately
 altered in a temporary, synthetic context. All fixtures are temporary files;
 no network, no protected corpus mutation, no production write. The database
 isolation tests prove the command never connects to or mutates any database
-configured through ``DATABASE_URL``.
+configured through ``DATABASE_URL``. The SOURCE_LOCK tests cover the complete
+required top-level version-field set (platform/application/partner_field/
+commercial_integration) with valid, missing, empty, wrong-type, malformed,
+and unexpected/tampered values.
 """
 
 from __future__ import annotations
@@ -26,9 +29,26 @@ SCRIPTS_DIR = PLATFORM_CORE / "scripts"
 REPO_ROOT = PLATFORM_CORE.parents[1]
 CORPUS_MANIFEST_PATH = REPO_ROOT / ".imperial-adas" / "protected-corpus-manifest.json"
 SECRETS_BASELINE_PATH = REPO_ROOT / ".secrets.baseline"
+SOURCE_LOCK_PATH = PLATFORM_CORE / "SOURCE_LOCK.json"
+REQUIRED_LOCK_VERSION_FIELDS = (
+    "platform_version",
+    "application_version",
+    "partner_field_version",
+    "commercial_integration_version",
+)
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import check_secret_baseline  # noqa: E402
+
+
+def _canonical_lock() -> dict:
+    return json.loads(SOURCE_LOCK_PATH.read_text(encoding="utf-8"))
+
+
+def _write_lock(tmp_path: Path, lock: dict) -> Path:
+    synthetic = tmp_path / "synthetic-SOURCE_LOCK.json"
+    synthetic.write_text(json.dumps(lock), encoding="utf-8")
+    return synthetic
 
 
 def _run_reconciliation(**env_overrides: str) -> subprocess.CompletedProcess[str]:
@@ -38,6 +58,10 @@ def _run_reconciliation(**env_overrides: str) -> subprocess.CompletedProcess[str
         "II_RECON_SECRETS_BASELINE",
         "II_RECON_SOURCE_LOCK",
         "II_RECON_EXPECTED_ALEMBIC_HEAD",
+        "II_RECON_EXPECTED_PLATFORM_VERSION",
+        "II_RECON_EXPECTED_APPLICATION_VERSION",
+        "II_RECON_EXPECTED_PARTNER_FIELD_VERSION",
+        "II_RECON_EXPECTED_COMMERCIAL_INTEGRATION_VERSION",
     ):
         env.pop(key, None)
     env.update(env_overrides)
@@ -234,6 +258,8 @@ def test_reconciliation_fail_closed_on_source_lock_head_tamper(
                 "alembic_head": "99999999_9999",
                 "platform_version": "5.0.0",
                 "application_version": "1.5.0",
+                "partner_field_version": "1.0.0",
+                "commercial_integration_version": "1.0.0",
                 "release_date": "2026-07-19",
             }
         ),
@@ -267,6 +293,8 @@ def test_reconciliation_fail_closed_on_source_lock_malformed_version(
                 "alembic_head": "20260816_0072",
                 "platform_version": "5.0.0",
                 "application_version": "release-candidate",
+                "partner_field_version": "1.0.0",
+                "commercial_integration_version": "1.0.0",
                 "release_date": "2026-07-19",
             }
         ),
@@ -287,6 +315,8 @@ def test_reconciliation_fail_closed_on_source_lock_malformed_date(
                 "alembic_head": "20260816_0072",
                 "platform_version": "5.0.0",
                 "application_version": "1.5.0",
+                "partner_field_version": "1.0.0",
+                "commercial_integration_version": "1.0.0",
                 "release_date": "2026.07.19",
             }
         ),
@@ -295,6 +325,114 @@ def test_reconciliation_fail_closed_on_source_lock_malformed_date(
     result = _run_reconciliation(II_RECON_SOURCE_LOCK=str(synthetic))
     assert result.returncode != 0
     assert "release_date ervenytelen" in result.stderr
+
+
+def test_source_lock_probe_passes_on_canonical_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "SOURCE_LOCK", SOURCE_LOCK_PATH)
+    module._source_lock_probe()  # a kanonikus lock ervenyes, nem dobhat.
+
+
+@pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
+def test_source_lock_probe_fail_closed_on_missing_version_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
+) -> None:
+    module = _load_module()
+    lock = _canonical_lock()
+    lock.pop(field)
+    monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
+    with pytest.raises(SystemExit) as excinfo:
+        module._source_lock_probe()
+    assert excinfo.value.code not in (0, None)
+    assert f"SOURCE_LOCK {field} ervenytelen" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
+def test_source_lock_probe_fail_closed_on_empty_version_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
+) -> None:
+    module = _load_module()
+    lock = _canonical_lock()
+    lock[field] = ""
+    monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
+    with pytest.raises(SystemExit) as excinfo:
+        module._source_lock_probe()
+    assert excinfo.value.code not in (0, None)
+    assert f"SOURCE_LOCK {field} ervenytelen" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
+def test_source_lock_probe_fail_closed_on_wrong_type_version_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
+) -> None:
+    module = _load_module()
+    lock = _canonical_lock()
+    lock[field] = 1.0
+    monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
+    with pytest.raises(SystemExit) as excinfo:
+        module._source_lock_probe()
+    assert excinfo.value.code not in (0, None)
+    assert f"SOURCE_LOCK {field} ervenytelen" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
+@pytest.mark.parametrize(
+    "malformed", ["1.0", "v1.0.0", "1.0.0-beta", " 1.0.0", "1.0.0 "]
+)
+def test_source_lock_probe_fail_closed_on_malformed_version_field(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    malformed: str,
+) -> None:
+    module = _load_module()
+    lock = _canonical_lock()
+    lock[field] = malformed
+    monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
+    with pytest.raises(SystemExit) as excinfo:
+        module._source_lock_probe()
+    assert excinfo.value.code not in (0, None)
+    assert f"SOURCE_LOCK {field} ervenytelen" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
+def test_source_lock_probe_fail_closed_on_unexpected_version_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
+) -> None:
+    module = _load_module()
+    lock = _canonical_lock()
+    lock[field] = "9.9.9"
+    monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
+    with pytest.raises(SystemExit) as excinfo:
+        module._source_lock_probe()
+    assert excinfo.value.code not in (0, None)
+    assert f"SOURCE_LOCK {field} elter a pinelt vart ertektol" in str(excinfo.value)
+
+
+def test_reconciliation_passes_on_synthetic_valid_lock(tmp_path: Path) -> None:
+    result = _run_reconciliation(
+        II_RECON_SOURCE_LOCK=str(_write_lock(tmp_path, _canonical_lock()))
+    )
+    assert result.returncode == 0, result.stderr
+    assert "minden lokalis" in result.stdout
+
+
+def test_reconciliation_fail_closed_on_partner_field_version_mutation(
+    tmp_path: Path,
+) -> None:
+    lock = _canonical_lock()
+    lock["partner_field_version"] = "9.9.9"
+    result = _run_reconciliation(
+        II_RECON_SOURCE_LOCK=str(_write_lock(tmp_path, lock))
+    )
+    assert result.returncode != 0
+    assert "partner_field_version elter a pinelt vart ertektol" in result.stderr
+    assert "minden lokalis" not in result.stdout
+    baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
+    _assert_no_secret_material(baseline, result.stdout)
+    _assert_no_secret_material(baseline, result.stderr)
 
 
 def test_reconciliation_fail_closed_on_wrong_alembic_head() -> None:

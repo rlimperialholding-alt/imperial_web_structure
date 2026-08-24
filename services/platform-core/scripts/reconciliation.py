@@ -8,7 +8,10 @@ vagy production írás nem történik. A script determinisztikusan összeveti:
    check_secret_baseline logikával (élő scan vs. auditált baseline;
    stale-only eltérés dokumentált warning, minden más eltérés FAIL);
 3. a SOURCE_LOCK kibocsátási rögzítést (alembic head = a migrációs gráf
-   tényleges egyetlen feje, szigorú semver/date verzió-invariánsok);
+   tényleges egyetlen feje; a teljes, kötelező top-level verziómező-készlet
+   -- platform_version, application_version, partner_field_version,
+   commercial_integration_version -- szigorú semver és a scriptben pinelt
+   explicit várt érték szerint; release_date ISO-dátum);
 4. a seed-modullistát egy kizárólag a script által épített, privát
    in-memory SQLite adatbázis regiszterével (az app engine/session
    soha nem kerül felhasználásra, a DATABASE_URL környezeti változót a
@@ -17,10 +20,12 @@ vagy production írás nem történik. A script determinisztikusan összeveti:
 
 Bármelyik eltérés nemnulla kilépési kóddal (fail-closed) zárul.
 
-Teszt-seam: a vizsgált artefaktumok útvonala és az elvárt alembic head
-környezeti változóval felülírható (kizárólag szintetikus fail-closed
-bizonyítékhoz); a pipeline mindig az alapértelmezett repo-útvonalakat
-használja, mert ezeket a változókat nem állítja be.
+Teszt-seam: a vizsgált artefaktumok útvonala, az elvárt alembic head és a
+pinelt várt verzióértékek környezeti változóval felülírhatók (kizárólag
+szintetikus fail-closed bizonyítékhoz); a pipeline mindig az alapértelmezett
+repo-útvonalakat és várt értékeket használja, mert ezeket a változókat nem
+állítja be. A lock verzióértékei és a scriptben pinelt várt értékek csak
+együtt, egy auditált commitban mozoghatnak.
 """
 
 from __future__ import annotations
@@ -79,6 +84,31 @@ SOURCE_LOCK = Path(
 
 _SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# A SOURCE_LOCK szerződés teljes, kötelező top-level verziómező-készlete.
+# Mindegyik mezőnek szerepelnie kell, stringnek és szigorú semvernek kell
+# lennie, és exact egyeznie kell az alábbi pinelt várt értékkel; hiányzó,
+# üres, rossz típusú, malformált vagy megváltoztatott érték fail-closed.
+REQUIRED_LOCK_VERSION_FIELDS = (
+    "platform_version",
+    "application_version",
+    "partner_field_version",
+    "commercial_integration_version",
+)
+EXPECTED_LOCK_VERSIONS = {
+    "platform_version": os.environ.get(
+        "II_RECON_EXPECTED_PLATFORM_VERSION", "5.0.0"
+    ),
+    "application_version": os.environ.get(
+        "II_RECON_EXPECTED_APPLICATION_VERSION", "1.5.0"
+    ),
+    "partner_field_version": os.environ.get(
+        "II_RECON_EXPECTED_PARTNER_FIELD_VERSION", "1.0.0"
+    ),
+    "commercial_integration_version": os.environ.get(
+        "II_RECON_EXPECTED_COMMERCIAL_INTEGRATION_VERSION", "1.0.0"
+    ),
+}
 
 
 def _sha256(path: Path) -> str:
@@ -154,11 +184,24 @@ def _source_lock_probe() -> None:
             "reconciliation FAIL: SOURCE_LOCK alembic_head "
             f"{lock_head!r} elter a migracios graf fejetol {heads!r}."
         )
-    for key in ("platform_version", "application_version"):
+    for key in REQUIRED_LOCK_VERSION_FIELDS:
+        expected = EXPECTED_LOCK_VERSIONS[key]
+        if not isinstance(expected, str) or not _SEMVER.fullmatch(expected):
+            raise SystemExit(
+                "reconciliation FAIL: pinelt vart ertek "
+                f"{key} ervenytelen: {expected!r}."
+            )
+    for key in REQUIRED_LOCK_VERSION_FIELDS:
         value = lock.get(key)
+        expected = EXPECTED_LOCK_VERSIONS[key]
         if not isinstance(value, str) or not _SEMVER.fullmatch(value):
             raise SystemExit(
                 f"reconciliation FAIL: SOURCE_LOCK {key} ervenytelen: {value!r}."
+            )
+        if value != expected:
+            raise SystemExit(
+                f"reconciliation FAIL: SOURCE_LOCK {key} elter a pinelt "
+                f"vart ertektol: {value!r} (vart: {expected!r})."
             )
     release_date = lock.get("release_date")
     if not isinstance(release_date, str) or not _ISO_DATE.fullmatch(release_date):
@@ -169,6 +212,8 @@ def _source_lock_probe() -> None:
     print(
         "reconciliation PASS: SOURCE_LOCK verziok rogzitve "
         f"(platform {lock['platform_version']}, app {lock['application_version']}, "
+        f"partner_field {lock['partner_field_version']}, "
+        f"commercial_integration {lock['commercial_integration_version']}, "
         f"alembic_head {lock_head})."
     )
 
