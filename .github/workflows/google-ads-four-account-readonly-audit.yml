@@ -15,6 +15,7 @@ jobs:
     env:
       GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
       GOOGLE_ADS_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_CLOUD_ADMIN_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_ADS_LOGIN_CUSTOMER_ID: "8668141303"
       GOOGLE_ADS_API_VERSION: v25
       GOOGLE_CLOUD_PROJECT_NUMBER: "1091317438049"
@@ -341,10 +342,16 @@ jobs:
           async function main() {
             const developerToken = required('GOOGLE_ADS_DEVELOPER_TOKEN');
             const credentials = parseServiceAccount(required('GOOGLE_ADS_SERVICE_ACCOUNT_JSON'));
+            const cloudAdminCredentials = parseServiceAccount(
+              required('GOOGLE_CLOUD_ADMIN_SERVICE_ACCOUNT_JSON')
+            );
             if (!credentials.client_email || !credentials.private_key) {
               throw new Error('Service account JSON is missing required fields');
             }
-            const apiEnablement = await enableGoogleAdsApi(credentials);
+            if (!cloudAdminCredentials.client_email || !cloudAdminCredentials.private_key) {
+              throw new Error('Cloud admin service account JSON is missing required fields');
+            }
+            const apiEnablement = await enableGoogleAdsApi(cloudAdminCredentials);
             if (apiEnablement.changed) {
               await new Promise(resolve => setTimeout(resolve, 15000));
             }
