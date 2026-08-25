@@ -192,6 +192,28 @@ def _render_message(
         unsubscribe_url=f"{settings().base_url}/growth/unsubscribe/{unsubscribe_token}",
     )
     subject = template["subject"].format_map(values).strip()
+    if signal.signal_type == "residential_building_plot":
+        subject = f"Együttműködés a {values['location']} építési telek értékesítéséhez"
+        body = (
+            f"Tisztelt {values['company_name']}!\n\n"
+            f"Az Ön által hirdetett {values['location']} építési telek miatt keresem.\n\n"
+            "Az Imperial Holding típusházak tervezésével és családi házak "
+            "kivitelezésével foglalkozik. Szeretnénk együttműködni a telek "
+            "értékesítésében. Ha a tulajdonos hozzájárul, kiválasztunk egy telekre "
+            "illő típustervet, és elkészítjük a telek + ház ajánlatot, valamint a "
+            "közös hirdetési anyagot. Így az érdeklődő nemcsak egy üres telket lát, "
+            "hanem egy konkrét otthon lehetőségét is.\n\n"
+            f"{PARTNER_OUTREACH_ANCHOR}\n\n"
+            "Kérem, írja meg, nyitottak-e erre, és egyeztethetünk-e a "
+            "tulajdonossal.\n\n"
+            f"Hirdetés: {values['evidence_url']}\n\n"
+            "Üdvözlettel:\n"
+            "Imperial Holding\n"
+            f"{values['sender_email']}\n\n"
+            f"Leiratkozás: {values['unsubscribe_url']}"
+        )
+        assert_outreach_copy(body)
+        return subject, body
     # The partner-facing sentence is owner-authored and locked. Runtime registry
     # templates may select the subject but cannot replace this body anchor.
     body = (

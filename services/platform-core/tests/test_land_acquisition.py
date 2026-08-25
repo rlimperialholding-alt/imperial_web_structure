@@ -10,6 +10,8 @@ from sqlalchemy import select
 
 from app.growth_ops.catalog import _fetch
 from app.growth_ops.models import GrowthSignal, OutreachMessage
+from app.growth_ops.registry import BrandBinding
+from app.growth_ops.service import _render_message
 from app.land_acquisition.models import (
     LandListingPackage,
     LandOpportunity,
@@ -339,6 +341,64 @@ def test_named_portal_is_never_read_by_generic_scanner(monkeypatch):
         "status": "rejected",
         "error_type": "portal_licensed_connector_required",
     }
+
+
+def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
+    monkeypatch.setattr(
+        "app.growth_ops.service.settings",
+        lambda: SimpleNamespace(base_url="https://growth.imperialholding.test"),
+    )
+    signal = GrowthSignal(
+        signal_id="SIG-LAND-COPY",
+        motor_key="construction",
+        source_id="licensed-feed:uat",
+        source_bucket="property_development",
+        external_key="LISTING-COPY-001",
+        signal_type="residential_building_plot",
+        detected_at=datetime.now(UTC),
+        company_name="Nagy Gergő",
+        subject_type="natural_person",
+        recipient_email="nagy.gergo1@dh.hu",
+        recipient_email_type="named",
+        contact_basis="unknown",
+        location="sülysápi, 605 m²-es",
+        summary="Eladó belterületi építési telek Sülysápon.",
+        evidence_url="https://example.test/listing/COPY-001",
+        brand_id="Imperial",
+        score=90,
+        urgency=50,
+        confidence=90,
+        dedupe_hash="0" * 64,
+        source_payload_hash="1" * 64,
+        status="blocked",
+    )
+    binding = BrandBinding(
+        brand_id="Imperial",
+        sender_email="info@imperialholding.hu",
+        domain_key="imperialholding.hu",
+        secret={},
+        config={
+            "brand_name": "Imperial Holding",
+            "templates": {
+                "default": {
+                    "initial": {
+                        "subject": "unused land-specific subject",
+                        "body": "unused land-specific body",
+                    }
+                }
+            },
+        },
+    )
+    subject, body = _render_message(
+        signal,
+        binding,
+        step=0,
+        unsubscribe_token="UAT-TOKEN",
+    )
+    assert subject == "Együttműködés a sülysápi, 605 m²-es építési telek értékesítéséhez"
+    assert "telek + ház ajánlatot" in body
+    assert "egyeztethetünk-e a tulajdonossal" in body
+    assert "Leiratkozás: https://growth.imperialholding.test/growth/unsubscribe/UAT-TOKEN" in body
 
 
 def test_generic_scanner_rejects_private_and_cgnat_targets(monkeypatch):
