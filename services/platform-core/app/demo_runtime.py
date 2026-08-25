@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -10,6 +11,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +41,28 @@ class DemoRuntimeError(ValueError):
 _REPLACE_MAX_ATTEMPTS = 5
 _REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4)
 
+# Explicit, documented allowlist of transient Windows replacement failures.
+# Only these PermissionError.winerror codes are retried, only on Windows,
+# and only for the same atomic rename; every other PermissionError/OSError
+# is raised immediately on the first attempt without sleeping or retrying.
+#   - 5  (ERROR_ACCESS_DENIED): the observed WinError 5 race, where a
+#        transient external holder opens the fresh target without
+#        FILE_SHARE_DELETE for a few milliseconds;
+#   - 32 (ERROR_SHARING_VIOLATION): another process holds the target file
+#        without the sharing mode the rename requires;
+#   - 33 (ERROR_LOCK_VIOLATION): another process holds a lock region on the
+#        target file.
+_TRANSIENT_WINDOWS_REPLACE_ERRORS = frozenset({5, 32, 33})
+
+
+def _is_transient_windows_replace_error(error: OSError) -> bool:
+    """True only for a documented transient Windows replacement failure."""
+    return (
+        os.name == "nt"
+        and isinstance(error, PermissionError)
+        and getattr(error, "winerror", None) in _TRANSIENT_WINDOWS_REPLACE_ERRORS
+    )
+
 
 def _replace_with_transient_retry(temporary_path: Path, target: Path) -> None:
     attempts = 1
@@ -45,9 +70,19 @@ def _replace_with_transient_retry(temporary_path: Path, target: Path) -> None:
         try:
             temporary_path.replace(target)
             return
-        except PermissionError:
+        except OSError as error:
+            if not _is_transient_windows_replace_error(error):
+                raise
             if attempts >= _REPLACE_MAX_ATTEMPTS:
                 raise
+            logger.debug(
+                "demo_runtime atomic replace attempt %d/%d hit transient "
+                "Windows replacement error %s; retrying in %.2fs",
+                attempts,
+                _REPLACE_MAX_ATTEMPTS,
+                getattr(error, "winerror", None),
+                _REPLACE_RETRY_DELAYS[attempts - 1],
+            )
             time.sleep(_REPLACE_RETRY_DELAYS[attempts - 1])
             attempts += 1
 

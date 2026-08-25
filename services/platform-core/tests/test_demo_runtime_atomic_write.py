@@ -14,18 +14,28 @@ In-process concurrency cannot produce the denial alone because
 holder has to be another process or a short-lived external scanner. The
 remediation is therefore a bounded retry of the *same* atomic rename while
 the transient holder releases, never a fallback to a non-atomic partial
-write.
+write. Only the explicit allowlist of transient Windows replacement errors
+(``winerror`` 5/32/33) is retried, only on Windows; every other
+PermissionError/OSError is raised on the first attempt without sleeping.
 
 These tests prove, deterministically:
 
-1. a single transient denial is retried and the atomic write completes;
-2. a persistent denial still fails closed: the original PermissionError
+1. an allowlisted transient denial is retried and the atomic write
+   completes;
+2. a permanent permission error (no winerror, or a non-allowlisted
+   winerror) is raised on the first attempt with no retry delay, and a
+   persistent denial still fails closed: the original PermissionError
    propagates, the previous target content stays byte-identical, and no
    owned temporary file is left behind;
-3. the real Windows share-mode mechanism (a held target without
+3. exhausted transient retries re-raise the original error after exactly
+   the bounded delays and still clean up every owned temporary file;
+4. the allowlisted winerror is never retried outside Windows;
+5. the real Windows share-mode mechanism (a held target without
    FILE_SHARE_DELETE) blocks replacement and recovers once released;
-4. concurrent writers on one runtime instance stay serialized and the file
-   is always complete JSON.
+6. concurrent writers on one runtime instance stay serialized and the file
+   is always complete JSON;
+7. an ambient ``DEMO_RUNTIME_PATH`` cannot redirect test isolation, and the
+   suite-level runtime path stays inside the pytest temporary root.
 
 All fixtures use synthetic copies under the pytest temporary directory; the
 repository runtime data is never touched.
@@ -36,11 +46,16 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
+import app.demo_runtime as demo_runtime
 import pytest
-
 from app.demo_runtime import DemoRuntime
+from demo_runtime_path_isolation import (
+    isolate_demo_runtime_path,
+    restore_demo_runtime_path,
+)
 
 
 def _runtime(tmp_path: Path) -> DemoRuntime:
@@ -53,20 +68,35 @@ def _state_bytes(runtime: DemoRuntime) -> bytes:
     return runtime.runtime_path.read_bytes()
 
 
+def _transient_windows_permission_error() -> PermissionError:
+    """The observed Gate 6 race: PermissionError with winerror 5."""
+    error = PermissionError(13, "Access is denied", "source", "target")
+    error.winerror = 5
+    return error
+
+
+def _permission_error_with_winerror(winerror: int) -> PermissionError:
+    error = PermissionError(13, "Permission denied", "source", "target")
+    error.winerror = winerror
+    return error
+
+
 def test_transient_replace_denial_is_retried_and_write_completes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     runtime = _runtime(tmp_path)
     real_replace = os.replace
-    denials: list[bool] = []
+    denials = 0
 
     def flaky_replace(source, target):
-        if Path(target) == runtime.runtime_path and not denials:
-            denials.append(True)
-            raise PermissionError(13, "Access is denied", str(source), str(target))
+        nonlocal denials
+        if Path(target) == runtime.runtime_path and denials < 2:
+            denials += 1
+            raise _transient_windows_permission_error()
         return real_replace(source, target)
 
     monkeypatch.setattr(os, "replace", flaky_replace)
+    monkeypatch.setattr(time, "sleep", lambda _: None)  # keep the test instant
 
     result = runtime.execute_action(
         module_id="crm",
@@ -76,7 +106,7 @@ def test_transient_replace_denial_is_retried_and_write_completes(
         idempotency_key="IDEMP-TRANSIENT-1",
     )
 
-    assert len(denials) == 1, "the injected transient denial was never raised"
+    assert denials == 2, "both injected transient denials were retried"
     assert result["duplicate"] is False
     state = json.loads(_state_bytes(runtime))
     assert state["events"][0]["id"] == result["event"]["id"]
@@ -90,13 +120,18 @@ def test_persistent_replace_denial_fails_closed_and_cleans_up(
 ) -> None:
     runtime = _runtime(tmp_path)
     before = _state_bytes(runtime)
+    replace_calls = 0
+    sleep_delays: list[float] = []
 
     def always_denied(source, target):
+        nonlocal replace_calls
+        replace_calls += 1
         if Path(target) == runtime.runtime_path:
             raise PermissionError(13, "Access is denied", str(source), str(target))
         raise AssertionError("replace was called for an unexpected target")
 
     monkeypatch.setattr(os, "replace", always_denied)
+    monkeypatch.setattr(time, "sleep", sleep_delays.append)
 
     with pytest.raises(PermissionError):
         runtime.execute_action(
@@ -106,10 +141,121 @@ def test_persistent_replace_denial_fails_closed_and_cleans_up(
             idempotency_key="IDEMP-PERSISTENT-1",
         )
 
+    # A non-allowlisted permission error (no winerror) is raised on the first
+    # attempt without any retry delay.
+    assert replace_calls == 1
+    assert sleep_delays == []
     # Fail closed: the previous complete content is untouched (no non-atomic
     # partial write) and every owned temporary file is removed.
     assert _state_bytes(runtime) == before
     assert list(tmp_path.glob(".*.tmp")) == []
+
+
+@pytest.mark.parametrize(
+    "error_factory",
+    [
+        pytest.param(
+            lambda: _permission_error_with_winerror(1314),
+            id="windows-permanent-privilege-not-held",
+        ),
+        pytest.param(
+            lambda: _permission_error_with_winerror(2),
+            id="windows-non-allowlisted-code",
+        ),
+    ],
+)
+def test_non_allowlisted_windows_permission_error_raises_on_first_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_factory
+) -> None:
+    runtime = _runtime(tmp_path)
+    replace_calls = 0
+    sleep_delays: list[float] = []
+
+    def denied_replace(source, target):
+        nonlocal replace_calls
+        replace_calls += 1
+        if Path(target) != runtime.runtime_path:
+            raise AssertionError("replace was called for an unexpected target")
+        raise error_factory()
+
+    monkeypatch.setattr(os, "replace", denied_replace)
+    monkeypatch.setattr(time, "sleep", sleep_delays.append)
+
+    with pytest.raises(PermissionError):
+        runtime.execute_action(
+            module_id="crm",
+            action_id="qualify_lead",
+            project_id="PRJ-PERMANENT",
+            idempotency_key="IDEMP-PERMANENT-1",
+        )
+
+    assert replace_calls == 1, "a permanent error must not be retried"
+    assert sleep_delays == [], "a permanent error must not incur a retry delay"
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_exhausted_transient_retries_reraise_original_error_and_clean_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = _runtime(tmp_path)
+    before = _state_bytes(runtime)
+    replace_calls = 0
+    sleep_delays: list[float] = []
+
+    def always_transient(source, target):
+        nonlocal replace_calls
+        replace_calls += 1
+        if Path(target) != runtime.runtime_path:
+            raise AssertionError("replace was called for an unexpected target")
+        raise _transient_windows_permission_error()
+
+    monkeypatch.setattr(os, "replace", always_transient)
+    monkeypatch.setattr(time, "sleep", sleep_delays.append)
+
+    with pytest.raises(PermissionError) as excinfo:
+        runtime.execute_action(
+            module_id="crm",
+            action_id="qualify_lead",
+            project_id="PRJ-EXHAUSTED",
+            idempotency_key="IDEMP-EXHAUSTED-1",
+        )
+
+    # The original transient error is re-raised unchanged after exactly the
+    # bounded attempts and delays; no error is swallowed.
+    assert getattr(excinfo.value, "winerror", None) == 5
+    assert replace_calls == demo_runtime._REPLACE_MAX_ATTEMPTS
+    assert sleep_delays == list(demo_runtime._REPLACE_RETRY_DELAYS)
+    assert sum(sleep_delays) <= 0.75
+    # Fail closed after exhaustion: previous content untouched (no non-atomic
+    # partial write) and every owned temporary file is removed.
+    assert _state_bytes(runtime) == before
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_allowlisted_winerror_is_not_retried_outside_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    temporary = tmp_path / "state.tmp"
+    temporary.write_text("new", encoding="utf-8")
+    target = tmp_path / "runtime.json"
+    target.write_text("old", encoding="utf-8")
+    replace_calls = 0
+
+    def denied_replace(source, destination):
+        nonlocal replace_calls
+        replace_calls += 1
+        raise _transient_windows_permission_error()
+
+    monkeypatch.setattr(os, "replace", denied_replace)
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("must not sleep outside Windows"))
+    monkeypatch.setattr(demo_runtime.os, "name", "posix")
+
+    with pytest.raises(PermissionError):
+        demo_runtime._replace_with_transient_retry(temporary, target)
+
+    assert replace_calls == 1, "non-Windows failures are never retried"
+    assert target.read_text(encoding="utf-8") == "old"
+    assert temporary.read_text(encoding="utf-8") == "new"
 
 
 @pytest.mark.skipif(
@@ -175,3 +321,42 @@ def test_concurrent_writers_serialize_and_keep_file_complete(tmp_path: Path) -> 
     state = json.loads(_state_bytes(runtime))
     assert len(state["events"]) == writers * actions_per_writer
     assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_ambient_demo_runtime_path_cannot_redirect_test_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ambient = tmp_path / "ambient" / "platform_demo_runtime.json"
+    monkeypatch.setenv("DEMO_RUNTIME_PATH", str(ambient))
+
+    previous, isolated = isolate_demo_runtime_path(tmp_path / "suite-root")
+
+    # The isolation assignment is unconditional: the ambient value is
+    # recorded but never used as the write target.
+    assert previous == str(ambient)
+    assert isolated == str(tmp_path / "suite-root" / "demo" / "platform_demo_runtime.json")
+    assert os.environ["DEMO_RUNTIME_PATH"] == isolated
+    assert os.environ["DEMO_RUNTIME_PATH"] != str(ambient)
+
+    # Reversible: the previous value is restored for the next scope.
+    restore_demo_runtime_path(previous)
+    assert os.environ["DEMO_RUNTIME_PATH"] == str(ambient)
+
+
+def test_isolated_demo_runtime_path_restores_to_unset_without_ambient_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DEMO_RUNTIME_PATH", raising=False)
+
+    previous, isolated = isolate_demo_runtime_path(tmp_path / "suite-root")
+
+    assert previous is None
+    assert os.environ["DEMO_RUNTIME_PATH"] == isolated
+
+    restore_demo_runtime_path(previous)
+    assert "DEMO_RUNTIME_PATH" not in os.environ
+
+
+def test_suite_runtime_path_stays_inside_the_pytest_temp_root() -> None:
+    temp_root = Path(os.environ["PYTEST_DEBUG_TEMPROOT"])
+    assert demo_runtime.RUNTIME_PATH.is_relative_to(temp_root)

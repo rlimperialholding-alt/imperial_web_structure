@@ -6,19 +6,25 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from demo_runtime_path_isolation import (
+    isolate_demo_runtime_path,
+    restore_demo_runtime_path,
+)
+
 pytest_temp_root = Path(tempfile.gettempdir()) / f"iip_pytest_{os.getpid()}"
 pytest_temp_root.mkdir(parents=True, exist_ok=True)
 os.environ["PYTEST_DEBUG_TEMPROOT"] = str(pytest_temp_root)
 os.environ.setdefault("PLATFORM_RUNTIME_ROOT", str(pytest_temp_root / "runtime"))
 # The demo runtime writes its JSON state next to the seed data by default.
-# Point it at the pytest temp root so the suite never rewrites the repository
-# runtime data file, where a transient antivirus/indexer/sync hold on Windows
-# caused the Gate 6 WinError 5 replacement failure. Must be set before
-# app.demo_runtime reads the variable at import time.
-os.environ.setdefault(
-    "DEMO_RUNTIME_PATH",
-    str(pytest_temp_root / "demo" / "platform_demo_runtime.json"),
-)
+# Force it into the pytest temp root so the suite never rewrites the
+# repository runtime data file, where a transient antivirus/indexer/sync
+# hold on Windows caused the Gate 6 WinError 5 replacement failure. The
+# assignment is unconditional (not setdefault), so an ambient
+# DEMO_RUNTIME_PATH cannot redirect test writes outside the temp root; the
+# previous value is saved and restored at session end, keeping the change
+# reversible and test-scoped. Must be set before app.demo_runtime reads the
+# variable at import time.
+_previous_demo_runtime_path, _ = isolate_demo_runtime_path(pytest_temp_root)
 
 
 def _cleanup_pytest_temp_root() -> None:
@@ -87,11 +93,10 @@ os.environ.setdefault(
 os.environ.setdefault("HOUSE_DESIGNER_CALLBACK_BASE_URL", "https://intelligence.test.example")
 
 import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.seed import seed_database  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -129,4 +134,5 @@ def logged_in_client(client):
 def pytest_sessionfinish(session, exitstatus):
     del session, exitstatus
     engine.dispose()
+    restore_demo_runtime_path(_previous_demo_runtime_path)
     _cleanup_pytest_temp_root()
