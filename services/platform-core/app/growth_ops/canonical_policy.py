@@ -25,6 +25,29 @@ PARTNER_OUTREACH_ANCHOR = (
 )
 PARTNER_OUTREACH_ANCHOR_SHA256 = "7004cccbda5c2e45109edf92474791a4b2fd268d8ffe2de08d093c32f1b1e24f"
 
+# Owner-approved land-listing copy, 2026-08-25. The three anchors prevent a
+# runtime template or later refactor from changing the product, commission, or
+# property-owner offer without an explicit policy update.
+LAND_OUTREACH_SERVICE_ANCHOR = (
+    "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik."
+)
+LAND_OUTREACH_SERVICE_ANCHOR_SHA256 = (
+    "0220cfa5398c899f068acdf1530b7002ca00fcc422a2f6895c52883bbe02ee26"
+)
+LAND_AGENT_COMMISSION_ANCHOR = (
+    "Ha az Ön által közvetített érdeklődő megvásárolja valamelyik típustervünket, "
+    "az értékesített típusterv nettó árából 2,5%-ot fizetünk Önnek."
+)
+LAND_AGENT_COMMISSION_ANCHOR_SHA256 = (
+    "487fa86e9ac27c22da12807ae314854bf5cdb0b0fc5519c80cd4dbaa5d105181"
+)
+LAND_OWNER_FREE_AD_ANCHOR = (
+    "Ingyen, jutalék nélkül meghirdetjük az ingatlanát a telekhez illő típusházunkkal."
+)
+LAND_OWNER_FREE_AD_ANCHOR_SHA256 = (
+    "09bff47f226817749a551e2cb8d7d44a9481e02d57829a6e47f09b191b1f380c"
+)
+
 ACTIVE_CONTENT_BRANDS = (
     "Imperial",
     "Bautica",
@@ -88,9 +111,17 @@ class DailyGateResult:
 
 
 def assert_policy_integrity() -> None:
-    actual = hashlib.sha256(PARTNER_OUTREACH_ANCHOR.encode("utf-8")).hexdigest()
-    if actual != PARTNER_OUTREACH_ANCHOR_SHA256:
-        raise RuntimeError("Partner outreach anchor integrity check failed")
+    anchors = (
+        (PARTNER_OUTREACH_ANCHOR, PARTNER_OUTREACH_ANCHOR_SHA256),
+        (LAND_OUTREACH_SERVICE_ANCHOR, LAND_OUTREACH_SERVICE_ANCHOR_SHA256),
+        (LAND_AGENT_COMMISSION_ANCHOR, LAND_AGENT_COMMISSION_ANCHOR_SHA256),
+        (LAND_OWNER_FREE_AD_ANCHOR, LAND_OWNER_FREE_AD_ANCHOR_SHA256),
+    )
+    if any(
+        hashlib.sha256(value.encode("utf-8")).hexdigest() != expected
+        for value, expected in anchors
+    ):
+        raise RuntimeError("Owner-approved outreach anchor integrity check failed")
     if len(ACTIVE_CONTENT_BRANDS) != DAILY_CONTENT_BRAND_MINIMUM:
         raise RuntimeError("Canonical active-brand count is inconsistent")
     if len(set(ACTIVE_CONTENT_BRANDS)) != len(ACTIVE_CONTENT_BRANDS):
@@ -99,6 +130,12 @@ def assert_policy_integrity() -> None:
 
 def assert_outreach_copy(body: str) -> None:
     assert_policy_integrity()
+    if LAND_OUTREACH_SERVICE_ANCHOR in body:
+        has_agent_offer = LAND_AGENT_COMMISSION_ANCHOR in body
+        has_owner_offer = LAND_OWNER_FREE_AD_ANCHOR in body
+        if has_agent_offer == has_owner_offer:
+            raise ValueError("owner_locked_land_outreach_offer_missing_or_mixed")
+        return
     if PARTNER_OUTREACH_ANCHOR not in body:
         raise ValueError("owner_locked_partner_outreach_anchor_missing")
 

@@ -18,6 +18,9 @@ from ..audit import audit
 from ..config import settings as platform_settings
 from ..models import MailSendingDomain, MailSuppression
 from .canonical_policy import (
+    LAND_AGENT_COMMISSION_ANCHOR,
+    LAND_OUTREACH_SERVICE_ANCHOR,
+    LAND_OWNER_FREE_AD_ANCHOR,
     PARTNER_OUTREACH_ANCHOR,
     assert_outreach_copy,
     contains_no_monitoring_entity,
@@ -110,8 +113,18 @@ def _score(data: GrowthSignalIn) -> int:
     return min(100, max(0, score))
 
 
+def _is_public_land_listing_contact(data: GrowthSignalIn) -> bool:
+    return (
+        data.signal_type == "residential_building_plot"
+        and data.contact_basis == "public_property_listing"
+        and data.recipient_role in {"listing_agent", "property_owner"}
+        and bool(data.public_contact_url)
+    )
+
+
 def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
     reasons: list[str] = []
+    public_land_contact = _is_public_land_listing_contact(data)
     if data.motor_key == "ivs":
         reasons.append("iora_internal_executive_review_only")
     if score < 55:
@@ -122,20 +135,24 @@ def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
         reasons.append("recipient_email_missing")
     if data.contact_basis == "unknown":
         reasons.append("contact_basis_unknown")
-    if data.subject_type == "natural_person" and data.contact_basis not in {
-        "explicit_request",
-        "documented_consent",
-    }:
+    if (
+        data.subject_type == "natural_person"
+        and data.contact_basis not in {"explicit_request", "documented_consent"}
+        and not public_land_contact
+    ):
         reasons.append("natural_person_without_prior_consent_or_request")
     if data.contact_basis == "public_business_contact" and (
         data.subject_type != "organization" or data.recipient_email_type != "role"
     ):
         reasons.append("public_business_basis_requires_organization_role_inbox")
-    if data.recipient_email_type in {"named", "unknown"} and data.contact_basis not in {
-        "explicit_request",
-        "documented_consent",
-    }:
+    if (
+        data.recipient_email_type in {"named", "unknown"}
+        and data.contact_basis not in {"explicit_request", "documented_consent"}
+        and not public_land_contact
+    ):
         reasons.append("named_or_unknown_mailbox_requires_consent_or_request")
+    if data.contact_basis == "public_property_listing" and not public_land_contact:
+        reasons.append("invalid_public_property_listing_contact")
     return sorted(set(reasons))
 
 
@@ -193,25 +210,53 @@ def _render_message(
     )
     subject = template["subject"].format_map(values).strip()
     if signal.signal_type == "residential_building_plot":
-        subject = f"Együttműködés a {values['location']} építési telek értékesítéséhez"
-        body = (
-            f"Tisztelt {values['company_name']}!\n\n"
-            f"Az Ön által hirdetett {values['location']} építési telek miatt keresem.\n\n"
-            "Az Imperial Holding típusházak tervezésével és családi házak "
-            "kivitelezésével foglalkozik. Szeretnénk együttműködni a telek "
-            "értékesítésében. Ha a tulajdonos hozzájárul, kiválasztunk egy telekre "
-            "illő típustervet, és elkészítjük a telek + ház ajánlatot, valamint a "
-            "közös hirdetési anyagot. Így az érdeklődő nemcsak egy üres telket lát, "
-            "hanem egy konkrét otthon lehetőségét is.\n\n"
-            f"{PARTNER_OUTREACH_ANCHOR}\n\n"
-            "Kérem, írja meg, nyitottak-e erre, és egyeztethetünk-e a "
-            "tulajdonossal.\n\n"
-            f"Hirdetés: {values['evidence_url']}\n\n"
-            "Üdvözlettel:\n"
-            "Imperial Holding\n"
-            f"{values['sender_email']}\n\n"
-            f"Leiratkozás: {values['unsubscribe_url']}"
-        )
+        if signal.recipient_role == "listing_agent":
+            subject = f"Plusz 2,5% bevétel a {values['location']} telek hirdetésével"
+            body = (
+                f"Tisztelt {values['company_name']}!\n\n"
+                f"Az Ön által hirdetett {values['location']} építési telek miatt "
+                "keresem.\n\n"
+                f"{LAND_OUTREACH_SERVICE_ANCHOR} "
+                "Olyan együttműködést ajánlunk Önnek, amellyel az ingatlan "
+                "értékesítése mellett plusz bevételhez juthat.\n\n"
+                "Mi elkészítjük a telekhez illő telek + típusház hirdetési anyagot, "
+                "és elküldjük Önnek. Önnek csak meg kell hirdetnie. "
+                f"{LAND_AGENT_COMMISSION_ANCHOR}\n\n"
+                "Kap egy közvetlen telefonszámot, ahol minden szakmai kérdésére "
+                "válaszolunk. Az érdeklődő is hívhat bennünket. Önnek nem kell "
+                "építési vagy műszaki kérdésekkel foglalkoznia. Csak írásban kell "
+                "jeleznie, hogy az érdeklődő Öntől érkezett.\n\n"
+                "Kész együttműködési szerződéstervezettel várjuk partnereink közé.\n\n"
+                "A partneri csatlakozáshoz válaszoljon emailben, és elküldjük a "
+                "szerződéstervezetet.\n\n"
+                f"Hirdetés: {values['evidence_url']}\n\n"
+                "Üdvözlettel:\n"
+                "Imperial Holding\n"
+                f"{values['sender_email']}\n\n"
+                f"Leiratkozás: {values['unsubscribe_url']}"
+            )
+        elif signal.recipient_role == "property_owner":
+            subject = f"Ingyen elkészítjük a {values['location']} telek + típusház hirdetését"
+            body = (
+                f"Tisztelt {values['company_name']}!\n\n"
+                f"Az Ön által hirdetett {values['location']} építési telek miatt "
+                "keresem.\n\n"
+                f"{LAND_OUTREACH_SERVICE_ANCHOR}\n\n"
+                f"{LAND_OWNER_FREE_AD_ANCHOR} Önnek ezért nem kell fizetnie, és "
+                "semmilyen kötelezettséget nem vállal.\n\n"
+                "Csak az írásos engedélyét kérjük ahhoz, hogy a telket a telek + "
+                "típusház ajánlat részeként meghirdethessük. A hirdetési anyagot mi "
+                "készítjük el.\n\n"
+                "A hirdetés engedélyezéséhez válaszoljon emailben: "
+                "„Engedélyezem a telek hirdetését.”\n\n"
+                f"Hirdetés: {values['evidence_url']}\n\n"
+                "Üdvözlettel:\n"
+                "Imperial Holding\n"
+                f"{values['sender_email']}\n\n"
+                f"Leiratkozás: {values['unsubscribe_url']}"
+            )
+        else:
+            raise GrowthRegistryError("Building-plot recipient role is required")
         assert_outreach_copy(body)
         return subject, body
     # The partner-facing sentence is owner-authored and locked. Runtime registry
@@ -392,6 +437,7 @@ def ingest_signal(
         company_name=data.company_name,
         company_registration_id=data.company_registration_id,
         subject_type=data.subject_type,
+        recipient_role=data.recipient_role,
         recipient_email=data.recipient_email,
         recipient_email_type=data.recipient_email_type,
         contact_basis=data.contact_basis,
@@ -442,6 +488,7 @@ def ingest_signal(
             "source_id": row.source_id,
             "source_bucket": row.source_bucket,
             "signal_type": row.signal_type,
+            "recipient_role": row.recipient_role,
             "brand_id": row.brand_id,
             "score": row.score,
             "status": row.status,

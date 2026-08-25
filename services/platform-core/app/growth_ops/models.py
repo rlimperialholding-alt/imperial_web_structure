@@ -62,6 +62,10 @@ class GrowthSignal(Base):
             name="ck_growth_signal_email_type",
         ),
         CheckConstraint(
+            "recipient_role IN ('listing_agent','property_owner','unknown')",
+            name="ck_growth_signal_recipient_role",
+        ),
+        CheckConstraint(
             "status IN ('accepted','rejected','blocked','queued',"
             "'contacted','responded','suppressed')",
             name="ck_growth_signal_status",
@@ -81,6 +85,7 @@ class GrowthSignal(Base):
     company_name: Mapped[str | None] = mapped_column(String(500), index=True)
     company_registration_id: Mapped[str | None] = mapped_column(String(120), index=True)
     subject_type: Mapped[str] = mapped_column(String(30), index=True)
+    recipient_role: Mapped[str] = mapped_column(String(30), default="unknown", index=True)
     recipient_email: Mapped[str | None] = mapped_column(String(320), index=True)
     recipient_email_type: Mapped[str] = mapped_column(String(20), default="none", index=True)
     contact_basis: Mapped[str] = mapped_column(String(80), index=True)

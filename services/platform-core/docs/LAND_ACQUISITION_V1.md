@@ -12,8 +12,10 @@ szolgáltatásait bővíti.
 1. Egy engedélyezett forrásconnector `residential_building_plot` Growth Signalt ad át.
 2. A Growth Worker idempotensen létrehozza/frissíti a `land_opportunities` rekordot.
 3. Forrásverzió-változás törli a korábbi forrásjóváhagyást és új ellenőrzést követel.
-4. Megkeresés kizárólag a Growth Ops meglévő jogalap-, consent-, suppression-,
-   sender-domain-, release-token- és kill-switch kapuin keresztül történhet.
+4. Megkeresés kizárólag a Growth Ops meglévő forrás-, suppression-, sender-domain-,
+   release-token- és kill-switch kapuin keresztül történhet. A hirdetésben megadott
+   címzettet `listing_agent` vagy `property_owner` szerepkörbe kell sorolni; ismeretlen
+   szerepkörrel nem készül telekspecifikus levél.
 5. DEAL csak a közös Growth Ops ledgerben rögzített válasz és külön DEAL-bizonylat után
    állítható be.
 6. A hirdetési meghatalmazás időkorlátos, scope-olt és négy-szem jóváhagyású.
@@ -44,12 +46,21 @@ A `config/land-acquisition/portals.json` alapállapotban minden külső olvasás
 és visszavonást tilt. Ez szándékos: a repositoryban jelenleg nincs bizonyított szerződés,
 API-credential, portálspecifikus adapter-receipt vagy staging contract-test.
 
-## E-mail jogalap
+## E-mail forrás- és címzetti kapu
 
-- Magánszemély címzett esetén automatikus megkereséshez explicit kérés/hozzájárulás és
-  annak bizonyítékazonosítója szükséges.
-- Nyilvános üzleti role mailbox csak a Growth Ops meglévő `public_business_contact`
-  szabályával használható.
+- A 2026-08-25-i tulajdonosi jóváhagyás alapján a nyilvános építésitelek-hirdetésben
+  közzétett kapcsolattartó egyszeri, a konkrét hirdetésre hivatkozó megkeresése
+  engedélyezett `public_property_listing` forrásalappal. Ez ingatlanközvetítőre és
+  magánhirdetőre is vonatkozik.
+- A forráshirdetés HTTPS URL-je, a címzett szerepköre és a hirdetésből származó
+  kapcsolat visszakereshető rögzítése kötelező. Más célú természetes személyes
+  megkeresésre ez a kivétel nem használható.
+- `listing_agent` esetén a levél a 2,5%-os közvetítői díjat, a kész hirdetési anyagot,
+  a teljes szakmai támogatást és a szerződéstervezetet ajánlja fel.
+- `property_owner` esetén a levél ingyenes, jutalékmentes, kötelezettség nélküli telek +
+  típusház hirdetést ajánl, és csak írásos hirdetési engedélyt kér.
+- Nyilvános üzleti role mailbox továbbra is a Growth Ops meglévő
+  `public_business_contact` szabályával használható.
 - Bounce, complaint, unsubscribe vagy suppression esetén minden további üzenet tiltott.
 - A telekmodul nem küld e-mailt közvetlenül, így nem kerülhető meg a közös policy.
 

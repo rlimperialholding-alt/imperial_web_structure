@@ -12,6 +12,9 @@ from app.growth_ops import deepseek as deepseek_service
 from app.growth_ops import service, wide_service
 from app.growth_ops.canonical_policy import (
     ACTIVE_CONTENT_BRANDS,
+    LAND_AGENT_COMMISSION_ANCHOR,
+    LAND_OUTREACH_SERVICE_ANCHOR,
+    LAND_OWNER_FREE_AD_ANCHOR,
     PARTNER_OUTREACH_ANCHOR,
     PARTNER_OUTREACH_ANCHOR_SHA256,
     SOURCE_LEDGER_ROUTE_COUNT,
@@ -56,6 +59,20 @@ def test_owner_locked_partner_sentence_has_expected_hash():
     assert_outreach_copy(f"Tisztelt Partner!\n{PARTNER_OUTREACH_ANCHOR}")
     with pytest.raises(ValueError, match="anchor_missing"):
         assert_outreach_copy("Kérjen most ajánlatot!")
+
+
+def test_owner_locked_land_offers_are_distinct_and_required():
+    assert_outreach_copy(
+        f"{LAND_OUTREACH_SERVICE_ANCHOR}\n{LAND_AGENT_COMMISSION_ANCHOR}"
+    )
+    assert_outreach_copy(f"{LAND_OUTREACH_SERVICE_ANCHOR}\n{LAND_OWNER_FREE_AD_ANCHOR}")
+    with pytest.raises(ValueError, match="offer_missing_or_mixed"):
+        assert_outreach_copy(LAND_OUTREACH_SERVICE_ANCHOR)
+    with pytest.raises(ValueError, match="offer_missing_or_mixed"):
+        assert_outreach_copy(
+            f"{LAND_OUTREACH_SERVICE_ANCHOR}\n{LAND_AGENT_COMMISSION_ANCHOR}\n"
+            f"{LAND_OWNER_FREE_AD_ANCHOR}"
+        )
 
 
 def test_named_no_monitoring_hard_gate_blocks_before_storage(db):

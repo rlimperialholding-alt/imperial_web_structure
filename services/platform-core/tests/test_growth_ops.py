@@ -180,6 +180,25 @@ def test_natural_person_without_request_is_rejected(db, growth_runtime):
     assert not db.scalars(select(OutreachMessage)).all()
 
 
+@pytest.mark.parametrize("recipient_role", ["listing_agent", "property_owner"])
+def test_public_building_plot_listing_allows_named_recipient(recipient_role):
+    signal = _signal(
+        external_key=f"LAND-{recipient_role}",
+        signal_type="residential_building_plot",
+        company_name="Nyilvános hirdető",
+        company_registration_id=None,
+        subject_type="natural_person",
+        recipient_role=recipient_role,
+        recipient_email="hirdeto@example.test",
+        recipient_email_type="named",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property-listing.example.test/LAND-001",
+        evidence_url="https://property-listing.example.test/LAND-001",
+    )
+
+    assert service._eligibility(signal, score=90) == []
+
+
 def test_global_suppression_prevents_queue(db, growth_runtime):
     db.add(MailSuppression(email="iroda@minta-epito.test", reason="unsubscribe", active=True))
     db.commit()

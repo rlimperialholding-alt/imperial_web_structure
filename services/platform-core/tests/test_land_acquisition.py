@@ -358,9 +358,10 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         detected_at=datetime.now(UTC),
         company_name="Nagy Gergő",
         subject_type="natural_person",
+        recipient_role="listing_agent",
         recipient_email="nagy.gergo1@dh.hu",
         recipient_email_type="named",
-        contact_basis="unknown",
+        contact_basis="public_property_listing",
         location="sülysápi, 605 m²-es",
         summary="Eladó belterületi építési telek Sülysápon.",
         evidence_url="https://example.test/listing/COPY-001",
@@ -395,10 +396,32 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         step=0,
         unsubscribe_token="UAT-TOKEN",
     )
-    assert subject == "Együttműködés a sülysápi, 605 m²-es építési telek értékesítéséhez"
-    assert "telek + ház ajánlatot" in body
-    assert "egyeztethetünk-e a tulajdonossal" in body
+    assert subject == "Plusz 2,5% bevétel a sülysápi, 605 m²-es telek hirdetésével"
+    assert "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik." in body
+    assert "az értékesített típusterv nettó árából 2,5%-ot fizetünk Önnek" in body
+    assert "Önnek nem kell építési vagy műszaki kérdésekkel foglalkoznia" in body
+    assert "Csak írásban kell jeleznie, hogy az érdeklődő Öntől érkezett" in body
+    assert "Kész együttműködési szerződéstervezettel várjuk partnereink közé" in body
     assert "Leiratkozás: https://growth.imperialholding.test/growth/unsubscribe/UAT-TOKEN" in body
+
+    signal.recipient_role = "property_owner"
+    signal.company_name = "Kovács Péter"
+    subject, body = _render_message(
+        signal,
+        binding,
+        step=0,
+        unsubscribe_token="UAT-OWNER-TOKEN",
+    )
+    assert subject == ("Ingyen elkészítjük a sülysápi, 605 m²-es telek + típusház hirdetését")
+    assert "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik." in body
+    assert "Ingyen, jutalék nélkül" in body
+    assert "Önnek ezért nem kell fizetnie, és semmilyen kötelezettséget nem vállal" in body
+    assert "Csak az írásos engedélyét kérjük" in body
+    assert "Engedélyezem a telek hirdetését." in body
+    assert "2,5%" not in body
+    assert (
+        "Leiratkozás: https://growth.imperialholding.test/growth/unsubscribe/UAT-OWNER-TOKEN"
+    ) in body
 
 
 def test_generic_scanner_rejects_private_and_cgnat_targets(monkeypatch):
