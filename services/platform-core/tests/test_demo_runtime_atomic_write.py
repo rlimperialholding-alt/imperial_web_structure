@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from app.demo_runtime import DemoRuntime, SEED_PATH
+from app.demo_runtime import DemoRuntime
 
 
 def _runtime(tmp_path: Path) -> DemoRuntime:
@@ -63,9 +63,7 @@ def test_transient_replace_denial_is_retried_and_write_completes(
     def flaky_replace(source, target):
         if Path(target) == runtime.runtime_path and not denials:
             denials.append(True)
-            raise PermissionError(
-                13, "Access is denied", str(source), str(target)
-            )
+            raise PermissionError(13, "Access is denied", str(source), str(target))
         return real_replace(source, target)
 
     monkeypatch.setattr(os, "replace", flaky_replace)
@@ -95,9 +93,7 @@ def test_persistent_replace_denial_fails_closed_and_cleans_up(
 
     def always_denied(source, target):
         if Path(target) == runtime.runtime_path:
-            raise PermissionError(
-                13, "Access is denied", str(source), str(target)
-            )
+            raise PermissionError(13, "Access is denied", str(source), str(target))
         raise AssertionError("replace was called for an unexpected target")
 
     monkeypatch.setattr(os, "replace", always_denied)
@@ -169,9 +165,7 @@ def test_concurrent_writers_serialize_and_keep_file_complete(tmp_path: Path) -> 
                 errors.append(exc)
                 return
 
-    threads = [
-        threading.Thread(target=worker, args=(index,)) for index in range(writers)
-    ]
+    threads = [threading.Thread(target=worker, args=(index,)) for index in range(writers)]
     for thread in threads:
         thread.start()
     for thread in threads:
