@@ -17,6 +17,7 @@ jobs:
       GOOGLE_ADS_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT_JSON }}
       GOOGLE_ADS_LOGIN_CUSTOMER_ID: "8668141303"
       GOOGLE_ADS_API_VERSION: v25
+      GOOGLE_CLOUD_PROJECT_NUMBER: "1091317438049"
     steps:
       - name: Query four accounts through searchStream only
         shell: bash
@@ -186,12 +187,12 @@ jobs:
               .replace(/\//g, '_');
           }
 
-          async function getAccessToken(credentials) {
+          async function getAccessToken(credentials, scope) {
             const now = Math.floor(Date.now() / 1000);
             const header = base64url(JSON.stringify({alg: 'RS256', typ: 'JWT'}));
             const claim = base64url(JSON.stringify({
               iss: credentials.client_email,
-              scope: 'https://www.googleapis.com/auth/adwords',
+              scope,
               aud: credentials.token_uri || 'https://oauth2.googleapis.com/token',
               iat: now,
               exp: now + 3600
@@ -220,6 +221,79 @@ jobs:
               throw new Error(`OAuth token exchange failed (${response.status}): ${payload.error || 'unknown_error'}`);
             }
             return payload.access_token;
+          }
+
+          function serviceUsageError(response, payload) {
+            const error = payload && payload.error ? payload.error : payload;
+            return new Error(
+              `Service Usage request failed (${response.status}): ` +
+              `${error && error.status ? error.status : 'unknown_status'} - ` +
+              `${error && error.message ? error.message : 'unknown_error'}`
+            );
+          }
+
+          async function enableGoogleAdsApi(credentials) {
+            const projectNumber = required('GOOGLE_CLOUD_PROJECT_NUMBER');
+            const serviceName = 'googleads.googleapis.com';
+            const resource = `projects/${projectNumber}/services/${serviceName}`;
+            const baseUrl = `https://serviceusage.googleapis.com/v1/${resource}`;
+            const accessToken = await getAccessToken(
+              credentials,
+              'https://www.googleapis.com/auth/cloud-platform'
+            );
+            const headers = {authorization: `Bearer ${accessToken}`};
+
+            let response = await fetch(baseUrl, {headers});
+            let payload = await response.json();
+            if (!response.ok) throw serviceUsageError(response, payload);
+            const beforeState = payload.state || null;
+            if (beforeState === 'ENABLED') {
+              return {beforeState, changed: false, afterState: beforeState};
+            }
+
+            response = await fetch(`${baseUrl}:enable`, {
+              method: 'POST',
+              headers: {...headers, 'content-type': 'application/json'},
+              body: '{}'
+            });
+            payload = await response.json();
+            if (!response.ok) throw serviceUsageError(response, payload);
+
+            const operationName = payload.name || null;
+            if (operationName) {
+              for (let attempt = 0; attempt < 30; attempt += 1) {
+                const operationResponse = await fetch(
+                  `https://serviceusage.googleapis.com/v1/${operationName}`,
+                  {headers}
+                );
+                const operation = await operationResponse.json();
+                if (!operationResponse.ok) {
+                  throw serviceUsageError(operationResponse, operation);
+                }
+                if (operation.done) {
+                  if (operation.error) {
+                    throw new Error(
+                      `Google Ads API enable operation failed: ${operation.error.message || 'unknown_error'}`
+                    );
+                  }
+                  break;
+                }
+                await new Promise(resolve => setTimeout(resolve, 5000));
+              }
+            }
+
+            response = await fetch(baseUrl, {headers});
+            payload = await response.json();
+            if (!response.ok) throw serviceUsageError(response, payload);
+            if (payload.state !== 'ENABLED') {
+              throw new Error(`Google Ads API remains ${payload.state || 'UNKNOWN'} after enable request`);
+            }
+            return {
+              beforeState,
+              changed: true,
+              operationName,
+              afterState: payload.state
+            };
           }
 
           function sanitizedError(response, payload) {
@@ -270,11 +344,19 @@ jobs:
             if (!credentials.client_email || !credentials.private_key) {
               throw new Error('Service account JSON is missing required fields');
             }
-            const accessToken = await getAccessToken(credentials);
+            const apiEnablement = await enableGoogleAdsApi(credentials);
+            if (apiEnablement.changed) {
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+            const accessToken = await getAccessToken(
+              credentials,
+              'https://www.googleapis.com/auth/adwords'
+            );
             const audit = {
               generatedAt: new Date().toISOString(),
               mode: 'READ_ONLY_SEARCH_STREAM',
               apiVersion: required('GOOGLE_ADS_API_VERSION'),
+              apiEnablement,
               managerCustomerId: required('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
               customerIds: CUSTOMER_IDS,
               accounts: []
