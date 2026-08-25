@@ -28,14 +28,51 @@ def create_campaign(client):
     response = client.post("/api/tendermail/campaigns", json={
         "name": "Teszt szerkezetépítési tender",
         "domain_key": "imperial_tender",
-        "subject_template": "Tendermeghívás – {{company_name}} – {{tender_id}}",
-        "text_template": "Tisztelt {{contact_name}}!\nTender: {{tender_link}}\nÉrtesítések: {{unsubscribe_url}}",
+        "subject_template": "Ajánlatkérés – {{tender_id}}",
+        "text_template": (
+            "Tisztelt {{contact_name}}!\n\n"
+            "Szeretnénk ajánlatot kérni a {{tender_id}} munkára. "
+            "Ez új megbízási lehetőség Önöknek.\n\n"
+            "Kérjük, nyissák meg a munka leírását: {{tender_link}}\n\n"
+            "Üdvözlettel:\nImperial Holding\n\n"
+            "Leiratkozás: {{unsubscribe_url}}"
+        ),
         "tender_id": "TND-TEST-001",
         "project_id": "IMP-TEST-001",
         "hourly_rate": 50,
     })
     assert response.status_code == 200
     return response.json()["campaign_id"]
+
+
+def test_tendermail_default_form_copy_passes_the_outbound_gate(logged_in_client):
+    page = logged_in_client.get("/tendermail")
+    assert page.status_code == 200
+    assert "Ajánlatkérés – {{tender_id}}" in page.text
+    assert "Ez új megbízási lehetőség Önöknek." in page.text
+
+    response = logged_in_client.post(
+        "/tendermail/campaigns",
+        data={
+            "name": "Alapértelmezett tenderlevél",
+            "domain_key": "imperial_tender",
+            "subject_template": "Ajánlatkérés – {{tender_id}}",
+            "text_template": (
+                "Tisztelt {{contact_name}}!\n\n"
+                "Szeretnénk ajánlatot kérni a {{tender_id}} munkára. "
+                "Ez új megbízási lehetőség Önöknek.\n\n"
+                "Kérjük, nyissák meg a munka leírását: {{tender_link}}\n\n"
+                "Üdvözlettel:\nImperial Holding\n\n"
+                "Leiratkozás: {{unsubscribe_url}}"
+            ),
+            "tender_id": "TND-DEFAULT-001",
+            "project_id": "IMP-DEFAULT-001",
+            "hourly_rate": "100",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
 
 
 def test_tendermail_requires_domain_auth_and_supports_safe_simulation(client, db):
@@ -71,6 +108,66 @@ def test_tendermail_requires_domain_auth_and_supports_safe_simulation(client, db
     recipient = db.scalar(select(TenderMailRecipient).where(TenderMailRecipient.campaign_id == campaign_id))
     assert campaign.status == "completed"
     assert recipient.status == "sent"
+
+
+def test_tendermail_blocks_jargon_and_foreign_brand_at_campaign_creation(client):
+    response = client.post(
+        "/api/tendermail/campaigns",
+        json={
+            "name": "Hibás megkeresés",
+            "domain_key": "imperial_tender",
+            "subject_template": "Partnerkapcsolat",
+            "text_template": (
+                "Strukturált szakmai együttműködést keresünk. "
+                "Bemutatjuk a projektjel-feldolgozási rendszert. "
+                "Kérjük, válaszoljanak. Imperial Holding / BauShield "
+                "{{tender_link}} {{unsubscribe_url}}"
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Kimenő levél blokkolva" in response.json()["detail"]
+
+
+def test_tendermail_blocks_one_bad_recipient_without_starving_valid_recipient(client, db):
+    campaign_id = create_campaign(client)
+    recipients = client.post(
+        f"/api/tendermail/campaigns/{campaign_id}/recipients",
+        json={
+            "recipients": [
+                {
+                    "email": "blocked@example.hu",
+                    "company_name": "Első Kft.",
+                    "contact_name": "BauShielddel dolgozó partner",
+                },
+                {
+                    "email": "valid@example.hu",
+                    "company_name": "Második Kft.",
+                    "contact_name": "Kovács Péter",
+                },
+            ],
+            "include_canonical_partner_records": False,
+        },
+    )
+    assert recipients.status_code == 200
+
+    verify_seeded_domain(client)
+    assert client.post(f"/api/tendermail/campaigns/{campaign_id}/approve?actor=owner").status_code == 200
+    assert client.post(f"/api/tendermail/campaigns/{campaign_id}/queue?simulate=true").status_code == 200
+    response = client.post(
+        f"/api/tendermail/campaigns/{campaign_id}/dispatch?simulate=true&limit=10"
+    )
+    assert response.status_code == 200
+    assert response.json()["sent"] == 1
+    assert response.json()["blocked"] == 1
+    assert response.json()["messages"][0]["email"] == "valid@example.hu"
+
+    rows = db.scalars(
+        select(TenderMailRecipient).where(TenderMailRecipient.campaign_id == campaign_id)
+    ).all()
+    statuses = {row.email: row.status for row in rows}
+    assert statuses == {"blocked@example.hu": "blocked", "valid@example.hu": "sent"}
 
 
 def test_complaint_suppresses_email_for_future_campaigns(client, db):

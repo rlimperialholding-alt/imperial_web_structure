@@ -6,6 +6,7 @@ export interface PendingOutboxMessage {
   channel: string;
   recipient: string;
   cc: string[];
+  audience: "external" | "internal";
   subject: string;
   body: string;
   htmlBody?: string;
@@ -76,6 +77,7 @@ export class OutboxDispatcher {
         const result = await this.email.send({
           to: message.recipient,
           cc: message.cc,
+          audience: message.audience,
           subject: message.subject,
           text: message.body,
           ...(message.htmlBody ? { html: message.htmlBody } : {}),

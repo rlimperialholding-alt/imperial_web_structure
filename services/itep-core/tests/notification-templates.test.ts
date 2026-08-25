@@ -10,9 +10,10 @@ describe("notification templates", () => {
       "P1_ESCALATION",
     );
 
-    expect(result.subject).toContain("[ITEP ESZKALÁCIÓ]");
-    expect(result.text).toContain("Elfogadási feltétel");
-    expect(result.html).toContain("<strong>Prioritás:</strong>");
+    expect(result.subject).toContain("Sürgős feladat");
+    expect(result.text).toContain("Teendő");
+    expect(result.html).toContain("<strong>Határidő:</strong>");
+    expect(result.audience).toBe("external");
   });
 
   it("escapes user-controlled HTML", () => {
@@ -23,5 +24,15 @@ describe("notification templates", () => {
     );
     expect(result.html).not.toContain("<script>");
     expect(result.html).toContain("&lt;script&gt;");
+  });
+
+  it("supports the legacy Imperial organization alias", () => {
+    const result = renderTaskReminder(
+      makeTask({ organizationId: "imperial" }),
+      1,
+      "NONE",
+    );
+
+    expect(result.text).toContain("Imperial Holding");
   });
 });

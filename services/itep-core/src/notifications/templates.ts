@@ -2,10 +2,37 @@ import type { Task } from "../domain/types.js";
 import type { EscalationEvent } from "../domain/priority-policy.js";
 
 export interface RenderedNotification {
+  audience: "external" | "internal";
   subject: string;
   text: string;
   html: string;
 }
+
+export class NotificationTemplateError extends Error {}
+
+const organizationBrandNames: Record<string, string> = {
+  imperial: "Imperial Holding",
+  "imperial-holding": "Imperial Holding",
+  "imperial-intelligence": "Imperial Intelligence",
+  "imperial-construction": "Imperial Construction",
+  "imperial-knowledge": "Imperial Knowledge",
+  "imperial-technologies": "Imperial Technologies",
+  "imperial-venture-studio": "Imperial Venture Studio",
+  property360: "Property 360",
+  baushield: "BauShield",
+  bautica: "Bautica",
+  prefab: "Prefab",
+  exitflow: "ExitFlow",
+  veritas: "Veritas Construct",
+  baufreund: "BauFreund",
+  "danish-fabrik": "Danish Fabrik",
+  timberhaus: "Timberhaus",
+  "casa-moderna": "Casa Moderna",
+  "everyday-homes": "Everyday Homes",
+  "family-homes": "Family Homes",
+  "budapesti-magasepito-vallalat": "Budapesti Magasépítő Vállalat",
+  "red-property": "RED Property",
+};
 
 export function renderTaskReminder(
   task: Task,
@@ -14,9 +41,9 @@ export function renderTaskReminder(
 ): RenderedNotification {
   const title =
     escalation === "P1_INCIDENT_REPORT"
-      ? "Kritikus incidensjelentés"
+      ? "Kritikus hiba"
       : escalation === "P1_ESCALATION"
-        ? "Kritikus feladat eszkaláció"
+        ? "Kritikus, lejárt feladat"
         : reminderLevel === 1
           ? "Barátságos emlékeztető"
           : reminderLevel === 2
@@ -25,60 +52,61 @@ export function renderTaskReminder(
               ? "Sürgős: a feladat lejárt"
               : "Ismételt sürgős emlékeztető";
 
-  const subjectPrefix =
-    escalation === "P1_INCIDENT_REPORT"
-      ? "[ITEP INCIDENT]"
-      : escalation === "P1_ESCALATION"
-        ? "[ITEP ESZKALÁCIÓ]"
-        : reminderLevel >= 3
-          ? "[ITEP LEJÁRT]"
-          : "[ITEP EMLÉKEZTETŐ]";
+  const brandName = organizationBrandNames[task.organizationId];
+  if (!brandName) {
+    throw new NotificationTemplateError(
+      `Ismeretlen szervezeti márka: ${task.organizationId}`,
+    );
+  }
+  // Task metadata is not proof that the actual mailbox is internal.  Treat the
+  // message as external by default; the final sender may only relax this after
+  // verifying every recipient domain.
+  const audience = "external" as const;
+  const subject = reminderLevel >= 3 || escalation !== "NONE"
+    ? `Sürgős feladat – ${task.id}`
+    : `Feladat emlékeztető – ${task.id}`;
 
   const lines = [
-    title,
+    `${title}.`,
     "",
-    `Feladat: ${task.title}`,
-    `Azonosító: ${task.id}`,
-    `Prioritás: ${task.priority}`,
-    `Határidő: ${task.dueAt.toISOString()}`,
-    `Aktuális státusz: ${task.status}`,
-    `Elfogadási feltétel: ${task.acceptanceCriteria}`,
-    `Elvárt bizonyíték: ${task.evidenceRequirement.description}`,
+    "Azért írunk, mert a következő feladat még nincs lezárva.",
+    `Feladat: ${task.title}.`,
+    `Határidő: ${task.dueAt.toISOString()}.`,
+    `Teendő: ${task.acceptanceCriteria}.`,
+    `Szükséges igazolás: ${task.evidenceRequirement.description}.`,
   ];
 
   if (task.blockedReason) {
-    lines.push(`Blokkolás oka: ${task.blockedReason}`);
-  }
-
-  if (escalation !== "NONE") {
-    lines.push(`Eszkaláció típusa: ${escalation}`);
+    lines.push(`Az akadály oka: ${task.blockedReason}.`);
   }
 
   lines.push(
     "",
-    "A feladat csak ellenőrzött bizonyítékkal és elfogadással zárható le.",
+    "Ez segít Önnek, hogy a feladat időben lezárható legyen.",
+    "Kérjük, végezze el a feladatot, majd küldje el a szükséges igazolást.",
+    "",
+    brandName,
   );
 
   const text = lines.join("\n");
   const html = `
     <main>
       <h1>${escapeHtml(title)}</h1>
+      <p>Azért írunk, mert a következő feladat még nincs lezárva.</p>
       <p><strong>Feladat:</strong> ${escapeHtml(task.title)}</p>
-      <p><strong>Azonosító:</strong> ${escapeHtml(task.id)}</p>
-      <p><strong>Prioritás:</strong> ${escapeHtml(task.priority)}</p>
       <p><strong>Határidő:</strong> ${escapeHtml(task.dueAt.toISOString())}</p>
-      <p><strong>Státusz:</strong> ${escapeHtml(task.status)}</p>
-      <p><strong>Elfogadási feltétel:</strong> ${escapeHtml(task.acceptanceCriteria)}</p>
-      <p><strong>Elvárt bizonyíték:</strong> ${escapeHtml(task.evidenceRequirement.description)}</p>
-      ${task.blockedReason ? `<p><strong>Blokkolás oka:</strong> ${escapeHtml(task.blockedReason)}</p>` : ""}
-      ${escalation !== "NONE" ? `<p><strong>Eszkaláció:</strong> ${escapeHtml(escalation)}</p>` : ""}
-      <hr />
-      <p>A feladat csak ellenőrzött bizonyítékkal és elfogadással zárható le.</p>
+      <p><strong>Teendő:</strong> ${escapeHtml(task.acceptanceCriteria)}</p>
+      <p><strong>Szükséges igazolás:</strong> ${escapeHtml(task.evidenceRequirement.description)}</p>
+      ${task.blockedReason ? `<p><strong>Az akadály oka:</strong> ${escapeHtml(task.blockedReason)}</p>` : ""}
+      <p>Ez segít Önnek, hogy a feladat időben lezárható legyen.</p>
+      <p>Kérjük, végezze el a feladatot, majd küldje el a szükséges igazolást.</p>
+      <p>${escapeHtml(brandName)}</p>
     </main>
   `.trim();
 
   return {
-    subject: `${subjectPrefix} ${task.id} – ${task.title}`,
+    audience,
+    subject,
     text,
     html,
   };

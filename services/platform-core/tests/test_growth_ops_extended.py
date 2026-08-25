@@ -62,9 +62,10 @@ def _signal(**changes) -> GrowthSignalIn:
 
 def _body_template() -> str:
     return (
-        "{company_name}! Releváns üzleti jelzés: {signal_summary}. "
-        "Forrás: {evidence_url}. Kapcsolatfelvétel válaszban. "
-        "Leiratkozás: {unsubscribe_url}"
+        "Tisztelt {company_name}! Keressük az együttműködés lehetőségét ebben a "
+        "témában: {signal_summary} Ha ebben partnerre van szükségük, tudunk segíteni. "
+        "Kérjük, válaszoljanak, ha szeretnének egyeztetni. Üdvözlettel: {brand_name}. "
+        "Forrás: {evidence_url}. Leiratkozás: {unsubscribe_url}"
     )
 
 
@@ -1051,6 +1052,14 @@ def _smtp_binding(**secret_changes) -> BrandBinding:
     )
 
 
+def _valid_smtp_outreach_body() -> str:
+    return (
+        "Keressük az együttműködés lehetőségét. Ha szakmai partnerre van szükségük, "
+        "tudunk segíteni. Kérjük, válaszoljanak, ha szeretnének egyeztetni. "
+        "Üdvözlettel: Bautica"
+    )
+
+
 def test_smtp_preflight_fail_closed():
     incomplete = _smtp_binding()
     del incomplete.secret["port"]
@@ -1062,12 +1071,48 @@ def test_smtp_preflight_fail_closed():
         SMTPEmailAdapter(_smtp_binding(use_ssl=False)).preflight()
 
 
+def test_smtp_preflight_blocks_sender_brand_mismatch():
+    binding = _smtp_binding()
+    object.__setattr__(binding, "sender_email", "imperialholding@baushield.hu")
+    with pytest.raises(GrowthRegistryError, match="sender_brand_mismatch"):
+        SMTPEmailAdapter(binding).preflight()
+
+
+def test_smtp_send_blocks_foreign_brand_reply_to_before_transport(smtp_transport):
+    with pytest.raises(GrowthRegistryError, match="sender_brand_mismatch"):
+        SMTPEmailAdapter(_smtp_binding()).send(
+            to_email="iroda@minta-epito.test",
+            subject="Szakmai egyeztetés",
+            body_text=_valid_smtp_outreach_body(),
+            idempotency_key="9" * 64,
+            reply_to="info@baushield.hu",
+        )
+
+    assert FakeSMTPServer.instances == []
+
+
+def test_smtp_blocks_bad_copy_before_opening_transport(smtp_transport):
+    with pytest.raises(GrowthRegistryError, match="Kimenő levél blokkolva"):
+        SMTPEmailAdapter(_smtp_binding()).send(
+            to_email="info@maisz.hu",
+            subject="Partnerkapcsolat",
+            body_text=(
+                "Strukturált szakmai együttműködést keresünk. "
+                "Bemutatjuk a projektjel-feldolgozási rendszert. "
+                "Kérjük, válaszoljanak. Bautica / Property360"
+            ),
+            idempotency_key="0" * 64,
+        )
+
+    assert FakeSMTPServer.instances == []
+
+
 def test_smtp_send_ssl_success(smtp_transport):
     adapter = SMTPEmailAdapter(_smtp_binding())
     receipt = adapter.send(
         to_email="iroda@minta-epito.test",
         subject="Szakmai egyeztetés",
-        body_text="Tartalmas, hosszú üzenet a kapcsolatfelvételhez.",
+        body_text=_valid_smtp_outreach_body(),
         idempotency_key="a" * 64,
         reply_to="info@bautica.test",
     )
@@ -1089,7 +1134,7 @@ def test_smtp_send_starttls_success(smtp_transport):
     receipt = adapter.send(
         to_email="iroda@minta-epito.test",
         subject="Szakmai egyeztetés",
-        body_text="Tartalmas, hosszú üzenet a kapcsolatfelvételhez.",
+        body_text=_valid_smtp_outreach_body(),
         idempotency_key="b" * 64,
     )
     assert receipt.accepted_recipient == "iroda@minta-epito.test"
@@ -1103,7 +1148,7 @@ def test_smtp_send_authentication_failure(smtp_transport):
         SMTPEmailAdapter(_smtp_binding()).send(
             to_email="x@test.hu",
             subject="Tárgy",
-            body_text="Üzenet szövege hosszabban.",
+            body_text=_valid_smtp_outreach_body(),
             idempotency_key="c" * 64,
         )
     assert exc_info.value.retry_safe is False
@@ -1116,7 +1161,7 @@ def test_smtp_send_connect_error_is_retry_safe(smtp_transport):
         SMTPEmailAdapter(_smtp_binding()).send(
             to_email="x@test.hu",
             subject="Tárgy",
-            body_text="Üzenet szövege hosszabban.",
+            body_text=_valid_smtp_outreach_body(),
             idempotency_key="d" * 64,
         )
     assert exc_info.value.retry_safe is True
@@ -1129,7 +1174,7 @@ def test_smtp_send_refused_recipients(smtp_transport):
         SMTPEmailAdapter(_smtp_binding()).send(
             to_email="iroda@minta-epito.test",
             subject="Tárgy",
-            body_text="Üzenet szövege hosszabban.",
+            body_text=_valid_smtp_outreach_body(),
             idempotency_key="e" * 64,
         )
     assert exc_info.value.retry_safe is False
@@ -1141,7 +1186,7 @@ def test_smtp_send_message_exception_is_ambiguous(smtp_transport):
         SMTPEmailAdapter(_smtp_binding()).send(
             to_email="iroda@minta-epito.test",
             subject="Tárgy",
-            body_text="Üzenet szövege hosszabban.",
+            body_text=_valid_smtp_outreach_body(),
             idempotency_key="f" * 64,
         )
     assert exc_info.value.retry_safe is False
@@ -1679,6 +1724,58 @@ def test_schedule_followups_creates_next_step(db, growth_runtime):
     assert followup is not None and followup.status == "queued"
 
     # already scheduled -> no duplicate
+    assert service.schedule_followups(db) == 0
+
+
+def test_invalid_followup_blocks_only_its_signal_and_does_not_starve_later_rows(
+    db, growth_runtime
+):
+    long_summary = " ".join(
+        f"rövid szakmai összefoglaló {index} fontos részlettel."
+        for index in range(10)
+    )
+    blocked_receipt = service.ingest_signal(
+        db,
+        _signal(
+            external_key="ETDR-2026-1201-BLOCKED",
+            summary=long_summary,
+            company_registration_id="01-09-120001",
+            recipient_email="elso@minta-epito.test",
+        ),
+    )
+    valid_receipt = service.ingest_signal(
+        db,
+        _signal(
+            external_key="ETDR-2026-1202-VALID",
+            company_registration_id="01-09-120002",
+            recipient_email="masodik@minta-epito.test",
+        ),
+    )
+    assert blocked_receipt.status == valid_receipt.status == "queued"
+
+    first = service.claim_outreach(db)
+    assert first is not None
+    service.dispatch_outreach(db, first)
+    second = service.claim_outreach(db)
+    assert second is not None
+    service.dispatch_outreach(db, second)
+    first.sent_at = datetime.now(UTC) - timedelta(days=6)
+    second.sent_at = datetime.now(UTC) - timedelta(days=5)
+    db.commit()
+
+    assert service.schedule_followups(db) == 1
+    blocked_signal = db.scalar(
+        select(GrowthSignal).where(GrowthSignal.signal_id == blocked_receipt.signal_id)
+    )
+    valid_followup = db.scalar(
+        select(OutreachMessage).where(
+            OutreachMessage.signal_id == valid_receipt.signal_id,
+            OutreachMessage.sequence_step == 1,
+        )
+    )
+    assert blocked_signal is not None and blocked_signal.status == "blocked"
+    assert "followup_copy_blocked" in blocked_signal.rejection_reasons_json
+    assert valid_followup is not None and valid_followup.status == "queued"
     assert service.schedule_followups(db) == 0
 
 

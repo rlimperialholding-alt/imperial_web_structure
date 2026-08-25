@@ -45,8 +45,10 @@ class FakeRegistry:
     def brand_binding(self, brand_id: str) -> BrandBinding:
         assert brand_id == "bautica"
         body = (
-            "{company_name}! Releváns üzleti jelzés: {signal_summary}. "
-            "Forrás: {evidence_url}. Kapcsolatfelvétel válaszban. Leiratkozás: {unsubscribe_url}"
+            "Tisztelt {company_name}! Keressük az együttműködés lehetőségét ebben a "
+            "témában: {signal_summary} Ha ebben partnerre van szükségük, tudunk segíteni. "
+            "Kérjük, válaszoljanak, ha szeretnének egyeztetni. Üdvözlettel: {brand_name}. "
+            "Forrás: {evidence_url}. Leiratkozás: {unsubscribe_url}"
         )
         return BrandBinding(
             brand_id="bautica",
@@ -178,6 +180,29 @@ def test_natural_person_without_request_is_rejected(db, growth_runtime):
     assert result.status == "rejected"
     assert "natural_person_without_prior_consent_or_request" in result.reasons
     assert not db.scalars(select(OutreachMessage)).all()
+
+
+def test_missing_company_name_uses_one_plain_salutation(db, growth_runtime):
+    result = service.ingest_signal(
+        db,
+        _signal(
+            external_key="ETDR-2026-0002-REQUESTED",
+            company_name=None,
+            company_registration_id=None,
+            subject_type="natural_person",
+            recipient_email="erdeklodo@example.test",
+            recipient_email_type="named",
+            contact_basis="explicit_request",
+        ),
+    )
+
+    assert result.status == "queued"
+    message = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
+    )
+    assert message is not None
+    assert message.body_text.startswith("Tisztelt Címzett!")
+    assert "Tisztelt Tisztelt" not in message.body_text
 
 
 def test_global_suppression_prevents_queue(db, growth_runtime):

@@ -21,20 +21,17 @@
     <label>Óránkénti maximum<input name="hourly_rate" type="number" value="100" min="1" max="500"></label>
     <label>Tenderazonosító<input name="tender_id" placeholder="TND-2026-..."></label>
     <label>ProjectID<input name="project_id" placeholder="IMP-..."></label>
-    <label class="span-2">Tárgy<input name="subject_template" value="{% raw %}Meghívás ajánlattételre – {{company_name}} – {{tender_id}}{% endraw %}" required></label>
+    <label class="span-2">Tárgy<input name="subject_template" value="{% raw %}Ajánlatkérés – {{tender_id}}{% endraw %}" required></label>
     <label class="span-2">Levél szövege<textarea name="text_template" rows="10" required>{% raw %}Tisztelt {{contact_name}}!
 
-Az Imperial Holding meghívja Önöket a {{tender_id}} azonosítójú tenderre.
+Szeretnénk ajánlatot kérni a {{tender_id}} munkára. Ez új megbízási lehetőség Önöknek.
 
-A tender részletei és dokumentumai:
-{{tender_link}}
-
-Kérjük, ajánlatukat a tenderfelületen megadott határidőig töltsék fel.
+Kérjük, nyissák meg a munka leírását: {{tender_link}}
 
 Üdvözlettel:
-Imperial Holding Beszerzés
+Imperial Holding
 
-Értesítési beállítások: {{unsubscribe_url}}{% endraw %}</textarea></label>
+Leiratkozás: {{unsubscribe_url}}{% endraw %}</textarea></label>
     <div class="form-action span-2"><button class="gold">Kampány létrehozása</button></div>
   </form>
 </section>

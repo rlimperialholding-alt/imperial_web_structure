@@ -154,13 +154,27 @@ def check_directus(settings: Settings, report: UATReport) -> None:
     )
 
 
-def check_gmail_sent(gmail, process_key: str, version: int) -> tuple[bool, str]:
-    subject = f"Process Card jóváhagyás: {process_key} v{version}"
-    result = gmail.users().messages().list(
-        userId="me", q=f'in:sent subject:"{subject}" newer_than:2d', maxResults=10
-    ).execute()
-    messages = result.get("messages", [])
-    return bool(messages), messages[0]["id"] if messages else "not-found"
+def check_gmail_sent(gmail, notification_id: str) -> tuple[bool, str]:
+    if not notification_id:
+        return False, "missing-message-id"
+    try:
+        message = gmail.users().messages().get(
+            userId="me",
+            id=notification_id,
+            format="metadata",
+            metadataHeaders=["Subject"],
+        ).execute()
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    headers = {
+        header.get("name", "").casefold(): header.get("value", "")
+        for header in message.get("payload", {}).get("headers", [])
+    }
+    visible = (
+        "SENT" in set(message.get("labelIds", []))
+        and headers.get("subject") == "Új anyag jóváhagyása"
+    )
+    return visible, str(message.get("id", notification_id))
 
 
 def run_pilot(
@@ -210,7 +224,7 @@ def run_pilot(
         f"folder={bool(draft_folder)}, files={sorted(draft_names)}",
     )
 
-    gmail_ok, gmail_id = check_gmail_sent(gmail, process_key, version)
+    gmail_ok, gmail_id = check_gmail_sent(gmail, notification_id)
     report.add(f"{process_key}.gmail_sent_visible", gmail_ok, gmail_id)
 
     service_tokens = settings.service_tokens()

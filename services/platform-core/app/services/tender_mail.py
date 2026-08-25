@@ -16,6 +16,11 @@ from ..schemas import (
     DomainVerificationIn, MailEventIn, SendingDomainIn, TenderCampaignIn, TenderRecipientIn,
 )
 from .email_guard import is_valid_email
+from .outbound_copy_guard import (
+    OutboundCopyViolation,
+    brand_id_from_sender,
+    require_outbound_email,
+)
 
 REQUIRED_TEMPLATE_TOKENS = ("{{tender_link}}", "{{unsubscribe_url}}")
 
@@ -93,6 +98,15 @@ def create_campaign(db: Session, data: TenderCampaignIn) -> TenderMailCampaign:
         raise ValueError("Aktív küldési domain nem található.")
     if not data.subject_template.strip() or not data.text_template.strip():
         raise ValueError("A tárgy és a levélszöveg kötelező.")
+    try:
+        require_outbound_email(
+            subject=data.subject_template,
+            body=data.text_template,
+            brand_id=brand_id_from_sender(domain.from_email),
+            kind="outreach",
+        )
+    except OutboundCopyViolation as exc:
+        raise ValueError(str(exc)) from exc
     row = TenderMailCampaign(
         campaign_id=new_id("TMC"), name=data.name, campaign_type=data.campaign_type,
         tender_id=data.tender_id, project_id=data.project_id, domain_key=data.domain_key,
@@ -265,10 +279,32 @@ def dispatch_batch(db: Session, campaign_id: str, *, simulate: bool, base_url: s
         TenderMailRecipient.status == "queued",
     ).order_by(TenderMailRecipient.id).limit(batch_limit)).all()
     sent_payloads: list[dict[str, Any]] = []
+    blocked_payloads: list[dict[str, Any]] = []
     now = utcnow()
     for row in recipients:
         subject = _render(campaign.subject_template, row, campaign, base_url)
         text = _render(campaign.text_template, row, campaign, base_url)
+        try:
+            require_outbound_email(
+                subject=subject,
+                body=text,
+                brand_id=brand_id_from_sender(domain.from_email),
+                kind="outreach",
+            )
+        except OutboundCopyViolation as exc:
+            row.status = "blocked"
+            row.suppression_reason = "outbound_copy_violation"
+            row.last_event_at = now
+            event = TenderMailEvent(
+                event_id=new_id("TME"), recipient_id=row.recipient_id,
+                campaign_id=campaign_id, event_type="blocked", provider_event_id=None,
+                payload_json=dumps({"reason": str(exc)}), occurred_at=now,
+            )
+            db.add(event)
+            blocked_payloads.append(
+                {"recipient_id": row.recipient_id, "email": row.email, "reason": str(exc)}
+            )
+            continue
         if simulate:
             provider_message_id = "SIM-" + uuid.uuid4().hex
         else:
@@ -292,7 +328,14 @@ def dispatch_batch(db: Session, campaign_id: str, *, simulate: bool, base_url: s
     ).limit(1))
     campaign.status = "sending" if remaining else "completed"
     db.commit()
-    return {"campaign_id": campaign_id, "simulate": simulate, "sent": len(sent_payloads), "messages": sent_payloads}
+    return {
+        "campaign_id": campaign_id,
+        "simulate": simulate,
+        "sent": len(sent_payloads),
+        "blocked": len(blocked_payloads),
+        "messages": sent_payloads,
+        "blocked_recipients": blocked_payloads,
+    }
 
 
 def record_event(db: Session, data: MailEventIn) -> TenderMailEvent:

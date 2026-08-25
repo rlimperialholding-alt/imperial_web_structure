@@ -45,7 +45,9 @@ test("the Sites artifact contains the worker, bindings and all migrations", asyn
 test("customer email templates never expose internal commercial controls", async () => {
   const source = await readFile("lib/email-templates.ts", "utf8");
   assert.doesNotMatch(source, /fedezet|internalControl|profitabilitás/i);
-  assert.match(source, /MyImperial felületén rögzítsd/);
+  assert.doesNotMatch(source, /MyImperial/i);
+  assert.match(source, /Biztonsági okból ne továbbítsa ezt az üzenetet/);
+  assert.match(source, /IMPERIAL HOLDING/);
 });
 
 test("the customer ChangeControl view does not expose an internal margin percentage", async () => {

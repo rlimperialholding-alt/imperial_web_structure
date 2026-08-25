@@ -18,8 +18,10 @@ export interface NotificationMessage {
   channel: "EMAIL" | "IN_APP" | "SMS";
   recipient: string;
   cc: string[];
+  audience: "external" | "internal";
   subject: string;
   body: string;
+  htmlBody?: string;
   scheduledFor: Date;
   idempotencyKey: string;
 }

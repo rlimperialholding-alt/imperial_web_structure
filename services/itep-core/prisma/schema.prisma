@@ -148,8 +148,10 @@ model NotificationOutbox {
   channel        String
   recipient      String
   cc             String[]
+  audience       String   @default("external")
   subject        String
   body           String
+  htmlBody       String?
   scheduledFor   DateTime
   sentAt         DateTime?
   attempts       Int      @default(0)

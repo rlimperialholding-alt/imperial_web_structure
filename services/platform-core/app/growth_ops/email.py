@@ -8,6 +8,11 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from typing import Any
 
+from ..services.outbound_copy_guard import (
+    OutboundCopyViolation,
+    require_outbound_email,
+    require_sender_brand,
+)
 from .registry import BrandBinding, GrowthRegistryError
 
 
@@ -35,6 +40,10 @@ class SMTPEmailAdapter:
         self.secret = binding.secret
 
     def preflight(self) -> None:
+        try:
+            require_sender_brand(self.binding.sender_email, self.binding.brand_id)
+        except OutboundCopyViolation as exc:
+            raise GrowthRegistryError(str(exc)) from exc
         required = {"host", "port", "username", "password"}
         if required - set(self.secret):
             raise GrowthRegistryError("SMTP secret is incomplete")
@@ -54,7 +63,21 @@ class SMTPEmailAdapter:
         body_text: str,
         idempotency_key: str,
         reply_to: str | None = None,
+        kind: str = "outreach",
     ) -> EmailReceipt:
+        try:
+            require_outbound_email(
+                subject=subject,
+                body=body_text,
+                brand_id=self.binding.brand_id,
+                kind=kind,
+            )
+            require_sender_brand(
+                reply_to or self.binding.sender_email,
+                self.binding.brand_id,
+            )
+        except OutboundCopyViolation as exc:
+            raise GrowthRegistryError(str(exc)) from exc
         self.preflight()
         domain = self.binding.sender_email.split("@", 1)[1]
         message_id = make_msgid(idstring=idempotency_key[:24], domain=domain)

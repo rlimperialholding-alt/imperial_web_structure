@@ -7,6 +7,8 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.outbound_email_guard import brand_from_sender, require_plain_single_brand_email
+
 
 class ArtifactPublisher(Protocol):
     def publish_version(self, role: str, process_key: str, version: int, files: list[Path]) -> dict[str, str]: ...
@@ -178,13 +180,46 @@ class GmailApprovalNotifier:
         msg = EmailMessage()
         msg["To"] = self.approver_email
         msg["From"] = self.delegated_user
-        msg["Subject"] = f"Process Card jóváhagyás: {process_key} v{version}"
-        links = "\n".join(f"- {kind}: {url}" for kind, url in artifact_links.items()) or "- A fájlok a jóváhagyási sorban találhatók."
-        checklist_line = f"\nKapcsolódó checklist: {checklist_template_id}" if checklist_template_id else ""
-        msg.set_content(f"Jóváhagyásra vár: {title}\nFelelős szerepkör: {role}\nVerzió: {version}{checklist_line}\n\n{links}")
+        subject, body = build_approval_email(
+            sender_email=self.delegated_user,
+            title=title,
+            version=version,
+            artifact_links=artifact_links,
+        )
+        msg["Subject"] = subject
+        msg.set_content(body)
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
         sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
         return sent["id"]
+
+
+def build_approval_email(
+    *,
+    sender_email: str,
+    title: str,
+    version: int,
+    artifact_links: dict[str, str],
+) -> tuple[str, str]:
+    _, identity = brand_from_sender(sender_email)
+    subject = "Új anyag jóváhagyása"
+    links = "\n".join(
+        f"- Fájl {index}: {url}"
+        for index, url in enumerate(artifact_links.values(), start=1)
+    ) or "- A fájlok a jóváhagyásra váró mappában találhatók."
+    body = (
+        f"Azért írunk, mert elkészült ez az anyag: {title}.\n"
+        "Ez segít, hogy mindenki ugyanazt a jóváhagyott leírást használja.\n"
+        f"Változat: {version}.\n\n"
+        f"A fájlok:\n{links}\n\n"
+        "Kérjük, nézze át, majd válaszoljon, hogy jóváhagyja-e.\n\n"
+        f"{identity.name}"
+    )
+    require_plain_single_brand_email(
+        sender_email=sender_email,
+        subject=subject,
+        body=body,
+    )
+    return subject, body
 
 
 class NullNotifier:

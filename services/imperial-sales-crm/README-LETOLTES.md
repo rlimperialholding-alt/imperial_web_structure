@@ -25,7 +25,7 @@ Az adatbázis induló sémája a `drizzle/0000_crm_core.sql` fájlban találhat�
 Az email-értesítések éles bekapcsolásához az alábbi környezeti változók szükségesek:
 
 - `RESEND_API_KEY` – titkos API-kulcs
-- `MYIMPERIAL_FROM_EMAIL` – hitelesített feladói cím, például `MyImperial <ertesites@pelda.hu>`
+- `MYIMPERIAL_FROM_EMAIL` – hitelesített feladói cím, például `Imperial Holding <ertesites@imperialholding.hu>`
 - `MYIMPERIAL_REPLY_TO` – opcionális válaszcím
 
 Kulcs nélkül a rendszer biztonságosan piszkozatként kezeli az értesítéseket, és valódi emailt nem küld.

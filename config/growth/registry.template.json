@@ -41,9 +41,9 @@
       "recipient_cooldown_days": 30,
       "followup_delays_days": [4, 8],
       "templates": {"default": {
-        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
-        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
-        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+        "initial": {"subject": "Együttműködési lehetőség", "body": "Tisztelt {company_name}!\n\nKeressük az együttműködés lehetőségét ebben a témában: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak erre a levélre, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nKapcsolódó nyilvános információ: {evidence_url}\nLeiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "Tisztelt {company_name}!\n\nRöviden visszatérünk korábbi levelünkre. Ebben a témában kerestük Önöket: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "Tisztelt {company_name}!\n\nUtoljára visszatérünk korábbi levelünkre. Ha ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"}
       }}
     },
     "veritas": {
@@ -52,9 +52,9 @@
       "domain_key": "REPLACE_VERITAS_DOMAIN_KEY",
       "secret_ref": "veritas-smtp.json",
       "templates": {"default": {
-        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
-        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
-        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+        "initial": {"subject": "Együttműködési lehetőség", "body": "Tisztelt {company_name}!\n\nKeressük az együttműködés lehetőségét ebben a témában: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak erre a levélre, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nKapcsolódó nyilvános információ: {evidence_url}\nLeiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "Tisztelt {company_name}!\n\nRöviden visszatérünk korábbi levelünkre. Ebben a témában kerestük Önöket: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "Tisztelt {company_name}!\n\nUtoljára visszatérünk korábbi levelünkre. Ha ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"}
       }}
     },
     "baushield": {
@@ -63,9 +63,9 @@
       "domain_key": "REPLACE_BAUSHIELD_DOMAIN_KEY",
       "secret_ref": "baushield-smtp.json",
       "templates": {"default": {
-        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
-        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
-        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+        "initial": {"subject": "Együttműködési lehetőség", "body": "Tisztelt {company_name}!\n\nKeressük az együttműködés lehetőségét ebben a témában: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak erre a levélre, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nKapcsolódó nyilvános információ: {evidence_url}\nLeiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "Tisztelt {company_name}!\n\nRöviden visszatérünk korábbi levelünkre. Ebben a témában kerestük Önöket: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "Tisztelt {company_name}!\n\nUtoljára visszatérünk korábbi levelünkre. Ha ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"}
       }}
     },
     "bautica": {
@@ -74,9 +74,9 @@
       "domain_key": "REPLACE_BAUTICA_DOMAIN_KEY",
       "secret_ref": "bautica-smtp.json",
       "templates": {"default": {
-        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
-        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
-        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+        "initial": {"subject": "Együttműködési lehetőség", "body": "Tisztelt {company_name}!\n\nKeressük az együttműködés lehetőségét ebben a témában: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak erre a levélre, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nKapcsolódó nyilvános információ: {evidence_url}\nLeiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "Tisztelt {company_name}!\n\nRöviden visszatérünk korábbi levelünkre. Ebben a témában kerestük Önöket: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "Tisztelt {company_name}!\n\nUtoljára visszatérünk korábbi levelünkre. Ha ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"}
       }}
     },
     "prefab": {
@@ -85,9 +85,9 @@
       "domain_key": "REPLACE_PREFAB_DOMAIN_KEY",
       "secret_ref": "prefab-smtp.json",
       "templates": {"default": {
-        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
-        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
-        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+        "initial": {"subject": "Együttműködési lehetőség", "body": "Tisztelt {company_name}!\n\nKeressük az együttműködés lehetőségét ebben a témában: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak erre a levélre, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nKapcsolódó nyilvános információ: {evidence_url}\nLeiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "Tisztelt {company_name}!\n\nRöviden visszatérünk korábbi levelünkre. Ebben a témában kerestük Önöket: {signal_summary}\n\nHa ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "Tisztelt {company_name}!\n\nUtoljára visszatérünk korábbi levelünkre. Ha ebben partnerre van szükségük, tudunk segíteni.\n\nKérjük, válaszoljanak, ha szeretnének röviden egyeztetni.\n\nÜdvözlettel:\n{brand_name}\n\nLeiratkozás: {unsubscribe_url}"}
       }}
     }
   },

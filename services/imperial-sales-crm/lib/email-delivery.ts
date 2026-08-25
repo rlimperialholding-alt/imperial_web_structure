@@ -1,5 +1,6 @@
 import { getRuntimeValue } from "@/db";
 import type { EmailTemplate } from "@/lib/email-templates";
+import { validateOutboundEmail } from "@/lib/outbound-copy-guard";
 
 export type EmailProviderStatus = { configured: boolean; fromEmail: string; provider: "resend" };
 
@@ -20,6 +21,19 @@ export async function deliverEmail(input: {
     getRuntimeValue("MYIMPERIAL_REPLY_TO"),
   ]);
   if (!apiKey || !fromEmail) return { ok: false, error: "Az email-küldés még nincs konfigurálva.", configurationRequired: true };
+
+  try {
+    validateOutboundEmail({
+      fromEmail,
+      subject: input.template.subject,
+      text: input.template.text,
+      html: input.template.html,
+      ...(replyTo ? { replyToEmail: replyTo } : {}),
+      kind: "transactional",
+    });
+  } catch {
+    return { ok: false, error: "A levél szövege nem felel meg a kötelező nyelvi vagy márkaszabálynak." };
+  }
 
   try {
     const response = await fetch("https://api.resend.com/emails", {

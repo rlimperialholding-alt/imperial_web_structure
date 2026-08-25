@@ -119,4 +119,33 @@ describe("TaskApplicationService", () => {
     expect(outbox.messages[0]?.eventKey).toBe("P1_ESCALATION");
     expect(outbox.messages[0]?.cc).toEqual(["manager-1"]);
   });
+
+  it("blocks an unknown-brand reminder without starving later tasks", async () => {
+    const tasks = new MemoryTaskRepository();
+    const audit = new MemoryAudit();
+    const outbox = new MemoryOutbox();
+    const due = new Date("2026-07-23T08:00:00.000Z");
+    tasks.items.set("UNKNOWN", makeTask({ id: "UNKNOWN", organizationId: "unknown-brand", nextCheckAt: due }));
+    tasks.items.set("VALID", makeTask({ id: "VALID", nextCheckAt: due }));
+    const service = new TaskApplicationService(
+      tasks,
+      audit,
+      outbox,
+      new BasicAuthorizationService(),
+      { now: () => new Date("2026-07-24T08:00:00.000Z") },
+      { next: () => "generated-id" },
+    );
+
+    const firstCount = await service.runEnforcementBatch(1);
+    const quarantined = tasks.items.get("UNKNOWN");
+    const count = await service.runEnforcementBatch(1);
+
+    expect(firstCount).toBe(0);
+    expect(count).toBe(1);
+    expect(quarantined?.nextCheckAt.toISOString()).toBe("9999-12-31T00:00:00.000Z");
+    expect(quarantined?.blockedReason).toMatch(/Automatikus levél letiltva/);
+    expect(outbox.messages).toHaveLength(1);
+    expect(outbox.messages[0]?.taskId).toBe("VALID");
+    expect(audit.events.some((event) => event.eventType === "ENFORCEMENT_NOTIFICATION_BLOCKED")).toBe(true);
+  });
 });

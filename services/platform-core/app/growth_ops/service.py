@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..models import MailSendingDomain, MailSuppression
+from ..services.outbound_copy_guard import OutboundCopyViolation, require_outbound_email
 from .connectors import SourceError, fetch_source
 from .email import EmailDeliveryError, SMTPEmailAdapter
 from .models import (
@@ -175,7 +176,7 @@ def _render_message(
         raise GrowthRegistryError("HTTPS GROWTH_OPS_BASE_URL is required")
     template = _template(binding, step)
     values = _SafeValues(
-        company_name=signal.company_name or "Tisztelt Címzett",
+        company_name=signal.company_name or "Címzett",
         signal_summary=signal.summary,
         evidence_url=signal.evidence_url,
         location=signal.location or "",
@@ -189,6 +190,15 @@ def _render_message(
         raise GrowthRegistryError(
             "Rendered outreach must contain useful copy and the unsubscribe URL"
         )
+    try:
+        require_outbound_email(
+            subject=subject,
+            body=body,
+            brand_id=binding.brand_id,
+            kind="outreach" if step == 0 else "followup",
+        )
+    except OutboundCopyViolation as exc:
+        raise GrowthRegistryError(str(exc)) from exc
     return subject, body
 
 
@@ -616,6 +626,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             body_text=row.body_text,
             idempotency_key=row.idempotency_key,
             reply_to=str(binding.config.get("reply_to") or binding.sender_email),
+            kind="outreach" if row.sequence_step == 0 else "followup",
         )
         row.status = "sent"
         row.provider_message_id = receipt.provider_message_id
@@ -689,7 +700,7 @@ def schedule_followups(db: Session) -> int:
     ).all()
     for row in candidates:
         signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
-        if not signal or signal.status in {"responded", "suppressed"}:
+        if not signal or signal.status in {"responded", "suppressed", "blocked"}:
             continue
         if db.scalar(
             select(OutreachMessage.id).where(
@@ -706,14 +717,39 @@ def schedule_followups(db: Session) -> int:
         delay = timedelta(days=int(delays[row.sequence_step]))
         if now < sent_at + delay:
             continue
-        _queue_message(
-            db,
-            signal,
-            binding,
-            step=row.sequence_step + 1,
-            available_at=now,
-            enforce_recipient_cooldown=False,
-        )
+        try:
+            _queue_message(
+                db,
+                signal,
+                binding,
+                step=row.sequence_step + 1,
+                available_at=now,
+                enforce_recipient_cooldown=False,
+            )
+        except GrowthRegistryError as exc:
+            try:
+                reasons = json.loads(signal.rejection_reasons_json or "[]")
+            except json.JSONDecodeError:
+                reasons = []
+            if not isinstance(reasons, list):
+                reasons = []
+            reason = f"followup_copy_blocked:{exc}"
+            reasons.append(reason)
+            signal.status = "blocked"
+            signal.rejection_reasons_json = canonical_json(sorted(set(map(str, reasons))))
+            audit(
+                db,
+                actor="growth-ops",
+                action="growth_followup_blocked",
+                entity_type="growth_signal",
+                entity_id=signal.signal_id,
+                after={
+                    "outreach_id": row.outreach_id,
+                    "sequence_step": row.sequence_step + 1,
+                    "reason": reason,
+                },
+            )
+            continue
         created += 1
     db.commit()
     return created

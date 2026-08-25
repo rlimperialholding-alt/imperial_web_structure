@@ -35,6 +35,7 @@ describe("OutboxDispatcher", () => {
     channel: "EMAIL",
     recipient: "employee@example.com",
     cc: [],
+    audience: "internal",
     subject: "Reminder",
     body: "Body",
     attempts: 0,

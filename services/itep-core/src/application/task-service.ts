@@ -6,7 +6,10 @@ import {
   transitionTask,
   validateTask,
 } from "../domain/index.js";
-import { renderTaskReminder } from "../notifications/templates.js";
+import {
+  NotificationTemplateError,
+  renderTaskReminder,
+} from "../notifications/templates.js";
 import { buildSemanticTaskFingerprint } from "../ingestion/fingerprint.js";
 import type {
   EvidenceSubmission,
@@ -123,9 +126,9 @@ export class TaskApplicationService {
   async runEnforcementBatch(limit = 100): Promise<number> {
     const now = this.clock.now();
     const dueTasks = await this.tasks.findDueForCheck(now, limit);
+    let processed = 0;
 
     for (const task of dueTasks) {
-      const overdue = now.getTime() > task.dueAt.getTime();
       const escalation = getEscalationEvent(task.priority, now, task.dueAt);
       const reminderLevel = task.reminderLevel + 1;
 
@@ -134,11 +137,32 @@ export class TaskApplicationService {
           ? []
           : [task.escalationPersonId];
 
-      const rendered = renderTaskReminder(
-        task,
-        reminderLevel,
-        escalation,
-      );
+      let rendered;
+      try {
+        rendered = renderTaskReminder(
+          task,
+          reminderLevel,
+          escalation,
+        );
+      } catch (error) {
+        if (!(error instanceof NotificationTemplateError)) throw error;
+        const quarantined: Task = {
+          ...task,
+          lastCheckedAt: now,
+          nextCheckAt: new Date("9999-12-31T00:00:00.000Z"),
+          blockedReason: `Automatikus levél letiltva: ${error.message}`,
+        };
+        await this.tasks.save(quarantined);
+        await this.audit.append(
+          createAuditEvent(quarantined, "ENFORCEMENT_NOTIFICATION_BLOCKED", "digital-anne", now, {
+            reason: error.message,
+            reminderLevel,
+            escalation,
+            quarantinedUntil: quarantined.nextCheckAt.toISOString(),
+          }),
+        );
+        continue;
+      }
 
       await this.outbox.enqueue({
         taskId: task.id,
@@ -146,8 +170,10 @@ export class TaskApplicationService {
         channel: "EMAIL",
         recipient: task.contact.email,
         cc,
+        audience: rendered.audience,
         subject: rendered.subject,
         body: rendered.text,
+        htmlBody: rendered.html,
         scheduledFor: now,
         idempotencyKey:
           `${task.id}:${task.nextCheckAt.toISOString()}:${reminderLevel}:${escalation}`,
@@ -167,9 +193,10 @@ export class TaskApplicationService {
           nextCheckAt: changed.nextCheckAt.toISOString(),
         }),
       );
+      processed += 1;
     }
 
-    return dueTasks.length;
+    return processed;
   }
 
   private async requireTask(id: string): Promise<Task> {

@@ -16,8 +16,10 @@ export class PrismaOutboxDispatchRepository
         channel: string;
         recipient: string;
         cc: string[];
+        audience: "external" | "internal";
         subject: string;
         body: string;
+        htmlBody: string | null;
         attempts: number;
         scheduledFor: Date;
         idempotencyKey: string;
@@ -39,7 +41,10 @@ export class PrismaOutboxDispatchRepository
         });
       }
 
-      return rows;
+      return rows.map((row) => ({
+        ...row,
+        htmlBody: row.htmlBody ?? undefined,
+      }));
     });
   }
 

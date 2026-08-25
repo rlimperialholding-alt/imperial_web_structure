@@ -23,9 +23,10 @@ export class TaskApplicationCandidateCreator
     const escalationPersonId =
       candidate.escalationPersonId ??
       this.policy.resolveEscalationPerson(candidate);
-    const contactEmail =
-      candidate.contactEmail ??
-      this.policy.resolveContactEmail(candidate);
+    // This adapter always assigns an internal employee.  A Gmail candidate's
+    // contactEmail can be the external sender, so it must never become the
+    // employee reminder address.  The trusted policy owns that resolution.
+    const contactEmail = this.policy.resolveContactEmail(candidate);
 
     const task = await this.service.create(this.actor, {
       organizationId: candidate.organizationId,
