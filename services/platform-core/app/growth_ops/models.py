@@ -84,6 +84,8 @@ class GrowthSignal(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     company_name: Mapped[str | None] = mapped_column(String(500), index=True)
     company_registration_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    recipient_organization_name: Mapped[str | None] = mapped_column(String(500), index=True)
+    recipient_office_name: Mapped[str | None] = mapped_column(String(500), index=True)
     subject_type: Mapped[str] = mapped_column(String(30), index=True)
     recipient_role: Mapped[str] = mapped_column(String(30), default="unknown", index=True)
     recipient_email: Mapped[str | None] = mapped_column(String(320), index=True)

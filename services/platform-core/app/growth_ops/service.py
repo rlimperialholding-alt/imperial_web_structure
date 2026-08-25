@@ -20,6 +20,7 @@ from ..config import settings as platform_settings
 from ..models import MailSendingDomain, MailSuppression
 from .canonical_policy import (
     LAND_AGENT_COMMISSION_ANCHOR,
+    LAND_AGENT_HARD_GATE_REASONS,
     LAND_AGENT_SUBJECT,
     LAND_CATALOG_URL,
     LAND_OUTREACH_SERVICE_ANCHOR,
@@ -28,6 +29,7 @@ from .canonical_policy import (
     PARTNER_OUTREACH_ANCHOR,
     assert_outreach_copy,
     contains_no_monitoring_entity,
+    land_agent_hard_gate_reason,
 )
 from .connectors import SourceError, fetch_source
 from .email import EmailDeliveryError, SMTPEmailAdapter
@@ -123,6 +125,20 @@ def _is_public_land_listing_contact(data: GrowthSignalIn) -> bool:
         and data.contact_basis == "public_property_listing"
         and data.recipient_role in {"listing_agent", "property_owner"}
         and bool(data.public_contact_url)
+    )
+
+
+def _land_agent_gate_reason(signal: GrowthSignalIn | GrowthSignal) -> str | None:
+    if signal.signal_type != "residential_building_plot":
+        return None
+    return land_agent_hard_gate_reason(
+        recipient_role=signal.recipient_role,
+        contact_name=signal.company_name,
+        organization_name=signal.recipient_organization_name,
+        office_name=signal.recipient_office_name,
+        recipient_email=signal.recipient_email,
+        public_contact_url=signal.public_contact_url,
+        evidence_url=signal.evidence_url,
     )
 
 
@@ -339,6 +355,9 @@ def _queue_message(
     available_at: datetime,
     enforce_recipient_cooldown: bool,
 ) -> OutreachMessage:
+    hard_gate_reason = _land_agent_gate_reason(signal)
+    if hard_gate_reason:
+        raise GrowthRegistryError(hard_gate_reason)
     if _recipient_suppressed(db, signal.recipient_email or ""):
         raise GrowthRegistryError("Recipient is suppressed")
     if enforce_recipient_cooldown:
@@ -413,6 +432,9 @@ def ingest_signal(
     *,
     run_id: str | None = None,
 ) -> GrowthSignalReceipt:
+    land_agent_gate = _land_agent_gate_reason(data)
+    if land_agent_gate:
+        raise GrowthRegistryError(land_agent_gate)
     hard_gate_values = "\n".join(
         value
         for value in (
@@ -475,6 +497,8 @@ def ingest_signal(
         detected_at=_aware(data.detected_at),
         company_name=data.company_name,
         company_registration_id=data.company_registration_id,
+        recipient_organization_name=data.recipient_organization_name,
+        recipient_office_name=data.recipient_office_name,
         subject_type=data.subject_type,
         recipient_role=data.recipient_role,
         recipient_email=data.recipient_email,
@@ -579,9 +603,15 @@ def run_motor(db: Session, motor_key: str, *, scheduled_for: datetime | None = N
             batch = fetch_source(source_id, source, limit=remaining)
             run.succeeded_sources += 1
             run.raw_signals += batch.raw_count
-            accepted = queued = 0
+            accepted = queued = hard_gate_blocked = 0
             for signal in batch.signals:
-                receipt = ingest_signal(db, signal, run_id=run.run_id)
+                try:
+                    receipt = ingest_signal(db, signal, run_id=run.run_id)
+                except GrowthRegistryError as exc:
+                    if str(exc) not in LAND_AGENT_HARD_GATE_REASONS:
+                        raise
+                    hard_gate_blocked += 1
+                    continue
                 accepted += receipt.status in {"accepted", "queued", "contacted"}
                 queued += bool(receipt.outreach_id and not receipt.idempotent)
             run.accepted_signals += accepted
@@ -593,6 +623,7 @@ def run_motor(db: Session, motor_key: str, *, scheduled_for: datetime | None = N
                     "status": "ok",
                     "raw": batch.raw_count,
                     "schema_rejected": batch.rejected_count,
+                    "hard_gate_blocked": hard_gate_blocked,
                     "accepted": accepted,
                     "queued": queued,
                 }
@@ -743,6 +774,12 @@ def release_outreach(
         raise KeyError(outreach_id)
     if row.status != "queued":
         raise GrowthRegistryError("Only queued outreach can be released")
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
+    if not signal:
+        raise GrowthRegistryError("Signal record is missing")
+    hard_gate_reason = _land_agent_gate_reason(signal)
+    if hard_gate_reason:
+        raise GrowthRegistryError(hard_gate_reason)
     if not hmac.compare_digest(row.payload_sha256, data.inspected_payload_sha256):
         raise GrowthRegistryError("Inspected outreach payload hash does not match")
     assert_outreach_copy(row.body_text)
@@ -781,8 +818,27 @@ def _trip_runtime_kill_switch() -> bool:
 
 
 def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
-    registry = GrowthRegistry.load()
     signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
+    hard_gate_reason = _land_agent_gate_reason(signal) if signal else None
+    if hard_gate_reason:
+        row.status = "blocked"
+        row.last_error = hard_gate_reason
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+        signal.status = "blocked"
+        signal.rejection_reasons_json = canonical_json([hard_gate_reason])
+        audit(
+            db,
+            actor="growth-worker",
+            action="growth_outreach_hard_gate_blocked",
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after={"signal_id": row.signal_id, "reason": hard_gate_reason},
+        )
+        db.commit()
+        return row
+    registry = GrowthRegistry.load()
     try:
         if not signal:
             raise GrowthRegistryError("Signal record is missing")

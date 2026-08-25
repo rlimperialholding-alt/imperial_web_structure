@@ -8,10 +8,16 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
+from app.growth_ops.canonical_policy import LAND_AGENT_HARD_GATE_GDN
 from app.growth_ops.catalog import _fetch
 from app.growth_ops.models import GrowthSignal, OutreachMessage
 from app.growth_ops.registry import BrandBinding
-from app.growth_ops.service import _queue_message, _release_matches, _render_message
+from app.growth_ops.service import (
+    _queue_message,
+    _release_matches,
+    _render_message,
+    dispatch_outreach,
+)
 from app.land_acquisition.models import (
     LandListingPackage,
     LandOpportunity,
@@ -357,6 +363,7 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         signal_type="residential_building_plot",
         detected_at=datetime.now(UTC),
         company_name="Nagy Gergő",
+        recipient_organization_name="Duna House",
         subject_type="natural_person",
         recipient_role="listing_agent",
         recipient_email="nagy.gergo1@dh.hu",
@@ -452,6 +459,9 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
         signal_type="residential_building_plot",
         detected_at=datetime.now(UTC),
         company_name="Nyilvános hirdető",
+        recipient_organization_name=(
+            "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
+        ),
         subject_type="natural_person",
         recipient_role=recipient_role,
         recipient_email=f"{recipient_role}@example.test",
@@ -516,6 +526,64 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
     else:
         assert initial.body_html is None
     assert followup.release_token_hash is None
+
+
+def test_dispatch_blocks_legacy_queued_gdn_agent_before_registry_or_smtp(db):
+    signal = GrowthSignal(
+        signal_id="SIG-LAND-GDN-LEGACY",
+        motor_key="construction",
+        source_id="licensed-feed:legacy",
+        source_bucket="property_development",
+        external_key="LISTING-GDN-LEGACY",
+        signal_type="residential_building_plot",
+        detected_at=datetime.now(UTC),
+        company_name="Minta Értékesítő",
+        recipient_organization_name="GDN Ingatlanhálózat",
+        recipient_office_name="GDN Belvárosi Iroda",
+        subject_type="natural_person",
+        recipient_role="listing_agent",
+        recipient_email="ertekesito@gdn-ingatlan.hu",
+        recipient_email_type="named",
+        contact_basis="public_property_listing",
+        public_contact_url="https://gdn-ingatlan.hu/ingatlan/LEGACY",
+        location="Budapest",
+        summary="Korábban sorba állított építési telek hirdetése.",
+        evidence_url="https://gdn-ingatlan.hu/ingatlan/LEGACY",
+        brand_id="Imperial",
+        score=90,
+        urgency=50,
+        confidence=90,
+        dedupe_hash="e" * 64,
+        source_payload_hash="f" * 64,
+        status="queued",
+    )
+    message = OutreachMessage(
+        outreach_id="OUT-LAND-GDN-LEGACY",
+        signal_id=signal.signal_id,
+        motor_key="construction",
+        brand_id="Imperial",
+        sender_email="info@imperialholding.hu",
+        recipient_email=signal.recipient_email,
+        sequence_step=0,
+        subject="legacy queued message",
+        body_text="Legacy queued outreach that must never be dispatched.",
+        unsubscribe_token_hash="1" * 64,
+        idempotency_key="2" * 64,
+        payload_sha256="3" * 64,
+        status="claimed",
+        claimed_by="legacy-worker",
+        claimed_at=datetime.now(UTC),
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    db.add_all([signal, message])
+    db.commit()
+
+    result = dispatch_outreach(db, message)
+
+    assert result.status == "blocked"
+    assert result.last_error == LAND_AGENT_HARD_GATE_GDN
+    assert signal.status == "blocked"
+    assert signal.rejection_reasons_json == f'["{LAND_AGENT_HARD_GATE_GDN}"]'
 
 
 def test_generic_scanner_rejects_private_and_cgnat_targets(monkeypatch):

@@ -20,6 +20,8 @@ class GrowthSignalIn(BaseModel):
     detected_at: datetime
     company_name: str | None = Field(default=None, max_length=500)
     company_registration_id: str | None = Field(default=None, max_length=120)
+    recipient_organization_name: str | None = Field(default=None, max_length=500)
+    recipient_office_name: str | None = Field(default=None, max_length=500)
     subject_type: Literal["organization", "natural_person"]
     recipient_role: Literal["listing_agent", "property_owner", "unknown"] = "unknown"
     recipient_email: str | None = Field(default=None, max_length=320)

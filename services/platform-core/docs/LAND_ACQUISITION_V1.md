@@ -68,6 +68,15 @@ API-credential, portálspecifikus adapter-receipt vagy staging contract-test.
 - Nyilvános üzleti role mailbox továbbra is a Growth Ops meglévő
   `public_business_contact` szabályával használható.
 - Bounce, complaint, unsubscribe vagy suppression esetén minden további üzenet tiltott.
+- Ingatlanos címzettnél külön, pontszámmal és kézi release-zel sem felülírható hard gate
+  tiltja Turczer Józsefet, a teljes GDN Ingatlanhálózatot, valamint az Otthon Centrum
+  II./II/A. és XII. kerületi irodáinak minden munkatársát. Az ismert OC-irodaazonosítók
+  közé tartozik a Bem rakpart, TDG, Hidegkúti út, Lajos utca, Ürömi utca, MOM Park és
+  Városmajor utca. OC-s címzett ellenőrzött iroda-hozzárendelés nélkül, illetve bármely
+  ingatlanos ellenőrzött hálózati/irodai affiliáció nélkül fail-closed módon blokkolt.
+- A kizárás a forrásrekord befogadása, az üzenet sorba állítása, a release és a tényleges
+  SMTP-kiküldés előtt is lefut; a már korábban sorba állított tiltott címzett státusza
+  `blocked` lesz, auditált tiltási indokkal.
 - A telekmodul nem küld e-mailt közvetlenül, így nem kerülhető meg a közös policy.
 
 ## Belső API

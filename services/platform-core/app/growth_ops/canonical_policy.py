@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+import unicodedata
 from dataclasses import dataclass
 
 SPEC_VERSION = "2026-08-20-canonical-wide-v1"
@@ -89,6 +91,35 @@ NO_MONITORING_HARD_GATE = (
     "Horizont Global",
 )
 
+# Owner-mandated land-agent exclusions, approved 2026-08-25. These are evaluated
+# independently from scoring and global email suppression. An Otthon Centrum agent
+# must carry verified office affiliation so the II./II/A. and XII. district office
+# exclusions cannot be bypassed by an incomplete source record.
+LAND_AGENT_BLOCKED_OC_OFFICE_ALIASES = (
+    "bem rakpart",
+    "tdg",
+    "hidegkuti ut",
+    "lajos utca",
+    "uromi utca",
+    "mom park",
+    "varosmajor utca",
+)
+
+LAND_AGENT_HARD_GATE_TURCZER = "land_agent_turczer_jozsef_hard_gate"
+LAND_AGENT_HARD_GATE_GDN = "land_agent_gdn_network_hard_gate"
+LAND_AGENT_HARD_GATE_OC_II_XII = "land_agent_otthon_centrum_ii_xii_office_hard_gate"
+LAND_AGENT_HARD_GATE_OC_UNVERIFIED = "land_agent_otthon_centrum_office_unverified_hard_gate"
+LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED = "land_agent_affiliation_unverified_hard_gate"
+LAND_AGENT_HARD_GATE_REASONS = frozenset(
+    {
+        LAND_AGENT_HARD_GATE_TURCZER,
+        LAND_AGENT_HARD_GATE_GDN,
+        LAND_AGENT_HARD_GATE_OC_II_XII,
+        LAND_AGENT_HARD_GATE_OC_UNVERIFIED,
+        LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED,
+    }
+)
+
 ETDR_BRANCHES = (
     "NEW_OR_CHANGED_RECORD_DELTA",
     "ETDR_START_NOT_VERIFIED",
@@ -156,6 +187,70 @@ def assert_outreach_copy(body: str) -> None:
 def contains_no_monitoring_entity(value: str) -> bool:
     normalized = " ".join(value.casefold().split())
     return any(name.casefold() in normalized for name in NO_MONITORING_HARD_GATE)
+
+
+def _identity_fold(value: str | None) -> str:
+    decomposed = unicodedata.normalize("NFKD", value or "")
+    ascii_like = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_like.casefold()).split())
+
+
+def _blocked_oc_office(office_name: str) -> bool:
+    normalized = _identity_fold(office_name)
+    district_pattern = re.compile(
+        r"\b(?:ii(?:\s+a)?|2(?:\s+a)?|xii|12)\s+kerulet\b|\b(?:2|12)ker\b"
+    )
+    if district_pattern.search(normalized):
+        return True
+    if re.search(r"\b(?:102\d|112\d)\b", normalized):
+        return True
+    return any(alias in normalized for alias in LAND_AGENT_BLOCKED_OC_OFFICE_ALIASES)
+
+
+def land_agent_hard_gate_reason(
+    *,
+    recipient_role: str,
+    contact_name: str | None,
+    organization_name: str | None,
+    office_name: str | None,
+    recipient_email: str | None,
+    public_contact_url: str | None,
+    evidence_url: str | None,
+) -> str | None:
+    """Return a non-overridable exclusion reason for a land-listing agent."""
+
+    if recipient_role != "listing_agent":
+        return None
+    identity = _identity_fold(
+        " ".join(
+            value
+            for value in (
+                contact_name,
+                organization_name,
+                office_name,
+                recipient_email,
+                public_contact_url,
+                evidence_url,
+            )
+            if value
+        )
+    )
+    if re.search(r"\b(?:turczer\s+jozsef|jozsef\s+turczer)\b", identity):
+        return LAND_AGENT_HARD_GATE_TURCZER
+    if re.search(r"\bgdn\b", identity):
+        return LAND_AGENT_HARD_GATE_GDN
+    if not organization_name or not organization_name.strip():
+        return LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED
+    is_otthon_centrum = bool(
+        re.search(r"\botthon\s+centrum\b|\boc\s+hu\b", identity)
+    )
+    if not is_otthon_centrum:
+        return None
+    if not office_name or not office_name.strip():
+        return LAND_AGENT_HARD_GATE_OC_UNVERIFIED
+    if _blocked_oc_office(office_name):
+        return LAND_AGENT_HARD_GATE_OC_II_XII
+    return None
 
 
 assert_policy_integrity()
