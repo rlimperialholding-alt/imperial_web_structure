@@ -58,10 +58,13 @@ API-credential, portálspecifikus adapter-receipt vagy staging contract-test.
 - A változtathatatlan, tulajdonos által jóváhagyott sablon első levele a
   `land-public-listing-v1` policy alapján automatikusan release-tokenes jóváhagyást kap.
   Ez kizárólag az első levélre érvényes; automatikus utánkövető levél nem készül.
-- `listing_agent` esetén a levél a 2,5%-os közvetítői díjat, a kész hirdetési anyagot,
-  a teljes szakmai támogatást és a szerződéstervezetet ajánlja fel.
-- `property_owner` esetén a levél ingyenes, jutalékmentes, kötelezettség nélküli telek +
-  típusház hirdetést ajánl, és csak írásos hirdetési engedélyt kér.
+- `listing_agent` esetén a 2026-08-25-én jóváhagyott rövid levél 2,5%-os jutalékot,
+  telekre illő típusházzal elkészített hirdetést, látványtervet, alaprajzot és műszaki
+  leírást ajánl. A fő jutalékmondat multipart HTML levélben félkövér, a plain-text
+  változatban változatlan szöveggel szerepel.
+- `property_owner` esetén a 2026-08-25-én jóváhagyott rövid levél díjmentes,
+  jutalékmentes és kötelezettség nélküli kínálatba vételt ajánl, valamint a nyilvános
+  telekkínálatra mutat: `https://imperialholding.hu/termek/telek-kereso`.
 - Nyilvános üzleti role mailbox továbbra is a Growth Ops meglévő
   `public_business_contact` szabályával használható.
 - Bounce, complaint, unsubscribe vagy suppression esetén minden további üzenet tiltott.

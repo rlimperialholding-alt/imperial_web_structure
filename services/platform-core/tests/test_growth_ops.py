@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.growth_ops import service
 from app.growth_ops.connectors import _timestamp
+from app.growth_ops.email import SMTPEmailAdapter
 from app.growth_ops.models import GrowthRun, GrowthSignal, OutreachMessage
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn
@@ -233,6 +234,45 @@ def test_daily_schedule_runs_once_after_budapest_0800(growth_runtime):
 def test_signal_schema_requires_contact_evidence():
     with pytest.raises(ValidationError, match="Public business contact URL is required"):
         _signal(public_contact_url=None)
+
+
+def test_smtp_adapter_sends_reviewed_html_as_multipart_alternative(monkeypatch):
+    sent = {}
+
+    class FakeSMTP:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def login(self, username, password):
+            assert (username, password) == ("test", "test")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def send_message(self, message, **kwargs):
+            sent["message"] = message
+            return {}
+
+    monkeypatch.setattr("app.growth_ops.email.smtplib.SMTP_SSL", FakeSMTP)
+    binding = FakeRegistry().brand_binding("bautica")
+
+    SMTPEmailAdapter(binding).send(
+        to_email="partner@example.test",
+        subject="ház eladásában kérnék segítséget",
+        body_text="2,5% jutalékot fizetünk.",
+        body_html="<p><strong>2,5% jutalékot fizetünk.</strong></p>",
+        idempotency_key="a" * 64,
+    )
+
+    message = sent["message"]
+    assert message.get_content_type() == "multipart/alternative"
+    assert "2,5% jutalékot fizetünk." in message.get_body(("plain",)).get_content()
+    assert "<strong>2,5% jutalékot fizetünk.</strong>" in message.get_body(
+        ("html",)
+    ).get_content()
 
 
 def test_rss_timestamp_accepts_standard_rfc_2822_date():

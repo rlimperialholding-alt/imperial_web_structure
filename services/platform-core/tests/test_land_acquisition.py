@@ -396,12 +396,19 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         step=0,
         unsubscribe_token="UAT-TOKEN",
     )
-    assert subject == "Plusz 2,5% bevétel a sülysápi, 605 m²-es telek hirdetésével"
-    assert "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik." in body
-    assert "az értékesített típusterv nettó árából 2,5%-ot fizetünk Önnek" in body
-    assert "Önnek nem kell építési vagy műszaki kérdésekkel foglalkoznia" in body
-    assert "Csak írásban kell jeleznie, hogy az érdeklődő Öntől érkezett" in body
-    assert "Kész együttműködési szerződéstervezettel várjuk partnereink közé" in body
+    assert subject == "ház eladásában kérnék segítséget"
+    assert (
+        "Cégünk, az Imperial Holding, előregyártott készházak és típusházak "
+        "építésével foglalkozik"
+    ) in body
+    assert (
+        "2,5% jutalékot fizetünk azoknak az ingatlanos partnereinknek, akik a "
+        "hirdetett telkeik mellé valamelyik típusházunkat is eladják."
+    ) in body
+    assert "Jelenleg is számos ingatlan-irodával dolgozunk együtt" in body
+    assert "látványtervvel, alaprajzzal és műszaki leírással" in body
+    assert "2,5% jutalékot fizetünk Önnek a típusterv árából" in body
+    assert "Érdekli ez a lehetőség?" in body
     assert "Leiratkozás: https://growth.imperialholding.test/growth/unsubscribe/UAT-TOKEN" in body
 
     signal.recipient_role = "property_owner"
@@ -412,12 +419,16 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         step=0,
         unsubscribe_token="UAT-OWNER-TOKEN",
     )
-    assert subject == ("Ingyen elkészítjük a sülysápi, 605 m²-es telek + típusház hirdetését")
-    assert "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik." in body
-    assert "Ingyen, jutalék nélkül" in body
-    assert "Önnek ezért nem kell fizetnie, és semmilyen kötelezettséget nem vállal" in body
-    assert "Csak az írásos engedélyét kérjük" in body
-    assert "Engedélyezem a telek hirdetését." in body
+    assert subject == "szeretnék érdeklődni a telek iránt"
+    assert (
+        "Cégünk, az Imperial Holding, előregyártott készházak és típusházak "
+        "építésével foglalkozik"
+    ) in body
+    assert "Szívesen felvennénk a kínálatunkba DÍJMENTESEN" in body
+    assert "https://imperialholding.hu/termek/telek-kereso" in body
+    assert "Nem kérünk Öntől pénzt semmilyen formában, jutalékot sem" in body
+    assert "Nem kérünk semmilyen kötelezettséget" in body
+    assert "Érdekli?" in body
     assert "2,5%" not in body
     assert (
         "Leiratkozás: https://growth.imperialholding.test/growth/unsubscribe/UAT-OWNER-TOKEN"
@@ -496,6 +507,14 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
     assert initial.release_approved_by == "owner-policy:land-public-listing-v1:2026-08-25"
     assert initial.release_approved_at is not None
     assert initial.release_token_hash and _release_matches(initial)
+    if recipient_role == "listing_agent":
+        assert initial.body_html
+        assert (
+            "<strong>2,5% jutalékot fizetünk azoknak az ingatlanos partnereinknek"
+            in initial.body_html
+        )
+    else:
+        assert initial.body_html is None
     assert followup.release_token_hash is None
 
 

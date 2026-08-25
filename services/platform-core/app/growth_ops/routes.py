@@ -73,6 +73,7 @@ def _outreach_artifact(row: OutreachMessage) -> dict:
         "recipient_email": row.recipient_email,
         "subject": row.subject,
         "body_text": row.body_text,
+        "body_html": row.body_html,
         "payload_sha256": row.payload_sha256,
         "release_approved_by": row.release_approved_by,
         "release_approved_at": row.release_approved_at,

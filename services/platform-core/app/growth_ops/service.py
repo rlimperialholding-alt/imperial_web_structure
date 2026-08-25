@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime, timedelta
+from html import escape
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
@@ -19,8 +20,11 @@ from ..config import settings as platform_settings
 from ..models import MailSendingDomain, MailSuppression
 from .canonical_policy import (
     LAND_AGENT_COMMISSION_ANCHOR,
+    LAND_AGENT_SUBJECT,
+    LAND_CATALOG_URL,
     LAND_OUTREACH_SERVICE_ANCHOR,
     LAND_OWNER_FREE_AD_ANCHOR,
+    LAND_OWNER_SUBJECT,
     PARTNER_OUTREACH_ANCHOR,
     assert_outreach_copy,
     contains_no_monitoring_entity,
@@ -211,47 +215,40 @@ def _render_message(
     subject = template["subject"].format_map(values).strip()
     if signal.signal_type == "residential_building_plot":
         if signal.recipient_role == "listing_agent":
-            subject = f"Plusz 2,5% bevétel a {values['location']} telek hirdetésével"
+            subject = LAND_AGENT_SUBJECT
             body = (
                 f"Tisztelt {values['company_name']}!\n\n"
-                f"Az Ön által hirdetett {values['location']} építési telek miatt "
-                "keresem.\n\n"
-                f"{LAND_OUTREACH_SERVICE_ANCHOR} "
-                "Olyan együttműködést ajánlunk Önnek, amellyel az ingatlan "
-                "értékesítése mellett plusz bevételhez juthat.\n\n"
-                "Mi elkészítjük a telekhez illő telek + típusház hirdetési anyagot, "
-                "és elküldjük Önnek. Önnek csak meg kell hirdetnie. "
+                f"Cégünk, az {values['brand_name']}, {LAND_OUTREACH_SERVICE_ANCHOR}, "
+                "és úgy gondoljuk, hogy az Ön által hirdetett telekben van lehetőség.\n\n"
                 f"{LAND_AGENT_COMMISSION_ANCHOR}\n\n"
-                "Kap egy közvetlen telefonszámot, ahol minden szakmai kérdésére "
-                "válaszolunk. Az érdeklődő is hívhat bennünket. Önnek nem kell "
-                "építési vagy műszaki kérdésekkel foglalkoznia. Csak írásban kell "
-                "jeleznie, hogy az érdeklődő Öntől érkezett.\n\n"
-                "Kész együttműködési szerződéstervezettel várjuk partnereink közé.\n\n"
-                "A partneri csatlakozáshoz válaszoljon emailben, és elküldjük a "
-                "szerződéstervezetet.\n\n"
-                f"Hirdetés: {values['evidence_url']}\n\n"
+                "Jelenleg is számos ingatlan-irodával dolgozunk együtt az ország "
+                "minden pontján. Mi elkészítjük a hirdetést Önnek egy olyan "
+                "típusházzal, ami építhető erre a telekre, látványtervvel, "
+                "alaprajzzal és műszaki leírással. Ha Ön meghirdeti a telekkel "
+                "együtt, és érkezik rá vevő, 2,5% jutalékot fizetünk Önnek a "
+                "típusterv árából.\n\n"
+                "Érdekli ez a lehetőség?\n\n"
                 "Üdvözlettel:\n"
-                "Imperial Holding\n"
+                f"{values['brand_name']}\n"
                 f"{values['sender_email']}\n\n"
                 f"Leiratkozás: {values['unsubscribe_url']}"
             )
         elif signal.recipient_role == "property_owner":
-            subject = f"Ingyen elkészítjük a {values['location']} telek + típusház hirdetését"
+            subject = LAND_OWNER_SUBJECT
             body = (
                 f"Tisztelt {values['company_name']}!\n\n"
-                f"Az Ön által hirdetett {values['location']} építési telek miatt "
-                "keresem.\n\n"
-                f"{LAND_OUTREACH_SERVICE_ANCHOR}\n\n"
-                f"{LAND_OWNER_FREE_AD_ANCHOR} Önnek ezért nem kell fizetnie, és "
-                "semmilyen kötelezettséget nem vállal.\n\n"
-                "Csak az írásos engedélyét kérjük ahhoz, hogy a telket a telek + "
-                "típusház ajánlat részeként meghirdethessük. A hirdetési anyagot mi "
-                "készítjük el.\n\n"
-                "A hirdetés engedélyezéséhez válaszoljon emailben: "
-                "„Engedélyezem a telek hirdetését.”\n\n"
-                f"Hirdetés: {values['evidence_url']}\n\n"
+                f"Cégünk, az {values['brand_name']}, {LAND_OUTREACH_SERVICE_ANCHOR}, "
+                "és úgy gondoljuk, hogy az Ön telkében van lehetőség.\n\n"
+                f"{LAND_OWNER_FREE_AD_ANCHOR}\n\n"
+                "Itt meg tudja nézni a weboldalunkon, milyen telkekkel dolgozunk "
+                f"jelenleg: {LAND_CATALOG_URL}\n\n"
+                "Nem kérünk Öntől pénzt semmilyen formában, jutalékot sem: a "
+                "lehetőség mindkettőnknek előnyös, mi a típusházat adjuk el, Ön "
+                "pedig a telket. Nem kérünk semmilyen kötelezettséget, csak "
+                "szeretnénk együttműködni Önnel.\n\n"
+                "Érdekli?\n\n"
                 "Üdvözlettel:\n"
-                "Imperial Holding\n"
+                f"{values['brand_name']}\n"
                 f"{values['sender_email']}\n\n"
                 f"Leiratkozás: {values['unsubscribe_url']}"
             )
@@ -275,6 +272,17 @@ def _render_message(
             "Rendered outreach must contain useful copy and the unsubscribe URL"
         )
     return subject, body
+
+
+def _email_html(body_text: str, *, bold_sentence: str | None = None) -> str:
+    paragraphs: list[str] = []
+    bold_escaped = escape(bold_sentence) if bold_sentence else None
+    for paragraph in body_text.split("\n\n"):
+        safe = escape(paragraph).replace("\n", "<br>\n")
+        if bold_escaped and bold_escaped in safe:
+            safe = safe.replace(bold_escaped, f"<strong>{bold_escaped}</strong>", 1)
+        paragraphs.append(f"<p>{safe}</p>")
+    return "<!doctype html><html><body>" + "".join(paragraphs) + "</body></html>"
 
 
 def _recipient_suppressed(db: Session, email: str) -> bool:
@@ -339,15 +347,22 @@ def _queue_message(
             raise GrowthRegistryError(";".join(errors))
     token = token_urlsafe(32)
     subject, body = _render_message(signal, binding, step=step, unsubscribe_token=token)
+    body_html = None
+    if (
+        signal.signal_type == "residential_building_plot"
+        and signal.recipient_role == "listing_agent"
+    ):
+        body_html = _email_html(body, bold_sentence=LAND_AGENT_COMMISSION_ANCHOR)
     key = sha({"signal_id": signal.signal_id, "brand_id": binding.brand_id, "step": step})
-    payload_hash = sha(
-        {
-            "from": binding.sender_email,
-            "to": signal.recipient_email,
-            "subject": subject,
-            "body": body,
-        }
-    )
+    payload = {
+        "from": binding.sender_email,
+        "to": signal.recipient_email,
+        "subject": subject,
+        "body": body,
+    }
+    if body_html:
+        payload["body_html"] = body_html
+    payload_hash = sha(payload)
     row = OutreachMessage(
         outreach_id=f"OUT-{uuid4().hex[:20].upper()}",
         signal_id=signal.signal_id,
@@ -358,6 +373,7 @@ def _queue_message(
         sequence_step=step,
         subject=subject,
         body_text=body,
+        body_html=body_html,
         unsubscribe_token_hash=hashlib.sha256(token.encode()).hexdigest(),
         idempotency_key=key,
         payload_sha256=payload_hash,
@@ -691,16 +707,17 @@ def claim_outreach(db: Session) -> OutreachMessage | None:
 
 
 def _payload_matches(row: OutreachMessage) -> bool:
+    payload = {
+        "from": row.sender_email,
+        "to": row.recipient_email,
+        "subject": row.subject,
+        "body": row.body_text,
+    }
+    if row.body_html:
+        payload["body_html"] = row.body_html
     return hmac.compare_digest(
         row.payload_sha256,
-        sha(
-            {
-                "from": row.sender_email,
-                "to": row.recipient_email,
-                "subject": row.subject,
-                "body": row.body_text,
-            }
-        ),
+        sha(payload),
     )
 
 
@@ -774,6 +791,13 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         if not _payload_matches(row):
             raise GrowthRegistryError("outreach_payload_hash_mismatch")
         assert_outreach_copy(row.body_text)
+        if (
+            signal.signal_type == "residential_building_plot"
+            and signal.recipient_role == "listing_agent"
+        ):
+            required_bold = f"<strong>{escape(LAND_AGENT_COMMISSION_ANCHOR)}</strong>"
+            if not row.body_html or required_bold not in row.body_html:
+                raise GrowthRegistryError("land_agent_commission_bold_format_missing")
         if not _release_matches(row):
             raise GrowthRegistryError("outreach_exact_payload_release_missing_or_invalid")
         if _recipient_suppressed(db, row.recipient_email):
@@ -790,6 +814,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             to_email=row.recipient_email,
             subject=row.subject,
             body_text=row.body_text,
+            body_html=row.body_html,
             idempotency_key=row.idempotency_key,
             reply_to=str(binding.config.get("reply_to") or binding.sender_email),
         )

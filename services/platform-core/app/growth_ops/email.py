@@ -53,6 +53,7 @@ class SMTPEmailAdapter:
         subject: str,
         body_text: str,
         idempotency_key: str,
+        body_html: str | None = None,
         reply_to: str | None = None,
     ) -> EmailReceipt:
         self.preflight()
@@ -68,6 +69,8 @@ class SMTPEmailAdapter:
         if reply_to:
             message["Reply-To"] = reply_to
         message.set_content(body_text)
+        if body_html:
+            message.add_alternative(body_html, subtype="html")
         host = str(self.secret["host"])
         port = int(self.secret["port"])
         timeout = float(self.secret.get("timeout_seconds", 30))

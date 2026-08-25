@@ -25,27 +25,38 @@ PARTNER_OUTREACH_ANCHOR = (
 )
 PARTNER_OUTREACH_ANCHOR_SHA256 = "7004cccbda5c2e45109edf92474791a4b2fd268d8ffe2de08d093c32f1b1e24f"
 
-# Owner-approved land-listing copy, 2026-08-25. The three anchors prevent a
-# runtime template or later refactor from changing the product, commission, or
-# property-owner offer without an explicit policy update.
+# Owner-approved land-listing copy, revised 2026-08-25. These subjects and
+# anchors prevent a runtime template or later refactor from changing the
+# product, commission, or property-owner offer without an explicit policy
+# update.
+LAND_OWNER_SUBJECT = "szeretnék érdeklődni a telek iránt"
+LAND_OWNER_SUBJECT_SHA256 = (
+    "792451ca4fd342fdf19cf530caa910030e8a5e06f96eec39f3b02700ea4159e5"
+)
+LAND_AGENT_SUBJECT = "ház eladásában kérnék segítséget"
+LAND_AGENT_SUBJECT_SHA256 = (
+    "4f5460a60567e226c1fb4c4e4a28b59315738a2eda21ce37eebdbf6d28b43334"
+)
+LAND_CATALOG_URL = "https://imperialholding.hu/termek/telek-kereso"
 LAND_OUTREACH_SERVICE_ANCHOR = (
-    "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik."
+    "előregyártott készházak és típusházak építésével foglalkozik"
 )
 LAND_OUTREACH_SERVICE_ANCHOR_SHA256 = (
-    "0220cfa5398c899f068acdf1530b7002ca00fcc422a2f6895c52883bbe02ee26"
+    "49b13d78545af86f7cce867c44567cf7575085228b7cc81415e16208683d39f3"
 )
 LAND_AGENT_COMMISSION_ANCHOR = (
-    "Ha az Ön által közvetített érdeklődő megvásárolja valamelyik típustervünket, "
-    "az értékesített típusterv nettó árából 2,5%-ot fizetünk Önnek."
+    "2,5% jutalékot fizetünk azoknak az ingatlanos partnereinknek, akik a hirdetett "
+    "telkeik mellé valamelyik típusházunkat is eladják."
 )
 LAND_AGENT_COMMISSION_ANCHOR_SHA256 = (
-    "487fa86e9ac27c22da12807ae314854bf5cdb0b0fc5519c80cd4dbaa5d105181"
+    "ae48724a42c7de14cb30a6715ce488f314320c12b566ac4255ba8bf6ac1bb393"
 )
 LAND_OWNER_FREE_AD_ANCHOR = (
-    "Ingyen, jutalék nélkül meghirdetjük az ingatlanát a telekhez illő típusházunkkal."
+    "Szívesen felvennénk a kínálatunkba DÍJMENTESEN, mert sokan keresnek nálunk a "
+    "típusházakhoz eladó telkeket."
 )
 LAND_OWNER_FREE_AD_ANCHOR_SHA256 = (
-    "09bff47f226817749a551e2cb8d7d44a9481e02d57829a6e47f09b191b1f380c"
+    "d232996df9487fa74c70c2d517939cd209e8b8422d880a36f953c7ea5f25ac60"
 )
 
 ACTIVE_CONTENT_BRANDS = (
@@ -113,6 +124,8 @@ class DailyGateResult:
 def assert_policy_integrity() -> None:
     anchors = (
         (PARTNER_OUTREACH_ANCHOR, PARTNER_OUTREACH_ANCHOR_SHA256),
+        (LAND_OWNER_SUBJECT, LAND_OWNER_SUBJECT_SHA256),
+        (LAND_AGENT_SUBJECT, LAND_AGENT_SUBJECT_SHA256),
         (LAND_OUTREACH_SERVICE_ANCHOR, LAND_OUTREACH_SERVICE_ANCHOR_SHA256),
         (LAND_AGENT_COMMISSION_ANCHOR, LAND_AGENT_COMMISSION_ANCHOR_SHA256),
         (LAND_OWNER_FREE_AD_ANCHOR, LAND_OWNER_FREE_AD_ANCHOR_SHA256),

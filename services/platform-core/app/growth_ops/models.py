@@ -135,6 +135,7 @@ class OutreachMessage(Base):
     sequence_step: Mapped[int] = mapped_column(Integer, default=0)
     subject: Mapped[str] = mapped_column(String(500))
     body_text: Mapped[str] = mapped_column(Text)
+    body_html: Mapped[str | None] = mapped_column(Text)
     unsubscribe_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     idempotency_key: Mapped[str] = mapped_column(String(64), index=True)
     payload_sha256: Mapped[str] = mapped_column(String(64))
