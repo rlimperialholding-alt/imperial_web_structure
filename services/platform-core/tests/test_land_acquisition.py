@@ -1,0 +1,504 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from types import SimpleNamespace
+
+import pytest
+from sqlalchemy import select
+
+from app.growth_ops.catalog import _fetch
+from app.growth_ops.models import GrowthSignal, OutreachMessage
+from app.land_acquisition.models import (
+    LandListingPackage,
+    LandOpportunity,
+    LandPublicationAttempt,
+)
+from app.land_acquisition.schemas import (
+    AuthorityGrantIn,
+    DealIn,
+    ListingPackageIn,
+    PackageApprovalIn,
+    PublicationConfirmationIn,
+    PublicationRequestIn,
+    SourceVerificationIn,
+)
+from app.land_acquisition.service import (
+    approve_package,
+    confirm_publication,
+    create_listing_package,
+    grant_authority,
+    record_deal,
+    request_publication,
+    revoke_authority,
+    scan_authority_expiry,
+    sync_growth_plot_signals,
+    verify_source,
+)
+from app.models import (
+    BuildConfigCase,
+    BuildConfigGate,
+    BuildConfigVersion,
+    HouseCatalogPlan,
+    HouseCatalogVersion,
+    ModuleRegistry,
+    OutboxMessage,
+    PlotCheckCase,
+    PlotRuleSet,
+)
+
+
+def _signal(db, *, signal_id: str = "SIG-LAND-UAT", payload_sha: str = "1" * 64):
+    signal = GrowthSignal(
+        signal_id=signal_id,
+        motor_key="construction",
+        source_id="licensed-feed:uat",
+        source_bucket="property_development",
+        external_key="LISTING-UAT-001",
+        signal_type="residential_building_plot",
+        detected_at=datetime.now(UTC),
+        subject_type="natural_person",
+        recipient_email="seller@example.test",
+        recipient_email_type="named",
+        contact_basis="explicit_request",
+        consent_evidence_id="CONSENT-UAT-001",
+        location="Budapest XI. kerület",
+        summary="Eladó 800 m²-es családi házas építési telek.",
+        evidence_url="https://licensed-feed.example.test/listings/UAT-001",
+        brand_id="Imperial Holding",
+        score=88,
+        urgency=50,
+        confidence=95,
+        dedupe_hash="2" * 64,
+        source_payload_hash=payload_sha,
+        status="responded",
+    )
+    db.add(signal)
+    db.add(
+        OutreachMessage(
+            outreach_id="OUT-LAND-UAT",
+            signal_id=signal_id,
+            motor_key="construction",
+            brand_id="Imperial Holding",
+            sender_email="info@imperialholding.hu",
+            recipient_email="seller@example.test",
+            sequence_step=0,
+            subject="Együttműködési lehetőség",
+            body_text="Evidenced UAT outreach.",
+            unsubscribe_token_hash="3" * 64,
+            idempotency_key="4" * 64,
+            payload_sha256="5" * 64,
+            status="responded",
+            response_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+    return signal
+
+
+def _commercial_dependencies(db):
+    now = datetime.now(UTC)
+    db.add(
+        PlotRuleSet(
+            rule_set_id="RULE-LAND-UAT",
+            municipality="Budapest XI.",
+            zoning_code="LKE-UAT",
+            version="2026-UAT",
+            lifecycle_status="verified",
+            source_url="https://or.njt.hu/uat",
+            source_document_version="2026-UAT",
+            source_note="UAT zoning evidence",
+            maximum_coverage_percent=Decimal("30"),
+            maximum_floor_area_ratio=Decimal("0.6"),
+            maximum_height_m=Decimal("7.5"),
+            minimum_green_percent=Decimal("50"),
+            front_setback_m=Decimal("5"),
+            side_setback_m=Decimal("3"),
+            rear_setback_m=Decimal("6"),
+            allowed_uses_json='["residential"]',
+            verified_by="legal@imperial.local",
+            verified_at=now,
+            created_by="technical-prep@imperial.local",
+        )
+    )
+    db.add(
+        HouseCatalogPlan(
+            house_id="HOUSE-LAND-UAT",
+            brand="Imperial",
+            canonical_name="Imperial Family 120",
+            lifecycle_status="active",
+            current_released_version=1,
+            created_by="catalog@imperial.local",
+        )
+    )
+    db.add(
+        HouseCatalogVersion(
+            catalog_version_id="HCV-LAND-UAT-1",
+            house_id="HOUSE-LAND-UAT",
+            version=1,
+            status="released",
+            catalog_price_huf=Decimal("85000000"),
+            gross_area_m2=Decimal("120"),
+            rooms="4+1",
+            price_status="2026-UAT",
+            data_quality="verified",
+            lifestyles_json='["family"]',
+            source_type="company-catalog",
+            source_url="https://imperialholding.hu/house/UAT",
+            source_verified_at="2026-08-25",
+            rights_evidence="RIGHTS-UAT",
+            technical_summary="Verified UAT technical snapshot.",
+            change_summary="Initial UAT release.",
+            content_sha256="6" * 64,
+            released_by="managing-director@imperial.local",
+            released_at=now,
+            created_by="catalog@imperial.local",
+        )
+    )
+    db.add(
+        PlotCheckCase(
+            case_id="PLOT-LAND-UAT",
+            project_id="PRJ-LAND-UAT",
+            title="Land acquisition UAT plot",
+            address="Budapest XI., UAT utca 1.",
+            parcel_number="UAT/1",
+            municipality="Budapest XI.",
+            zoning_code="LKE-UAT",
+            rule_set_id="RULE-LAND-UAT",
+            status="fit",
+            current_revision=1,
+            geometry_json='{"type":"Polygon","coordinates":[]}',
+            geometry_crs="LOCAL-METRIC",
+            geometry_sha256="7" * 64,
+            declared_plot_area_m2=Decimal("800"),
+            proposed_footprint_m2=Decimal("120"),
+            proposed_gross_floor_area_m2=Decimal("120"),
+            proposed_paved_area_m2=Decimal("80"),
+            proposed_height_m=Decimal("5.5"),
+            proposed_use="residential",
+            proposed_width_m=Decimal("10"),
+            proposed_depth_m=Decimal("12"),
+            house_id="HOUSE-LAND-UAT",
+            final_assessment_id="ASSESS-LAND-UAT",
+            created_by="technical-prep@imperial.local",
+            finalized_by="designer@imperial.local",
+            finalized_at=now,
+        )
+    )
+    db.add(
+        BuildConfigCase(
+            case_id="BC-LAND-UAT",
+            project_id="PRJ-LAND-UAT",
+            title="Land listing BuildConfig",
+            housebuild_case_id="HB-LAND-UAT",
+            housebuild_variant_id="HBV-LAND-UAT",
+            current_version_id="BCV-LAND-UAT-1",
+            status="approved",
+            created_by="technical-prep@imperial.local",
+            approved_by="finance@imperial.local",
+            approved_at=now,
+        )
+    )
+    db.add(
+        BuildConfigVersion(
+            version_id="BCV-LAND-UAT-1",
+            case_id="BC-LAND-UAT",
+            version_no=1,
+            status="approved",
+            brand="Imperial",
+            technology="Danish Fabrik",
+            completion_level="turnkey",
+            package_name="Family",
+            gross_area_m2=Decimal("120"),
+            currency="HUF",
+            vat_rate=Decimal("0.05"),
+            option_json="[]",
+            bom_json="[]",
+            payment_schedule_json="[]",
+            capacity_json="{}",
+            pricing_snapshot_json='{"cash_buffer_percent":25}',
+            source_sha256="8" * 64,
+            config_sha256="9" * 64,
+            bom_sha256="a" * 64,
+            net_cost_huf=Decimal("50000000"),
+            net_price_huf=Decimal("70000000"),
+            vat_huf=Decimal("3500000"),
+            gross_price_huf=Decimal("73500000"),
+            margin_percent=Decimal("40"),
+            duration_days=240,
+            created_by="technical-prep@imperial.local",
+            approved_by="finance@imperial.local",
+            approved_at=now,
+        )
+    )
+    for key in ("pricing", "margin", "cashflow"):
+        db.add(
+            BuildConfigGate(
+                version_id="BCV-LAND-UAT-1",
+                gate_key=key,
+                decision="approved",
+                evidence_refs_json='["UAT-EVIDENCE"]',
+                evidence_sha256="b" * 64,
+                note=f"Approved UAT {key} gate.",
+                decided_by="finance@imperial.local",
+                decided_at=now,
+            )
+        )
+    db.commit()
+
+
+def _approved_package(db):
+    signal = _signal(db)
+    assert sync_growth_plot_signals(db) == {"seen": 1, "created": 1, "updated": 0}
+    assert sync_growth_plot_signals(db) == {"seen": 1, "created": 0, "updated": 0}
+    opportunity = db.scalar(select(LandOpportunity))
+    verify_source(
+        db,
+        opportunity.opportunity_id,
+        SourceVerificationIn(
+            expected_source_sha256=signal.source_payload_hash,
+            note="The licensed source snapshot and active listing were manually verified.",
+            actor="source-reviewer@imperial.local",
+        ),
+    )
+    record_deal(
+        db,
+        opportunity.opportunity_id,
+        DealIn(
+            evidence_ref="crm://growth/OUT-LAND-UAT/response",
+            evidence_sha256="c" * 64,
+            actor="sales@imperial.local",
+        ),
+    )
+    grant = grant_authority(
+        db,
+        opportunity.opportunity_id,
+        AuthorityGrantIn(
+            grantor_reference="seller-contract-UAT",
+            scopes=["advertising", "media_use", "pricing", "withdrawal", "website", "portals"],
+            evidence_ref="drive://legal/LAND-AUTH-UAT",
+            evidence_sha256="d" * 64,
+            valid_from=datetime.now(UTC) - timedelta(minutes=1),
+            valid_until=datetime.now(UTC) + timedelta(days=30),
+            created_by="legal-prep@imperial.local",
+            approved_by="legal@imperial.local",
+        ),
+    )
+    _commercial_dependencies(db)
+    package = create_listing_package(
+        db,
+        opportunity.opportunity_id,
+        ListingPackageIn(
+            authority_grant_id=grant.grant_id,
+            plotcheck_case_id="PLOT-LAND-UAT",
+            house_id="HOUSE-LAND-UAT",
+            catalog_version_id="HCV-LAND-UAT-1",
+            buildconfig_case_id="BC-LAND-UAT",
+            buildconfig_version_id="BCV-LAND-UAT-1",
+            plot_price_huf=90_000_000,
+            media_asset_ids=["MEDIA-LAND-UAT", "MEDIA-HOUSE-UAT"],
+            contact_route="crm://imperial/land/UAT",
+            actor="listing-prep@imperial.local",
+        ),
+    )
+    with pytest.raises(ValueError, match="creator cannot approve"):
+        approve_package(
+            db,
+            package.package_id,
+            PackageApprovalIn(
+                expected_payload_sha256=package.payload_sha256,
+                note="Self approval must remain blocked in every environment.",
+                actor="listing-prep@imperial.local",
+            ),
+        )
+    package = approve_package(
+        db,
+        package.package_id,
+        PackageApprovalIn(
+            expected_payload_sha256=package.payload_sha256,
+            note="Legal, technical and commercial evidence reviewed for UAT release.",
+            actor="release-reviewer@imperial.local",
+        ),
+    )
+    return opportunity, grant, package
+
+
+def test_named_portal_is_never_read_by_generic_scanner(monkeypatch):
+    monkeypatch.setattr(
+        "app.growth_ops.catalog.httpx.Client",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network call forbidden")),
+    )
+    result = _fetch(
+        SimpleNamespace(
+            route_url="https://www.ingatlan.com/123456",
+            source_record_json="{}",
+        )
+    )
+    assert result == {
+        "status": "rejected",
+        "error_type": "portal_licensed_connector_required",
+    }
+
+
+def test_generic_scanner_rejects_private_and_cgnat_targets(monkeypatch):
+    for address in ("127.0.0.1", "10.10.0.8", "100.64.0.1"):
+        monkeypatch.setattr(
+            "app.growth_ops.catalog.socket.getaddrinfo",
+            lambda *args, address=address, **kwargs: [(2, 1, 6, "", (address, 443))],
+        )
+        result = _fetch(
+            SimpleNamespace(
+                route_url="https://scanner-target.example.test/source",
+                source_record_json="{}",
+            )
+        )
+        assert result == {"status": "rejected", "error_type": "non_public_target"}
+
+
+def test_deal_package_and_disabled_portals_fail_closed(db):
+    opportunity, _grant, package = _approved_package(db)
+    attempts = request_publication(
+        db,
+        package.package_id,
+        PublicationRequestIn(
+            channels=["ingatlan_com", "zenga", "imperial_plot_finder"],
+            actor="publishing@imperial.local",
+        ),
+    )
+    assert {row.status for row in attempts} == {"BLOCKED"}
+    assert all(row.outbox_message_id is None for row in attempts)
+    assert not db.scalars(
+        select(OutboxMessage).where(OutboxMessage.message_id.like("MSG-LAND-%"))
+    ).all()
+    assert opportunity.state == "PUBLISH_APPROVED"
+    stored = db.scalar(
+        select(LandListingPackage).where(LandListingPackage.package_id == package.package_id)
+    )
+    assert stored.payload_sha256 == package.payload_sha256
+    assert "total_indicative_price_huf" in stored.payload_json
+
+
+def test_licensed_adapter_requires_healthy_module_and_readback_proof(db, tmp_path, monkeypatch):
+    opportunity, _grant, package = _approved_package(db)
+    registry_path = tmp_path / "portals.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "portals": [
+                    {
+                        "key": "imperial_plot_finder",
+                        "domains": ["imperialholding.hu"],
+                        "discovery_mode": "manual",
+                        "publish_mode": "licensed_api",
+                        "discovery_enabled": False,
+                        "publish_enabled": True,
+                        "adapter_module": "imperial-plot-finder-adapter",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LAND_ACQUISITION_PORTAL_REGISTRY_FILE", str(registry_path))
+
+    blocked = request_publication(
+        db,
+        package.package_id,
+        PublicationRequestIn(
+            channels=["imperial_plot_finder"],
+            actor="publishing@imperial.local",
+        ),
+    )[0]
+    assert blocked.status == "BLOCKED"
+
+    # The same blocked idempotency key becomes queueable only after the module
+    # registry has a successful integration-test receipt.
+    db.add(
+        ModuleRegistry(
+            module_key="imperial-plot-finder-adapter",
+            name="Imperial Plot Finder Adapter",
+            lifecycle_status="pilot",
+            integration_status="healthy",
+            last_integration_test_at=datetime.now(UTC),
+            last_integration_test_status="passed",
+        )
+    )
+    db.commit()
+    queued = request_publication(
+        db,
+        package.package_id,
+        PublicationRequestIn(
+            channels=["imperial_plot_finder"],
+            actor="publishing@imperial.local",
+        ),
+    )[0]
+    assert queued.status == "QUEUED"
+    assert queued.outbox_message_id
+    with pytest.raises(ValueError, match="does not belong"):
+        confirm_publication(
+            db,
+            queued.attempt_id,
+            PublicationConfirmationIn(
+                external_id="PLOT-UAT-001",
+                public_url="https://example.test/forged",
+                proof={"readback_payload_sha256": package.payload_sha256},
+                actor="reconciliation@imperial.local",
+            ),
+        )
+    confirmed = confirm_publication(
+        db,
+        queued.attempt_id,
+        PublicationConfirmationIn(
+            external_id="PLOT-UAT-001",
+            public_url="https://plots.imperialholding.hu/PLOT-UAT-001",
+            proof={"readback_payload_sha256": package.payload_sha256},
+            actor="reconciliation@imperial.local",
+        ),
+    )
+    assert confirmed.status == "SUCCEEDED"
+    db.refresh(opportunity)
+    assert opportunity.state == "PUBLISHED"
+
+
+def test_revoked_authority_creates_idempotent_takedown_requirement(db):
+    opportunity, grant, package = _approved_package(db)
+    publication = LandPublicationAttempt(
+        attempt_id="LPUB-LIVE-UAT",
+        opportunity_id=opportunity.opportunity_id,
+        package_id=package.package_id,
+        channel="ingatlan_com",
+        action="PUBLISH",
+        idempotency_key="e" * 64,
+        payload_sha256=package.payload_sha256,
+        status="SUCCEEDED",
+        external_id="ING-UAT-1",
+        public_url="https://ingatlan.com/ING-UAT-1",
+        proof_json='{"readback":"verified"}',
+        proof_sha256="f" * 64,
+        created_by="publishing@imperial.local",
+        completed_at=datetime.now(UTC),
+    )
+    db.add(publication)
+    db.commit()
+    revoke_authority(
+        db,
+        grant.grant_id,
+        actor="legal@imperial.local",
+        reason="The owner withdrew advertising and publication authority immediately.",
+    )
+    db.refresh(opportunity)
+    assert opportunity.state == "TAKEDOWN_REQUIRED"
+    withdrawals = db.scalars(
+        select(LandPublicationAttempt).where(LandPublicationAttempt.action == "WITHDRAW")
+    ).all()
+    assert len(withdrawals) == 1
+    assert withdrawals[0].status == "WITHDRAWAL_REQUIRED"
+    assert scan_authority_expiry(db)["withdrawals"] == 0
+    assert (
+        db.scalar(
+            select(LandPublicationAttempt).where(LandPublicationAttempt.action == "WITHDRAW")
+        ).attempt_id
+        == withdrawals[0].attempt_id
+    )

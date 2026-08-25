@@ -878,6 +878,7 @@ def heartbeat(
 
 
 def run_once(db: Session) -> dict[str, Any]:
+    from ..land_acquisition.service import scan_authority_expiry, sync_growth_plot_signals
     from .catalog import scan_due_routes
     from .processing import generate_daily_content, send_internal_handoff
     from .wide_service import run_due as run_due_wide
@@ -889,6 +890,8 @@ def run_once(db: Session) -> dict[str, Any]:
     # not release or publish the quarantined assets.
     wide_run = run_due_wide(db) or wide_run
     internal_handoff = send_internal_handoff(db)
+    land_sync = sync_growth_plot_signals(db)
+    land_takedown = scan_authority_expiry(db)
     if not settings().enabled:
         heartbeat(db, status="disabled")
         return {
@@ -898,6 +901,8 @@ def run_once(db: Session) -> dict[str, Any]:
             "route_scan": route_scan,
             "content_factory": content_factory,
             "internal_handoff": internal_handoff,
+            "land_sync": land_sync,
+            "land_takedown": land_takedown,
             "followups": 0,
             "sent": 0,
         }
@@ -912,6 +917,8 @@ def run_once(db: Session) -> dict[str, Any]:
         "route_scan": route_scan,
         "content_factory": content_factory,
         "internal_handoff": internal_handoff,
+        "land_sync": land_sync,
+        "land_takedown": land_takedown,
         "followups": followups,
         "sent": sent,
     }

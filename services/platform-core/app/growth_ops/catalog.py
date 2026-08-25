@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import re
+import socket
 from datetime import UTC, datetime, time, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
@@ -17,6 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from ..land_acquisition.registry import is_named_portal_host
 from .canonical_policy import (
     DAILY_ROUTE_ATTEMPT_MINIMUM,
     SOURCE_LEDGER_ROUTE_COUNT,
@@ -35,6 +38,48 @@ BLOCKED_MARKERS = (
     "jelentkezzen be",
     "paywall",
 )
+
+
+class UnsafeRouteError(ValueError):
+    pass
+
+
+def assert_public_https_url(url: str) -> str:
+    """Reject SSRF targets before any outbound request is attempted.
+
+    Production still needs an egress allow-list and resolving proxy to eliminate the
+    DNS-rebinding interval between this check and the HTTP connection.
+    """
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise UnsafeRouteError("invalid_route_url")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise UnsafeRouteError("invalid_route_url") from exc
+    if port not in {None, 443}:
+        raise UnsafeRouteError("non_standard_https_port")
+    try:
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(
+                parsed.hostname,
+                port or 443,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except (OSError, socket.gaierror) as exc:
+        raise UnsafeRouteError("dns_resolution_failed") from exc
+    if not addresses:
+        raise UnsafeRouteError("dns_resolution_empty")
+    try:
+        resolved = [ipaddress.ip_address(address) for address in addresses]
+    except ValueError as exc:
+        raise UnsafeRouteError("invalid_resolved_address") from exc
+    if any(not address.is_global for address in resolved):
+        raise UnsafeRouteError("non_public_target")
+    return parsed.hostname.casefold().rstrip(".")
 
 
 class _VisibleText(HTMLParser):
@@ -298,6 +343,15 @@ def _fetch(route: SourceCoverageRoute) -> dict[str, Any]:
     parsed = urlparse(route.route_url)
     if parsed.scheme != "https" or not parsed.hostname:
         return {"status": "rejected", "error_type": "invalid_route_url"}
+    if is_named_portal_host(parsed.hostname):
+        return {
+            "status": "rejected",
+            "error_type": "portal_licensed_connector_required",
+        }
+    try:
+        assert_public_https_url(route.route_url)
+    except UnsafeRouteError as exc:
+        return {"status": "rejected", "error_type": str(exc)}
     if contains_no_monitoring_entity(route.source_record_json):
         return {"status": "rejected", "error_type": "no_monitoring_hard_gate"}
     content = bytearray()
