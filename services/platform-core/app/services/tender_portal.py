@@ -39,6 +39,11 @@ from .email_guard import is_valid_email
 from .fs_guard import contained_path
 from .integration import ingest_event
 from .partner_control import create_partner, eligibility_report
+from .outbound_recipient_guard import (
+    OutboundRecipientBlocked,
+    RecipientPolicyContext,
+    require_outbound_recipient,
+)
 from .tender_evidence_security import (
     TenderEvidenceUnavailable,
     TenderMalwareDetected,
@@ -276,6 +281,7 @@ def add_invitation(
     mail_recipient_id: str | None = None,
     access_token: str | None = None,
     partner_id: str | None = None,
+    recipient_policy_context: dict[str, Any] | None = None,
 ) -> TenderInvitation:
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs partnermeghívási jogosultság.")
@@ -289,6 +295,15 @@ def add_invitation(
         raise ValueError("Érvénytelen partner e-mail-cím.")
     if len(company_name.strip()) < 2:
         raise ValueError("A partner cégneve kötelező.")
+    require_outbound_recipient(
+        RecipientPolicyContext.from_mapping(
+            recipient_policy_context,
+            email=email,
+            company_name=company_name.strip(),
+            contact_name=contact_name.strip(),
+            purpose="procurement",
+        )
+    )
     existing = db.scalar(
         select(TenderInvitation).where(
             TenderInvitation.tender_id_fk == tender.id, TenderInvitation.partner_email == email
@@ -378,37 +393,59 @@ def sync_mail_recipients(db: Session, tender_id: str, user: object) -> dict[str,
     campaigns = list(
         db.scalars(select(TenderMailCampaign).where(TenderMailCampaign.tender_id == tender_id))
     )
-    added = existing = 0
+    added = existing = blocked = 0
     for campaign in campaigns:
         recipients = list(
             db.scalars(
                 select(TenderMailRecipient).where(
-                    TenderMailRecipient.campaign_id == campaign.campaign_id
+                    TenderMailRecipient.campaign_id == campaign.campaign_id,
+                    TenderMailRecipient.status.in_(
+                        ("pending", "queued", "sent", "delivered")
+                    ),
                 )
             )
         )
         for recipient in recipients:
+            try:
+                personalization = json.loads(recipient.personalization_json or "{}")
+            except (json.JSONDecodeError, TypeError):
+                personalization = {}
+            if not isinstance(personalization, dict):
+                personalization = {}
+            policy_context = personalization.get("_recipient_policy_context")
+            if not isinstance(policy_context, dict):
+                policy_context = personalization
             before = db.scalar(
                 select(TenderInvitation).where(
                     TenderInvitation.tender_id_fk == tender.id,
                     TenderInvitation.partner_email == recipient.email,
                 )
             )
-            add_invitation(
-                db,
-                tender_id,
-                user,
-                partner_email=recipient.email,
-                company_name=recipient.company_name or recipient.email,
-                contact_name=recipient.contact_name or "",
-                mail_recipient_id=recipient.recipient_id,
-                access_token=recipient.tracking_token,
-            )
+            try:
+                add_invitation(
+                    db,
+                    tender_id,
+                    user,
+                    partner_email=recipient.email,
+                    company_name=recipient.company_name or recipient.email,
+                    contact_name=recipient.contact_name or "",
+                    mail_recipient_id=recipient.recipient_id,
+                    access_token=recipient.tracking_token,
+                    recipient_policy_context=policy_context,
+                )
+            except OutboundRecipientBlocked:
+                blocked += 1
+                continue
             if before:
                 existing += 1
             else:
                 added += 1
-    return {"added": added, "existing": existing, "campaigns": len(campaigns)}
+    return {
+        "added": added,
+        "existing": existing,
+        "blocked": blocked,
+        "campaigns": len(campaigns),
+    }
 
 
 def publish_tender(db: Session, tender_id: str, user: object) -> TenderPackage:

@@ -85,6 +85,7 @@ class GrowthSignal(Base):
     confidence: Mapped[int] = mapped_column(Integer, default=0)
     dedupe_hash: Mapped[str] = mapped_column(String(64), index=True)
     source_payload_hash: Mapped[str] = mapped_column(String(64))
+    recipient_policy_context_json: Mapped[str] = mapped_column(Text, default="{}")
     status: Mapped[str] = mapped_column(String(30), default="accepted", index=True)
     rejection_reasons_json: Mapped[str] = mapped_column(Text, default="[]")
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

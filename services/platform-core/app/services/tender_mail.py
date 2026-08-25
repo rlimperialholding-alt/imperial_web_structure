@@ -21,6 +21,11 @@ from .outbound_copy_guard import (
     brand_id_from_sender,
     require_outbound_email,
 )
+from .outbound_recipient_guard import (
+    RecipientGateDecision,
+    RecipientPolicyContext,
+    evaluate_outbound_recipient,
+)
 
 REQUIRED_TEMPLATE_TOKENS = ("{{tender_link}}", "{{unsubscribe_url}}")
 
@@ -123,6 +128,85 @@ def _suppression(db: Session, email: str) -> MailSuppression | None:
     return db.scalar(select(MailSuppression).where(MailSuppression.email == email, MailSuppression.active.is_(True)))
 
 
+def _campaign_recipient_purpose(campaign: TenderMailCampaign) -> str:
+    return "procurement" if campaign.campaign_type == "tender_invitation" else "outreach"
+
+
+def _stored_policy_mapping(personalization: dict[str, Any]) -> dict[str, Any]:
+    nested = personalization.get("_recipient_policy_context")
+    stored = dict(nested) if isinstance(nested, dict) else {}
+    for key in (
+        "organization_class",
+        "contracting_authority_verified",
+        "contracting_authority_suspected",
+        "organization_affiliations",
+        "office_affiliations",
+        "public_contact_url",
+        "website_url",
+    ):
+        if key not in stored and key in personalization:
+            stored[key] = personalization[key]
+    return stored
+
+
+def _data_policy_context(
+    data: TenderRecipientIn, campaign: TenderMailCampaign, email: str
+) -> RecipientPolicyContext:
+    stored = _stored_policy_mapping(data.personalization)
+    for key, value in {
+        "organization_class": data.organization_class,
+        "organization_affiliations": data.organization_affiliations,
+        "office_affiliations": data.office_affiliations,
+        "public_contact_url": data.public_contact_url,
+        "website_url": data.website_url,
+    }.items():
+        if value not in (None, "", [], ()):
+            stored[key] = value
+    stored["contracting_authority_verified"] = bool(
+        stored.get("contracting_authority_verified") or data.contracting_authority_verified
+    )
+    stored["contracting_authority_suspected"] = bool(
+        stored.get("contracting_authority_suspected") or data.contracting_authority_suspected
+    )
+    return RecipientPolicyContext.from_mapping(
+        stored,
+        email=email,
+        company_name=data.company_name or "",
+        contact_name=data.contact_name or "",
+        purpose=_campaign_recipient_purpose(campaign),
+    )
+
+
+def _row_policy_context(
+    row: TenderMailRecipient, campaign: TenderMailCampaign
+) -> RecipientPolicyContext:
+    personalization = loads(row.personalization_json, {})
+    if not isinstance(personalization, dict):
+        personalization = {}
+    return RecipientPolicyContext.from_mapping(
+        _stored_policy_mapping(personalization),
+        email=row.email,
+        company_name=row.company_name or "",
+        contact_name=row.contact_name or "",
+        purpose=_campaign_recipient_purpose(campaign),
+    )
+
+
+def _policy_personalization(
+    personalization: dict[str, Any], context: RecipientPolicyContext
+) -> dict[str, Any]:
+    value = dict(personalization)
+    value["_recipient_policy_context"] = context.to_dict()
+    return value
+
+
+def _suppress_for_policy(
+    row: TenderMailRecipient, decision: RecipientGateDecision, *, status: str
+) -> None:
+    row.status = status
+    row.suppression_reason = decision.status
+
+
 def add_recipient(db: Session, campaign_id: str, data: TenderRecipientIn) -> TenderMailRecipient:
     campaign = db.scalar(select(TenderMailCampaign).where(TenderMailCampaign.campaign_id == campaign_id))
     if not campaign:
@@ -134,14 +218,61 @@ def add_recipient(db: Session, campaign_id: str, data: TenderRecipientIn) -> Ten
         TenderMailRecipient.campaign_id == campaign_id, TenderMailRecipient.email == email,
     ))
     if existing:
+        if data.company_name and data.company_name.strip():
+            existing.company_name = data.company_name.strip()
+        if data.contact_name and data.contact_name.strip():
+            existing.contact_name = data.contact_name.strip()
+        if data.canonical_record_id:
+            existing.canonical_record_id = data.canonical_record_id
+        incoming_context = _data_policy_context(data, campaign, email)
+        merged_context = _row_policy_context(existing, campaign).to_dict()
+        for key, value in incoming_context.to_dict().items():
+            if key in {"email", "company_name", "contact_name", "purpose"}:
+                continue
+            if value not in (None, "", False, [], ()):
+                merged_context[key] = value
+        merged_context["contracting_authority_verified"] = bool(
+            merged_context.get("contracting_authority_verified")
+            or incoming_context.contracting_authority_verified
+        )
+        merged_context["contracting_authority_suspected"] = bool(
+            merged_context.get("contracting_authority_suspected")
+            or incoming_context.contracting_authority_suspected
+        )
+        merged_context.update(
+            {
+                "email": existing.email,
+                "company_name": existing.company_name or "",
+                "contact_name": existing.contact_name or "",
+                "purpose": _campaign_recipient_purpose(campaign),
+            }
+        )
+        context = RecipientPolicyContext.from_mapping(merged_context)
+        existing_personalization = loads(existing.personalization_json, {})
+        if not isinstance(existing_personalization, dict):
+            existing_personalization = {}
+        existing_personalization.update(data.personalization)
+        existing.personalization_json = dumps(
+            _policy_personalization(existing_personalization, context)
+        )
+        decision = evaluate_outbound_recipient(context)
+        if not decision.allowed and existing.status in {"pending", "queued"}:
+            _suppress_for_policy(existing, decision, status="suppressed")
+        db.commit()
+        db.refresh(existing)
         return existing
     suppression = _suppression(db, email)
+    context = _data_policy_context(data, campaign, email)
+    policy_decision = evaluate_outbound_recipient(context)
     row = TenderMailRecipient(
         recipient_id=new_id("TMR"), campaign_id=campaign_id, canonical_record_id=data.canonical_record_id,
         company_name=data.company_name, contact_name=data.contact_name, email=email,
-        status="suppressed" if suppression else "pending",
-        suppression_reason=suppression.reason if suppression else None,
-        personalization_json=dumps(data.personalization), tracking_token=uuid.uuid4().hex,
+        status="suppressed" if suppression or not policy_decision.allowed else "pending",
+        suppression_reason=(
+            suppression.reason if suppression else policy_decision.status if not policy_decision.allowed else None
+        ),
+        personalization_json=dumps(_policy_personalization(data.personalization, context)),
+        tracking_token=uuid.uuid4().hex,
     )
     db.add(row)
     campaign.recipient_count += 1
@@ -166,7 +297,21 @@ def add_canonical_partner_recipients(db: Session, campaign_id: str) -> dict[str,
             row = add_recipient(db, campaign_id, TenderRecipientIn(
                 email=str(email), company_name=data.get("company_name") or record.canonical_name,
                 contact_name=data.get("contact_name"), canonical_record_id=record.record_id,
-                personalization={"project_id": record.project_id, "source_record": record.record_id},
+                organization_class=data.get("organization_class") or data.get("entity_class"),
+                contracting_authority_verified=bool(
+                    data.get("contracting_authority_verified")
+                ),
+                contracting_authority_suspected=bool(
+                    data.get("contracting_authority_suspected")
+                ),
+                organization_affiliations=data.get("organization_affiliations") or [],
+                office_affiliations=data.get("office_affiliations") or [],
+                public_contact_url=data.get("public_contact_url"),
+                website_url=data.get("website_url") or data.get("website"),
+                personalization={
+                    "project_id": record.project_id,
+                    "source_record": record.record_id,
+                },
             ))
             if row.status == "suppressed":
                 suppressed += 1
@@ -233,7 +378,10 @@ def queue_campaign(db: Session, campaign_id: str, simulate: bool = False) -> Ten
     )).all()
     now = utcnow()
     for row in recipients:
-        if _suppression(db, row.email):
+        policy_decision = evaluate_outbound_recipient(_row_policy_context(row, campaign))
+        if not policy_decision.allowed:
+            _suppress_for_policy(row, policy_decision, status="suppressed")
+        elif _suppression(db, row.email):
             row.status = "suppressed"
             row.suppression_reason = "global_suppression"
         else:
@@ -282,6 +430,34 @@ def dispatch_batch(db: Session, campaign_id: str, *, simulate: bool, base_url: s
     blocked_payloads: list[dict[str, Any]] = []
     now = utcnow()
     for row in recipients:
+        policy_decision = evaluate_outbound_recipient(_row_policy_context(row, campaign))
+        if not policy_decision.allowed:
+            _suppress_for_policy(row, policy_decision, status="blocked")
+            row.last_event_at = now
+            event = TenderMailEvent(
+                event_id=new_id("TME"),
+                recipient_id=row.recipient_id,
+                campaign_id=campaign_id,
+                event_type="blocked",
+                provider_event_id=None,
+                payload_json=dumps(
+                    {
+                        "reason": policy_decision.reason,
+                        "status": policy_decision.status,
+                        "matches": list(policy_decision.matches),
+                    }
+                ),
+                occurred_at=now,
+            )
+            db.add(event)
+            blocked_payloads.append(
+                {
+                    "recipient_id": row.recipient_id,
+                    "email": row.email,
+                    "reason": policy_decision.status,
+                }
+            )
+            continue
         subject = _render(campaign.subject_template, row, campaign, base_url)
         text = _render(campaign.text_template, row, campaign, base_url)
         try:

@@ -429,6 +429,13 @@ class TenderRecipientIn(BaseModel):
     company_name: str | None = None
     contact_name: str | None = None
     canonical_record_id: str | None = None
+    organization_class: str | None = None
+    contracting_authority_verified: bool = False
+    contracting_authority_suspected: bool = False
+    organization_affiliations: list[str] = Field(default_factory=list)
+    office_affiliations: list[str] = Field(default_factory=list)
+    public_contact_url: str | None = None
+    website_url: str | None = None
     personalization: dict[str, Any] = Field(default_factory=dict)
 
 

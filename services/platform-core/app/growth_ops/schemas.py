@@ -19,7 +19,14 @@ class GrowthSignalIn(BaseModel):
     signal_type: str = Field(min_length=2, max_length=120)
     detected_at: datetime
     company_name: str | None = Field(default=None, max_length=500)
+    contact_name: str | None = Field(default=None, max_length=255)
     company_registration_id: str | None = Field(default=None, max_length=120)
+    organization_class: str | None = Field(default=None, max_length=120)
+    contracting_authority_verified: bool = False
+    contracting_authority_suspected: bool = False
+    organization_affiliations: list[str] = Field(default_factory=list, max_length=50)
+    office_affiliations: list[str] = Field(default_factory=list, max_length=50)
+    website_url: str | None = Field(default=None, max_length=1500)
     subject_type: Literal["organization", "natural_person"]
     recipient_email: str | None = Field(default=None, max_length=320)
     recipient_email_type: Literal["role", "named", "unknown", "none"] = "none"

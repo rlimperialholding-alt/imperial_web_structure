@@ -170,6 +170,154 @@ def test_tendermail_blocks_one_bad_recipient_without_starving_valid_recipient(cl
     assert statuses == {"blocked@example.hu": "blocked", "valid@example.hu": "sent"}
 
 
+def test_tendermail_add_recipient_enforces_owner_and_public_authority_gates(client, db):
+    campaign_id = create_campaign(client)
+    response = client.post(
+        f"/api/tendermail/campaigns/{campaign_id}/recipients",
+        json={
+            "recipients": [
+                {
+                    "email": "turczer.jozsef@gmail.com",
+                    "company_name": "Minta Kft.",
+                    "contact_name": "Turczer József",
+                },
+                {
+                    "email": "iroda@pest.gdn-ingatlan.hu",
+                    "company_name": "GDN Ingatlanhálózat",
+                },
+                {
+                    "email": "mompark@oc.hu",
+                    "company_name": "Otthon Centrum Budapest XII. kerület",
+                },
+                {
+                    "email": "beszerzes@minta-varos.hu",
+                    "company_name": "Minta Város Önkormányzata",
+                    "organization_class": "municipality",
+                    "contracting_authority_verified": True,
+                },
+                {
+                    "email": "ismeretlen@oc.hu",
+                    "company_name": "Otthon Centrum",
+                },
+            ],
+            "include_canonical_partner_records": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"added": 0, "suppressed": 5, "skipped": 0}
+    rows = db.scalars(
+        select(TenderMailRecipient).where(TenderMailRecipient.campaign_id == campaign_id)
+    ).all()
+    reasons = {row.email: row.suppression_reason for row in rows}
+    assert reasons["ismeretlen@oc.hu"] == "SUPPRESSION_REVIEW"
+    assert reasons["beszerzes@minta-varos.hu"].startswith(
+        "HARD_SUPPRESSED_PUBLIC_PROCUREMENT_AUTHORITY"
+    )
+    assert all(row.status == "suppressed" for row in rows)
+
+
+def test_tendermail_final_dispatch_rechecks_legacy_rows_without_starving_valid(client, db):
+    campaign_id = create_campaign(client)
+    response = client.post(
+        f"/api/tendermail/campaigns/{campaign_id}/recipients",
+        json={
+            "recipients": [
+                {
+                    "email": "legacy@example.hu",
+                    "company_name": "Régi címzett Kft.",
+                },
+                {
+                    "email": "valid@example.hu",
+                    "company_name": "Magán Fővállalkozó Kft.",
+                    "organization_class": "private_contractor",
+                    "personalization": {
+                        "project_type": "public_procurement",
+                        "evidence_url": "https://kozbeszerzes.varos.gov.hu/tender/123",
+                    },
+                },
+            ],
+            "include_canonical_partner_records": False,
+        },
+    )
+    assert response.status_code == 200
+    verify_seeded_domain(client)
+    assert client.post(
+        f"/api/tendermail/campaigns/{campaign_id}/approve?actor=owner"
+    ).status_code == 200
+    assert client.post(
+        f"/api/tendermail/campaigns/{campaign_id}/queue?simulate=true"
+    ).status_code == 200
+
+    legacy = db.scalar(
+        select(TenderMailRecipient).where(
+            TenderMailRecipient.campaign_id == campaign_id,
+            TenderMailRecipient.email == "legacy@example.hu",
+        )
+    )
+    legacy.company_name = "Minta Város Önkormányzata"
+    db.commit()
+
+    dispatched = client.post(
+        f"/api/tendermail/campaigns/{campaign_id}/dispatch?simulate=true&limit=10"
+    )
+    assert dispatched.status_code == 200
+    assert dispatched.json()["sent"] == 1
+    assert dispatched.json()["blocked"] == 1
+    assert dispatched.json()["messages"][0]["email"] == "valid@example.hu"
+    db.refresh(legacy)
+    assert legacy.status == "blocked"
+    assert legacy.suppression_reason.startswith(
+        "HARD_SUPPRESSED_PUBLIC_PROCUREMENT_AUTHORITY"
+    )
+
+
+def test_tendermail_existing_recipient_reclassification_is_persisted_and_suppressed(
+    client, db
+):
+    campaign_id = create_campaign(client)
+    endpoint = f"/api/tendermail/campaigns/{campaign_id}/recipients"
+    first = client.post(
+        endpoint,
+        json={
+            "recipients": [
+                {
+                    "email": "partner@example.hu",
+                    "company_name": "Korábbi Magáncég Kft.",
+                }
+            ],
+            "include_canonical_partner_records": False,
+        },
+    )
+    assert first.status_code == 200
+
+    corrected = client.post(
+        endpoint,
+        json={
+            "recipients": [
+                {
+                    "email": "partner@example.hu",
+                    "company_name": "GDN Ingatlanhálózat",
+                    "contact_name": "GDN partneriroda",
+                }
+            ],
+            "include_canonical_partner_records": False,
+        },
+    )
+
+    assert corrected.status_code == 200
+    row = db.scalar(
+        select(TenderMailRecipient).where(
+            TenderMailRecipient.campaign_id == campaign_id,
+            TenderMailRecipient.email == "partner@example.hu",
+        )
+    )
+    assert row is not None
+    assert row.company_name == "GDN Ingatlanhálózat"
+    assert row.status == "suppressed"
+    assert row.suppression_reason.startswith("HARD_SUPPRESSED_OWNER_DIRECTIVE")
+
+
 def test_complaint_suppresses_email_for_future_campaigns(client, db):
     verify_seeded_domain(client)
     campaign_id = create_campaign(client)

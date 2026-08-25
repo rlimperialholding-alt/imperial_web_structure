@@ -17,6 +17,8 @@ from app.models import (
     TenderBidVersion,
     TenderBidEvidence,
     TenderInvitation,
+    TenderMailCampaign,
+    TenderMailRecipient,
     TenderClarificationRequest,
     TenderPackage,
     TenderPurchaseOrderPreparation,
@@ -161,6 +163,69 @@ def test_project_manager_creates_publishes_and_gets_event_task(client, db):
     assert event is not None and event.event_type == "TENDER_PUBLISHED"
     task = db.scalar(select(TaskRecord).where(TaskRecord.source_event_id == event.event_id))
     assert task is not None
+
+
+def test_tender_portal_invitation_uses_central_recipient_gate(client, db):
+    _create_tender(client, db)
+    public_authority = client.post(
+        f"/tenders/{TENDER_ID}/invitations",
+        data={
+            "company_name": "Minta Város Önkormányzata",
+            "contact_name": "Beszerzési Iroda",
+            "partner_email": "beszerzes@minta-varos.hu",
+        },
+        follow_redirects=False,
+    )
+    gdn = client.post(
+        f"/tenders/{TENDER_ID}/invitations",
+        data={
+            "company_name": "GDN Ingatlanhálózat",
+            "contact_name": "Partner Iroda",
+            "partner_email": "iroda@pest.gdn-ingatlan.hu",
+        },
+        follow_redirects=False,
+    )
+
+    assert public_authority.status_code == 400
+    assert gdn.status_code == 400
+    assert not db.scalars(select(TenderInvitation)).all()
+
+
+def test_tender_portal_sync_skips_suppressed_mail_recipients(client, db):
+    _create_tender(client, db)
+    campaign = TenderMailCampaign(
+        campaign_id="TMC-SUPPRESSED-SYNC",
+        name="Teszt kampány",
+        campaign_type="tender_invitation",
+        tender_id=TENDER_ID,
+        domain_key="imperialholding.hu",
+        subject_template="Tárgy",
+        text_template="Szöveg",
+        status="draft",
+        approval_status="pending",
+        created_by="owner",
+    )
+    recipient = TenderMailRecipient(
+        recipient_id="TMR-SUPPRESSED-SYNC",
+        campaign_id=campaign.campaign_id,
+        company_name="Magán Partner Kft.",
+        contact_name="Kapcsolattartó",
+        email="suppressed@example.hu",
+        status="suppressed",
+        suppression_reason="global_suppression",
+        personalization_json="{}",
+        tracking_token="suppressed-sync-token",
+    )
+    db.add_all([campaign, recipient])
+    db.commit()
+
+    response = client.post(
+        f"/tenders/{TENDER_ID}/sync-mail",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert not db.scalars(select(TenderInvitation)).all()
 
 
 def test_partner_saves_itemized_bid_submits_and_cannot_edit_until_withdrawn(client, db):

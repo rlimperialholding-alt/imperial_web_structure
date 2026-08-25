@@ -193,6 +193,7 @@ def test_missing_company_name_uses_one_plain_salutation(db, growth_runtime):
             recipient_email="erdeklodo@example.test",
             recipient_email_type="named",
             contact_basis="explicit_request",
+            consent_evidence_id="GMAIL-REQUEST-1",
         ),
     )
 
@@ -244,3 +245,87 @@ def test_signal_schema_requires_contact_evidence():
 def test_rss_timestamp_accepts_standard_rfc_2822_date():
     value = _timestamp("Sun, 16 Aug 2026 06:15:00 +0000")
     assert value == datetime(2026, 8, 16, 6, 15, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("email", "company_name", "contact_name", "office_affiliations"),
+    [
+        ("turczer.jozsef@gmail.com", "Minta Kft.", None, []),
+        ("iroda@pest.gdn-ingatlan.hu", "Minta Kft.", None, []),
+        ("ismeretlen@oc.hu", "Otthon Centrum", None, []),
+        (
+            "iroda@example.hu",
+            "Otthon Centrum",
+            None,
+            ["Budapest XII. kerület MOM Park"],
+        ),
+    ],
+)
+def test_central_recipient_gate_blocks_before_growth_queue(
+    db, growth_runtime, email, company_name, contact_name, office_affiliations
+):
+    result = service.ingest_signal(
+        db,
+        _signal(
+            external_key=f"BLOCK-{email}-{company_name}",
+            recipient_email=email,
+            company_name=company_name,
+            contact_name=contact_name,
+            office_affiliations=office_affiliations,
+        ),
+    )
+
+    assert result.status == "blocked"
+    assert any(reason.startswith("recipient_policy:") for reason in result.reasons)
+    assert not db.scalars(select(OutreachMessage)).all()
+
+
+def test_public_authority_is_blocked_before_growth_queue(db, growth_runtime):
+    result = service.ingest_signal(
+        db,
+        _signal(
+            external_key="PUBLIC-AUTHORITY-1",
+            company_name="Minta Város Önkormányzata",
+            recipient_email="beszerzes@minta.hu",
+            organization_class="municipality",
+            contracting_authority_verified=True,
+        ),
+    )
+
+    assert result.status == "blocked"
+    assert not db.scalars(select(OutreachMessage)).all()
+
+
+def test_idempotent_reingest_rechecks_policy_and_blocks_existing_queue(db, growth_runtime):
+    initial = service.ingest_signal(db, _signal(external_key="RECHECK-POLICY-1"))
+    assert initial.status == "queued"
+
+    rechecked = service.ingest_signal(
+        db,
+        _signal(
+            external_key="RECHECK-POLICY-1",
+            organization_class="state_body",
+            contracting_authority_verified=True,
+        ),
+    )
+
+    message = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == initial.outreach_id)
+    )
+    assert rechecked.idempotent and rechecked.status == "blocked"
+    assert message is not None and message.status == "blocked"
+
+
+def test_private_contractor_public_project_evidence_still_queues(db, growth_runtime):
+    result = service.ingest_signal(
+        db,
+        _signal(
+            external_key="PRIVATE-CONTRACTOR-PUBLIC-PROJECT",
+            company_name="Magán Fővállalkozó Kft.",
+            organization_class="private_contractor",
+            evidence_url="https://kozbeszerzes.varos.gov.hu/tender/123",
+        ),
+    )
+
+    assert result.status == "queued"
+    assert result.outreach_id

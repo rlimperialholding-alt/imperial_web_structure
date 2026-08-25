@@ -1579,6 +1579,60 @@ def test_dispatch_outreach_success(db, growth_runtime):
     assert receipt.outreach_id == row.outreach_id
 
 
+def test_legacy_queued_public_authority_is_permanently_blocked_at_final_dispatch(
+    db, growth_runtime
+):
+    _signal_row(
+        db,
+        company_name="Minta Város Önkormányzata",
+        recipient_email="beszerzes@minta.hu",
+    )
+    _outreach_row(
+        db,
+        outreach_id="OUT-PUBLIC-AUTHORITY-LEGACY",
+        idempotency_key="public-authority-legacy".rjust(64, "0"),
+    )
+
+    row = service.claim_outreach(db)
+    result = service.dispatch_outreach(db, row)
+
+    assert result.status == "blocked"
+    assert result.last_error.startswith("HARD_SUPPRESSED_PUBLIC_PROCUREMENT_AUTHORITY")
+    assert not FakeSMTPAdapter.calls
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
+    assert signal is not None and signal.status == "blocked"
+
+
+def test_final_dispatch_uses_corrected_signal_identity_not_stale_policy_json(
+    db, growth_runtime
+):
+    signal = _signal_row(
+        db,
+        company_name="Korábbi Magáncég Kft.",
+        recipient_email="beszerzes@minta.hu",
+    )
+    signal.recipient_policy_context_json = json.dumps(
+        {
+            "email": "beszerzes@minta.hu",
+            "company_name": "Korábbi Magáncég Kft.",
+            "purpose": "outreach",
+        }
+    )
+    signal.company_name = "Minta Város Önkormányzata"
+    _outreach_row(
+        db,
+        outreach_id="OUT-CORRECTED-PUBLIC-AUTHORITY",
+        idempotency_key="corrected-public-authority".rjust(64, "0"),
+    )
+    db.commit()
+
+    row = service.claim_outreach(db)
+    result = service.dispatch_outreach(db, row)
+
+    assert result.status == "blocked"
+    assert not FakeSMTPAdapter.calls
+
+
 def test_dispatch_outreach_missing_signal(db, growth_runtime):
     row = _outreach_row(db, signal_id="SIG-MISSING", outreach_id="OUT-MISSING-1",
                         idempotency_key="missing-1".rjust(64, "0"))
@@ -1725,6 +1779,35 @@ def test_schedule_followups_creates_next_step(db, growth_runtime):
 
     # already scheduled -> no duplicate
     assert service.schedule_followups(db) == 0
+
+
+def test_recipient_gate_prevents_followup_creation(db, growth_runtime):
+    signal = _signal_row(
+        db,
+        signal_id="SIG-GDN-FOLLOWUP",
+        external_key="ETDR-GDN-FOLLOWUP",
+        company_name="GDN Ingatlanhálózat",
+        recipient_email="iroda@gdn-ingatlan.hu",
+    )
+    _outreach_row(
+        db,
+        signal_id=signal.signal_id,
+        outreach_id="OUT-GDN-FOLLOWUP",
+        idempotency_key="gdn-followup".rjust(64, "0"),
+        recipient_email="iroda@gdn-ingatlan.hu",
+        status="sent",
+        sent_at=datetime.now(UTC) - timedelta(days=5),
+    )
+
+    assert service.schedule_followups(db) == 0
+    db.refresh(signal)
+    assert signal.status == "blocked"
+    assert not db.scalar(
+        select(OutreachMessage).where(
+            OutreachMessage.signal_id == signal.signal_id,
+            OutreachMessage.sequence_step == 1,
+        )
+    )
 
 
 def test_invalid_followup_blocks_only_its_signal_and_does_not_starve_later_rows(

@@ -17,6 +17,12 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..models import MailSendingDomain, MailSuppression
 from ..services.outbound_copy_guard import OutboundCopyViolation, require_outbound_email
+from ..services.outbound_recipient_guard import (
+    OutboundRecipientBlocked,
+    RecipientGateDecision,
+    RecipientPolicyContext,
+    evaluate_outbound_recipient,
+)
 from .connectors import SourceError, fetch_source
 from .email import EmailDeliveryError, SMTPEmailAdapter
 from .models import (
@@ -213,6 +219,92 @@ def _recipient_suppressed(db: Session, email: str) -> bool:
     )
 
 
+def _data_policy_context(data: GrowthSignalIn, *, purpose: str) -> RecipientPolicyContext:
+    return RecipientPolicyContext(
+        email=data.recipient_email or "",
+        company_name=data.company_name or "",
+        contact_name=data.contact_name or "",
+        location=data.location or "",
+        public_contact_url=data.public_contact_url or "",
+        evidence_url=data.evidence_url,
+        website_url=data.website_url or "",
+        organization_class=data.organization_class or "",
+        contracting_authority_verified=data.contracting_authority_verified,
+        contracting_authority_suspected=data.contracting_authority_suspected,
+        organization_affiliations=tuple(data.organization_affiliations),
+        office_affiliations=tuple(data.office_affiliations),
+        purpose=purpose,
+    )
+
+
+def _signal_policy_context(signal: GrowthSignal, *, purpose: str) -> RecipientPolicyContext:
+    try:
+        stored = json.loads(signal.recipient_policy_context_json or "{}")
+    except (json.JSONDecodeError, TypeError):
+        stored = {}
+    if not isinstance(stored, dict):
+        stored = {}
+    current_identity = {
+        "email": signal.recipient_email or "",
+        "company_name": signal.company_name or "",
+        "location": signal.location or "",
+        "public_contact_url": signal.public_contact_url or "",
+        "evidence_url": signal.evidence_url or "",
+    }
+    stored.update(current_identity)
+    stored["purpose"] = purpose
+    return RecipientPolicyContext.from_mapping(stored)
+
+
+def _merged_policy_context(
+    signal: GrowthSignal, incoming: RecipientPolicyContext
+) -> RecipientPolicyContext:
+    current = _signal_policy_context(signal, purpose=incoming.purpose).to_dict()
+    for key, value in incoming.to_dict().items():
+        if value not in (None, "", False, [], ()):
+            current[key] = value
+    current["contracting_authority_verified"] = bool(
+        current.get("contracting_authority_verified")
+        or incoming.contracting_authority_verified
+    )
+    current["contracting_authority_suspected"] = bool(
+        current.get("contracting_authority_suspected")
+        or incoming.contracting_authority_suspected
+    )
+    current["purpose"] = incoming.purpose
+    return RecipientPolicyContext.from_mapping(current)
+
+
+def _policy_reason(decision: RecipientGateDecision) -> str:
+    matches = ",".join(decision.matches) or "policy_match"
+    return f"recipient_policy:{decision.status}:{matches}"
+
+
+def _block_signal_and_queued_messages(
+    db: Session, signal: GrowthSignal, decision: RecipientGateDecision
+) -> None:
+    try:
+        reasons = json.loads(signal.rejection_reasons_json or "[]")
+    except (json.JSONDecodeError, TypeError):
+        reasons = []
+    if not isinstance(reasons, list):
+        reasons = []
+    reasons.append(_policy_reason(decision))
+    signal.status = "blocked"
+    signal.rejection_reasons_json = canonical_json(sorted(set(map(str, reasons))))
+    for message in db.scalars(
+        select(OutreachMessage).where(
+            OutreachMessage.signal_id == signal.signal_id,
+            OutreachMessage.status.in_(("queued", "claimed")),
+        )
+    ).all():
+        message.status = "blocked"
+        message.last_error = decision.status
+        message.claimed_by = None
+        message.claimed_at = None
+        message.lease_expires_at = None
+
+
 def _rate_errors(db: Session, binding: BrandBinding, recipient: str) -> list[str]:
     now = utcnow()
     today = datetime(now.year, now.month, now.day, tzinfo=UTC)
@@ -256,6 +348,11 @@ def _queue_message(
     available_at: datetime,
     enforce_recipient_cooldown: bool,
 ) -> OutreachMessage:
+    policy_decision = evaluate_outbound_recipient(
+        _signal_policy_context(signal, purpose="outreach" if step == 0 else "followup")
+    )
+    if not policy_decision.allowed:
+        raise OutboundRecipientBlocked(policy_decision)
     if _recipient_suppressed(db, signal.recipient_email or ""):
         raise GrowthRegistryError("Recipient is suppressed")
     if enforce_recipient_cooldown:
@@ -307,6 +404,7 @@ def ingest_signal(
     )
     brand_id = registry.brand_for(data.signal_type, data.brand_id)
     dedupe_hash = _signal_dedupe(data, brand_id)
+    incoming_policy_context = _data_policy_context(data, purpose="outreach")
     existing = db.scalar(
         select(GrowthSignal).where(
             or_(
@@ -319,6 +417,11 @@ def ingest_signal(
         )
     )
     if existing:
+        merged_context = _merged_policy_context(existing, incoming_policy_context)
+        existing.recipient_policy_context_json = canonical_json(merged_context.to_dict())
+        policy_decision = evaluate_outbound_recipient(merged_context)
+        if not policy_decision.allowed:
+            _block_signal_and_queued_messages(db, existing, policy_decision)
         existing.last_seen_at = utcnow()
         db.commit()
         existing_outreach = db.scalar(
@@ -338,6 +441,9 @@ def ingest_signal(
         )
     score = _score(data)
     reasons = _eligibility(data, score)
+    policy_decision = evaluate_outbound_recipient(incoming_policy_context)
+    if not policy_decision.allowed:
+        reasons.append(_policy_reason(policy_decision))
     row = GrowthSignal(
         signal_id=f"SIG-{uuid4().hex[:20].upper()}",
         run_id=run_id,
@@ -364,8 +470,9 @@ def ingest_signal(
         confidence=data.confidence,
         dedupe_hash=dedupe_hash,
         source_payload_hash=data.source_payload_hash,
-        status="rejected" if reasons else "accepted",
-        rejection_reasons_json=canonical_json(reasons),
+        recipient_policy_context_json=canonical_json(incoming_policy_context.to_dict()),
+        status="blocked" if not policy_decision.allowed else "rejected" if reasons else "accepted",
+        rejection_reasons_json=canonical_json(sorted(set(reasons))),
     )
     db.add(row)
     db.flush()
@@ -385,6 +492,10 @@ def ingest_signal(
                 enforce_recipient_cooldown=True,
             )
             row.status = "queued"
+        except OutboundRecipientBlocked as exc:
+            reasons.append(_policy_reason(exc.decision))
+            row.status = "blocked"
+            row.rejection_reasons_json = canonical_json(sorted(set(reasons)))
         except GrowthRegistryError as exc:
             reasons.append(str(exc))
             row.status = "suppressed" if "suppressed" in str(exc) else "blocked"
@@ -603,6 +714,38 @@ def _trip_runtime_kill_switch() -> bool:
 def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
     registry = GrowthRegistry.load()
     signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
+    purpose = "outreach" if row.sequence_step == 0 else "followup"
+    stored_context = (
+        _signal_policy_context(signal, purpose=purpose).to_dict() if signal else {}
+    )
+    policy_context = RecipientPolicyContext.from_mapping(
+        stored_context,
+        email=row.recipient_email,
+        purpose=purpose,
+    )
+    policy_decision = evaluate_outbound_recipient(policy_context)
+    if not policy_decision.allowed:
+        if signal:
+            _block_signal_and_queued_messages(db, signal, policy_decision)
+        row.status = "blocked"
+        row.last_error = policy_decision.status
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+        audit(
+            db,
+            actor="growth-worker",
+            action="growth_outreach_recipient_blocked",
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after={
+                "signal_id": row.signal_id,
+                "status": policy_decision.status,
+                "matches": list(policy_decision.matches),
+            },
+        )
+        db.commit()
+        return row
     try:
         if not signal:
             raise GrowthRegistryError("Signal record is missing")
@@ -726,14 +869,18 @@ def schedule_followups(db: Session) -> int:
                 available_at=now,
                 enforce_recipient_cooldown=False,
             )
-        except GrowthRegistryError as exc:
+        except (OutboundRecipientBlocked, GrowthRegistryError) as exc:
             try:
                 reasons = json.loads(signal.rejection_reasons_json or "[]")
             except json.JSONDecodeError:
                 reasons = []
             if not isinstance(reasons, list):
                 reasons = []
-            reason = f"followup_copy_blocked:{exc}"
+            reason = (
+                _policy_reason(exc.decision)
+                if isinstance(exc, OutboundRecipientBlocked)
+                else f"followup_copy_blocked:{exc}"
+            )
             reasons.append(reason)
             signal.status = "blocked"
             signal.rejection_reasons_json = canonical_json(sorted(set(map(str, reasons))))
