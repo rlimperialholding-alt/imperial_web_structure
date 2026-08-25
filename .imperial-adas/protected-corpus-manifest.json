@@ -5,11 +5,11 @@
     "files":  [
                   {
                       "path":  ".imperial-adas/acceptance/business-golden-cases.template.json",
-                      "sha256":  "4efd6ddca788401f457fe4b4d692e00130c4c2906b6971732aa9d078e11b704d"
+                      "sha256":  "dc343177b333c3b8456cdd58c572a0496a32b3ffe42a509d14eeead19df1d76e"
                   },
                   {
                       "path":  ".imperial-adas/acceptance/README.md",
-                      "sha256":  "57cf6d2688adfa1c641e1bd54ae5967ceb41324fc14301a3d0b397d5133d2458"
+                      "sha256":  "f879ec55df1b4afd967c925686d2ace4f7d3e91fc163611bfa8a0efae1911535"
                   }
               ]
 }

@@ -33,6 +33,16 @@ function Invoke-ADASCICommand {
     $ExitCode.Value = [int]$currentExitCode
 }
 
+function Get-ADASCIAttestationResults {
+    # A generic List[object] expanded directly with @(...) throws "Argument types
+    # do not match", which would abort every attestation write. Enumerate it
+    # through the pipeline first so ConvertTo-Json receives a normal object
+    # array. Same defect and same workaround as in Initialize-ADASProject.ps1.
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)]$Results)
+    return @($Results | ForEach-Object { $_ })
+}
+
 if ($DispatchSelfTest) {
     $marker = Join-Path ([IO.Path]::GetTempPath()) ("imperial-adas-dispatch-{0}.txt" -f [guid]::NewGuid().ToString('N'))
     $previousMarker = [Environment]::GetEnvironmentVariable('ADAS_DISPATCH_MARKER', 'Process')
@@ -81,12 +91,12 @@ foreach ($group in $groups) {
         Write-Host '::endgroup::'
         $results.Add([pscustomobject]@{ group=$group; name=$entry.name; command=$entry.command; exitCode=[int]$code; passed=([int]$code -eq 0); durationMs=[int]((Get-Date)-$started).TotalMilliseconds })
         if ([int]$code -ne 0) {
-            $attestation = [ordered]@{ schemaVersion='2.1'; commit=$env:GITHUB_SHA; runId=$env:GITHUB_RUN_ID; status='BLOCKED'; generatedAt=(Get-Date).ToUniversalTime().ToString('o'); results=@($results) }
+            $attestation = [ordered]@{ schemaVersion='2.1'; commit=$env:GITHUB_SHA; runId=$env:GITHUB_RUN_ID; status='BLOCKED'; generatedAt=(Get-Date).ToUniversalTime().ToString('o'); results=(Get-ADASCIAttestationResults -Results $results) }
             $attestation | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $root 'ci-attestation.json') -Encoding UTF8
             exit [int]$code
         }
     }
 }
-$attestation = [ordered]@{ schemaVersion='2.1'; commit=$env:GITHUB_SHA; runId=$env:GITHUB_RUN_ID; status='PASS'; generatedAt=(Get-Date).ToUniversalTime().ToString('o'); results=@($results) }
+$attestation = [ordered]@{ schemaVersion='2.1'; commit=$env:GITHUB_SHA; runId=$env:GITHUB_RUN_ID; status='PASS'; generatedAt=(Get-Date).ToUniversalTime().ToString('o'); results=(Get-ADASCIAttestationResults -Results $results) }
 $attestation | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $root 'ci-attestation.json') -Encoding UTF8
 exit 0

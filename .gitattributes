@@ -1,3 +1,7 @@
+# The protected acceptance corpus is verified byte-exactly against
+# .imperial-adas/protected-corpus-manifest.json, so its checked-out bytes must be
+# identical on every platform regardless of core.autocrlf.
+.imperial-adas/acceptance/** text eol=lf
 services/platform-core/app/static/prevalidated-commercial-sources/*.json text eol=lf
 services/platform-core/data/copy_gate/*.json text eol=lf
 services/platform-core/app/static/brand-assets/*.json text eol=lf
