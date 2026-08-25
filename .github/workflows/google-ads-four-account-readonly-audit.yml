@@ -267,7 +267,12 @@ jobs:
             };
           }
 
-          async function probeQuotaProject(accessToken, developerToken, quotaProject) {
+          async function probeQuotaProject(
+            identity,
+            accessToken,
+            developerToken,
+            quotaProject
+          ) {
             const probe = await queryAccount(
               accessToken,
               developerToken,
@@ -276,6 +281,7 @@ jobs:
               quotaProject
             );
             return {
+              identity,
               quotaProject: quotaProject || null,
               ok: probe.ok,
               error: probe.error || null,
@@ -295,23 +301,40 @@ jobs:
             if (!cloudAdminCredentials.client_email || !cloudAdminCredentials.private_key) {
               throw new Error('Cloud admin service account JSON is missing required fields');
             }
-            const accessToken = await getAccessToken(
-              credentials,
-              'https://www.googleapis.com/auth/adwords'
-            );
+            const identities = [
+              {name: 'adsServiceAccount', credentials},
+              {name: 'cloudAdminServiceAccount', credentials: cloudAdminCredentials}
+            ];
             const quotaCandidates = [...new Set([
               null,
               credentials.project_id || null,
               cloudAdminCredentials.project_id || null
             ])];
+            const accessTokens = new Map();
             const connectionProbes = [];
-            for (const quotaProject of quotaCandidates) {
-              connectionProbes.push(
-                await probeQuotaProject(accessToken, developerToken, quotaProject)
+            for (const identity of identities) {
+              const token = await getAccessToken(
+                identity.credentials,
+                'https://www.googleapis.com/auth/adwords'
               );
+              accessTokens.set(identity.name, token);
+              for (const quotaProject of quotaCandidates) {
+                connectionProbes.push(
+                  await probeQuotaProject(
+                    identity.name,
+                    token,
+                    developerToken,
+                    quotaProject
+                  )
+                );
+              }
             }
-            const selectedQuotaProject =
-              connectionProbes.find(probe => probe.ok)?.quotaProject || null;
+            const selectedProbe = connectionProbes.find(probe => probe.ok) || null;
+            const selectedQuotaProject = selectedProbe?.quotaProject || null;
+            const selectedIdentity = selectedProbe?.identity || null;
+            const accessToken = selectedIdentity
+              ? accessTokens.get(selectedIdentity)
+              : accessTokens.get('adsServiceAccount');
             const connectionEstablished = connectionProbes.some(probe => probe.ok);
             const audit = {
               generatedAt: new Date().toISOString(),
@@ -319,6 +342,7 @@ jobs:
               apiVersion: required('GOOGLE_ADS_API_VERSION'),
               connectionProbes,
               connectionEstablished,
+              selectedIdentity,
               selectedQuotaProject,
               managerCustomerId: required('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
               customerIds: CUSTOMER_IDS,
