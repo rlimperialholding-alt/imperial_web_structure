@@ -18,23 +18,34 @@ write. Only the explicit allowlist of transient Windows replacement errors
 (``winerror`` 5/32/33) is retried, only on Windows; every other
 PermissionError/OSError is raised on the first attempt without sleeping.
 
-These tests prove, deterministically:
+Because the retry gate is platform-specific, the platform-dependent cases
+below simulate the platform through the narrow module-local seam
+``demo_runtime._is_windows`` (see :func:`_simulate_platform`). The global
+``os.name`` attribute is never mutated, so ``pathlib``, pytest and every
+other importer of ``os`` keep observing the real host, and the tests are
+deterministic on Windows and non-Windows hosts alike.
+
+These tests prove, deterministically and on every host:
 
 1. an allowlisted transient denial is retried and the atomic write
-   completes;
+   completes (Windows simulated);
 2. a permanent permission error (no winerror, or a non-allowlisted
    winerror) is raised on the first attempt with no retry delay, and a
    persistent denial still fails closed: the original PermissionError
    propagates, the previous target content stays byte-identical, and no
    owned temporary file is left behind;
 3. exhausted transient retries re-raise the original error after exactly
-   the bounded delays and still clean up every owned temporary file;
-4. the allowlisted winerror is never retried outside Windows;
-5. the real Windows share-mode mechanism (a held target without
+   the bounded delays and still clean up every owned temporary file
+   (Windows simulated);
+4. the allowlisted winerror is never retried outside Windows (non-Windows
+   simulated);
+5. the platform seam is production-neutral: unpatched it is exactly
+   ``os.name == "nt"``, and simulating it never mutates global ``os.name``;
+6. the real Windows share-mode mechanism (a held target without
    FILE_SHARE_DELETE) blocks replacement and recovers once released;
-6. concurrent writers on one runtime instance stay serialized and the file
+7. concurrent writers on one runtime instance stay serialized and the file
    is always complete JSON;
-7. an ambient ``DEMO_RUNTIME_PATH`` cannot redirect test isolation, and the
+8. an ambient ``DEMO_RUNTIME_PATH`` cannot redirect test isolation, and the
    suite-level runtime path stays inside the pytest temporary root.
 
 All fixtures use synthetic copies under the pytest temporary directory; the
@@ -81,6 +92,18 @@ def _permission_error_with_winerror(winerror: int) -> PermissionError:
     return error
 
 
+def _simulate_platform(monkeypatch: pytest.MonkeyPatch, *, windows: bool) -> None:
+    """Deterministically simulate the platform for the retry gate.
+
+    Only the module-local seam ``demo_runtime._is_windows`` is replaced, so
+    the simulation is confined to the module under test and reverted by
+    ``monkeypatch`` at teardown. Global ``os.name`` is deliberately left
+    untouched: mutating it would also change ``pathlib``, pytest, and every
+    other module that reads ``os.name``.
+    """
+    monkeypatch.setattr(demo_runtime, "_is_windows", lambda: windows)
+
+
 def test_transient_replace_denial_is_retried_and_write_completes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -97,6 +120,9 @@ def test_transient_replace_denial_is_retried_and_write_completes(
 
     monkeypatch.setattr(os, "replace", flaky_replace)
     monkeypatch.setattr(time, "sleep", lambda _: None)  # keep the test instant
+    # The injected winerror 5 is only retryable on Windows, so the platform
+    # is simulated explicitly instead of depending on the host.
+    _simulate_platform(monkeypatch, windows=True)
 
     result = runtime.execute_action(
         module_id="crm",
@@ -211,6 +237,9 @@ def test_exhausted_transient_retries_reraise_original_error_and_clean_up(
 
     monkeypatch.setattr(os, "replace", always_transient)
     monkeypatch.setattr(time, "sleep", sleep_delays.append)
+    # The injected winerror 5 is only retryable on Windows, so the platform
+    # is simulated explicitly instead of depending on the host.
+    _simulate_platform(monkeypatch, windows=True)
 
     with pytest.raises(PermissionError) as excinfo:
         runtime.execute_action(
@@ -248,7 +277,10 @@ def test_allowlisted_winerror_is_not_retried_outside_windows(
 
     monkeypatch.setattr(os, "replace", denied_replace)
     monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("must not sleep outside Windows"))
-    monkeypatch.setattr(demo_runtime.os, "name", "posix")
+    # Simulate a non-Windows host through the module-local seam. Patching
+    # ``demo_runtime.os.name`` instead would mutate the single global ``os``
+    # module object and leak into pathlib, pytest and unrelated modules.
+    _simulate_platform(monkeypatch, windows=False)
 
     with pytest.raises(PermissionError):
         demo_runtime._replace_with_transient_retry(temporary, target)
@@ -256,6 +288,34 @@ def test_allowlisted_winerror_is_not_retried_outside_windows(
     assert replace_calls == 1, "non-Windows failures are never retried"
     assert target.read_text(encoding="utf-8") == "old"
     assert temporary.read_text(encoding="utf-8") == "new"
+
+
+def test_platform_seam_is_production_neutral_and_leak_free(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The seam must equal ``os.name == "nt"`` and never touch global ``os``."""
+    real_os_name = os.name
+
+    # Unpatched production behavior is exactly the documented predicate.
+    assert demo_runtime._is_windows() is (real_os_name == "nt")
+
+    # An allowlisted error is classified purely by the simulated platform.
+    transient = _transient_windows_permission_error()
+    _simulate_platform(monkeypatch, windows=True)
+    assert demo_runtime._is_windows() is True
+    assert demo_runtime._is_transient_windows_replace_error(transient) is True
+
+    _simulate_platform(monkeypatch, windows=False)
+    assert demo_runtime._is_windows() is False
+    assert demo_runtime._is_transient_windows_replace_error(transient) is False
+
+    # Simulating either platform leaves the real host attribute untouched, so
+    # pathlib, pytest and unrelated modules are unaffected.
+    assert os.name == real_os_name
+    assert demo_runtime.os is os
+
+    monkeypatch.undo()
+    assert demo_runtime._is_windows() is (real_os_name == "nt")
 
 
 @pytest.mark.skipif(

@@ -55,10 +55,23 @@ _REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4)
 _TRANSIENT_WINDOWS_REPLACE_ERRORS = frozenset({5, 32, 33})
 
 
+def _is_windows() -> bool:
+    """Narrow, module-local platform predicate for the retry gate.
+
+    At runtime this is exactly ``os.name == "nt"`` and nothing else. It is a
+    dedicated helper only so the focused retry tests can simulate either
+    platform deterministically on any host by monkeypatching this single
+    module-local seam. Patching the seam keeps the simulation local to this
+    module; patching the global ``os.name`` attribute instead would also
+    change ``pathlib``, pytest and every other importer of ``os``.
+    """
+    return os.name == "nt"
+
+
 def _is_transient_windows_replace_error(error: OSError) -> bool:
     """True only for a documented transient Windows replacement failure."""
     return (
-        os.name == "nt"
+        _is_windows()
         and isinstance(error, PermissionError)
         and getattr(error, "winerror", None) in _TRANSIENT_WINDOWS_REPLACE_ERRORS
     )
