@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.growth_ops.catalog import _fetch
 from app.growth_ops.models import GrowthSignal, OutreachMessage
 from app.growth_ops.registry import BrandBinding
-from app.growth_ops.service import _render_message
+from app.growth_ops.service import _queue_message, _release_matches, _render_message
 from app.land_acquisition.models import (
     LandListingPackage,
     LandOpportunity,
@@ -422,6 +422,81 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
     assert (
         "Leiratkozás: https://growth.imperialholding.test/growth/unsubscribe/UAT-OWNER-TOKEN"
     ) in body
+
+
+@pytest.mark.parametrize("recipient_role", ["listing_agent", "property_owner"])
+def test_owner_approved_public_land_initial_email_is_policy_released(
+    db, monkeypatch, recipient_role
+):
+    monkeypatch.setattr(
+        "app.growth_ops.service.settings",
+        lambda: SimpleNamespace(base_url="https://growth.imperialholding.test"),
+    )
+    signal = GrowthSignal(
+        signal_id=f"SIG-LAND-RELEASE-{recipient_role}",
+        motor_key="construction",
+        source_id="licensed-feed:uat",
+        source_bucket="property_development",
+        external_key=f"LISTING-RELEASE-{recipient_role}",
+        signal_type="residential_building_plot",
+        detected_at=datetime.now(UTC),
+        company_name="Nyilvános hirdető",
+        subject_type="natural_person",
+        recipient_role=recipient_role,
+        recipient_email=f"{recipient_role}@example.test",
+        recipient_email_type="named",
+        contact_basis="public_property_listing",
+        public_contact_url="https://example.test/listing/RELEASE-001",
+        location="sülysápi, 605 m²-es",
+        summary="Eladó belterületi építési telek Sülysápon.",
+        evidence_url="https://example.test/listing/RELEASE-001",
+        brand_id="Imperial",
+        score=90,
+        urgency=50,
+        confidence=90,
+        dedupe_hash=("a" if recipient_role == "listing_agent" else "b") * 64,
+        source_payload_hash=("c" if recipient_role == "listing_agent" else "d") * 64,
+        status="accepted",
+    )
+    binding = BrandBinding(
+        brand_id="Imperial",
+        sender_email="info@imperialholding.hu",
+        domain_key="imperialholding.hu",
+        secret={},
+        config={
+            "brand_name": "Imperial Holding",
+            "templates": {
+                "default": {
+                    "initial": {"subject": "unused", "body": "unused"},
+                    "followup_1": {"subject": "unused", "body": "unused"},
+                }
+            },
+        },
+    )
+    db.add(signal)
+    db.flush()
+
+    initial = _queue_message(
+        db,
+        signal,
+        binding,
+        step=0,
+        available_at=datetime.now(UTC),
+        enforce_recipient_cooldown=False,
+    )
+    followup = _queue_message(
+        db,
+        signal,
+        binding,
+        step=1,
+        available_at=datetime.now(UTC),
+        enforce_recipient_cooldown=False,
+    )
+
+    assert initial.release_approved_by == "owner-policy:land-public-listing-v1:2026-08-25"
+    assert initial.release_approved_at is not None
+    assert initial.release_token_hash and _release_matches(initial)
+    assert followup.release_token_hash is None
 
 
 def test_generic_scanner_rejects_private_and_cgnat_targets(monkeypatch):

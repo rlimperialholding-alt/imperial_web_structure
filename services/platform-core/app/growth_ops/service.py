@@ -365,6 +365,29 @@ def _queue_message(
         available_at=available_at,
     )
     db.add(row)
+    if (
+        step == 0
+        and signal.signal_type == "residential_building_plot"
+        and signal.contact_basis == "public_property_listing"
+        and signal.recipient_role in {"listing_agent", "property_owner"}
+    ):
+        assert_outreach_copy(row.body_text)
+        row.release_approved_by = "owner-policy:land-public-listing-v1:2026-08-25"
+        row.release_approved_at = utcnow()
+        row.release_token_hash = _release_digest(row, row.release_approved_by)
+        audit(
+            db,
+            actor=row.release_approved_by,
+            action="growth_outreach_policy_released",
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after={
+                "payload_sha256": row.payload_sha256,
+                "signal_id": signal.signal_id,
+                "recipient_role": signal.recipient_role,
+                "policy_scope": "single_initial_public_building_plot_outreach",
+            },
+        )
     return row
 
 
@@ -843,6 +866,8 @@ def schedule_followups(db: Session) -> int:
     for row in candidates:
         signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
         if not signal or signal.status in {"responded", "suppressed"}:
+            continue
+        if signal.signal_type == "residential_building_plot":
             continue
         if db.scalar(
             select(OutreachMessage.id).where(

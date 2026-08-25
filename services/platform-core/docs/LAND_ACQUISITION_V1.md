@@ -55,6 +55,9 @@ API-credential, portálspecifikus adapter-receipt vagy staging contract-test.
 - A forráshirdetés HTTPS URL-je, a címzett szerepköre és a hirdetésből származó
   kapcsolat visszakereshető rögzítése kötelező. Más célú természetes személyes
   megkeresésre ez a kivétel nem használható.
+- A változtathatatlan, tulajdonos által jóváhagyott sablon első levele a
+  `land-public-listing-v1` policy alapján automatikusan release-tokenes jóváhagyást kap.
+  Ez kizárólag az első levélre érvényes; automatikus utánkövető levél nem készül.
 - `listing_agent` esetén a levél a 2,5%-os közvetítői díjat, a kész hirdetési anyagot,
   a teljes szakmai támogatást és a szerződéstervezetet ajánlja fel.
 - `property_owner` esetén a levél ingyenes, jutalékmentes, kötelezettség nélküli telek +
