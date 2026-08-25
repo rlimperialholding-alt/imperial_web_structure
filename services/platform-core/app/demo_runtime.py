@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -22,6 +23,33 @@ def utcnow() -> str:
 
 class DemoRuntimeError(ValueError):
     pass
+
+
+# On Windows, os.replace requires DELETE sharing on the target. A transient
+# external holder (antivirus real-time scan, search indexer, or file-sync
+# agent) can open the freshly written target without FILE_SHARE_DELETE for a
+# few milliseconds, which makes the rename fail with PermissionError
+# (WinError 5, access denied) even though the process owns the file and the
+# directory is writable. This is the failure observed once in the Gate 6
+# regression suite. A failed rename leaves the temporary file intact, so the
+# same atomic replacement can simply be retried. The retry never falls back
+# to a non-atomic partial write, the total wait is bounded, and a persistent
+# permission problem still surfaces as the original PermissionError.
+_REPLACE_MAX_ATTEMPTS = 5
+_REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4)
+
+
+def _replace_with_transient_retry(temporary_path: Path, target: Path) -> None:
+    attempts = 1
+    while True:
+        try:
+            temporary_path.replace(target)
+            return
+        except PermissionError:
+            if attempts >= _REPLACE_MAX_ATTEMPTS:
+                raise
+            time.sleep(_REPLACE_RETRY_DELAYS[attempts - 1])
+            attempts += 1
 
 
 class DemoRuntime:
@@ -60,7 +88,7 @@ class DemoRuntime:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(state, handle, ensure_ascii=False, indent=2)
                 handle.write("\n")
-            temporary_path.replace(self.runtime_path)
+            _replace_with_transient_retry(temporary_path, self.runtime_path)
         finally:
             temporary_path.unlink(missing_ok=True)
 

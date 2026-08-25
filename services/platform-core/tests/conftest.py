@@ -10,6 +10,15 @@ pytest_temp_root = Path(tempfile.gettempdir()) / f"iip_pytest_{os.getpid()}"
 pytest_temp_root.mkdir(parents=True, exist_ok=True)
 os.environ["PYTEST_DEBUG_TEMPROOT"] = str(pytest_temp_root)
 os.environ.setdefault("PLATFORM_RUNTIME_ROOT", str(pytest_temp_root / "runtime"))
+# The demo runtime writes its JSON state next to the seed data by default.
+# Point it at the pytest temp root so the suite never rewrites the repository
+# runtime data file, where a transient antivirus/indexer/sync hold on Windows
+# caused the Gate 6 WinError 5 replacement failure. Must be set before
+# app.demo_runtime reads the variable at import time.
+os.environ.setdefault(
+    "DEMO_RUNTIME_PATH",
+    str(pytest_temp_root / "demo" / "platform_demo_runtime.json"),
+)
 
 
 def _cleanup_pytest_temp_root() -> None:
