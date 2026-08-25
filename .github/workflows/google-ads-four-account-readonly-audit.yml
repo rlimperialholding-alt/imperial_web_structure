@@ -18,7 +18,6 @@ jobs:
       GOOGLE_CLOUD_ADMIN_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_ADS_LOGIN_CUSTOMER_ID: "8668141303"
       GOOGLE_ADS_API_VERSION: v25
-      GOOGLE_CLOUD_PROJECT_NUMBER: "1091317438049"
     steps:
       - name: Query four accounts through searchStream only
         shell: bash
@@ -224,79 +223,6 @@ jobs:
             return payload.access_token;
           }
 
-          function serviceUsageError(response, payload) {
-            const error = payload && payload.error ? payload.error : payload;
-            return new Error(
-              `Service Usage request failed (${response.status}): ` +
-              `${error && error.status ? error.status : 'unknown_status'} - ` +
-              `${error && error.message ? error.message : 'unknown_error'}`
-            );
-          }
-
-          async function enableGoogleAdsApi(credentials) {
-            const projectNumber = required('GOOGLE_CLOUD_PROJECT_NUMBER');
-            const serviceName = 'googleads.googleapis.com';
-            const resource = `projects/${projectNumber}/services/${serviceName}`;
-            const baseUrl = `https://serviceusage.googleapis.com/v1/${resource}`;
-            const accessToken = await getAccessToken(
-              credentials,
-              'https://www.googleapis.com/auth/cloud-platform'
-            );
-            const headers = {authorization: `Bearer ${accessToken}`};
-
-            let response = await fetch(baseUrl, {headers});
-            let payload = await response.json();
-            if (!response.ok) throw serviceUsageError(response, payload);
-            const beforeState = payload.state || null;
-            if (beforeState === 'ENABLED') {
-              return {beforeState, changed: false, afterState: beforeState};
-            }
-
-            response = await fetch(`${baseUrl}:enable`, {
-              method: 'POST',
-              headers: {...headers, 'content-type': 'application/json'},
-              body: '{}'
-            });
-            payload = await response.json();
-            if (!response.ok) throw serviceUsageError(response, payload);
-
-            const operationName = payload.name || null;
-            if (operationName) {
-              for (let attempt = 0; attempt < 30; attempt += 1) {
-                const operationResponse = await fetch(
-                  `https://serviceusage.googleapis.com/v1/${operationName}`,
-                  {headers}
-                );
-                const operation = await operationResponse.json();
-                if (!operationResponse.ok) {
-                  throw serviceUsageError(operationResponse, operation);
-                }
-                if (operation.done) {
-                  if (operation.error) {
-                    throw new Error(
-                      `Google Ads API enable operation failed: ${operation.error.message || 'unknown_error'}`
-                    );
-                  }
-                  break;
-                }
-                await new Promise(resolve => setTimeout(resolve, 5000));
-              }
-            }
-
-            response = await fetch(baseUrl, {headers});
-            payload = await response.json();
-            if (!response.ok) throw serviceUsageError(response, payload);
-            if (payload.state !== 'ENABLED') {
-              throw new Error(`Google Ads API remains ${payload.state || 'UNKNOWN'} after enable request`);
-            }
-            return {
-              beforeState,
-              changed: true,
-              operationName,
-              afterState: payload.state
-            };
-          }
-
           function sanitizedError(response, payload) {
             const source = Array.isArray(payload) ? payload[0] : payload;
             const error = source && source.error ? source.error : source;
@@ -309,18 +235,20 @@ jobs:
             };
           }
 
-          async function queryAccount(accessToken, developerToken, customerId, spec) {
+          async function queryAccount(accessToken, developerToken, customerId, spec, quotaProject) {
             const version = required('GOOGLE_ADS_API_VERSION');
+            const headers = {
+              authorization: `Bearer ${accessToken}`,
+              'content-type': 'application/json',
+              'developer-token': developerToken,
+              'login-customer-id': required('GOOGLE_ADS_LOGIN_CUSTOMER_ID')
+            };
+            if (quotaProject) headers['x-goog-user-project'] = quotaProject;
             const response = await fetch(
               `https://googleads.googleapis.com/${version}/customers/${customerId}/googleAds:searchStream`,
               {
                 method: 'POST',
-                headers: {
-                  authorization: `Bearer ${accessToken}`,
-                  'content-type': 'application/json',
-                  'developer-token': developerToken,
-                  'login-customer-id': required('GOOGLE_ADS_LOGIN_CUSTOMER_ID')
-                },
+                headers,
                 body: JSON.stringify({query: spec.query})
               }
             );
@@ -339,6 +267,22 @@ jobs:
             };
           }
 
+          async function probeQuotaProject(accessToken, developerToken, quotaProject) {
+            const probe = await queryAccount(
+              accessToken,
+              developerToken,
+              required('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
+              {dataset: 'connection_probe', query: 'SELECT customer.id FROM customer LIMIT 1'},
+              quotaProject
+            );
+            return {
+              quotaProject: quotaProject || null,
+              ok: probe.ok,
+              error: probe.error || null,
+              requestId: probe.requestId || null
+            };
+          }
+
           async function main() {
             const developerToken = required('GOOGLE_ADS_DEVELOPER_TOKEN');
             const credentials = parseServiceAccount(required('GOOGLE_ADS_SERVICE_ACCOUNT_JSON'));
@@ -351,19 +295,31 @@ jobs:
             if (!cloudAdminCredentials.client_email || !cloudAdminCredentials.private_key) {
               throw new Error('Cloud admin service account JSON is missing required fields');
             }
-            const apiEnablement = await enableGoogleAdsApi(cloudAdminCredentials);
-            if (apiEnablement.changed) {
-              await new Promise(resolve => setTimeout(resolve, 15000));
-            }
             const accessToken = await getAccessToken(
               credentials,
               'https://www.googleapis.com/auth/adwords'
             );
+            const quotaCandidates = [...new Set([
+              null,
+              credentials.project_id || null,
+              cloudAdminCredentials.project_id || null
+            ])];
+            const connectionProbes = [];
+            for (const quotaProject of quotaCandidates) {
+              connectionProbes.push(
+                await probeQuotaProject(accessToken, developerToken, quotaProject)
+              );
+            }
+            const selectedQuotaProject =
+              connectionProbes.find(probe => probe.ok)?.quotaProject || null;
+            const connectionEstablished = connectionProbes.some(probe => probe.ok);
             const audit = {
               generatedAt: new Date().toISOString(),
               mode: 'READ_ONLY_SEARCH_STREAM',
               apiVersion: required('GOOGLE_ADS_API_VERSION'),
-              apiEnablement,
+              connectionProbes,
+              connectionEstablished,
+              selectedQuotaProject,
               managerCustomerId: required('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
               customerIds: CUSTOMER_IDS,
               accounts: []
@@ -372,7 +328,15 @@ jobs:
             for (const customerId of CUSTOMER_IDS) {
               const datasets = [];
               for (const spec of QUERIES) {
-                datasets.push(await queryAccount(accessToken, developerToken, customerId, spec));
+                datasets.push(
+                  await queryAccount(
+                    accessToken,
+                    developerToken,
+                    customerId,
+                    spec,
+                    selectedQuotaProject
+                  )
+                );
               }
               audit.accounts.push({customerId, datasets});
             }
@@ -396,6 +360,13 @@ jobs:
                 '## Google Ads read-only audit\n\n`searchStream` only; no mutate endpoint is present.\n\n' +
                 '```json\n' + JSON.stringify(summary, null, 2) + '\n```\n'
               );
+            }
+            const failedDatasetCount = summary.reduce(
+              (total, account) => total + account.failedDatasets,
+              0
+            );
+            if (!connectionEstablished || failedDatasetCount > 0) {
+              process.exitCode = 1;
             }
           }
 
