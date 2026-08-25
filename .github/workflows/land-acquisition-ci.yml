@@ -46,6 +46,9 @@ jobs:
           app/growth_ops/processing.py app/growth_ops/service.py
           tests/test_land_acquisition.py
           alembic/versions/20260825_0077_land_acquisition.py
+          alembic/versions/20260825_0078_land_recipient_roles.py
+          alembic/versions/20260825_0079_growth_outreach_html.py
+          alembic/versions/20260825_0080_land_agent_affiliation_gate.py
       - name: Run land and Growth Ops regression tests
         run: >-
           pytest -q tests/test_land_acquisition.py tests/test_growth_ops.py
@@ -56,4 +59,4 @@ jobs:
           DATABASE_URL: sqlite:////tmp/imperial-land-migration-ci.sqlite
         run: |
           alembic upgrade head
-          test "$(alembic current 2>/dev/null | head -1)" = "20260825_0077 (head)"
+          test "$(alembic current 2>/dev/null | head -1)" = "20260825_0080 (head)"
