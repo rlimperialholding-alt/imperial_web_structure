@@ -94,8 +94,7 @@ jobs:
                 campaign.name,
                 campaign.status,
                 campaign.advertising_channel_type,
-                campaign.serving_status,
-                campaign.url_expansion_opt_out
+                campaign.serving_status
               FROM campaign
               ORDER BY campaign.id`
             },
@@ -134,7 +133,7 @@ jobs:
                 campaign_shared_set.shared_set,
                 campaign_shared_set.status
               FROM campaign_shared_set
-              ORDER BY campaign.id, campaign_shared_set.shared_set`
+              ORDER BY campaign.id`
             },
             {
               dataset: 'pmax_url_expansion',
@@ -142,7 +141,7 @@ jobs:
                 campaign.id,
                 campaign.name,
                 campaign.status,
-                campaign.url_expansion_opt_out
+                campaign.asset_automation_settings
               FROM campaign
               WHERE campaign.advertising_channel_type = PERFORMANCE_MAX
               ORDER BY campaign.id`
@@ -172,7 +171,7 @@ jobs:
                 asset_group.name,
                 asset_group.status,
                 asset_group.final_urls,
-                asset_group.mobile_urls
+                asset_group.final_mobile_urls
               FROM asset_group
               WHERE campaign.advertising_channel_type = PERFORMANCE_MAX
               ORDER BY campaign.id, asset_group.id`
