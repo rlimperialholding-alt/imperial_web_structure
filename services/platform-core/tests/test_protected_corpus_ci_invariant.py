@@ -11,7 +11,12 @@ checkout and breaks Remote CI. These tests therefore prove three things:
 2. the canonical form is LF and is pinned in ``.gitattributes``, so the
    platform-dependent digest drift cannot silently return;
 3. the invariant still fails closed on content tampering, on line-ending
-   tampering, and on a removed protected file.
+   tampering, and on a removed protected file;
+4. every recorded digest is proven equal to the canonical committed Git-blob
+   bytes (LF), so the manifest can never be silently blessed from an
+   ambiguous CRLF working tree;
+5. the coverage check is scoped to tracked acceptance artifacts, so an
+   unrelated untracked temporary file cannot cause a false failure.
 
 Case 3 also proves the invariant was not softened into a line-ending
 insensitive comparison. All tamper fixtures are synthetic copies under the
@@ -24,7 +29,10 @@ import fnmatch
 import hashlib
 import json
 import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 PLATFORM_CORE = Path(__file__).resolve().parents[1]
 REPO_ROOT = PLATFORM_CORE.parents[1]
@@ -97,15 +105,77 @@ def test_protected_corpus_matches_canonical_digest() -> None:
     assert _verify(_entries(), REPO_ROOT) == []
 
 
+def _tracked_acceptance_files() -> set[str]:
+    """Intended acceptance artifacts: tracked files, not transient temp files.
+
+    The coverage check is scoped to Git-tracked files so an unrelated
+    untracked temporary file in the acceptance directory cannot cause a false
+    failure, while any tracked artifact omitted from the manifest still fails
+    closed. Environments without Git metadata (e.g. a packed container image)
+    fall back to the physically present files, which there are exactly the
+    intended acceptance content.
+    """
+    try:
+        listed = subprocess.run(
+            ["git", "ls-files", "--", ".imperial-adas/acceptance"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return {
+            f".imperial-adas/acceptance/{path.name}"
+            for path in sorted(ACCEPTANCE_DIR.iterdir())
+            if path.is_file()
+        }
+    return {line for line in listed.splitlines() if line}
+
+
 def test_manifest_protects_every_acceptance_file() -> None:
     declared = {str(entry["path"]) for entry in _entries()}
-    present = {
-        f".imperial-adas/acceptance/{path.name}"
-        for path in sorted(ACCEPTANCE_DIR.iterdir())
-        if path.is_file()
-    }
+    present = _tracked_acceptance_files()
 
     assert present - declared == set(), "acceptance file excluded from protection"
+
+
+def test_manifest_digests_equal_committed_git_blob_lf_bytes() -> None:
+    """The recorded digests are the canonical committed blob bytes, not a
+    working-tree rendering.
+
+    Reviewers asked for proof that the manifest was never blessed from an
+    ambiguous CRLF working tree: each entry is resolved against HEAD, read
+    as raw blob bytes, and hashed exactly once. Git blobs are stored
+    LF-normalized, so this is also the "after LF normalization" evidence;
+    the CR check makes that explicit. The working-tree byte check above
+    remains the CI-mirror guard, this one proves provenance.
+    """
+    for entry in _entries():
+        relative = str(entry["path"])
+        try:
+            oid = subprocess.run(
+                ["git", "rev-parse", f"HEAD:{relative}"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            blob = subprocess.run(
+                ["git", "cat-file", "blob", oid],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                check=True,
+            ).stdout
+        except FileNotFoundError:
+            pytest.skip("git executable unavailable; blob provenance check needs the repository")
+        except subprocess.CalledProcessError as exc:
+            pytest.fail(f"git failed while resolving {relative}: {exc}")
+
+        digest = hashlib.sha256(blob).hexdigest()
+        assert digest == str(entry["sha256"]).lower(), (
+            f"manifest digest for {relative} is not the committed blob digest"
+        )
+        assert b"\r" not in blob, f"committed blob for {relative} contains CR bytes"
 
 
 def test_protected_corpus_bytes_are_lf_canonical() -> None:
