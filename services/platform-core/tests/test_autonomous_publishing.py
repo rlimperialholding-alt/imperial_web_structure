@@ -52,8 +52,16 @@ def _job_dict(*, job_id: str = "JOB-AUTOPUB-001") -> dict:
         "content_hash": hashlib.sha256(b"approved-content").hexdigest(),
         "channels": ["wordpress", "facebook", "instagram", "analytics", "crm"],
         "channel_payloads": {
-            "wordpress": {},
-            "facebook": {"message": "Jóváhagyott Facebook-szöveg #epites #otthon #imperial"},
+            "wordpress": {
+                "media": {
+                    "url": "https://brand.example/approved-image.jpg",
+                    "filename": "approved-image.jpg",
+                }
+            },
+            "facebook": {
+                "message": "Jóváhagyott Facebook-szöveg #epites #otthon #imperial",
+                "image_url": "https://brand.example/approved-image.jpg",
+            },
             "instagram": {
                 "caption": "Jóváhagyott Instagram-szöveg #epites #otthon #imperial",
                 "image_url": "https://brand.example/image.jpg",
@@ -156,6 +164,24 @@ def test_submission_is_durable_idempotent_and_payload_bound(db, fake_runtime):
     }
 
 
+@pytest.mark.parametrize(
+    ("channel", "error"),
+    [
+        ("wordpress", "WordPress HTTPS media.url is required"),
+        ("facebook", "facebook HTTPS image_url is required"),
+        ("instagram", "instagram HTTPS image_url is required"),
+    ],
+)
+def test_public_channels_reject_missing_image_payload(channel, error):
+    payload = _job_dict(job_id=f"JOB-MISSING-IMAGE-{channel.upper()}")
+    if channel == "wordpress":
+        payload["channel_payloads"][channel].pop("media")
+    else:
+        payload["channel_payloads"][channel].pop("image_url")
+    with pytest.raises(ValidationError, match=error):
+        PublicationJobIn.model_validate(payload)
+
+
 def test_submission_conflict_is_fail_closed(db, fake_runtime):
     first = PublicationJobIn.model_validate(_job_dict())
     service.submit_job(db, first)
@@ -178,7 +204,7 @@ def test_web_first_readback_then_social_then_attribution(db, fake_runtime, monke
     assert all(state.status == "READBACK_VERIFIED" for state in states)
 
 
-def test_partial_failure_rolls_back_in_reverse_and_routes_exception(db, fake_runtime):
+def test_partial_failure_rolls_back_in_reverse_and_queues_retry(db, fake_runtime):
     payload = _job_dict()
     payload["channels"] = ["wordpress", "facebook", "instagram"]
     payload["channel_payloads"] = {
@@ -187,6 +213,31 @@ def test_partial_failure_rolls_back_in_reverse_and_routes_exception(db, fake_run
     job = PublicationJobIn.model_validate(payload)
     service.submit_job(db, job)
     row = service.claim_job(db)
+    FakeAdapter.fail_channel = "instagram"
+    result = service.process_job(db, row)
+    assert result["status"] == "RETRY_QUEUED"
+    assert result["attempt"] == 1
+    assert result["retry_in_seconds"] == 30
+    assert FakeAdapter.rollbacks == ["facebook", "wordpress"]
+    assert row.status == "QUEUED" and row.available_at is not None
+    assert all(
+        state.status == "QUEUED"
+        for state in db.scalars(select(PublishingChannelState)).all()
+    )
+    assert db.scalar(select(PublishingExceptionRecord)) is None
+    assert db.scalar(select(TaskRecord).where(TaskRecord.assignee == "Molnár Andrea")) is None
+
+
+def test_partial_failure_after_final_attempt_routes_terminal_exception(db, fake_runtime):
+    payload = _job_dict(job_id="JOB-AUTOPUB-TERMINAL-001")
+    payload["channels"] = ["wordpress", "facebook", "instagram"]
+    payload["channel_payloads"] = {
+        key: payload["channel_payloads"][key] for key in payload["channels"]
+    }
+    job = PublicationJobIn.model_validate(payload)
+    service.submit_job(db, job)
+    row = service.claim_job(db)
+    row.max_attempts = 1
     FakeAdapter.fail_channel = "instagram"
     result = service.process_job(db, row)
     assert result["status"] == "ROLLED_BACK"

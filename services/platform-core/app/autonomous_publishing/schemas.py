@@ -130,6 +130,16 @@ class PublicationJobIn(BaseModel):
             and not self.visual_asset_package_id
         ):
             raise ValueError("VisualAssetPackageID is required")
+        if "wordpress" in self.channels:
+            media = self.channel_payloads.get("wordpress", {}).get("media")
+            if not isinstance(media, dict) or not str(media.get("url") or "").startswith("https://"):
+                raise ValueError("WordPress HTTPS media.url is required")
+        for channel in ("facebook", "instagram"):
+            if channel not in self.channels:
+                continue
+            image_url = str(self.channel_payloads.get(channel, {}).get("image_url") or "")
+            if not image_url.startswith("https://"):
+                raise ValueError(f"{channel} HTTPS image_url is required")
         if set(self.channel_payloads) != set(self.channels):
             raise ValueError("channel_payloads must match the selected channels exactly")
         for channel, field in (("facebook", "message"), ("instagram", "caption")):

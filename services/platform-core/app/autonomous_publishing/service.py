@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -389,6 +392,17 @@ def _proof(
         )
     )
     if existing:
+        existing.external_id = result.external_id
+        existing.public_url = result.public_url
+        existing.content_hash = result.content_hash
+        existing.canonical_url = result.canonical_url
+        existing.readback_json = readback_json
+        existing.readback_sha256 = hashlib.sha256(readback_json.encode()).hexdigest()
+        existing.analytics_event_id = (
+            result.external_id if state.channel == "analytics" else None
+        )
+        existing.crm_event_id = result.external_id if state.channel == "crm" else None
+        existing.verified_at = utcnow()
         return existing
     row = PublicationProofRecord(
         proof_id=f"PUBPROOF-{uuid4().hex[:20].upper()}",
@@ -509,6 +523,15 @@ def process_job(db: Session, job_row: PublishingJobRecord) -> dict[str, Any]:
             )
             completed.append((channel, result))
             db.commit()
+        unverified = [
+            channel
+            for channel in ordered
+            if channel != "forum" and states[channel].status != "READBACK_VERIFIED"
+        ]
+        if unverified:
+            raise AdapterError(
+                "unverified publication channels: " + ",".join(sorted(unverified))
+            )
         job_row.status = "VERIFIED"
         job_row.completed_at = utcnow()
         job_row.claimed_by = None
@@ -569,13 +592,37 @@ def process_job(db: Session, job_row: PublishingJobRecord) -> dict[str, Any]:
                         payload={"error_type": type(rollback_exc).__name__},
                     )
                 db.commit()
-        job_row.status = (
-            "ROLLBACK_FAILED" if rollback_failed else "ROLLED_BACK" if completed else "FAILED"
-        )
+
+        can_retry = not rollback_failed and job_row.attempt_count < job_row.max_attempts
         job_row.last_error = type(exc).__name__
         job_row.claimed_by = None
         job_row.claimed_at = None
         job_row.lease_expires_at = None
+        if can_retry:
+            delay_seconds = min(1800, 30 * (2 ** max(0, job_row.attempt_count - 1)))
+            for state in states.values():
+                if state.channel == "forum":
+                    continue
+                state.status = "QUEUED"
+                state.external_id = None
+                state.public_url = None
+                state.admin_url = None
+                state.published_at = None
+                state.verified_at = None
+            job_row.status = "QUEUED"
+            job_row.available_at = utcnow() + timedelta(seconds=delay_seconds)
+            db.commit()
+            return {
+                "status": "RETRY_QUEUED",
+                "job_id": job_row.job_id,
+                "error_type": type(exc).__name__,
+                "attempt": job_row.attempt_count,
+                "retry_in_seconds": delay_seconds,
+            }
+
+        job_row.status = (
+            "ROLLBACK_FAILED" if rollback_failed else "ROLLED_BACK" if completed else "FAILED"
+        )
         severity = "CRITICAL" if rollback_failed else "MAJOR"
         create_exception(
             db,
@@ -585,8 +632,8 @@ def process_job(db: Session, job_row: PublishingJobRecord) -> dict[str, Any]:
             channel=failed_channel,
             response={"message": str(exc)},
             recommended_action=(
-                "Ellenőrizd a readback/rollback bizonyítékot; javítsd az "
-                "adaptert vagy routingot, majd replay-elj."
+                "Az automatikus újrapróbálások elfogytak. Ellenőrizd a readback/rollback "
+                "bizonyítékot, javítsd az adaptert vagy routingot, majd replay-elj."
             ),
             rollback_status="FAILED" if rollback_failed else "VERIFIED" if completed else None,
         )
@@ -602,19 +649,164 @@ def process_job(db: Session, job_row: PublishingJobRecord) -> dict[str, Any]:
         client.close()
 
 
+def _daily_gate_deadline_reached(now: datetime | None = None) -> bool:
+    timezone = ZoneInfo(os.getenv("AUTONOMOUS_PUBLISHING_DAILY_GATE_TIMEZONE", "Europe/Budapest"))
+    local_now = (now or utcnow()).astimezone(timezone)
+    try:
+        hour = int(os.getenv("AUTONOMOUS_PUBLISHING_DAILY_GATE_HOUR", "12"))
+    except ValueError:
+        hour = 12
+    return local_now.hour >= max(0, min(23, hour))
+
+
+def daily_publication_integrity(
+    db: Session, *, now: datetime | None = None
+) -> dict[str, Any]:
+    registry = PublishingRegistry.load()
+    timezone = ZoneInfo(os.getenv("AUTONOMOUS_PUBLISHING_DAILY_GATE_TIMEZONE", "Europe/Budapest"))
+    local_now = (now or utcnow()).astimezone(timezone)
+    start_local = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_local = start_local + timedelta(days=1)
+    start_utc = start_local.astimezone(UTC)
+    end_utc = end_local.astimezone(UTC)
+
+    expected: set[tuple[str, str]] = set()
+    for brand_id, brand in registry.brands.items():
+        for channel, config in (brand.get("channels") or {}).items():
+            if channel in {*WEB_CHANNELS, *SOCIAL_CHANNELS} and config.get("enabled"):
+                expected.add((brand_id, channel))
+
+    rows = db.execute(
+        select(
+            PublishingChannelState.brand_id,
+            PublishingChannelState.channel,
+            PublishingChannelState.status,
+            PublishingChannelState.public_url,
+            PublicationProofRecord.proof_id,
+            PublicationProofRecord.readback_json,
+            PublishingJobRecord.payload_json,
+        )
+        .join(
+            PublishingJobRecord,
+            PublishingJobRecord.job_id == PublishingChannelState.job_id,
+        )
+        .outerjoin(
+            PublicationProofRecord,
+            PublicationProofRecord.channel_state_id
+            == PublishingChannelState.channel_state_id,
+        )
+        .where(
+            func.coalesce(
+                PublishingJobRecord.desired_publish_at, PublishingJobRecord.created_at
+            ) >= start_utc,
+            func.coalesce(
+                PublishingJobRecord.desired_publish_at, PublishingJobRecord.created_at
+            ) < end_utc,
+            PublishingChannelState.channel.in_([*WEB_CHANNELS, *SOCIAL_CHANNELS]),
+        )
+    ).all()
+
+    verified: set[tuple[str, str]] = set()
+    invalid: list[str] = []
+    for brand_id, channel, state, public_url, proof_id, readback_json, payload_json in rows:
+        key = (str(brand_id), str(channel))
+        if key not in expected or key in verified:
+            continue
+        if state != "READBACK_VERIFIED" or not str(public_url or "").startswith("https://"):
+            continue
+        if not proof_id or not readback_json:
+            continue
+        try:
+            readback = json.loads(readback_json)
+            payload = json.loads(payload_json)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            invalid.append(f"{brand_id}/{channel}:invalid_proof_json")
+            continue
+
+        image_verified = False
+        if channel == "wordpress":
+            image_verified = int(readback.get("featured_media") or 0) > 0
+        elif channel == "facebook":
+            image_verified = str(readback.get("full_picture") or "").startswith("https://")
+        elif channel == "instagram":
+            image_verified = str(readback.get("media_url") or "").startswith("https://")
+        elif channel == "nim_cms":
+            brand = registry.brands.get(str(brand_id)) or {}
+            config = ((brand.get("channels") or {}).get("nim_cms") or {})
+            mapping = ((config.get("contract") or {}).get("readback_map") or {})
+            visual_id_field = mapping.get("visual_asset_package_id")
+            visual_url_field = mapping.get("featured_image_url")
+            if visual_id_field:
+                image_verified = str(readback.get(visual_id_field) or "") == str(
+                    payload.get("visual_asset_package_id") or ""
+                )
+            elif visual_url_field:
+                image_verified = str(readback.get(visual_url_field) or "").startswith("https://")
+        if not image_verified:
+            invalid.append(f"{brand_id}/{channel}:image_not_verified")
+            continue
+        verified.add(key)
+
+    missing = sorted(f"{brand}/{channel}" for brand, channel in expected - verified)
+    status = "healthy" if expected and not missing and not invalid else "degraded"
+    return {
+        "status": status,
+        "local_date": start_local.date().isoformat(),
+        "expected": len(expected),
+        "verified": len(verified),
+        "missing": missing,
+        "invalid": sorted(set(invalid)),
+        "deadline_reached": _daily_gate_deadline_reached(now),
+    }
+
+
 def run_once(db: Session) -> dict[str, Any]:
     if not settings.autonomous_publishing_enabled:
         heartbeat(db, status="disabled")
         return {"status": "disabled", "processed": 0}
-    heartbeat(db, status="healthy")
     row = claim_job(db)
+    try:
+        daily_gate = daily_publication_integrity(db)
+    except Exception as exc:
+        daily_gate = {
+            "status": "degraded",
+            "error_type": type(exc).__name__,
+            "deadline_reached": True,
+        }
     if not row:
-        return {"status": "idle", "processed": 0}
+        worker_status = (
+            "healthy"
+            if daily_gate.get("status") == "healthy"
+            else "degraded"
+            if daily_gate.get("deadline_reached")
+            else "working"
+        )
+        heartbeat(
+            db,
+            status=worker_status,
+            detail={"status": "idle", "processed": 0, "daily_gate": daily_gate},
+        )
+        return {"status": "idle", "processed": 0, "daily_gate": daily_gate}
     heartbeat(db, status="working", current_job_id=row.job_id)
     result = process_job(db, row)
-    heartbeat(db, status="healthy", detail=result)
-    return {"processed": 1, **result}
-
+    try:
+        daily_gate = daily_publication_integrity(db)
+    except Exception as exc:
+        daily_gate = {
+            "status": "degraded",
+            "error_type": type(exc).__name__,
+            "deadline_reached": True,
+        }
+    if result.get("status") != "VERIFIED":
+        worker_status = "degraded"
+    elif daily_gate.get("status") == "healthy":
+        worker_status = "healthy"
+    elif daily_gate.get("deadline_reached"):
+        worker_status = "degraded"
+    else:
+        worker_status = "working"
+    heartbeat(db, status=worker_status, detail={**result, "daily_gate": daily_gate})
+    return {"processed": 1, **result, "daily_gate": daily_gate}
 
 def retry_job(db: Session, job_id: str, *, reason: str) -> PublishingJobRecord:
     row = db.scalar(select(PublishingJobRecord).where(PublishingJobRecord.job_id == job_id))

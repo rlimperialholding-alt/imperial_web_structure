@@ -58,9 +58,10 @@ def _settings(**overrides):
 
 
 def test_source_extraction_accepts_only_literal_evidence(db, monkeypatch):
+    source_permalink = "https://source.test/project/liget-projekt-123"
     text = (
         "A Minta Építő Kft. bejelentette a Liget projekt előkészítését. "
-        "Mikor indulhat el a kivitelezés?"
+        f"Mikor indulhat el a kivitelezés? {source_permalink}"
     )
     response = {
         "leads": [
@@ -85,7 +86,9 @@ def test_source_extraction_accepts_only_literal_evidence(db, monkeypatch):
         "questions": [
             {
                 "question": "Mikor indulhat el a kivitelezés?",
+                "question_kind": "literal",
                 "evidence_excerpt": "Mikor indulhat el a kivitelezés?",
+                "source_permalink": source_permalink,
             },
             {
                 "question": "Mennyi lesz az ára?",
@@ -114,7 +117,9 @@ def test_source_extraction_accepts_only_literal_evidence(db, monkeypatch):
     assert signal.recipient_email is None
     assert signal.status == "blocked"
     assert "internal_review_only" in signal.rejection_reasons_json
-    assert db.scalar(select(QuestionRadarTopic)).question == "Mikor indulhat el a kivitelezés?"
+    topic = db.scalar(select(QuestionRadarTopic))
+    assert topic.question == "Mikor indulhat el a kivitelezés?"
+    assert topic.source_url == source_permalink
 
 
 def test_source_hard_gate_blocks_before_model(db, monkeypatch):
@@ -138,7 +143,7 @@ def test_source_hard_gate_blocks_before_model(db, monkeypatch):
     assert "no_monitoring_hard_gate" in attempt.analysis_json
 
 
-def test_anonymous_project_and_inferred_question_are_retained_as_internal(db, monkeypatch):
+def test_anonymous_project_is_retained_but_inferred_question_is_rejected(db, monkeypatch):
     text = "Új projekt: 140 m2 családi ház generálkivitelezése Győrben."
     response = {
         "leads": [
@@ -182,11 +187,11 @@ def test_anonymous_project_and_inferred_question_are_retained_as_internal(db, mo
 
     signal = db.scalar(select(GrowthSignal))
     topic = db.scalar(select(QuestionRadarTopic))
-    assert result == {"status": "completed", "leads": 1, "questions": 1}
+    assert result == {"status": "completed", "leads": 1, "questions": 0}
     assert signal.subject_type == "project"
     assert signal.company_name is None
     assert signal.status == "blocked"
-    assert topic.classification == "inferred_from_evidence"
+    assert topic is None
     assert "question_kind=inferred_from_evidence" in captured["system_prompt"]
     assert "kikövetkeztetett kérdést ne adj vissza" not in captured["system_prompt"]
 
@@ -197,31 +202,36 @@ def test_content_factory_quarantines_all_nineteen_brands(db, monkeypatch):
         db.add(DailyContentObligation(local_date=local_day, brand_id=brand))
     db.commit()
     monkeypatch.setattr(processing, "settings", lambda: _settings())
-    monkeypatch.setattr(
-        processing,
-        "complete_json",
-        lambda *args, **kwargs: SimpleNamespace(
+    calls = []
+
+    def fake_complete(*args, **kwargs):
+        request = json.loads(kwargs["user_prompt"])
+        brand_id = request["brand_id"]
+        calls.append(brand_id)
+        return SimpleNamespace(
             request_id="DS-CONTENT",
             content=json.dumps(
                 {
-                    "packages": [
-                        {
-                            "brand_id": ACTIVE_CONTENT_BRANDS[0],
-                            "title": "Napi szakmai téma",
-                            "format": "faq",
-                            "body": "Bizonyíték-alapú belső vázlat.",
-                            "source_urls": [],
-                        }
-                    ]
+                    "package": {
+                        "brand_id": brand_id,
+                        "title": "Napi szakmai téma",
+                        "format": "faq",
+                        "body": "Bizonyíték-alapú belső szakmai vázlat. " * 20,
+                        "source_urls": [],
+                    }
                 }
             ),
-        ),
-    )
+        )
+
+    monkeypatch.setattr(processing, "complete_json", fake_complete)
 
     result = processing.generate_daily_content(db, now=datetime(2026, 8, 21, 8, 0, tzinfo=UTC))
 
     rows = db.scalars(select(DailyContentObligation)).all()
-    assert result == {"status": "complete", "generated": 19}
+    assert result["status"] == "complete"
+    assert result["generated"] == result["required"] == result["completed"] == 19
+    assert result["failed_brands"] == result["unresolved_brands"] == []
+    assert calls == list(ACTIVE_CONTENT_BRANDS)
     assert len(rows) == 19
     assert all(row.status == "quarantined" for row in rows)
     assert all("QUARANTINED_INTERNAL_DRAFT" in row.evidence_json for row in rows)
