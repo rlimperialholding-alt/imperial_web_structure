@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -15,6 +16,7 @@ from app.autonomous_publishing.models import (
     PublishingEventRecord,
     PublishingExceptionRecord,
     PublishingJobRecord,
+    PublishingWorkerHeartbeat,
 )
 from app.autonomous_publishing.registry import Binding
 from app.autonomous_publishing.schemas import MANDATORY_GATES, PublicationJobIn
@@ -162,6 +164,56 @@ def test_submission_is_durable_idempotent_and_payload_bound(db, fake_runtime):
         "PUBLICATION_JOB_QUEUED",
         "PUBLICATION_PREFLIGHT_PASSED",
     }
+
+
+def test_readiness_keeps_serving_with_a_fresh_degraded_daily_gate(
+    db, fake_runtime, monkeypatch
+):
+    monkeypatch.setattr(
+        service,
+        "settings",
+        replace(service.settings, autonomous_publishing_enabled=True),
+    )
+    db.add(
+        PublishingWorkerHeartbeat(
+            worker_id=service.settings.autonomous_publishing_worker_id,
+            status="degraded",
+            detail_json='{"daily_gate":{"status":"degraded"}}',
+            heartbeat_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is True
+    assert payload["worker_heartbeat"] == "degraded_sla"
+    assert payload["worker_status"] == "degraded"
+
+
+def test_readiness_still_rejects_a_stale_degraded_worker(db, fake_runtime, monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "settings",
+        replace(service.settings, autonomous_publishing_enabled=True),
+    )
+    db.add(
+        PublishingWorkerHeartbeat(
+            worker_id=service.settings.autonomous_publishing_worker_id,
+            status="degraded",
+            heartbeat_at=datetime.now(UTC)
+            - timedelta(
+                seconds=service.settings.autonomous_publishing_heartbeat_stale_seconds + 1
+            ),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is False
+    assert payload["worker_heartbeat"] == "stale_or_missing"
+    assert payload["worker_status"] == "degraded"
 
 
 @pytest.mark.parametrize(

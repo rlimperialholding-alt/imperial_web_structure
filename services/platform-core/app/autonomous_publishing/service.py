@@ -923,7 +923,7 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
         if database_ok
         else None
     )
-    heartbeat_ok = bool(
+    heartbeat_fresh = bool(
         heartbeat_row
         and heartbeat_row.heartbeat_at
         and (
@@ -931,8 +931,12 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
             - heartbeat_row.heartbeat_at.replace(tzinfo=heartbeat_row.heartbeat_at.tzinfo or UTC)
         ).total_seconds()
         <= settings.autonomous_publishing_heartbeat_stale_seconds
-        and heartbeat_row.status in {"healthy", "working"}
     )
+    heartbeat_serving = bool(
+        heartbeat_row
+        and heartbeat_row.status in {"healthy", "working", "degraded"}
+    )
+    heartbeat_ok = heartbeat_fresh and heartbeat_serving
     queued = (
         db.scalar(
             select(func.count())
@@ -949,7 +953,12 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
         "enabled": required,
         "database": "ok" if database_ok else "failed",
         "queue_depth": queued,
-        "worker_heartbeat": "ok" if heartbeat_ok else "stale_or_missing",
+        "worker_heartbeat": (
+            "degraded_sla"
+            if heartbeat_ok and heartbeat_row and heartbeat_row.status == "degraded"
+            else "ok" if heartbeat_ok else "stale_or_missing"
+        ),
+        "worker_status": heartbeat_row.status if heartbeat_row else "missing",
         "registry": registry_state,
         "writes_unlocked": writes_unlocked(),
         "http_metrics": ProductionHttpClient.metric_snapshot(),
