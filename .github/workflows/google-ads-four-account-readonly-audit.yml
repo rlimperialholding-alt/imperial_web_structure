@@ -1,0 +1,389 @@
+name: Google Ads four-account read-only audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  audit:
+    name: Read-only Google Ads audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: imperial-test
+    env:
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: "8668141303"
+      GOOGLE_ADS_API_VERSION: v25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - id: google-auth
+        name: Authenticate with keyless Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: famous-store-500901-d0
+          workload_identity_provider: projects/85038883753/locations/global/workloadIdentityPools/imperial-github-actions/providers/imperial-google-ads-audit-github
+          service_account: imperial-google-ads-audit@famous-store-500901-d0.iam.gserviceaccount.com
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/adwords
+          create_credentials_file: false
+
+      - name: Validate paused-draft mutation permission without writing
+        shell: bash
+        env:
+          GOOGLE_ADS_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+        run: |
+          node <<'NODE'
+          const customerId = '3676357956';
+          const version = process.env.GOOGLE_ADS_API_VERSION;
+          const response = await fetch(
+            `https://googleads.googleapis.com/${version}/customers/${customerId}/campaignBudgets:mutate`,
+            {
+              method: 'POST',
+              headers: {
+                authorization: `Bearer ${process.env.GOOGLE_ADS_ACCESS_TOKEN}`,
+                'content-type': 'application/json',
+                'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN,
+                'login-customer-id': process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
+              },
+              body: JSON.stringify({
+                operations: [{
+                  create: {
+                    name: 'CODEX VALIDATION ONLY 2026-08-26',
+                    amountMicros: '1000000',
+                    deliveryMethod: 'STANDARD',
+                    explicitlyShared: false
+                  }
+                }],
+                validateOnly: true
+              })
+            }
+          );
+          const payload = await response.json();
+          const source = Array.isArray(payload) ? payload[0] : payload;
+          const error = source?.error || source;
+          const result = {
+            ok: response.ok,
+            httpStatus: response.status,
+            code: error?.code || null,
+            status: error?.status || null,
+            message: error?.message || null,
+            requestId: response.headers.get('request-id') || response.headers.get('google-ads-request-id')
+          };
+          console.log(JSON.stringify(result));
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            require('node:fs').appendFileSync(
+              process.env.GITHUB_STEP_SUMMARY,
+              `## Google Ads validate-only mutation probe\n\n\`${JSON.stringify(result)}\`\n`
+            );
+          }
+          if (!response.ok) process.exitCode = 1;
+          NODE
+
+      - name: Query four accounts through searchStream only
+        shell: bash
+        env:
+          GOOGLE_ADS_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const CUSTOMER_IDS = [
+            '3676357956',
+            '2519304345',
+            '1804370841',
+            '5238545096'
+          ];
+
+          const QUERIES = [
+            {
+              dataset: 'conversion_actions',
+              query: `SELECT
+                conversion_action.id,
+                conversion_action.name,
+                conversion_action.status,
+                conversion_action.type,
+                conversion_action.category,
+                conversion_action.primary_for_goal,
+                conversion_action.counting_type,
+                conversion_action.click_through_lookback_window_days,
+                conversion_action.view_through_lookback_window_days,
+                conversion_action.value_settings.default_value,
+                conversion_action.value_settings.always_use_default_value,
+                conversion_action.owner_customer
+              FROM conversion_action
+              ORDER BY conversion_action.id`
+            },
+            {
+              dataset: 'customer_conversion_goals',
+              query: `SELECT
+                customer_conversion_goal.category,
+                customer_conversion_goal.origin,
+                customer_conversion_goal.biddable
+              FROM customer_conversion_goal
+              ORDER BY customer_conversion_goal.category, customer_conversion_goal.origin`
+            },
+            {
+              dataset: 'campaign_conversion_goals',
+              query: `SELECT
+                campaign.id,
+                campaign.name,
+                campaign.status,
+                campaign_conversion_goal.category,
+                campaign_conversion_goal.origin,
+                campaign_conversion_goal.biddable
+              FROM campaign_conversion_goal
+              ORDER BY campaign.id, campaign_conversion_goal.category, campaign_conversion_goal.origin`
+            },
+            {
+              dataset: 'campaigns',
+              query: `SELECT
+                campaign.id,
+                campaign.name,
+                campaign.status,
+                campaign.advertising_channel_type,
+                campaign.serving_status
+              FROM campaign
+              ORDER BY campaign.id`
+            },
+            {
+              dataset: 'negative_shared_sets',
+              query: `SELECT
+                shared_set.id,
+                shared_set.name,
+                shared_set.type,
+                shared_set.status,
+                shared_set.member_count,
+                shared_set.reference_count
+              FROM shared_set
+              WHERE shared_set.type = NEGATIVE_KEYWORDS
+              ORDER BY shared_set.id`
+            },
+            {
+              dataset: 'negative_shared_criteria',
+              query: `SELECT
+                shared_set.id,
+                shared_set.name,
+                shared_criterion.criterion_id,
+                shared_criterion.keyword.text,
+                shared_criterion.keyword.match_type
+              FROM shared_criterion
+              WHERE shared_set.type = NEGATIVE_KEYWORDS
+              ORDER BY shared_set.id, shared_criterion.criterion_id`
+            },
+            {
+              dataset: 'campaign_shared_sets',
+              query: `SELECT
+                campaign.id,
+                campaign.name,
+                campaign.status,
+                campaign.advertising_channel_type,
+                campaign_shared_set.shared_set,
+                campaign_shared_set.status
+              FROM campaign_shared_set
+              ORDER BY campaign.id`
+            },
+            {
+              dataset: 'pmax_url_expansion',
+              query: `SELECT
+                campaign.id,
+                campaign.name,
+                campaign.status,
+                campaign.asset_automation_settings
+              FROM campaign
+              WHERE campaign.advertising_channel_type = PERFORMANCE_MAX
+              ORDER BY campaign.id`
+            },
+            {
+              dataset: 'pmax_webpage_exclusions',
+              query: `SELECT
+                campaign.id,
+                campaign.name,
+                campaign.status,
+                campaign_criterion.criterion_id,
+                campaign_criterion.type,
+                campaign_criterion.negative,
+                campaign_criterion.webpage.criterion_name,
+                campaign_criterion.webpage.conditions
+              FROM campaign_criterion
+              WHERE campaign.advertising_channel_type = PERFORMANCE_MAX
+                AND campaign_criterion.type = WEBPAGE
+              ORDER BY campaign.id, campaign_criterion.criterion_id`
+            },
+            {
+              dataset: 'pmax_asset_group_urls',
+              query: `SELECT
+                campaign.id,
+                campaign.name,
+                asset_group.id,
+                asset_group.name,
+                asset_group.status,
+                asset_group.final_urls,
+                asset_group.final_mobile_urls
+              FROM asset_group
+              WHERE campaign.advertising_channel_type = PERFORMANCE_MAX
+              ORDER BY campaign.id, asset_group.id`
+            }
+          ];
+
+          function required(name) {
+            const value = process.env[name];
+            if (!value) throw new Error(`${name} is not configured`);
+            return value;
+          }
+
+          function sanitizedError(response, payload) {
+            const source = Array.isArray(payload) ? payload[0] : payload;
+            const error = source && source.error ? source.error : source;
+            return {
+              httpStatus: response.status,
+              code: error && error.code ? error.code : null,
+              status: error && error.status ? error.status : null,
+              message: error && error.message ? error.message : `HTTP ${response.status}`,
+              requestId: response.headers.get('request-id') || response.headers.get('google-ads-request-id')
+            };
+          }
+
+          async function queryAccount(accessToken, developerToken, customerId, spec, quotaProject) {
+            const version = required('GOOGLE_ADS_API_VERSION');
+            const headers = {
+              authorization: `Bearer ${accessToken}`,
+              'content-type': 'application/json',
+              'developer-token': developerToken,
+              'login-customer-id': required('GOOGLE_ADS_LOGIN_CUSTOMER_ID')
+            };
+            if (quotaProject) headers['x-goog-user-project'] = quotaProject;
+            const response = await fetch(
+              `https://googleads.googleapis.com/${version}/customers/${customerId}/googleAds:searchStream`,
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({query: spec.query})
+              }
+            );
+            const payload = await response.json();
+            if (!response.ok) {
+              return {dataset: spec.dataset, ok: false, rows: [], error: sanitizedError(response, payload)};
+            }
+            const batches = Array.isArray(payload) ? payload : [payload];
+            const rows = batches.flatMap(batch => batch.results || []);
+            return {
+              dataset: spec.dataset,
+              ok: true,
+              rows,
+              fieldMask: batches.map(batch => batch.fieldMask).filter(Boolean),
+              requestId: response.headers.get('request-id') || response.headers.get('google-ads-request-id')
+            };
+          }
+
+          async function probeQuotaProject(
+            identity,
+            accessToken,
+            developerToken,
+            quotaProject
+          ) {
+            const probe = await queryAccount(
+              accessToken,
+              developerToken,
+              required('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
+              {dataset: 'connection_probe', query: 'SELECT customer.id FROM customer LIMIT 1'},
+              quotaProject
+            );
+            return {
+              identity,
+              quotaProject: quotaProject || null,
+              ok: probe.ok,
+              error: probe.error || null,
+              requestId: probe.requestId || null
+            };
+          }
+
+          async function main() {
+            const developerToken = required('GOOGLE_ADS_DEVELOPER_TOKEN');
+            const accessToken = required('GOOGLE_ADS_ACCESS_TOKEN');
+            const connectionProbes = [await probeQuotaProject(
+              'workloadIdentityFederationServiceAccount',
+              accessToken,
+              developerToken,
+              null
+            )];
+            const selectedProbe = connectionProbes.find(probe => probe.ok) || null;
+            const selectedQuotaProject = selectedProbe?.quotaProject || null;
+            const selectedIdentity = selectedProbe?.identity || null;
+            const connectionEstablished = connectionProbes.some(probe => probe.ok);
+            const audit = {
+              generatedAt: new Date().toISOString(),
+              mode: 'READ_ONLY_SEARCH_STREAM',
+              apiVersion: required('GOOGLE_ADS_API_VERSION'),
+              connectionProbes,
+              connectionEstablished,
+              selectedIdentity,
+              selectedQuotaProject,
+              managerCustomerId: required('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
+              customerIds: CUSTOMER_IDS,
+              accounts: []
+            };
+
+            for (const customerId of CUSTOMER_IDS) {
+              const datasets = [];
+              for (const spec of QUERIES) {
+                datasets.push(
+                  await queryAccount(
+                    accessToken,
+                    developerToken,
+                    customerId,
+                    spec,
+                    selectedQuotaProject
+                  )
+                );
+              }
+              audit.accounts.push({customerId, datasets});
+            }
+
+            fs.writeFileSync(
+              'google-ads-four-account-readonly-audit.json',
+              JSON.stringify(audit, null, 2),
+              {encoding: 'utf8', mode: 0o600}
+            );
+
+            const summary = audit.accounts.map(account => ({
+              customerId: account.customerId,
+              successfulDatasets: account.datasets.filter(dataset => dataset.ok).length,
+              failedDatasets: account.datasets.filter(dataset => !dataset.ok).length,
+              rowCounts: Object.fromEntries(account.datasets.map(dataset => [dataset.dataset, dataset.rows.length]))
+            }));
+            console.log(JSON.stringify({ok: true, mode: audit.mode, summary}));
+            if (process.env.GITHUB_STEP_SUMMARY) {
+              fs.appendFileSync(
+                process.env.GITHUB_STEP_SUMMARY,
+                '## Google Ads read-only audit\n\n`searchStream` only; no mutate endpoint is present.\n\n' +
+                '```json\n' + JSON.stringify(summary, null, 2) + '\n```\n'
+              );
+            }
+            const failedDatasetCount = summary.reduce(
+              (total, account) => total + account.failedDatasets,
+              0
+            );
+            if (!connectionEstablished || failedDatasetCount > 0) {
+              process.exitCode = 1;
+            }
+          }
+
+          main().catch(error => {
+            console.error(error.message);
+            process.exitCode = 1;
+          });
+          NODE
+
+      - name: Upload redacted audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-ads-four-account-readonly-audit
+          path: google-ads-four-account-readonly-audit.json
+          if-no-files-found: warn
+          retention-days: 7
