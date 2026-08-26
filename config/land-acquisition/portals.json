@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "policy": "licensed-connectors-only",
+  "portals": [
+    {
+      "key": "ingatlan_com",
+      "domains": ["ingatlan.com"],
+      "discovery_mode": "manual",
+      "publish_mode": "manual",
+      "discovery_enabled": false,
+      "publish_enabled": false,
+      "adapter_module": null
+    },
+    {
+      "key": "zenga",
+      "domains": ["zenga.hu"],
+      "discovery_mode": "manual",
+      "publish_mode": "manual",
+      "discovery_enabled": false,
+      "publish_enabled": false,
+      "adapter_module": null
+    },
+    {
+      "key": "dh",
+      "domains": ["dh.hu"],
+      "discovery_mode": "manual",
+      "publish_mode": "manual",
+      "discovery_enabled": false,
+      "publish_enabled": false,
+      "adapter_module": null
+    },
+    {
+      "key": "oc",
+      "domains": ["oc.hu"],
+      "discovery_mode": "manual",
+      "publish_mode": "manual",
+      "discovery_enabled": false,
+      "publish_enabled": false,
+      "adapter_module": null
+    },
+    {
+      "key": "jofogas",
+      "domains": ["jofogas.hu"],
+      "discovery_mode": "manual",
+      "publish_mode": "manual",
+      "discovery_enabled": false,
+      "publish_enabled": false,
+      "adapter_module": null
+    },
+    {
+      "key": "koltozzbe",
+      "domains": ["koltozzbe.hu"],
+      "discovery_mode": "manual",
+      "publish_mode": "manual",
+      "discovery_enabled": false,
+      "publish_enabled": false,
+      "adapter_module": null
+    },
+    {
+      "key": "ingatlannet",
+      "domains": ["ingatlannet.hu"],
+      "discovery_mode": "manual",
+      "publish_mode": "manual",
+      "discovery_enabled": false,
+      "publish_enabled": false,
+      "adapter_module": null
+    },
+    {
+      "key": "imperial_plot_finder",
+      "domains": ["imperialholding.hu"],
+      "discovery_mode": "manual",
+      "publish_mode": "manual",
+      "discovery_enabled": false,
+      "publish_enabled": false,
+      "adapter_module": null
+    }
+  ]
+}

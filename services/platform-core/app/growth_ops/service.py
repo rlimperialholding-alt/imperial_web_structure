@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime, timedelta
+from html import escape
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
@@ -18,9 +19,17 @@ from ..audit import audit
 from ..config import settings as platform_settings
 from ..models import MailSendingDomain, MailSuppression
 from .canonical_policy import (
+    LAND_AGENT_COMMISSION_ANCHOR,
+    LAND_AGENT_HARD_GATE_REASONS,
+    LAND_AGENT_SUBJECT,
+    LAND_CATALOG_URL,
+    LAND_OUTREACH_SERVICE_ANCHOR,
+    LAND_OWNER_FREE_AD_ANCHOR,
+    LAND_OWNER_SUBJECT,
     PARTNER_OUTREACH_ANCHOR,
     assert_outreach_copy,
     contains_no_monitoring_entity,
+    land_agent_hard_gate_reason,
 )
 from .connectors import SourceError, fetch_source
 from .email import EmailDeliveryError, SMTPEmailAdapter
@@ -110,8 +119,32 @@ def _score(data: GrowthSignalIn) -> int:
     return min(100, max(0, score))
 
 
+def _is_public_land_listing_contact(data: GrowthSignalIn) -> bool:
+    return (
+        data.signal_type == "residential_building_plot"
+        and data.contact_basis == "public_property_listing"
+        and data.recipient_role in {"listing_agent", "property_owner"}
+        and bool(data.public_contact_url)
+    )
+
+
+def _land_agent_gate_reason(signal: GrowthSignalIn | GrowthSignal) -> str | None:
+    if signal.signal_type != "residential_building_plot":
+        return None
+    return land_agent_hard_gate_reason(
+        recipient_role=signal.recipient_role,
+        contact_name=signal.company_name,
+        organization_name=signal.recipient_organization_name,
+        office_name=signal.recipient_office_name,
+        recipient_email=signal.recipient_email,
+        public_contact_url=signal.public_contact_url,
+        evidence_url=signal.evidence_url,
+    )
+
+
 def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
     reasons: list[str] = []
+    public_land_contact = _is_public_land_listing_contact(data)
     if data.motor_key == "ivs":
         reasons.append("iora_internal_executive_review_only")
     if score < 55:
@@ -122,20 +155,24 @@ def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
         reasons.append("recipient_email_missing")
     if data.contact_basis == "unknown":
         reasons.append("contact_basis_unknown")
-    if data.subject_type == "natural_person" and data.contact_basis not in {
-        "explicit_request",
-        "documented_consent",
-    }:
+    if (
+        data.subject_type == "natural_person"
+        and data.contact_basis not in {"explicit_request", "documented_consent"}
+        and not public_land_contact
+    ):
         reasons.append("natural_person_without_prior_consent_or_request")
     if data.contact_basis == "public_business_contact" and (
         data.subject_type != "organization" or data.recipient_email_type != "role"
     ):
         reasons.append("public_business_basis_requires_organization_role_inbox")
-    if data.recipient_email_type in {"named", "unknown"} and data.contact_basis not in {
-        "explicit_request",
-        "documented_consent",
-    }:
+    if (
+        data.recipient_email_type in {"named", "unknown"}
+        and data.contact_basis not in {"explicit_request", "documented_consent"}
+        and not public_land_contact
+    ):
         reasons.append("named_or_unknown_mailbox_requires_consent_or_request")
+    if data.contact_basis == "public_property_listing" and not public_land_contact:
+        reasons.append("invalid_public_property_listing_contact")
     return sorted(set(reasons))
 
 
@@ -192,6 +229,49 @@ def _render_message(
         unsubscribe_url=f"{settings().base_url}/growth/unsubscribe/{unsubscribe_token}",
     )
     subject = template["subject"].format_map(values).strip()
+    if signal.signal_type == "residential_building_plot":
+        if signal.recipient_role == "listing_agent":
+            subject = LAND_AGENT_SUBJECT
+            body = (
+                f"Tisztelt {values['company_name']}!\n\n"
+                f"Cégünk, az {values['brand_name']}, {LAND_OUTREACH_SERVICE_ANCHOR}, "
+                "és úgy gondoljuk, hogy az Ön által hirdetett telekben van lehetőség.\n\n"
+                f"{LAND_AGENT_COMMISSION_ANCHOR}\n\n"
+                "Jelenleg is számos ingatlan-irodával dolgozunk együtt az ország "
+                "minden pontján. Mi elkészítjük a hirdetést Önnek egy olyan "
+                "típusházzal, ami építhető erre a telekre, látványtervvel, "
+                "alaprajzzal és műszaki leírással. Ha Ön meghirdeti a telekkel "
+                "együtt, és érkezik rá vevő, 2,5% jutalékot fizetünk Önnek a "
+                "típusterv árából.\n\n"
+                "Érdekli ez a lehetőség?\n\n"
+                "Üdvözlettel:\n"
+                f"{values['brand_name']}\n"
+                f"{values['sender_email']}\n\n"
+                f"Leiratkozás: {values['unsubscribe_url']}"
+            )
+        elif signal.recipient_role == "property_owner":
+            subject = LAND_OWNER_SUBJECT
+            body = (
+                f"Tisztelt {values['company_name']}!\n\n"
+                f"Cégünk, az {values['brand_name']}, {LAND_OUTREACH_SERVICE_ANCHOR}, "
+                "és úgy gondoljuk, hogy az Ön telkében van lehetőség.\n\n"
+                f"{LAND_OWNER_FREE_AD_ANCHOR}\n\n"
+                "Itt meg tudja nézni a weboldalunkon, milyen telkekkel dolgozunk "
+                f"jelenleg: {LAND_CATALOG_URL}\n\n"
+                "Nem kérünk Öntől pénzt semmilyen formában, jutalékot sem: a "
+                "lehetőség mindkettőnknek előnyös, mi a típusházat adjuk el, Ön "
+                "pedig a telket. Nem kérünk semmilyen kötelezettséget, csak "
+                "szeretnénk együttműködni Önnel.\n\n"
+                "Érdekli?\n\n"
+                "Üdvözlettel:\n"
+                f"{values['brand_name']}\n"
+                f"{values['sender_email']}\n\n"
+                f"Leiratkozás: {values['unsubscribe_url']}"
+            )
+        else:
+            raise GrowthRegistryError("Building-plot recipient role is required")
+        assert_outreach_copy(body)
+        return subject, body
     # The partner-facing sentence is owner-authored and locked. Runtime registry
     # templates may select the subject but cannot replace this body anchor.
     body = (
@@ -208,6 +288,17 @@ def _render_message(
             "Rendered outreach must contain useful copy and the unsubscribe URL"
         )
     return subject, body
+
+
+def _email_html(body_text: str, *, bold_sentence: str | None = None) -> str:
+    paragraphs: list[str] = []
+    bold_escaped = escape(bold_sentence) if bold_sentence else None
+    for paragraph in body_text.split("\n\n"):
+        safe = escape(paragraph).replace("\n", "<br>\n")
+        if bold_escaped and bold_escaped in safe:
+            safe = safe.replace(bold_escaped, f"<strong>{bold_escaped}</strong>", 1)
+        paragraphs.append(f"<p>{safe}</p>")
+    return "<!doctype html><html><body>" + "".join(paragraphs) + "</body></html>"
 
 
 def _recipient_suppressed(db: Session, email: str) -> bool:
@@ -264,6 +355,9 @@ def _queue_message(
     available_at: datetime,
     enforce_recipient_cooldown: bool,
 ) -> OutreachMessage:
+    hard_gate_reason = _land_agent_gate_reason(signal)
+    if hard_gate_reason:
+        raise GrowthRegistryError(hard_gate_reason)
     if _recipient_suppressed(db, signal.recipient_email or ""):
         raise GrowthRegistryError("Recipient is suppressed")
     if enforce_recipient_cooldown:
@@ -272,15 +366,22 @@ def _queue_message(
             raise GrowthRegistryError(";".join(errors))
     token = token_urlsafe(32)
     subject, body = _render_message(signal, binding, step=step, unsubscribe_token=token)
+    body_html = None
+    if (
+        signal.signal_type == "residential_building_plot"
+        and signal.recipient_role == "listing_agent"
+    ):
+        body_html = _email_html(body, bold_sentence=LAND_AGENT_COMMISSION_ANCHOR)
     key = sha({"signal_id": signal.signal_id, "brand_id": binding.brand_id, "step": step})
-    payload_hash = sha(
-        {
-            "from": binding.sender_email,
-            "to": signal.recipient_email,
-            "subject": subject,
-            "body": body,
-        }
-    )
+    payload = {
+        "from": binding.sender_email,
+        "to": signal.recipient_email,
+        "subject": subject,
+        "body": body,
+    }
+    if body_html:
+        payload["body_html"] = body_html
+    payload_hash = sha(payload)
     row = OutreachMessage(
         outreach_id=f"OUT-{uuid4().hex[:20].upper()}",
         signal_id=signal.signal_id,
@@ -291,6 +392,7 @@ def _queue_message(
         sequence_step=step,
         subject=subject,
         body_text=body,
+        body_html=body_html,
         unsubscribe_token_hash=hashlib.sha256(token.encode()).hexdigest(),
         idempotency_key=key,
         payload_sha256=payload_hash,
@@ -298,6 +400,29 @@ def _queue_message(
         available_at=available_at,
     )
     db.add(row)
+    if (
+        step == 0
+        and signal.signal_type == "residential_building_plot"
+        and signal.contact_basis == "public_property_listing"
+        and signal.recipient_role in {"listing_agent", "property_owner"}
+    ):
+        assert_outreach_copy(row.body_text)
+        row.release_approved_by = "owner-policy:land-public-listing-v1:2026-08-25"
+        row.release_approved_at = utcnow()
+        row.release_token_hash = _release_digest(row, row.release_approved_by)
+        audit(
+            db,
+            actor=row.release_approved_by,
+            action="growth_outreach_policy_released",
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after={
+                "payload_sha256": row.payload_sha256,
+                "signal_id": signal.signal_id,
+                "recipient_role": signal.recipient_role,
+                "policy_scope": "single_initial_public_building_plot_outreach",
+            },
+        )
     return row
 
 
@@ -307,6 +432,9 @@ def ingest_signal(
     *,
     run_id: str | None = None,
 ) -> GrowthSignalReceipt:
+    land_agent_gate = _land_agent_gate_reason(data)
+    if land_agent_gate:
+        raise GrowthRegistryError(land_agent_gate)
     hard_gate_values = "\n".join(
         value
         for value in (
@@ -369,7 +497,10 @@ def ingest_signal(
         detected_at=_aware(data.detected_at),
         company_name=data.company_name,
         company_registration_id=data.company_registration_id,
+        recipient_organization_name=data.recipient_organization_name,
+        recipient_office_name=data.recipient_office_name,
         subject_type=data.subject_type,
+        recipient_role=data.recipient_role,
         recipient_email=data.recipient_email,
         recipient_email_type=data.recipient_email_type,
         contact_basis=data.contact_basis,
@@ -420,6 +551,7 @@ def ingest_signal(
             "source_id": row.source_id,
             "source_bucket": row.source_bucket,
             "signal_type": row.signal_type,
+            "recipient_role": row.recipient_role,
             "brand_id": row.brand_id,
             "score": row.score,
             "status": row.status,
@@ -471,9 +603,15 @@ def run_motor(db: Session, motor_key: str, *, scheduled_for: datetime | None = N
             batch = fetch_source(source_id, source, limit=remaining)
             run.succeeded_sources += 1
             run.raw_signals += batch.raw_count
-            accepted = queued = 0
+            accepted = queued = hard_gate_blocked = 0
             for signal in batch.signals:
-                receipt = ingest_signal(db, signal, run_id=run.run_id)
+                try:
+                    receipt = ingest_signal(db, signal, run_id=run.run_id)
+                except GrowthRegistryError as exc:
+                    if str(exc) not in LAND_AGENT_HARD_GATE_REASONS:
+                        raise
+                    hard_gate_blocked += 1
+                    continue
                 accepted += receipt.status in {"accepted", "queued", "contacted"}
                 queued += bool(receipt.outreach_id and not receipt.idempotent)
             run.accepted_signals += accepted
@@ -485,6 +623,7 @@ def run_motor(db: Session, motor_key: str, *, scheduled_for: datetime | None = N
                     "status": "ok",
                     "raw": batch.raw_count,
                     "schema_rejected": batch.rejected_count,
+                    "hard_gate_blocked": hard_gate_blocked,
                     "accepted": accepted,
                     "queued": queued,
                 }
@@ -599,16 +738,17 @@ def claim_outreach(db: Session) -> OutreachMessage | None:
 
 
 def _payload_matches(row: OutreachMessage) -> bool:
+    payload = {
+        "from": row.sender_email,
+        "to": row.recipient_email,
+        "subject": row.subject,
+        "body": row.body_text,
+    }
+    if row.body_html:
+        payload["body_html"] = row.body_html
     return hmac.compare_digest(
         row.payload_sha256,
-        sha(
-            {
-                "from": row.sender_email,
-                "to": row.recipient_email,
-                "subject": row.subject,
-                "body": row.body_text,
-            }
-        ),
+        sha(payload),
     )
 
 
@@ -634,6 +774,12 @@ def release_outreach(
         raise KeyError(outreach_id)
     if row.status != "queued":
         raise GrowthRegistryError("Only queued outreach can be released")
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
+    if not signal:
+        raise GrowthRegistryError("Signal record is missing")
+    hard_gate_reason = _land_agent_gate_reason(signal)
+    if hard_gate_reason:
+        raise GrowthRegistryError(hard_gate_reason)
     if not hmac.compare_digest(row.payload_sha256, data.inspected_payload_sha256):
         raise GrowthRegistryError("Inspected outreach payload hash does not match")
     assert_outreach_copy(row.body_text)
@@ -672,8 +818,27 @@ def _trip_runtime_kill_switch() -> bool:
 
 
 def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
-    registry = GrowthRegistry.load()
     signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
+    hard_gate_reason = _land_agent_gate_reason(signal) if signal else None
+    if hard_gate_reason:
+        row.status = "blocked"
+        row.last_error = hard_gate_reason
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+        signal.status = "blocked"
+        signal.rejection_reasons_json = canonical_json([hard_gate_reason])
+        audit(
+            db,
+            actor="growth-worker",
+            action="growth_outreach_hard_gate_blocked",
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after={"signal_id": row.signal_id, "reason": hard_gate_reason},
+        )
+        db.commit()
+        return row
+    registry = GrowthRegistry.load()
     try:
         if not signal:
             raise GrowthRegistryError("Signal record is missing")
@@ -682,6 +847,13 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         if not _payload_matches(row):
             raise GrowthRegistryError("outreach_payload_hash_mismatch")
         assert_outreach_copy(row.body_text)
+        if (
+            signal.signal_type == "residential_building_plot"
+            and signal.recipient_role == "listing_agent"
+        ):
+            required_bold = f"<strong>{escape(LAND_AGENT_COMMISSION_ANCHOR)}</strong>"
+            if not row.body_html or required_bold not in row.body_html:
+                raise GrowthRegistryError("land_agent_commission_bold_format_missing")
         if not _release_matches(row):
             raise GrowthRegistryError("outreach_exact_payload_release_missing_or_invalid")
         if _recipient_suppressed(db, row.recipient_email):
@@ -698,6 +870,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             to_email=row.recipient_email,
             subject=row.subject,
             body_text=row.body_text,
+            body_html=row.body_html,
             idempotency_key=row.idempotency_key,
             reply_to=str(binding.config.get("reply_to") or binding.sender_email),
         )
@@ -774,6 +947,8 @@ def schedule_followups(db: Session) -> int:
     for row in candidates:
         signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
         if not signal or signal.status in {"responded", "suppressed"}:
+            continue
+        if signal.signal_type == "residential_building_plot":
             continue
         if db.scalar(
             select(OutreachMessage.id).where(
@@ -878,6 +1053,7 @@ def heartbeat(
 
 
 def run_once(db: Session) -> dict[str, Any]:
+    from ..land_acquisition.service import scan_authority_expiry, sync_growth_plot_signals
     from .catalog import scan_due_routes
     from .processing import generate_daily_content, send_internal_handoff
     from .wide_service import run_due as run_due_wide
@@ -889,6 +1065,8 @@ def run_once(db: Session) -> dict[str, Any]:
     # not release or publish the quarantined assets.
     wide_run = run_due_wide(db) or wide_run
     internal_handoff = send_internal_handoff(db)
+    land_sync = sync_growth_plot_signals(db)
+    land_takedown = scan_authority_expiry(db)
     if not settings().enabled:
         heartbeat(db, status="disabled")
         return {
@@ -898,6 +1076,8 @@ def run_once(db: Session) -> dict[str, Any]:
             "route_scan": route_scan,
             "content_factory": content_factory,
             "internal_handoff": internal_handoff,
+            "land_sync": land_sync,
+            "land_takedown": land_takedown,
             "followups": 0,
             "sent": 0,
         }
@@ -913,6 +1093,8 @@ def run_once(db: Session) -> dict[str, Any]:
         "route_scan": route_scan,
         "content_factory": content_factory,
         "internal_handoff": internal_handoff,
+        "land_sync": land_sync,
+        "land_takedown": land_takedown,
         "followups": followups,
         "sent": sent,
         "blocking_errors": (

@@ -77,6 +77,18 @@ def _motor(route: SourceCoverageRoute) -> str:
 
 def _signal_type(route: SourceCoverageRoute) -> str:
     value = _route_context(route).casefold()
+    if any(
+        marker in value
+        for marker in (
+            "építési telek",
+            "beépíthető telek",
+            "lakótelek",
+            "családi házas telek",
+            "building plot",
+            "residential plot",
+        )
+    ):
+        return "residential_building_plot"
     if "etdr" in value or "e-építés" in value:
         if "befejez" in value or "completion" in value:
             return "etdr_completion_not_verified"

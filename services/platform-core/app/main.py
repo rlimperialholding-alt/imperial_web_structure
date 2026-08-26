@@ -56,6 +56,7 @@ from .database import Base, SessionLocal, engine, get_db
 from .demo_runtime import DemoRuntimeError, demo_runtime
 from .growth_ops.routes import router as growth_ops_router
 from .growth_ops.service import readiness as growth_ops_readiness
+from .land_acquisition.routes import router as land_acquisition_router
 from .models import (
     BookingExperienceVersion,
     BookingRecord,
@@ -1244,6 +1245,7 @@ app.include_router(build_regulatory_admin_router(templates))
 app.include_router(build_typehouse_factory_router(templates))
 app.include_router(autonomous_publishing_router)
 app.include_router(growth_ops_router)
+app.include_router(land_acquisition_router)
 
 
 class DemoActionIn(BaseModel):

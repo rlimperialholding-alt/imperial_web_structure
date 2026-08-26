@@ -20,11 +20,15 @@ class GrowthSignalIn(BaseModel):
     detected_at: datetime
     company_name: str | None = Field(default=None, max_length=500)
     company_registration_id: str | None = Field(default=None, max_length=120)
+    recipient_organization_name: str | None = Field(default=None, max_length=500)
+    recipient_office_name: str | None = Field(default=None, max_length=500)
     subject_type: Literal["organization", "natural_person"]
+    recipient_role: Literal["listing_agent", "property_owner", "unknown"] = "unknown"
     recipient_email: str | None = Field(default=None, max_length=320)
     recipient_email_type: Literal["role", "named", "unknown", "none"] = "none"
     contact_basis: Literal[
         "public_business_contact",
+        "public_property_listing",
         "explicit_request",
         "documented_consent",
         "unknown",
@@ -67,6 +71,21 @@ class GrowthSignalIn(BaseModel):
             raise ValueError("Consent/request evidence is required")
         if self.contact_basis == "public_business_contact" and not self.public_contact_url:
             raise ValueError("Public business contact URL is required")
+        if self.contact_basis == "public_property_listing":
+            if self.signal_type != "residential_building_plot":
+                raise ValueError(
+                    "Public property listing basis is restricted to building-plot signals"
+                )
+            if self.recipient_role == "unknown":
+                raise ValueError("Building-plot recipient role is required")
+            if not self.public_contact_url:
+                raise ValueError("Public property listing URL is required")
+        if (
+            self.signal_type == "residential_building_plot"
+            and self.recipient_email
+            and self.recipient_role == "unknown"
+        ):
+            raise ValueError("Building-plot recipient role is required")
         if not self.evidence_url.startswith("https://"):
             raise ValueError("Evidence URL must use HTTPS")
         return self

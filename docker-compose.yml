@@ -138,6 +138,7 @@ services:
       GROWTH_OPS_POLL_SECONDS: ${GROWTH_OPS_POLL_SECONDS:-30}
       GROWTH_OPS_LEASE_SECONDS: ${GROWTH_OPS_LEASE_SECONDS:-300}
       GROWTH_OPS_BASE_URL: ${GROWTH_OPS_BASE_URL:-}
+      LAND_ACQUISITION_PORTAL_REGISTRY_FILE: /app/config/land-acquisition/portals.json
       GROWTH_OPS_TIMEZONE: ${GROWTH_OPS_TIMEZONE:-Europe/Budapest}
       CANONICAL_GROWTH_ENABLED: ${CANONICAL_GROWTH_ENABLED:-false}
       CANONICAL_GROWTH_DAILY_AT: ${CANONICAL_GROWTH_DAILY_AT:-05:30}
@@ -200,6 +201,7 @@ services:
       - ${AUTONOMOUS_PUBLISHING_REGISTRY_DIR:-./config/publishing}:/app/config/publishing:ro
       - ${AUTONOMOUS_PUBLISHING_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/publishing}:/run/secrets/publishing:ro
       - ${GROWTH_OPS_REGISTRY_DIR:-./config/growth}:/app/config/growth:ro
+      - ${LAND_ACQUISITION_REGISTRY_DIR:-./config/land-acquisition}:/app/config/land-acquisition:ro
       - ${GROWTH_OPS_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/growth}:/run/secrets/growth:ro
     secrets:
       - platform_db_password
@@ -332,6 +334,7 @@ services:
       - platform_core_runtime:/app/runtime
       - platform_core_data:/app/data
       - ${GROWTH_OPS_REGISTRY_DIR:-./config/growth}:/app/config/growth:ro
+      - ${LAND_ACQUISITION_REGISTRY_DIR:-./config/land-acquisition}:/app/config/land-acquisition:ro
       - ${GROWTH_OPS_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/growth}:/run/secrets/growth:ro
     secrets:
       - platform_db_password

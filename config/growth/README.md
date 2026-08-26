@@ -47,3 +47,10 @@ Every partner-facing email body contains the owner-locked sentence:
 The exact final email artifact must be inspected and HMAC-released before dispatch. The
 Homes4you, HWS Home and Horizont Global no-monitoring gate remains ACTIVE / FAIL_CLOSED at
 query, fetch, storage, prompt, handoff, publication and outreach boundaries.
+
+Land-listing-agent outreach has an additional owner-mandated hard gate. Turczer József, every
+GDN Ingatlanhálózat office and agent, and every Otthon Centrum II./II/A. or XII. district office
+and agent are blocked before ingestion, queueing, release and SMTP dispatch. Listing-agent
+records without verified organization affiliation are blocked; Otthon Centrum records also
+require a verified office affiliation. Scoring, manual release and legacy queue state cannot
+override these exclusions.
