@@ -485,7 +485,19 @@ class NIMAdminSessionAdapter(BaseAdapter):
             value for value in parser.options.get("params[user_public]", []) if value
         ]
         configured_author = str(self.binding.config.get("default_author_id") or "")
-        author = configured_author if configured_author in authors else (authors[0] if authors else "")
+        # NIM installations expose a system/public author first on some forms,
+        # but article rendering expects the editorial author used by the native
+        # admin workflow. Prefer the configured value, then the known native
+        # editorial option, and only then fall back to the first advertised one.
+        author = (
+            configured_author
+            if configured_author in authors
+            else "3"
+            if "3" in authors
+            else authors[0]
+            if authors
+            else ""
+        )
         self._article_form_defaults = {"category": category, "author": author}
 
     def _upload_featured_image(self, job: PublicationJobIn, key: str) -> str:
@@ -567,13 +579,15 @@ class NIMAdminSessionAdapter(BaseAdapter):
             "params[hu_HU_metadescription]": job.meta_description or job.excerpt,
             "params[hu_HU_customscript]": "",
             "params[hu_HU_robots_type]": "",
-            "params[hu_HU_robots]": "",
+            "params[hu_HU_robots]": "INDEX, FOLLOW",
             "params[hu_HU_canonical]": job.canonical_url or "",
             "params[categorie]": str(defaults.get("category") or ""),
             "params[categories]": "",
-            "params[categories][]": "",
             "params[user_public]": str(defaults.get("author") or ""),
-            "params[date_public]": datetime.now(UTC).date().isoformat(),
+            # The native NIM form leaves the publication date blank and lets the
+            # enable action establish the live timestamp. Supplying an ISO date
+            # creates a record that some NIM versions cannot render or reopen.
+            "params[date_public]": "",
             "params[date_start]": "",
             "params[date_end]": "",
             "params[image]": str(
@@ -581,11 +595,8 @@ class NIMAdminSessionAdapter(BaseAdapter):
                 or channel_payload.get("featured_image_id")
                 or ""
             ),
-            "params[related][]": "",
             "params[labels]": "",
-            "params[labels][]": "",
             "params[images]": "",
-            "params[images][]": "",
         }
 
     def _find_created_article_id(self, job: PublicationJobIn, key: str) -> str:

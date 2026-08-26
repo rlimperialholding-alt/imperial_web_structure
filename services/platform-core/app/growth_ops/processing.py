@@ -80,6 +80,66 @@ def _sha(value: Any) -> str:
     return hashlib.sha256(_json(value).encode()).hexdigest()
 
 
+def _complete_json_payload(db: Session, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
+    """Retry one transient provider/JSON failure without weakening any gate."""
+
+    last_error: Exception | None = None
+    for _attempt in range(2):
+        try:
+            result = complete_json(db, **kwargs)
+            payload = json.loads(result.content)
+            if not isinstance(payload, dict):
+                raise ValueError("model_payload_not_object")
+            return result, payload
+        except (GrowthRegistryError, json.JSONDecodeError) as exc:
+            last_error = exc
+    assert last_error is not None
+    raise last_error
+
+
+def _single_content_package(payload: dict[str, Any]) -> dict[str, Any]:
+    package = payload.get("package")
+    if isinstance(package, dict):
+        return package
+    packages = payload.get("packages")
+    if isinstance(packages, list) and len(packages) == 1 and isinstance(packages[0], dict):
+        return packages[0]
+    if payload.get("brand_id") or payload.get("title"):
+        return payload
+    nested = next(
+        (
+            value
+            for value in payload.values()
+            if isinstance(value, dict) and value.get("title")
+        ),
+        None,
+    )
+    if isinstance(nested, dict):
+        return nested
+    raise ValueError("package_not_object")
+
+
+def _trim_complete_sentences(value: object, *, limit: int) -> str:
+    text = re.sub(r"\s{2,}", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    candidate = text[: limit + 1]
+    boundaries = [match.end() for match in re.finditer(r"[.!?](?:\s|$)", candidate)]
+    cutoff = max((point for point in boundaries if point <= limit), default=0)
+    if cutoff < 600:
+        cutoff = candidate.rfind(" ", 0, limit + 1)
+    trimmed = candidate[: max(cutoff, 1)].rstrip(" ,;:-")
+    if trimmed and trimmed[-1] not in ".!?":
+        trimmed += "."
+    return trimmed
+
+
+def _normalize_content_lengths(package: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(package)
+    normalized["body"] = _trim_complete_sentences(normalized.get("body"), limit=2200)
+    return normalized
+
+
 QUALITY_GATE_VERSION = "canonical-auto-quality-v2"
 QUALITY_RELEASE_SECRET_FILE = Path("/run/secrets/platform_release_hmac_key")
 
@@ -990,7 +1050,7 @@ def generate_question_radar_answers(db: Session, *, now: datetime | None = None)
             "output_schema": {"answer": "500-1200 karakteres magyar szakmai válasz"},
         }
         try:
-            result = complete_json(
+            result, payload = _complete_json_payload(
                 db,
                 system_prompt=(
                     "Magyar szakmai fórumválaszt írsz. Először közvetlenül válaszolj a kérdésre, "
@@ -1005,7 +1065,6 @@ def generate_question_radar_answers(db: Session, *, now: datetime | None = None)
                 run_id=f"QRA-{local_day.isoformat()}",
                 max_tokens=1200,
             )
-            payload = json.loads(result.content)
             answer = str(payload.get("answer") or "").strip()
             if disclosure not in answer or not 300 <= len(answer) <= 1800:
                 raise GrowthRegistryError("generated_forum_answer_failed_copy_contract")
@@ -1171,7 +1230,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         }
         evidence_available = any(brand_evidence.values())
         try:
-            result = complete_json(
+            result, payload = _complete_json_payload(
                 db,
                 system_prompt=(
                     "Magyar direct-response szakmai szerkesztő vagy. Egyetlen megadott "
@@ -1254,14 +1313,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                 run_id=None,
                 max_tokens=3000,
             )
-            payload = json.loads(result.content)
-            package = payload.get("package")
-            if not isinstance(package, dict):
-                packages = payload.get("packages")
-                if isinstance(packages, list) and len(packages) == 1:
-                    package = packages[0]
-                elif payload.get("brand_id"):
-                    package = payload
+            package = _single_content_package(payload)
             validation_errors: list[str] = []
             if not isinstance(package, dict):
                 validation_errors.append("package_not_object")
@@ -1372,19 +1424,19 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
             if isinstance(source_urls, list)
             else []
         )
-        package = _sanitize_unbound_claims(package)
+        package = _normalize_content_lengths(_sanitize_unbound_claims(package))
         deterministic_errors = _deterministic_publication_errors(package, publication_contract)
         repair_result = None
         if deterministic_errors:
             try:
-                repair_result = complete_json(
+                repair_result, repaired_payload = _complete_json_payload(
                     db,
                     system_prompt=(
                         "Magyar senior szerkesztő vagy. A determinisztikus kiadási kapu által "
                         "blokkolt szöveget javítsd ki, ne magyarázd. A hibakódok minden okát "
                         "távolítsd el; ne helyettesítsd másik nem igazolt állítással. Tartsd meg "
                         "a márka pozícióját, a természetes magyar hangot, az egyetlen CTA-t és "
-                        "a 3-8 hashtaget. A cikk törzse 1200-2200 karakter legyen. Forrás nélküli "
+                        "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. Forrás nélküli "
                         "anyagban kizárólag óvatos döntési "
                         "útmutató maradhat. A teljes javított package objektumot add vissza."
                     ),
@@ -1403,25 +1455,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     high_stakes=False,
                     max_tokens=3500,
                 )
-                repaired_payload = json.loads(repair_result.content)
-                repaired = repaired_payload.get("package")
-                if not isinstance(repaired, dict):
-                    repaired_packages = repaired_payload.get("packages")
-                    if isinstance(repaired_packages, list) and len(repaired_packages) == 1:
-                        repaired = repaired_packages[0]
-                if not isinstance(repaired, dict) and repaired_payload.get("title"):
-                    repaired = repaired_payload
-                if not isinstance(repaired, dict):
-                    repaired = next(
-                        (
-                            value
-                            for value in repaired_payload.values()
-                            if isinstance(value, dict) and value.get("title")
-                        ),
-                        None,
-                    )
-                if not isinstance(repaired, dict):
-                    raise ValueError("repair_package_not_object")
+                repaired = _single_content_package(repaired_payload)
                 repaired["brand_id"] = row.brand_id
                 repaired_urls = repaired.get("source_urls")
                 repaired["source_urls"] = (
@@ -1433,7 +1467,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     if isinstance(repaired_urls, list)
                     else []
                 )
-                repaired = _sanitize_unbound_claims(repaired)
+                repaired = _normalize_content_lengths(_sanitize_unbound_claims(repaired))
                 repair_errors: list[str] = []
                 if not str(repaired.get("title") or "").strip():
                     repair_errors.append("title_missing")

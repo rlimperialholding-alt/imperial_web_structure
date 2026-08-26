@@ -1,9 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from html import escape
 
-from app.autonomous_publishing.adapters import NIMAdminSessionAdapter
 import pytest
 
+from app.autonomous_publishing.adapters import NIMAdminSessionAdapter
 from app.autonomous_publishing.registry import Binding, RegistryError
 from app.autonomous_publishing.schemas import GateResultIn, PublicationJobIn
 
@@ -100,7 +100,9 @@ def test_admin_session_adapter_publishes_with_image_and_reads_it_back() -> None:
     add_form_html = (
         '<input name="params[hu_HU]" value="">'
         '<select name="params[categorie]"><option value="">Nincs</option></select>'
-        '<select name="params[user_public]"><option value="1">Szerkesztő</option></select>'
+        '<select name="params[user_public]">'
+        '<option value="1">Rendszer</option><option value="3">Szerkesztő</option>'
+        '</select>'
     )
     readback_html = (
         f'<input name="params[hu_HU]" value="{escape(draft.title)}">'
@@ -147,11 +149,15 @@ def test_admin_session_adapter_publishes_with_image_and_reads_it_back() -> None:
     assert create_call["data"]["params[enable]"] == "0"
     assert create_call["data"]["params[image]"] == "content/blog/verified-image.png"
     assert create_call["data"]["params[categorie]"] == "2"
-    assert create_call["data"]["params[user_public]"] == "1"
+    assert create_call["data"]["params[user_public]"] == "3"
     assert create_call["data"]["params[language]"] == ""
     assert create_call["data"]["params[hu_HU_robots_type]"] == ""
-    assert create_call["data"]["params[hu_HU_robots]"] == ""
-    assert create_call["data"]["params[date_public]"]
+    assert create_call["data"]["params[hu_HU_robots]"] == "INDEX, FOLLOW"
+    assert create_call["data"]["params[date_public]"] == ""
+    assert "params[categories][]" not in create_call["data"]
+    assert "params[related][]" not in create_call["data"]
+    assert "params[labels][]" not in create_call["data"]
+    assert "params[images][]" not in create_call["data"]
     enable_call = client.calls[5]
     assert enable_call["url"] == "https://bautica.hu/admin_article/enable"
     assert enable_call["data"]["id"] == "321"
