@@ -168,8 +168,8 @@ def test_submission_is_durable_idempotent_and_payload_bound(db, fake_runtime):
     ("channel", "error"),
     [
         ("wordpress", "WordPress HTTPS media.url is required"),
-        ("facebook", "facebook HTTPS image_url is required"),
-        ("instagram", "instagram HTTPS image_url is required"),
+        ("facebook", "facebook image_factory or HTTPS image_url is required"),
+        ("instagram", "instagram image_factory or HTTPS image_url is required"),
     ],
 )
 def test_public_channels_reject_missing_image_payload(channel, error):

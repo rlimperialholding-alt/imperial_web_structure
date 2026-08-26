@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import hmac
+import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from ..config import settings as platform_settings
 from ..database import get_db
+from .canonical_templates import CanonicalFirstContactRegistry
 from .models import GrowthRun, OutreachMessage
 from .registry import GrowthRegistryError
-from .schemas import GrowthControlIn, GrowthSignalIn, OutreachEventIn, OutreachReleaseIn
+from .schemas import (
+    CanonicalFirstContactRenderIn,
+    GrowthControlIn,
+    GrowthSignalIn,
+    OutreachEventIn,
+    OutreachReleaseIn,
+)
 from .service import (
     ingest_signal,
     readiness,
@@ -67,13 +75,22 @@ def _outreach(row: OutreachMessage) -> dict:
 
 
 def _outreach_artifact(row: OutreachMessage) -> dict:
+    try:
+        canonical_metadata = json.loads(row.receipt_json or "{}").get("canonical_template")
+    except json.JSONDecodeError:
+        canonical_metadata = None
     return {
         **_outreach(row),
         "sender_email": row.sender_email,
         "recipient_email": row.recipient_email,
         "subject": row.subject,
         "body_text": row.body_text,
-        "body_html": row.body_html,
+        "body_html": row.body_html or (
+            canonical_metadata.get("body_html")
+            if isinstance(canonical_metadata, dict)
+            else None
+        ),
+        "canonical_template": canonical_metadata,
         "payload_sha256": row.payload_sha256,
         "release_approved_by": row.release_approved_by,
         "release_approved_at": row.release_approved_at,
@@ -86,6 +103,40 @@ def growth_readiness(db: Session = Depends(get_db)):  # noqa: B008
     if not ready:
         raise HTTPException(status_code=503, detail=detail)
     return {"status": "ready", **detail}
+
+
+@router.get(
+    "/api/internal/growth-ops/canonical-first-contact/readiness",
+    dependencies=[Depends(require_internal_token)],
+)
+def canonical_first_contact_readiness():
+    try:
+        return CanonicalFirstContactRegistry.load().readiness()
+    except GrowthRegistryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/internal/growth-ops/canonical-first-contact/render",
+    dependencies=[Depends(require_internal_token)],
+)
+def canonical_first_contact_render(data: CanonicalFirstContactRenderIn):
+    try:
+        rendered = CanonicalFirstContactRegistry.load().render(**data.model_dump())
+    except GrowthRegistryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "template_id": rendered.template_id,
+        "recipient_type": rendered.recipient_type,
+        "sender_brand_id": rendered.sender_brand_id,
+        "subject": rendered.subject,
+        "body_text": rendered.body_text,
+        "body_html": rendered.body_html,
+        "sendable": rendered.sendable,
+        "blocked_reasons": list(rendered.blocked_reasons),
+        "registry_sha256": rendered.registry_sha256,
+        "owner_body_sha256": rendered.owner_body_sha256,
+    }
 
 
 @router.post("/api/internal/growth-ops/signals", dependencies=[Depends(require_internal_token)])

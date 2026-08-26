@@ -90,16 +90,20 @@ class PublishingRegistry:
             channels = brand.get("channels")
             if (
                 not domain
-                or cms_route not in {"NIM", "WORDPRESS"}
+                or cms_route not in {"NIM", "WORDPRESS", "NONE"}
                 or not isinstance(channels, dict)
             ):
                 raise RegistryError(f"Incomplete brand binding: {brand_id}")
-            expected = "nim_cms" if cms_route == "NIM" else "wordpress"
-            if not channels.get(expected, {}).get("enabled"):
-                raise RegistryError(f"CMS route is not enabled for brand: {brand_id}")
-            other = "wordpress" if expected == "nim_cms" else "nim_cms"
-            if channels.get(other, {}).get("enabled"):
-                raise RegistryError(f"Parallel CMS routing is blocked for brand: {brand_id}")
+            if cms_route == "NONE":
+                if any(channels.get(name, {}).get("enabled") for name in ("nim_cms", "wordpress")):
+                    raise RegistryError(f"CMS route NONE cannot enable a CMS: {brand_id}")
+            else:
+                expected = "nim_cms" if cms_route == "NIM" else "wordpress"
+                if not channels.get(expected, {}).get("enabled"):
+                    raise RegistryError(f"CMS route is not enabled for brand: {brand_id}")
+                other = "wordpress" if expected == "nim_cms" else "nim_cms"
+                if channels.get(other, {}).get("enabled"):
+                    raise RegistryError(f"Parallel CMS routing is blocked for brand: {brand_id}")
             for channel, config in channels.items():
                 if channel not in SUPPORTED_CHANNELS or not isinstance(config, dict):
                     raise RegistryError(f"Invalid channel binding: {brand_id}/{channel}")

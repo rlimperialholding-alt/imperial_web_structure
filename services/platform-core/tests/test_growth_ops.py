@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -37,7 +39,7 @@ class FakeRegistry:
         "distress": {"interval_minutes": 60, "max_raw_signals_per_run": 500},
         "ivs": {"daily_at": "08:00", "max_raw_signals_per_run": 500},
     }
-    brands = {"bautica": {}}
+    brands = {"imperial": {}}
 
     def validate_signal_source(self, *, source_id: str, motor_key: str, source_bucket: str) -> None:
         if (source_id, motor_key, source_bucket) != (
@@ -48,37 +50,25 @@ class FakeRegistry:
             raise GrowthRegistryError("source mismatch")
 
     def brand_for(self, signal_type: str, requested: str | None = None) -> str:
-        if signal_type != "residential_construction" or requested not in {None, "bautica"}:
+        if signal_type != "residential_construction" or requested not in {None, "imperial"}:
             raise GrowthRegistryError("route mismatch")
-        return "bautica"
+        return "imperial"
 
     def brand_binding(self, brand_id: str) -> BrandBinding:
-        assert brand_id == "bautica"
-        body = (
-            "{company_name}! Releváns üzleti jelzés: {signal_summary}. "
-            "Forrás: {evidence_url}. Kapcsolatfelvétel válaszban. Leiratkozás: {unsubscribe_url}"
-        )
+        assert brand_id == "imperial"
         return BrandBinding(
-            brand_id="bautica",
-            sender_email="info@bautica.test",
-            domain_key="bautica-test",
+            brand_id="imperial",
+            sender_email="info@imperialholding.test",
+            domain_key="imperial-test",
             secret={
-                "host": "smtp.bautica.test",
+                "host": "smtp.imperialholding.test",
                 "port": 465,
                 "username": "test",
                 "password": "test",
                 "use_ssl": True,
             },
             config={
-                "brand_name": "Bautica",
-                "templates": {
-                    "default": {
-                        "initial": {"subject": "Szakmai egyeztetés", "body": body},
-                        "followup_1": {"subject": "Rövid utánkövetés", "body": body},
-                        "followup_2": {"subject": "Utolsó utánkövetés", "body": body},
-                    }
-                },
-                "followup_delays_days": [4, 8],
+                "brand_name": "Imperial Holding",
                 "recipient_cooldown_days": 30,
                 "max_daily_messages": 100,
             },
@@ -88,6 +78,15 @@ class FakeRegistry:
 @pytest.fixture
 def growth_runtime(monkeypatch, db):
     registry = FakeRegistry()
+    canonical_path = (
+        Path(os.environ["CANONICAL_FIRST_CONTACT_REGISTRY_FILE"])
+        if "CANONICAL_FIRST_CONTACT_REGISTRY_FILE" in os.environ
+        else Path(__file__).resolve().parents[3]
+        / "config"
+        / "outbound"
+        / "canonical_first_contact_templates_hu_v1.json"
+    )
+    monkeypatch.setenv("CANONICAL_FIRST_CONTACT_REGISTRY_FILE", str(canonical_path))
     monkeypatch.setattr(service.GrowthRegistry, "load", classmethod(lambda cls: registry))
     monkeypatch.setattr(service, "writes_unlocked", lambda: True)
     monkeypatch.setattr(
@@ -104,9 +103,9 @@ def growth_runtime(monkeypatch, db):
     )
     db.add(
         MailSendingDomain(
-            domain_key="bautica-test",
-            domain_name="bautica.test",
-            from_email="info@bautica.test",
+            domain_key="imperial-test",
+            domain_name="imperialholding.test",
+            from_email="info@imperialholding.test",
             provider="smtp",
             spf_status="pass",
             dkim_status="pass",
@@ -129,6 +128,13 @@ def _signal(**changes) -> GrowthSignalIn:
         "company_name": "Minta Építő Kft.",
         "company_registration_id": "01-09-999999",
         "subject_type": "organization",
+        "recipient_type": "architect_office",
+        "recipient_name": "Minta Építésziroda",
+        "sender_company_name": "Imperial Holding",
+        "reference_names": ["Referencia Ház", "Második Ház"],
+        "reference_names_verified": True,
+        "recipient_classification_verified": True,
+        "exclusion_screening_verified": True,
         "recipient_email": "iroda@minta-epito.test",
         "recipient_email_type": "role",
         "contact_basis": "public_business_contact",
@@ -154,22 +160,72 @@ def test_verified_business_role_signal_queues_once(db, growth_runtime):
     assert len(db.scalars(select(OutreachMessage)).all()) == 1
 
 
-def test_unsubscribe_token_is_hashed_and_globally_suppresses(db, growth_runtime):
+def test_queued_payload_is_bound_to_the_canonical_registry(db, growth_runtime):
     result = service.ingest_signal(db, _signal())
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
     assert message is not None and len(message.unsubscribe_token_hash) == 64
-    match = re.search(r"/growth/unsubscribe/([^\s]+)", message.body_text)
-    assert match and match.group(1) != message.unsubscribe_token_hash
+    assert message.subject == "együttműködés"
+    assert message.body_text.startswith("Tisztelt Minta Építésziroda!")
+    assert "Referencia Ház, Második Ház" in message.body_text
+    assert "Szeretnénk felajánlani szakmai segítségünket" not in message.body_text
+    metadata = service._canonical_metadata(message)
+    assert metadata["template_id"] == "ARCHITECT_OFFICE_FIRST_CONTACT_HU"
+    assert metadata["registry_sha256"]
 
-    service.unsubscribe(db, match.group(1))
 
-    assert message.status == "unsubscribed"
-    suppression = db.scalar(
-        select(MailSuppression).where(MailSuppression.email == message.recipient_email)
+def test_verified_referral_partner_queues_only_the_canonical_locked_template(
+    db, growth_runtime
+):
+    result = service.ingest_signal(
+        db,
+        _signal(
+            external_key="PARTNER-2026-0001",
+            recipient_type="referral_partner",
+            recipient_name="Kovács Anna",
+            sender_company_name=None,
+            reference_names=[],
+            reference_names_verified=False,
+            business_context="építőanyag-áruházi hálózat",
+            business_context_verified=True,
+            business_context_evidence_url="https://minta-epito.test/uzleteink",
+        ),
     )
-    assert suppression and suppression.active
+    message = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
+    )
+
+    assert result.status == "queued"
+    assert message is not None
+    assert message.subject == "együttműködés"
+    assert message.body_text.startswith("Tisztelt Kovács Anna!\n\nCégünk 1989 óta")
+    assert "Az Önök építőanyag-áruházi hálózat vásárlói között" in message.body_text
+    assert "1% új bevétel" not in message.subject
+    assert "a teljes 1% jutalékot" not in message.body_text
+    metadata = service._canonical_metadata(message)
+    assert metadata["template_id"] == "REFERRAL_PARTNER_FIRST_CONTACT_HU"
+    assert metadata["body_html"].count("<strong>") == 2
+
+
+def test_referral_partner_without_verified_business_context_is_recorded_for_completion(
+    db, growth_runtime
+):
+    result = service.ingest_signal(
+        db,
+        _signal(
+            external_key="PARTNER-2026-0002",
+            recipient_type="referral_partner",
+            recipient_name="Kovács Anna",
+            sender_company_name=None,
+            reference_names=[],
+            reference_names_verified=False,
+        ),
+    )
+
+    assert result.status == "template-variable-missing"
+    assert result.reasons == ["template-variable-missing"]
+    assert not db.scalars(select(OutreachMessage)).all()
 
 
 def test_natural_person_without_request_is_rejected(db, growth_runtime):
@@ -421,7 +477,7 @@ def test_smtp_adapter_sends_reviewed_html_as_multipart_alternative(monkeypatch):
             return {}
 
     monkeypatch.setattr("app.growth_ops.email.smtplib.SMTP_SSL", FakeSMTP)
-    binding = FakeRegistry().brand_binding("bautica")
+    binding = FakeRegistry().brand_binding("imperial")
 
     SMTPEmailAdapter(binding).send(
         to_email="partner@example.test",

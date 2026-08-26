@@ -135,11 +135,12 @@ services:
       GROWTH_OPS_SECRET_DIR: /run/secrets/growth
       GROWTH_OPS_KILL_SWITCH_FILE: /run/secrets/growth/kill-switch
       GROWTH_OPS_WORKER_ID: ${GROWTH_OPS_WORKER_ID:-imperial-growth-worker}
-      GROWTH_OPS_POLL_SECONDS: ${GROWTH_OPS_POLL_SECONDS:-30}
+      GROWTH_OPS_POLL_SECONDS: ${GROWTH_OPS_POLL_SECONDS:-10}
       GROWTH_OPS_LEASE_SECONDS: ${GROWTH_OPS_LEASE_SECONDS:-300}
       GROWTH_OPS_BASE_URL: ${GROWTH_OPS_BASE_URL:-}
       LAND_ACQUISITION_PORTAL_REGISTRY_FILE: /app/config/land-acquisition/portals.json
       GROWTH_OPS_TIMEZONE: ${GROWTH_OPS_TIMEZONE:-Europe/Budapest}
+      CANONICAL_FIRST_CONTACT_REGISTRY_FILE: /app/config/outbound/canonical_first_contact_templates_hu_v1.json
       CANONICAL_GROWTH_ENABLED: ${CANONICAL_GROWTH_ENABLED:-false}
       CANONICAL_GROWTH_DAILY_AT: ${CANONICAL_GROWTH_DAILY_AT:-05:30}
       CANONICAL_SOURCE_MANIFEST_FILE: /app/config/growth/source-ledger-manifest.json
@@ -149,10 +150,15 @@ services:
       CANONICAL_ROUTE_MAX_RESPONSE_BYTES: ${CANONICAL_ROUTE_MAX_RESPONSE_BYTES:-1000000}
       CANONICAL_PROCESSING_ENABLED: ${CANONICAL_PROCESSING_ENABLED:-false}
       CANONICAL_ANALYSIS_TEXT_CHARS: ${CANONICAL_ANALYSIS_TEXT_CHARS:-6000}
+      CANONICAL_QUESTION_ANSWER_ENABLED: ${CANONICAL_QUESTION_ANSWER_ENABLED:-true}
+      CANONICAL_QUESTION_ANSWER_BATCH_SIZE: ${CANONICAL_QUESTION_ANSWER_BATCH_SIZE:-50}
       CANONICAL_CONTENT_FACTORY_ENABLED: ${CANONICAL_CONTENT_FACTORY_ENABLED:-false}
       CANONICAL_INTERNAL_HANDOFF_ENABLED: ${CANONICAL_INTERNAL_HANDOFF_ENABLED:-false}
       CANONICAL_INTERNAL_HANDOFF_AT: ${CANONICAL_INTERNAL_HANDOFF_AT:-18:30}
       CANONICAL_INTERNAL_HANDOFF_SECRET_FILE: /run/secrets/growth/internal-handoff-smtp.json
+      CANONICAL_PUBLICATION_DIGEST_ENABLED: ${CANONICAL_PUBLICATION_DIGEST_ENABLED:-true}
+      CANONICAL_PUBLICATION_DIGEST_AT: ${CANONICAL_PUBLICATION_DIGEST_AT:-10:00}
+      CANONICAL_PUBLICATION_DIGEST_RECIPIENT: ${CANONICAL_PUBLICATION_DIGEST_RECIPIENT:-molnar.andrea@imperialholding.hu}
       DEEPSEEK_API_KEY_FILE: /run/secrets/growth/deepseek-api-key
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       DEEPSEEK_ROUTINE_MODEL: ${DEEPSEEK_ROUTINE_MODEL:-deepseek-v4-flash}
@@ -195,6 +201,9 @@ services:
       CONTENT_IMAGE_FACTORY_TIMEOUT_SECONDS: ${CONTENT_IMAGE_FACTORY_TIMEOUT_SECONDS:-30}
       CONTENT_IMAGE_FACTORY_BATCH_SIZE: ${CONTENT_IMAGE_FACTORY_BATCH_SIZE:-100}
       CONTENT_IMAGE_FACTORY_ASSET_ROOT: /app/runtime/marketing_creatives
+      CANONICAL_IMAGE_FACTORY_ENABLED: ${CANONICAL_IMAGE_FACTORY_ENABLED:-false}
+      CANONICAL_IMAGE_AUTO_RELEASE_ENABLED: ${CANONICAL_IMAGE_AUTO_RELEASE_ENABLED:-false}
+      CANONICAL_IMAGE_FACTORY_QA_MIN_SCORE: ${CANONICAL_IMAGE_FACTORY_QA_MIN_SCORE:-90}
     volumes:
       - platform_core_runtime:/app/runtime
       - platform_core_data:/app/data
@@ -202,6 +211,7 @@ services:
       - ${AUTONOMOUS_PUBLISHING_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/publishing}:/run/secrets/publishing:ro
       - ${GROWTH_OPS_REGISTRY_DIR:-./config/growth}:/app/config/growth:ro
       - ${LAND_ACQUISITION_REGISTRY_DIR:-./config/land-acquisition}:/app/config/land-acquisition:ro
+      - ${CANONICAL_OUTBOUND_REGISTRY_DIR:-/opt/imperial-intelligence/config/outbound}:/app/config/outbound:ro
       - ${GROWTH_OPS_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/growth}:/run/secrets/growth:ro
     secrets:
       - platform_db_password
@@ -333,8 +343,11 @@ services:
     volumes:
       - platform_core_runtime:/app/runtime
       - platform_core_data:/app/data
+      - ${AUTONOMOUS_PUBLISHING_REGISTRY_DIR:-./config/publishing}:/app/config/publishing:ro
+      - ${AUTONOMOUS_PUBLISHING_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/publishing}:/run/secrets/publishing:ro
       - ${GROWTH_OPS_REGISTRY_DIR:-./config/growth}:/app/config/growth:ro
       - ${LAND_ACQUISITION_REGISTRY_DIR:-./config/land-acquisition}:/app/config/land-acquisition:ro
+      - ${CANONICAL_OUTBOUND_REGISTRY_DIR:-/opt/imperial-intelligence/config/outbound}:/app/config/outbound:ro
       - ${GROWTH_OPS_SECRET_DIR_HOST:-/opt/imperial-intelligence/secrets/growth}:/run/secrets/growth:ro
     secrets:
       - platform_db_password

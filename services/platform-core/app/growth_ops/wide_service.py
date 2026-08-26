@@ -138,9 +138,10 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
     )
     row.gate_errors_json = _canonical_json(gate.errors)
     row.status = "full" if gate.passed else "partial"
-    row.internal_handoff_status = "required_pending"
+    if row.internal_handoff_status != "sent":
+        row.internal_handoff_status = "required_pending"
     row.external_outreach_status = "blocked_until_adapter_test_and_release"
-    row.external_publication_status = "blocked_until_adapter_test_and_release"
+    row.external_publication_status = "owner_approved_live_for_bound_channels"
     row.detail_json = _canonical_json(
         {
             "executive": {"name": IORA_EXECUTIVE_NAME, "email": IORA_EXECUTIVE_EMAIL},

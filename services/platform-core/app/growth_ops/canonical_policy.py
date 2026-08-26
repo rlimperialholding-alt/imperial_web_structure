@@ -83,6 +83,177 @@ ACTIVE_CONTENT_BRANDS = (
     "BauShield",
 )
 
+# Owner-confirmed delivery scope for the initial production phase. Facebook and
+# CMS are independent routes, but every public delivery requires an approved image.
+# The historical constant name is retained because external checks import it.
+FACEBOOK_TEXT_ONLY_TARGETS = {
+    "Imperial": ("imperial",),
+    "Bautica": ("bautica",),
+    "Prefab": ("prefab",),
+    "Casa Moderna": ("casa-moderna",),
+    "BauFreund": ("baufreund",),
+    "Danish Fabrik": ("danish-fabrik",),
+    "TimberHaus": ("timberhaus",),
+    "RED Property": ("red-property",),
+    "Property360": ("property-360",),
+    "Everyday Homes": ("everyday-homes",),
+    "Family Homes": ("family-homes",),
+    "Imperial Construction": ("budapesti-magasepito-vallalat",),
+}
+
+CMS_LIVE_TARGETS = {
+    "Bautica": "bautica",
+    "Prefab": "prefab",
+    "Casa Moderna": "casa-moderna",
+    "BauFreund": "baufreund",
+    "Danish Fabrik": "danish-fabrik",
+    "TimberHaus": "timberhaus",
+}
+
+CONTENT_IMAGE_OWNER = "Imperial Content Image Factory"
+
+BRAND_CONTENT_FOCUS = {
+    "Imperial": ("építkezés", "kivitelezés", "ingatlan", "projekt", "műszaki"),
+    "Bautica": ("felújítás", "kivitelezés", "építkezés", "bővítés", "otthon"),
+    "Prefab": ("előregyártás", "csarnok", "panel", "szerkezet", "kivitelezés"),
+    "Casa Moderna": ("prémium otthon", "okosotthon", "komfort", "építészet", "ház"),
+    "BauFreund": ("építkezés", "kivitelezés", "ház", "költség", "műszaki"),
+    "Danish Fabrik": ("készház", "faváz", "könnyűszerkezet", "szigetelés", "ház"),
+    "TimberHaus": ("faház", "faváz", "könnyűszerkezet", "faépítés", "otthon"),
+    "RED Property": ("ingatlanfejlesztés", "ingatlan", "beruházás", "értékesítés", "projekt"),
+    "Property360": ("ingatlan", "ingatlanüzemeltetés", "értékbecslés", "befektetés", "projekt"),
+    "Everyday Homes": ("megfizethető otthon", "családi ház", "praktikus", "építkezés", "otthon"),
+    "Venture Studio": ("vállalkozás", "üzletfejlesztés", "innováció", "növekedés", "befektetés"),
+    "Family Homes": ("családi ház", "otthon", "alaprajz", "építkezés", "család"),
+    "Imperial Construction": ("generálkivitelezés", "építkezés", "kivitelezés", "műszaki", "projekt"),
+    "Imperial Intelligence": ("mesterséges intelligencia", "adat", "automatizálás", "kutatás", "döntéstámogatás"),
+    "Imperial Technologies": ("technológia", "integráció", "automatizálás", "szoftver", "rendszer"),
+    "Imperial Knowledge": ("szakmai tudás", "oktatás", "útmutató", "képzés", "döntés"),
+    "ExitFlow": ("cégeladás", "utódlás", "kiszállás", "felvásárlás", "exit"),
+    "Veritas Construct": ("műszaki ellenőrzés", "építési vita", "szakértő", "hiba", "kivitelezés"),
+    "BauShield": ("építési kockázat", "garancia", "szerződés", "műszaki ellenőrzés", "hiba"),
+}
+
+# These copy contracts are deliberately more specific than keyword matching.  They
+# are fed to the generator and to the independent release reviewer, so a piece that
+# would still work after swapping only the logo must fail closed.
+BRAND_PUBLICATION_CONTRACTS = {
+    "Imperial": {
+        "position": "A cégcsoport átfogó építési és ingatlanos szakmai tekintélye; összetett döntések közérthető, vezetői szintű tisztázása.",
+        "voice": "Határozott, természetes, magázó magyar; konkrét helyzet, szakmai álláspont és egyetlen következő lépés.",
+        "required": ["építési vagy ingatlanos döntési helyzet", "egyértelmű szakmai álláspont", "konkrét ügyfélhaszon"],
+        "forbidden": ["általános motiváció", "másik márka szlogene", "bizonyíték nélküli ár-, idő- vagy garanciaígéret"],
+    },
+    "Bautica": {
+        "position": "Mérnöki fegyelemre épülő felújítás és kivitelezés; a szakmai előkészítés látható előnye.",
+        "voice": "Szakértő, világos, tárgyszerű, de értékesítési energiájú magázó magyar.",
+        "required": ["valós kivitelezési döntés", "mérnöki ok-okozat", "konkrét ügyfélhaszon"],
+        "locked_slogan": "Az építés tudománya.",
+        "forbidden": ["általános otthonszépítés", "BauFreund baráti hangja", "bizonyíték nélküli műszaki tény"],
+    },
+    "Prefab": {
+        "position": "Iparosított, előregyártott építési rendszer: tervezhetőség, ismételhetőség és tiszta döntési pontok.",
+        "voice": "Modern, tömör, technológiai, közérthető magázó magyar.",
+        "required": ["előregyártási vagy szerkezeti mechanizmus", "ügyféloldali döntési előny", "konkrét következő lépés"],
+        "locked_slogans": ["Építőipar 2.0", "Nincsenek kérdőjelek."],
+        "forbidden": ["általános családiház-szöveg", "favázas életmódhangulat", "nem igazolt gyorsasági állítás"],
+    },
+    "Casa Moderna": {
+        "position": "Kortárs, prémium otthon és építészeti komfort; az átgondolt tér és technológia mindennapi értéke.",
+        "voice": "Elegáns, érzékletes, visszafogottan értékesítő magázó magyar.",
+        "required": ["konkrét lakóhelyzet", "építészeti vagy komfortdöntés", "prémium ügyfélhaszon"],
+        "forbidden": ["olcsóság vagy finanszírozás mint főígéret", "generikus luxusjelzők", "nem igazolt okosotthon-funkció"],
+    },
+    "BauFreund": {
+        "position": "Az építtető barátságos, független szakmai segítője felújításnál, építkezésnél, számításnál és ellenőrzésnél.",
+        "voice": "Közvetlen, tegező, természetes, kávé mellett is kimondható magyar.",
+        "required": ["felismerhető vevői félelem vagy kérdés", "egy konkrét BauFreund-mechanizmus", "egy megfigyelhető ügyfélhaszon"],
+        "locked_slogan": "BauFreund - az építő barát.",
+        "forbidden": ["száraz vállalati hang", "Bautica mérnöki-tudomány pozíciója", "általános tanács konkrét ajánlat nélkül"],
+    },
+    "Danish Fabrik": {
+        "position": "Dán szemléletű, iparosított favázas építési rendszer; az anyag- és rendszerválasztás következményei.",
+        "voice": "Letisztult, nyugodt, természetes, magázó magyar.",
+        "required": ["favázas vagy anyagválasztási döntés", "rendszerszintű ügyfélhaszon", "konkrét következő lépés"],
+        "locked_slogan": "Nem érdemes másból építeni.",
+        "forbidden": ["TimberHaus választható készültségi mechanizmusa", "romantikus faházleírás", "nem igazolt felsőbbrendűségi tényállítás"],
+    },
+    "TimberHaus": {
+        "position": "Nyíltan összehasonlítható, műszakilag átlátható faépítés és választható kivitelezési készültségi szint.",
+        "voice": "Nyugodt, természetes, elemző és következetesen magázó magyar.",
+        "required": ["valódi otthon vagy faépítési döntés", "átlátható felelősség vagy készültségi választás", "konkrét következő lépés"],
+        "locked_slogan": "Fából mindent lehet.",
+        "forbidden": ["Danish életmódhang", "RED agresszív ár-idő hang", "a falszerkezet mint önmagában eladott termék"],
+    },
+    "RED Property": {
+        "position": "Családi házak és típusházak: ár, idő és azonnali összehasonlíthatóság; nem ingatlanközvetítő márka.",
+        "voice": "Direkt, energikus, magabiztos, tegező, rövid és félreérthetetlen magyar.",
+        "required": ["típusház vagy egyértelmű házválasztási helyzet", "konkrét döntési előny", "egyetlen direkt CTA"],
+        "forbidden": ["ingatlanfejlesztés", "ingatlanhirdetés", "közvetítés", "listing", "staging", "bizonyíték nélküli ár-, idő- vagy legjobb/leggyorsabb állítás", "Ház. Ár. Határidő."],
+    },
+    "Property360": {
+        "position": "Az ingatlanvásárlás és beköltözés teljes, összehangolt 360 fokos ügyfélútja; nem befektetési tanácsadás és nem üzemeltetés.",
+        "voice": "Segítőkész, lendületes, tegező, döntést könnyítő magyar.",
+        "required": ["konkrét lakás- vagy házkeresési helyzet", "összehangolt következő lépés", "kézzelfogható ügyfélhaszon"],
+        "locked_slogan": "Kattints és költözz!",
+        "forbidden": ["ingatlanbefektetési hozam", "értékbecslés mint főajánlat", "ingatlanüzemeltetés", "általános projektmenedzsment"],
+    },
+    "Everyday Homes": {
+        "position": "Elérhető, praktikus családi otthon és egyszerűbb, egy kézben kezelt megvalósítás.",
+        "voice": "Közvetlen, tegező, hétköznapi, reményt adó és konkrét magyar.",
+        "required": ["felismerhető családi helyzet", "kézzelfogható otthon- vagy folyamategy­szerűsítési előny", "egy termék- vagy cselekvési CTA"],
+        "forbidden": ["bizonyíték nélküli finanszírozási összeg", "Family Homes karakter- és napirend-mechanizmusa", "száraz mérnöki konzultáció mint főtéma"],
+    },
+    "Family Homes": {
+        "position": "A házaknak karakterük van: ház- és alaprajzközpontú történetek arról, milyen benne egy család valódi napja.",
+        "voice": "Meleg, megfigyelő, konkrét élethelyzetekből építkező magyar.",
+        "required": ["egy házkarakter vagy alaprajzi döntés", "reggel–napközben–este vagy hétvége konkrét használati helyzete", "termékközpontú következő lépés"],
+        "forbidden": ["Family Match", "kvíz", "három választásra szűkítés", "finanszírozás vagy megfizethetőség mint főígéret", "Everyday Homes oldal- vagy kérdéslogikája"],
+    },
+    "Imperial Construction": {
+        "position": "Budapesti Magasépítő Vállalat: B2B generálkivitelezés, fővállalkozás és magasépítés szervezett mérnöki színvonalon.",
+        "voice": "Tapasztalt cégvezető természetes, magabiztos, magázó hangja.",
+        "required": ["generálkivitelezés, fővállalkozás vagy magasépítés kifejezett megnevezése", "konkrét B2B épülettípus vagy növekedési helyzet", "konkrét ajánlatkérési CTA"],
+        "forbidden": ["lakossági típusház", "általános projektkontroll mint főígéret", "bizonyíték nélküli 1989-, ár- vagy időgarancia"],
+    },
+}
+
+# The seven currently internal-only brands still receive daily content, but do not
+# have an external delivery target in this release.  Their contract remains explicit
+# so their drafts cannot drift into another brand's lane.
+for _brand in set(ACTIVE_CONTENT_BRANDS) - set(BRAND_PUBLICATION_CONTRACTS):
+    BRAND_PUBLICATION_CONTRACTS[_brand] = {
+        "position": ", ".join(BRAND_CONTENT_FOCUS[_brand]),
+        "voice": "Természetes, konkrét, szakmai magyar; egy álláspont és egy következő lépés.",
+        "required": ["márkaspecifikus probléma", "konkrét ügyfélhaszon", "egyetlen CTA"],
+        "forbidden": ["másik Imperial-márka ajánlata", "bizonyíték nélküli szám, ár, idő, garancia vagy felsőfok"],
+    }
+
+
+def delivery_plan_for_brand(brand_id: str) -> dict[str, object]:
+    facebook_targets = list(FACEBOOK_TEXT_ONLY_TARGETS.get(brand_id, ()))
+    cms_target = CMS_LIVE_TARGETS.get(brand_id)
+    return {
+        "facebook": {
+            "mode": "LIVE_IMAGE_REQUIRED" if facebook_targets else "DISABLED",
+            "page_brand_ids": facebook_targets,
+            "image_owner": CONTENT_IMAGE_OWNER if facebook_targets else None,
+        },
+        "cms": {
+            "mode": "LIVE_IMAGE_REQUIRED" if cms_target else "DISABLED",
+            "site_brand_id": cms_target,
+            "image_owner": CONTENT_IMAGE_OWNER if cms_target else None,
+        },
+    }
+
+
+def content_focus_for_brand(brand_id: str) -> tuple[str, ...]:
+    return BRAND_CONTENT_FOCUS[brand_id]
+
+
+def publication_contract_for_brand(brand_id: str) -> dict[str, object]:
+    return BRAND_PUBLICATION_CONTRACTS[brand_id]
+
 # The canonical hard gate remains ACTIVE / FAIL_CLOSED. Matching content must not be
 # queried, fetched, stored, enriched, prompted, handed off, published, or contacted.
 NO_MONITORING_HARD_GATE = (
@@ -170,6 +341,23 @@ def assert_policy_integrity() -> None:
         raise RuntimeError("Canonical active-brand count is inconsistent")
     if len(set(ACTIVE_CONTENT_BRANDS)) != len(ACTIVE_CONTENT_BRANDS):
         raise RuntimeError("Canonical active-brand list contains duplicates")
+    if not set(FACEBOOK_TEXT_ONLY_TARGETS).issubset(ACTIVE_CONTENT_BRANDS):
+        raise RuntimeError("Facebook delivery scope references an inactive content brand")
+    if not set(CMS_LIVE_TARGETS).issubset(ACTIVE_CONTENT_BRANDS):
+        raise RuntimeError("CMS delivery scope references an inactive content brand")
+    page_targets = [
+        page_id
+        for page_ids in FACEBOOK_TEXT_ONLY_TARGETS.values()
+        for page_id in page_ids
+    ]
+    if len(page_targets) != 12 or len(set(page_targets)) != 12:
+        raise RuntimeError("Facebook delivery scope must contain exactly 12 unique pages")
+    if len(CMS_LIVE_TARGETS) != 6:
+        raise RuntimeError("CMS delivery scope must contain exactly six sites")
+    if set(BRAND_CONTENT_FOCUS) != set(ACTIVE_CONTENT_BRANDS):
+        raise RuntimeError("Every active content brand must have an explicit topic focus")
+    if set(BRAND_PUBLICATION_CONTRACTS) != set(ACTIVE_CONTENT_BRANDS):
+        raise RuntimeError("Every active content brand must have a publication contract")
 
 
 def assert_outreach_copy(body: str) -> None:
@@ -182,7 +370,6 @@ def assert_outreach_copy(body: str) -> None:
         return
     if PARTNER_OUTREACH_ANCHOR not in body:
         raise ValueError("owner_locked_partner_outreach_anchor_missing")
-
 
 def contains_no_monitoring_entity(value: str) -> bool:
     normalized = " ".join(value.casefold().split())

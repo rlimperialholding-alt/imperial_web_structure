@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -34,11 +35,18 @@ from .models import (
     PublishingWorkerHeartbeat,
 )
 from .registry import PublishingRegistry, RegistryError, writes_unlocked
-from .schemas import MANDATORY_GATES, PublicationJobIn, PublicationJobReceipt
+from .schemas import (
+    MANDATORY_GATES,
+    OWNER_AUTO_PUBLICATION_POLICY_ID,
+    PublicationJobIn,
+    PublicationJobReceipt,
+)
 
 WEB_CHANNELS = ("nim_cms", "wordpress")
 SOCIAL_CHANNELS = ("facebook", "instagram")
 ATTRIBUTION_CHANNELS = ("analytics", "crm")
+QUALITY_GATE_VERSION = "canonical-auto-quality-v2"
+QUALITY_RELEASE_SECRET_FILE = Path("/run/secrets/platform_release_hmac_key")
 
 EVENT_TYPES = {
     "PUBLICATION_JOB_QUEUED",
@@ -81,6 +89,53 @@ def _job_key(job: PublicationJobIn) -> str:
 def _channel_key(job: PublicationJobIn, channel: str) -> str:
     raw = f"{job.brand_id}|{job.content_asset_id}|{job.content_version_id}|{channel}"
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _automated_release_token_errors(job: PublicationJobIn) -> list[str]:
+    try:
+        token = json.loads(job.release_token)
+        if not isinstance(token, dict):
+            return ["automated_release_token_not_object"]
+    except json.JSONDecodeError:
+        return ["automated_release_token_not_json"]
+    try:
+        secret = QUALITY_RELEASE_SECRET_FILE.read_text(encoding="utf-8").strip().encode()
+    except OSError:
+        return ["automated_release_secret_missing"]
+    if len(secret) < 32:
+        return ["automated_release_secret_invalid"]
+    signature = str(token.get("hmac_sha256") or "")
+    unsigned = {key: value for key, value in token.items() if key != "hmac_sha256"}
+    expected = hmac.new(
+        secret,
+        canonical_json(unsigned).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    errors: list[str] = []
+    if not hmac.compare_digest(signature, expected):
+        errors.append("automated_release_hmac_invalid")
+    expected_bindings = {
+        "schema": QUALITY_GATE_VERSION,
+        "brand_id": job.brand_id,
+        "content_asset_id": job.content_asset_id,
+        "content_version_id": job.content_version_id,
+        "content_hash": job.content_hash,
+        "channels": list(job.channels),
+    }
+    for key, value in expected_bindings.items():
+        if token.get(key) != value:
+            errors.append(f"automated_release_binding_mismatch:{key}")
+    if not str(token.get("quality_manifest_sha256") or ""):
+        errors.append("automated_release_quality_manifest_missing")
+    try:
+        expires_at = datetime.fromisoformat(str(token.get("expires_at") or ""))
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= utcnow():
+            errors.append("automated_release_token_expired")
+    except ValueError:
+        errors.append("automated_release_expiry_invalid")
+    return errors
 
 
 def emit_event(
@@ -129,8 +184,21 @@ def preflight_errors(job: PublicationJobIn, registry: PublishingRegistry) -> lis
     errors: list[str] = []
     now = utcnow()
     by_gate = {gate.gate: gate for gate in job.gate_results}
-    missing = sorted(MANDATORY_GATES - set(by_gate))
-    errors.extend(f"missing_gate:{gate}" for gate in missing)
+    owner_policy_gate = by_gate.get("owner_auto_publication_policy")
+    owner_policy_channels = all(
+        job.channel_payloads.get(channel, {}).get("owner_policy_release_id")
+        == OWNER_AUTO_PUBLICATION_POLICY_ID
+        for channel in job.channels
+    )
+    owner_policy_active = bool(
+        owner_policy_gate
+        and owner_policy_gate.decision == "PASS"
+        and owner_policy_gate.evidence_id == OWNER_AUTO_PUBLICATION_POLICY_ID
+        and owner_policy_channels
+    )
+    if not owner_policy_active:
+        missing = sorted(MANDATORY_GATES - set(by_gate))
+        errors.extend(f"missing_gate:{gate}" for gate in missing)
     for gate in job.gate_results:
         checked = gate.checked_at if gate.checked_at.tzinfo else gate.checked_at.replace(tzinfo=UTC)
         valid = (
@@ -146,6 +214,8 @@ def preflight_errors(job: PublicationJobIn, registry: PublishingRegistry) -> lis
         errors.append("invalid_job_idempotency_key")
     if hashlib.sha256(job.release_token.encode()).hexdigest() != job.release_token_hash:
         errors.append("release_token_hash_mismatch")
+    if by_gate.get("automated_content_quality"):
+        errors.extend(_automated_release_token_errors(job))
     try:
         for channel in job.channels:
             binding = registry.binding(job.brand_id, channel)
@@ -480,13 +550,12 @@ def process_job(db: Session, job_row: PublishingJobRecord) -> dict[str, Any]:
                 continue
             if channel in SOCIAL_CHANNELS:
                 web_state = next((states[name] for name in WEB_CHANNELS if name in states), None)
-                if (
-                    not web_state
-                    or web_state.status != "READBACK_VERIFIED"
-                    or not web_state.public_url
-                ):
+                if web_state:
+                    if web_state.status != "READBACK_VERIFIED" or not web_state.public_url:
+                        raise AdapterError("web-first readback prerequisite is not satisfied")
+                    job.canonical_url = web_state.public_url
+                elif channel != "facebook" or job.cms_route != "NONE":
                     raise AdapterError("web-first readback prerequisite is not satisfied")
-                job.canonical_url = web_state.public_url
             binding = registry.binding(job.brand_id, channel)
             adapter = build_adapter(binding, client)
             state.status = "PUBLISHING"

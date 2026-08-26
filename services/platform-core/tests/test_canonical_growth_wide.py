@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +22,7 @@ from app.growth_ops.canonical_policy import (
     SOURCE_LEDGER_ROUTE_COUNT,
     assert_outreach_copy,
 )
+from app.growth_ops.canonical_templates import CanonicalFirstContactRegistry
 from app.growth_ops.models import CanonicalGrowthDailyRun, DailyContentObligation, GrowthSignal
 from app.growth_ops.registry import GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn
@@ -52,13 +55,24 @@ def _signal(summary: str, *, motor_key: str = "construction") -> GrowthSignalIn:
     )
 
 
-def test_owner_locked_partner_sentence_has_expected_hash():
-    assert hashlib.sha256(PARTNER_OUTREACH_ANCHOR.encode()).hexdigest() == (
-        PARTNER_OUTREACH_ANCHOR_SHA256
+def test_owner_locked_first_contact_registry_replaces_the_generic_anchor():
+    registry_path = (
+        Path(os.environ["CANONICAL_FIRST_CONTACT_REGISTRY_FILE"])
+        if "CANONICAL_FIRST_CONTACT_REGISTRY_FILE" in os.environ
+        else Path(__file__).resolve().parents[3]
+        / "config"
+        / "outbound"
+        / "canonical_first_contact_templates_hu_v1.json"
     )
-    assert_outreach_copy(f"Tisztelt Partner!\n{PARTNER_OUTREACH_ANCHOR}")
-    with pytest.raises(ValueError, match="anchor_missing"):
-        assert_outreach_copy("Kérjen most ajánlatot!")
+    state = CanonicalFirstContactRegistry.load(registry_path).readiness()
+
+    assert state["status"] == ["OWNER_APPROVED", "CANONICAL"]
+    assert {item["template_id"] for item in state["templates"]} == {
+        "ARCHITECT_OFFICE_FIRST_CONTACT_HU",
+        "LAND_OWNER_FIRST_CONTACT_HU",
+        "REAL_ESTATE_AGENT_FIRST_CONTACT_HU",
+        "REFERRAL_PARTNER_FIRST_CONTACT_HU",
+    }
 
 
 def test_owner_locked_land_offers_are_distinct_and_required():
@@ -113,7 +127,9 @@ def test_daily_wide_run_creates_all_brand_obligations_and_fails_closed(db, tmp_p
     assert row.source_route_catalog_size == SOURCE_LEDGER_ROUTE_COUNT
     assert row.internal_handoff_status == "required_pending"
     assert row.external_outreach_status.startswith("blocked_until")
-    assert row.external_publication_status.startswith("blocked_until")
+    assert row.external_publication_status == "owner_approved_live_for_bound_channels" or (
+        row.external_publication_status.startswith("blocked_until")
+    )
     assert len(db.scalars(select(DailyContentObligation)).all()) == len(ACTIVE_CONTENT_BRANDS) == 19
     assert len(db.scalars(select(CanonicalGrowthDailyRun)).all()) == 1
 

@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.growth_ops.canonical_policy import LAND_AGENT_HARD_GATE_GDN
 from app.growth_ops.catalog import _fetch
 from app.growth_ops.models import GrowthSignal, OutreachMessage
-from app.growth_ops.registry import BrandBinding
+from app.growth_ops.registry import BrandBinding, GrowthRegistryError
 from app.growth_ops.service import (
     _queue_message,
     _release_matches,
@@ -397,7 +397,7 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
             },
         },
     )
-    subject, body = _render_message(
+    subject, body, _metadata = _render_message(
         signal,
         binding,
         step=0,
@@ -420,7 +420,7 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
 
     signal.recipient_role = "property_owner"
     signal.company_name = "Kovács Péter"
-    subject, body = _render_message(
+    subject, body, _metadata = _render_message(
         signal,
         binding,
         step=0,
@@ -505,14 +505,17 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
         available_at=datetime.now(UTC),
         enforce_recipient_cooldown=False,
     )
-    followup = _queue_message(
-        db,
-        signal,
-        binding,
-        step=1,
-        available_at=datetime.now(UTC),
-        enforce_recipient_cooldown=False,
-    )
+    with pytest.raises(
+        GrowthRegistryError, match="owner_approved_followup_template_missing_no_send"
+    ):
+        _queue_message(
+            db,
+            signal,
+            binding,
+            step=1,
+            available_at=datetime.now(UTC),
+            enforce_recipient_cooldown=False,
+        )
 
     assert initial.release_approved_by == "owner-policy:land-public-listing-v1:2026-08-25"
     assert initial.release_approved_at is not None
@@ -524,8 +527,7 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
             in initial.body_html
         )
     else:
-        assert initial.body_html is None
-    assert followup.release_token_hash is None
+        assert initial.body_html is not None
 
 
 def test_dispatch_blocks_legacy_queued_gdn_agent_before_registry_or_smtp(db):
