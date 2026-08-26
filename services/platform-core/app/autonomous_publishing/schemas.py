@@ -26,6 +26,8 @@ MANDATORY_GATES = {
     "channel_policy",
 }
 
+OWNER_AUTO_PUBLICATION_POLICY_ID = "OWNER-AUTO-PUBLISH-2026-08-23"
+
 
 class GateResultIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -63,7 +65,7 @@ class PublicationJobIn(BaseModel):
     content_asset_id: str = Field(min_length=3, max_length=120)
     content_version_id: str = Field(min_length=1, max_length=120)
     brand_id: str = Field(min_length=2, max_length=100)
-    visual_asset_package_id: str = Field(min_length=3, max_length=160)
+    visual_asset_package_id: str | None = Field(default=None, min_length=3, max_length=160)
     claim_ids: list[str] = Field(min_length=1, max_length=100)
     price_snapshot_id: str = Field(min_length=3, max_length=160)
     offer_version_id: str = Field(min_length=3, max_length=160)
@@ -77,7 +79,7 @@ class PublicationJobIn(BaseModel):
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     channels: list[Channel] = Field(min_length=1, max_length=7)
     channel_payloads: dict[str, dict[str, Any]]
-    cms_route: Literal["NIM", "WORDPRESS"]
+    cms_route: Literal["NIM", "WORDPRESS", "NONE"]
     idempotency_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     desired_publish_at: datetime | None = None
     rollback_policy: RollbackPolicyIn = Field(default_factory=RollbackPolicyIn)
@@ -111,15 +113,19 @@ class PublicationJobIn(BaseModel):
         by_gate = {gate.gate: gate for gate in self.gate_results}
         if len(by_gate) != len(self.gate_results):
             raise ValueError("Duplicate gate names are not allowed")
-        expected_web = "nim_cms" if self.cms_route == "NIM" else "wordpress"
-        other_web = "wordpress" if expected_web == "nim_cms" else "nim_cms"
-        if expected_web not in self.channels or other_web in self.channels:
-            raise ValueError("CMSRoute and web channel selection conflict")
-        if (
-            any(channel in self.channels for channel in ("facebook", "instagram"))
-            and expected_web not in self.channels
-        ):
-            raise ValueError("Social publication requires its canonical web channel")
+        web_channels = {"nim_cms", "wordpress"}
+        if self.cms_route == "NONE":
+            if web_channels.intersection(self.channels):
+                raise ValueError("CMSRoute NONE cannot contain a web channel")
+            if "instagram" in self.channels:
+                raise ValueError("Instagram publication requires a canonical web channel")
+        else:
+            expected_web = "nim_cms" if self.cms_route == "NIM" else "wordpress"
+            other_web = "wordpress" if expected_web == "nim_cms" else "nim_cms"
+            if expected_web not in self.channels or other_web in self.channels:
+                raise ValueError("CMSRoute and web channel selection conflict")
+            if "instagram" in self.channels and expected_web not in self.channels:
+                raise ValueError("Instagram publication requires its canonical web channel")
         if not self.cta.get("url") or not self.cta.get("label"):
             raise ValueError("Approved CTA label and URL are required")
         if (
@@ -130,6 +136,12 @@ class PublicationJobIn(BaseModel):
             and not self.visual_asset_package_id
         ):
             raise ValueError("VisualAssetPackageID is required")
+        if "nim_cms" in self.channels:
+            nim_payload = self.channel_payloads.get("nim_cms", {})
+            if not str(nim_payload.get("featured_image_id") or "").strip() and not isinstance(
+                nim_payload.get("image_factory"), dict
+            ):
+                raise ValueError("NIM featured_image_id or image_factory is required")
         if "wordpress" in self.channels:
             media = self.channel_payloads.get("wordpress", {}).get("media")
             if not isinstance(media, dict) or not str(media.get("url") or "").startswith("https://"):
@@ -137,9 +149,13 @@ class PublicationJobIn(BaseModel):
         for channel in ("facebook", "instagram"):
             if channel not in self.channels:
                 continue
-            image_url = str(self.channel_payloads.get(channel, {}).get("image_url") or "")
-            if not image_url.startswith("https://"):
-                raise ValueError(f"{channel} HTTPS image_url is required")
+            channel_payload = self.channel_payloads.get(channel, {})
+            image_url = str(channel_payload.get("image_url") or "")
+            image_factory = channel_payload.get("image_factory")
+            if not image_url.startswith("https://") and not (
+                channel == "facebook" and isinstance(image_factory, dict)
+            ):
+                raise ValueError(f"{channel} image_factory or HTTPS image_url is required")
         if set(self.channel_payloads) != set(self.channels):
             raise ValueError("channel_payloads must match the selected channels exactly")
         for channel, field in (("facebook", "message"), ("instagram", "caption")):

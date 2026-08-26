@@ -5,11 +5,12 @@ import ipaddress
 import json
 import re
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, time, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -22,22 +23,42 @@ from sqlalchemy.orm import Session
 from ..land_acquisition.registry import is_named_portal_host
 from .canonical_policy import (
     DAILY_ROUTE_ATTEMPT_MINIMUM,
+    DAILY_UNIQUE_LEAD_MINIMUM,
     SOURCE_LEDGER_ROUTE_COUNT,
     SOURCE_LEDGER_SHEET_ID,
     SOURCE_LEDGER_SPREADSHEET_ID,
     contains_no_monitoring_entity,
 )
-from .models import SourceCatalogRevision, SourceCoverageAttempt, SourceCoverageRoute
+from .models import GrowthSignal, SourceCatalogRevision, SourceCoverageAttempt, SourceCoverageRoute
 from .registry import GrowthRegistryError, settings
 
 BLOCKED_MARKERS = (
     "captcha",
     "access denied",
     "too many requests",
-    "bejelentkezés",
-    "jelentkezzen be",
     "paywall",
 )
+
+LOGIN_PATH_MARKERS = (
+    "/bejelentkezes",
+    "/bejelentkezés",
+    "/belepes",
+    "/belépés",
+    "/login",
+    "/sign-in",
+    "/signin",
+)
+
+QUESTION_SURFACE_ROUTE_OVERRIDES = {
+    # The canonical ledger keeps the marketplace homepages. These deterministic
+    # overlays point one route per surface at the public question/task listing,
+    # without removing the separate homepage coverage routes.
+    "SRC-0001": "https://joszaki.hu/szakivalaszol",
+    "SRC-0002": "https://qjob.hu/budapest/munka/epitesz-munka",
+    "EVB-06834": "https://qjob.hu/budapest/munka/epitomernok-allas",
+}
+
+DAILY_ROUTE_ATTEMPT_MAXIMUM = 2_000
 
 
 class UnsafeRouteError(ValueError):
@@ -83,22 +104,125 @@ def assert_public_https_url(url: str) -> str:
 
 
 class _VisibleText(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, base_url: str | None = None) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.hidden = 0
+        self.base_url = base_url
+        self.links: list[dict[str, str]] = []
+        self._href: str | None = None
+        self._anchor_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.casefold() in {"script", "style", "noscript", "svg"}:
             self.hidden += 1
+        elif tag.casefold() == "a" and not self.hidden:
+            self._href = next((value for key, value in attrs if key.casefold() == "href"), None)
+            self._anchor_parts = []
 
     def handle_endtag(self, tag: str) -> None:
         if tag.casefold() in {"script", "style", "noscript", "svg"} and self.hidden:
             self.hidden -= 1
+        elif tag.casefold() == "a" and self._href and self.base_url:
+            absolute = urljoin(self.base_url, self._href.strip())
+            parsed = urlparse(absolute)
+            base_host = (urlparse(self.base_url).hostname or "").casefold()
+            if (
+                parsed.scheme == "https"
+                and (parsed.hostname or "").casefold() == base_host
+                and len(absolute) <= 1500
+            ):
+                canonical = urlunparse(parsed._replace(fragment=""))
+                label = re.sub(r"\s+", " ", " ".join(self._anchor_parts)).strip()[:500]
+                if label and not any(item["url"] == canonical for item in self.links):
+                    self.links.append({"url": canonical, "label": label})
+            self._href = None
+            self._anchor_parts = []
 
     def handle_data(self, data: str) -> None:
         if not self.hidden:
             self.parts.append(data)
+            if self._href:
+                self._anchor_parts.append(data)
+
+
+class _QjobTaskCards(HTMLParser):
+    """Extract Qjob task cards whose permalink is stored on a div, not an anchor."""
+
+    _VOID_TAGS = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self, base_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.stack: list[str] = []
+        self.active_depth: int | None = None
+        self.active_href: str | None = None
+        self.active_parts: list[str] = []
+        self.links: list[dict[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        name = tag.casefold()
+        if name not in self._VOID_TAGS:
+            self.stack.append(name)
+        if self.active_depth is not None or name != "div":
+            return
+        values = {key.casefold(): value or "" for key, value in attrs}
+        href = values.get("href", "").strip()
+        classes = values.get("class", "").casefold().split()
+        if "work" not in classes or not re.fullmatch(r"/tasks/\d+/?", href):
+            return
+        self.active_depth = len(self.stack)
+        self.active_href = href
+        self.active_parts = []
+
+    def handle_endtag(self, tag: str) -> None:
+        name = tag.casefold()
+        if (
+            self.active_depth is not None
+            and name == "div"
+            and len(self.stack) == self.active_depth
+            and self.active_href
+        ):
+            absolute = urljoin(self.base_url, self.active_href)
+            parsed = urlparse(absolute)
+            base_host = (urlparse(self.base_url).hostname or "").casefold()
+            label = re.sub(r"\s+", " ", " ".join(self.active_parts)).strip()[:500]
+            if (
+                label
+                and parsed.scheme == "https"
+                and (parsed.hostname or "").casefold() == base_host
+            ):
+                canonical = urlunparse(parsed._replace(fragment=""))
+                if not any(item["url"] == canonical for item in self.links):
+                    self.links.append({"url": canonical, "label": label})
+            self.active_depth = None
+            self.active_href = None
+            self.active_parts = []
+        if self.stack:
+            if self.stack[-1] == name:
+                self.stack.pop()
+            elif name in self.stack:
+                reverse_index = self.stack[::-1].index(name)
+                del self.stack[len(self.stack) - reverse_index - 1 :]
+
+    def handle_data(self, data: str) -> None:
+        if self.active_depth is not None:
+            self.active_parts.append(data)
 
 
 def _visible_text(body_text: str, limit: int) -> str:
@@ -111,8 +235,97 @@ def _visible_text(body_text: str, limit: int) -> str:
     return re.sub(r"\s+", " ", value).strip()[:limit]
 
 
+def _page_evidence(
+    body_text: str, *, base_url: str, limit: int
+) -> tuple[str, list[dict[str, str]]]:
+    parser = _VisibleText(base_url)
+    try:
+        parser.feed(body_text)
+        value = " ".join(parser.parts)
+    except Exception:
+        return _visible_text(body_text, limit), []
+    text = re.sub(r"\s+", " ", value).strip()[:limit]
+    links = list(parser.links)
+    if (urlparse(base_url).hostname or "").casefold().endswith("qjob.hu"):
+        task_parser = _QjobTaskCards(base_url)
+        try:
+            task_parser.feed(body_text)
+        except Exception:
+            task_parser.links = []
+        task_urls = {item["url"] for item in task_parser.links}
+        # Task cards are the actionable evidence; navigation links only fill the
+        # remaining capacity after all concrete task permalinks.
+        links = task_parser.links + [item for item in links if item["url"] not in task_urls]
+    return text, links[:100]
+
+
+def _looks_like_blocked_response(
+    *, status_code: int, route_url: str, title: str | None, body_text: str, visible_text: str
+) -> bool:
+    if status_code in {401, 403, 407, 429, 451}:
+        return True
+    lowered_body = body_text.casefold()
+    if any(marker in lowered_body for marker in BLOCKED_MARKERS):
+        return True
+    path = urlparse(route_url).path.casefold().rstrip("/")
+    title_text = (title or "").casefold()
+    login_page = any(marker in path for marker in LOGIN_PATH_MARKERS)
+    login_language = any(
+        marker in f"{title_text} {visible_text.casefold()}"
+        for marker in ("bejelentkezés", "jelentkezzen be", "belépés", "log in", "sign in")
+    )
+    password_form = bool(
+        re.search(r"<input[^>]+type\s*=\s*[\"']?password\b", body_text, re.I)
+    )
+    # A login link in ordinary navigation is not an authentication wall. Treat
+    # it as blocking only when the requested URL is itself a login route, or a
+    # short page is dominated by a password form and login language.
+    return bool(
+        (login_page and (login_language or password_form))
+        or (password_form and login_language and len(visible_text) < 3_000)
+    )
+
+
 def _canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _paced_route_target(cfg: Any, local_now: datetime, start_local: datetime) -> int:
+    elapsed_minutes = max(0.0, (local_now - start_local).total_seconds() / 60)
+    handoff_hour, handoff_minute = (
+        int(part) for part in getattr(cfg, "canonical_internal_handoff_at", "18:30").split(":")
+    )
+    handoff_local = datetime.combine(
+        local_now.date(), time(handoff_hour, handoff_minute), local_now.tzinfo
+    )
+    if handoff_local <= start_local:
+        handoff_local += timedelta(days=1)
+    # Finish the minimum route coverage before the mandatory internal handoff,
+    # leaving a thirty-minute recovery window for slow sources.
+    pacing_deadline = max(
+        start_local + timedelta(hours=1), handoff_local - timedelta(minutes=30)
+    )
+    pacing_window_minutes = max(
+        60.0, (pacing_deadline - start_local).total_seconds() / 60
+    )
+    return min(
+        DAILY_ROUTE_ATTEMPT_MINIMUM,
+        max(
+            cfg.canonical_route_batch_size,
+            int(elapsed_minutes / pacing_window_minutes * DAILY_ROUTE_ATTEMPT_MINIMUM),
+        ),
+    )
+
+
+def _daily_route_target(
+    *, attempted_today: int, unique_leads_today: int, paced_minimum_target: int
+) -> int:
+    if (
+        attempted_today >= DAILY_ROUTE_ATTEMPT_MINIMUM
+        and unique_leads_today < DAILY_UNIQUE_LEAD_MINIMUM
+    ):
+        return DAILY_ROUTE_ATTEMPT_MAXIMUM
+    return paced_minimum_target
 
 
 def _text(value: Any, limit: int | None = None) -> str | None:
@@ -186,9 +399,10 @@ def _records(snapshot_path: str | Path) -> tuple[list[dict[str, Any]], str]:
 def _row(record: dict[str, Any], catalog_sha256: str, now: datetime) -> dict[str, Any]:
     canonical = _canonical_json(record)
     catalog_status = _text(record.get("Katalógusstátusz"), 120)
+    route_id = _text(record.get("RouteID"), 180)
     return {
         "route_key": _text(record.get("RouteKey"), 500),
-        "route_id": _text(record.get("RouteID"), 180),
+        "route_id": route_id,
         "catalog_sha256": catalog_sha256,
         "motor": _text(record.get("Motor"), 160),
         "catalog_part": _text(record.get("Katalógusrész"), 160),
@@ -198,7 +412,9 @@ def _row(record: dict[str, Any], catalog_sha256: str, now: datetime) -> dict[str
         "source_name": _text(record.get("Forrás neve"), 500),
         "source_type": _text(record.get("Forrástípus"), 120),
         "search_signal": _text(record.get("Keresési jel/kifejezés")),
-        "route_url": _text(record.get("Útvonal URL"), 3000),
+        "route_url": QUESTION_SURFACE_ROUTE_OVERRIDES.get(
+            route_id or "", _text(record.get("Útvonal URL"), 3000)
+        ),
         "base_url": _text(record.get("Alap URL"), 3000),
         "route_mode": _text(record.get("Útvonalmód"), 80),
         "priority": _text(record.get("Prioritás"), 80),
@@ -375,10 +591,20 @@ def _fetch(route: SourceCoverageRoute) -> dict[str, Any]:
     except httpx.HTTPError as exc:
         return {"status": "failed", "error_type": type(exc).__name__}
     body = bytes(content)
-    body_text = body[:200_000].decode("utf-8", errors="ignore")
-    lowered = body_text.casefold()
-    blocked = status_code in {401, 403, 407, 429, 451} or any(
-        marker in lowered for marker in BLOCKED_MARKERS
+    body_text = body.decode("utf-8", errors="ignore")
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", body_text, re.I | re.S)
+    title = re.sub(r"\s+", " ", title_match.group(1)).strip()[:500] if title_match else None
+    analysis_text, analysis_links = _page_evidence(
+        body_text,
+        base_url=route.route_url,
+        limit=getattr(cfg, "canonical_analysis_text_chars", 6000),
+    )
+    blocked = _looks_like_blocked_response(
+        status_code=status_code,
+        route_url=route.route_url,
+        title=title,
+        body_text=body_text,
+        visible_text=analysis_text,
     )
     if blocked or 300 <= status_code < 400:
         result_status = "blocked"
@@ -386,8 +612,6 @@ def _fetch(route: SourceCoverageRoute) -> dict[str, Any]:
         result_status = "succeeded"
     else:
         result_status = "failed"
-    title_match = re.search(r"<title[^>]*>(.*?)</title>", body_text, re.I | re.S)
-    title = re.sub(r"\s+", " ", title_match.group(1)).strip()[:500] if title_match else None
     return {
         "status": result_status,
         "http_status": status_code,
@@ -400,11 +624,8 @@ def _fetch(route: SourceCoverageRoute) -> dict[str, Any]:
         },
         # Transient only: the worker gives this bounded visible-text sample to the
         # evidence extractor, but never persists the full fetched page body.
-        "analysis_text": _visible_text(
-            body_text, getattr(cfg, "canonical_analysis_text_chars", 6000)
-        )
-        if result_status == "succeeded"
-        else "",
+        "analysis_text": analysis_text if result_status == "succeeded" else "",
+        "analysis_links": analysis_links if result_status == "succeeded" else [],
     }
 
 
@@ -426,17 +647,23 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         )
         or 0
     )
-    elapsed_minutes = max(0.0, (local_now - start_local).total_seconds() / 60)
-    paced_target = min(
-        DAILY_ROUTE_ATTEMPT_MINIMUM,
-        max(
-            cfg.canonical_route_batch_size,
-            int(elapsed_minutes / (18 * 60) * DAILY_ROUTE_ATTEMPT_MINIMUM),
-        ),
+    unique_leads_today = int(
+        db.scalar(
+            select(func.count())
+            .select_from(GrowthSignal)
+            .where(GrowthSignal.created_at >= start_utc)
+        )
+        or 0
+    )
+    paced_minimum_target = _paced_route_target(cfg, local_now, start_local)
+    paced_target = _daily_route_target(
+        attempted_today=attempted_today,
+        unique_leads_today=unique_leads_today,
+        paced_minimum_target=paced_minimum_target,
     )
     allowance = min(
         cfg.canonical_route_batch_size,
-        DAILY_ROUTE_ATTEMPT_MINIMUM - attempted_today,
+        DAILY_ROUTE_ATTEMPT_MAXIMUM - attempted_today,
         paced_target - attempted_today,
     )
     if allowance <= 0:
@@ -444,6 +671,8 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
             "status": "on_pace",
             "attempted": 0,
             "attempted_today": attempted_today,
+            "unique_leads_today": unique_leads_today,
+            "daily_lead_target_met": unique_leads_today >= DAILY_UNIQUE_LEAD_MINIMUM,
             "paced_target": paced_target,
         }
     candidates = db.scalars(
@@ -474,11 +703,21 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         selected.append(route)
         if len(selected) >= allowance:
             break
-    outcomes: dict[str, int] = {}
-    for route in selected:
+    def fetch_timed(route: SourceCoverageRoute):
         started = datetime.now(UTC)
         result = _fetch(route)
         completed = datetime.now(UTC)
+        return started, result, completed
+
+    if selected:
+        with ThreadPoolExecutor(max_workers=min(8, len(selected))) as executor:
+            fetched = list(executor.map(fetch_timed, selected))
+    else:
+        fetched = []
+
+    outcomes: dict[str, int] = {}
+    # Persist and extract evidence on the owning SQLAlchemy thread only.
+    for route, (started, result, completed) in zip(selected, fetched, strict=True):
         status = str(result["status"])
         attempt = SourceCoverageAttempt(
             attempt_id=f"SCA-{uuid4().hex[:20].upper()}",
@@ -497,7 +736,13 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         if status == "succeeded" and getattr(cfg, "canonical_processing_enabled", False):
             from .processing import process_source_attempt
 
-            process_source_attempt(db, route=route, attempt=attempt, text=result["analysis_text"])
+            process_source_attempt(
+                db,
+                route=route,
+                attempt=attempt,
+                text=result["analysis_text"],
+                link_candidates=result.get("analysis_links") or [],
+            )
         elif status != "succeeded":
             attempt.analysis_status = "skipped"
         route.attempt_count += 1
@@ -516,6 +761,8 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         "status": "attempted" if selected else "no_due_routes",
         "attempted": len(selected),
         "attempted_today": attempted_today + len(selected),
+        "unique_leads_today": unique_leads_today,
+        "daily_lead_target_met": unique_leads_today >= DAILY_UNIQUE_LEAD_MINIMUM,
         "paced_target": paced_target,
         "outcomes": outcomes,
     }

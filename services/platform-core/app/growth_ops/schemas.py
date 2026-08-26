@@ -24,6 +24,22 @@ class GrowthSignalIn(BaseModel):
     recipient_office_name: str | None = Field(default=None, max_length=500)
     subject_type: Literal["organization", "natural_person"]
     recipient_role: Literal["listing_agent", "property_owner", "unknown"] = "unknown"
+    recipient_type: Literal[
+        "architect_office",
+        "land_owner",
+        "real_estate_agent",
+        "referral_partner",
+        "unknown",
+    ] = "unknown"
+    recipient_name: str | None = Field(default=None, max_length=500)
+    sender_company_name: str | None = Field(default=None, max_length=500)
+    reference_names: list[str] = Field(default_factory=list, max_length=3)
+    reference_names_verified: bool = False
+    business_context: str | None = Field(default=None, max_length=500)
+    business_context_verified: bool = False
+    business_context_evidence_url: str | None = Field(default=None, max_length=1500)
+    recipient_classification_verified: bool = False
+    exclusion_screening_verified: bool = False
     recipient_email: str | None = Field(default=None, max_length=320)
     recipient_email_type: Literal["role", "named", "unknown", "none"] = "none"
     contact_basis: Literal[
@@ -51,6 +67,22 @@ class GrowthSignalIn(BaseModel):
         normalized = value.strip().lower()
         if not EMAIL_RE.fullmatch(normalized):
             raise ValueError("Invalid recipient email address")
+        return normalized
+
+    @field_validator("recipient_name", "sender_company_name", "business_context")
+    @classmethod
+    def optional_names_are_clean(cls, value: str | None) -> str | None:
+        normalized = " ".join(str(value or "").split())
+        return normalized or None
+
+    @field_validator("reference_names")
+    @classmethod
+    def reference_names_are_clean(cls, values: list[str]) -> list[str]:
+        normalized = [" ".join(str(value or "").split()) for value in values]
+        if any(not value for value in normalized):
+            raise ValueError("Reference names cannot be empty")
+        if len(set(value.casefold() for value in normalized)) != len(normalized):
+            raise ValueError("Reference names must be unique")
         return normalized
 
     @model_validator(mode="after")
@@ -88,6 +120,26 @@ class GrowthSignalIn(BaseModel):
             raise ValueError("Building-plot recipient role is required")
         if not self.evidence_url.startswith("https://"):
             raise ValueError("Evidence URL must use HTTPS")
+        if self.recipient_type == "architect_office" and len(self.reference_names) not in {
+            0,
+            2,
+            3,
+        }:
+            raise ValueError("Architect references must contain zero, two or three items")
+        if self.reference_names and not self.reference_names_verified:
+            raise ValueError("Architect references must be explicitly verified")
+        if self.recipient_type != "architect_office" and self.reference_names:
+            raise ValueError("References are only allowed for architect-office outreach")
+        if self.business_context_evidence_url and not self.business_context_evidence_url.startswith(
+            "https://"
+        ):
+            raise ValueError("Business-context evidence URL must use HTTPS")
+        if self.recipient_type != "referral_partner" and (
+            self.business_context
+            or self.business_context_verified
+            or self.business_context_evidence_url
+        ):
+            raise ValueError("Business context is only allowed for referral-partner outreach")
         return self
 
 
@@ -123,3 +175,26 @@ class OutreachReleaseIn(BaseModel):
     approved_by: str = Field(min_length=3, max_length=255)
     inspected_payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     approval_note: str = Field(min_length=10, max_length=2000)
+
+
+class CanonicalFirstContactRenderIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recipient_type: Literal[
+        "architect_office",
+        "land_owner",
+        "real_estate_agent",
+        "referral_partner",
+        "unknown",
+    ]
+    recipient_name: str | None = Field(default=None, max_length=500)
+    sender_company_name: str | None = Field(default=None, max_length=500)
+    reference_names: list[str] = Field(default_factory=list, max_length=3)
+    reference_names_verified: bool = False
+    business_context: str | None = Field(default=None, max_length=500)
+    business_context_verified: bool = False
+    business_context_evidence_url: str | None = Field(default=None, max_length=1500)
+    unsubscribe_url: str | None = Field(default=None, max_length=2000)
+    recipient_classification_verified: bool
+    exclusion_screening_verified: bool
+    screening_values: list[str] = Field(default_factory=list, max_length=50)

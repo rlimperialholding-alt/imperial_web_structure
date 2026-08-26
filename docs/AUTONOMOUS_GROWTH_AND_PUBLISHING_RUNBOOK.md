@@ -11,7 +11,7 @@ failed sender verification or absent kill-switch approval must never be reported
 | Construction acquisition | hourly | `growth-ops-worker` → managed HTTPS sources → `growth_signals` → outreach outbox | all six source buckets; attempted/succeeded/raw/schema-rejected/accepted/queued counts; at least 300 raw signals reviewed daily |
 | ExitFlow–Veritas–BauShield | hourly | same worker and outbox, canonical signal-to-brand routing | liquidation, bankruptcy, enforcement, officer/seat change and construction-dispute baskets |
 | IVS target engine | daily after 08:00 Europe/Budapest | same scheduler; existing engine is represented as a managed source | source contract and current policy evidence |
-| Content publication | daily jobs from Content Factory | `autonomous-publishing-worker` → web first → readback → social → attribution | all mandatory content/claim/legal/visual/security/channel gates and release-token binding |
+| Content publication | daily jobs from Content Factory | `growth-ops-worker` → independent available web/Facebook routes → per-channel readback | all mandatory content/claim/legal/visual/security/channel gates and release-token binding |
 
 The 50 Hungarian opportunities figure is a goal, not a quota. EKR/TED procurement notices
 must not be converted into leads merely to meet it. Source connectors count raw records before
@@ -37,8 +37,9 @@ leads.
   instead of retried, preventing an acceptance-timeout from causing duplicate mail.
 - Every external source is registry-bound to a motor and basket, HTTPS-only, host-allowlisted,
   response-size-limited and backed by non-expired policy evidence.
-- Publishing is web-first. Social and attribution channels run only after canonical web readback.
-  Partial failure invokes reverse-order rollback and creates an auditable exception.
+- Content Factory evaluates web and Facebook independently. A missing route is recorded as
+  skipped and never blocks an available route; every queued channel still requires its own
+  successful public readback. A failed channel creates an auditable exception for that channel.
 - Facebook and Instagram variants require 3–8 hashtags. Forum output remains draft-only unless
   an official API and current platform-policy evidence are registered.
 - WordPress uses a per-integration Application Password over HTTPS rather than a user's primary
@@ -88,8 +89,9 @@ publishing permissions only in the managed Meta secret.
    growth worker and then the gateway. Verify internal and public health plus recent logs.
 6. Install the server-managed registries and mode-0600 secrets. Register matching verified
    sending-domain rows. Check the internal readiness endpoints.
-7. Canary one synthetic, owned recipient per brand and one staging publication per channel.
-   Verify the public result/readback, delivery receipt, audit event, suppression and rollback.
+7. Canary one synthetic, owned recipient per brand and one staging publication for each actually
+   available route. Verify the public result/readback, image, delivery receipt, audit event,
+   suppression and rollback. Record unavailable routes as skipped; do not invent a route.
 8. Only after canary proof, change the relevant kill-switch to `ALLOW_APPROVED_WRITES` and enable
    the feature. Keep forum mode draft-only until its separate policy gate passes.
 

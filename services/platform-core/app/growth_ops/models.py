@@ -67,7 +67,7 @@ class GrowthSignal(Base):
         ),
         CheckConstraint(
             "status IN ('accepted','rejected','blocked','queued',"
-            "'contacted','responded','suppressed')",
+            "'contacted','responded','suppressed','template-variable-missing')",
             name="ck_growth_signal_status",
         ),
         CheckConstraint("score >= 0 AND score <= 100", name="ck_growth_signal_score"),
@@ -262,6 +262,38 @@ class QuestionRadarTopic(Base):
     classification: Mapped[str] = mapped_column(String(40), default="observed")
     dedupe_hash: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class QuestionRadarAnswer(Base):
+    __tablename__ = "question_radar_answers"
+    __table_args__ = (
+        UniqueConstraint("topic_id", name="uq_question_radar_answer_topic"),
+        CheckConstraint(
+            "status IN ('ineligible','quarantined','release_ready','channel_blocked','published','failed')",
+            name="ck_question_radar_answer_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    answer_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    topic_id: Mapped[str] = mapped_column(String(120), index=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    brand_id: Mapped[str] = mapped_column(String(120), index=True)
+    source_url: Mapped[str | None] = mapped_column(String(1500))
+    source_host: Mapped[str | None] = mapped_column(String(500), index=True)
+    disclosure_text: Mapped[str | None] = mapped_column(Text)
+    answer_text: Mapped[str | None] = mapped_column(Text)
+    answer_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(30), index=True)
+    eligibility_json: Mapped[str] = mapped_column(Text, default="{}")
+    review_manifest_json: Mapped[str] = mapped_column(Text, default="{}")
+    publication_job_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    public_url: Mapped[str | None] = mapped_column(String(1500))
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 class CanonicalLLMUsage(Base):

@@ -3,13 +3,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import http.client
 import io
 import json
+import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, urljoin, urlparse
 from uuid import uuid4
 
 from PIL import Image
@@ -54,6 +58,58 @@ def json_response(response) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise AdapterError("adapter response must be a JSON object")
     return body
+
+
+def _image_factory_asset(
+    payload: dict[str, Any], *, default_role: str
+) -> tuple[bytes, str, str]:
+    reference = payload.get("image_factory")
+    if not isinstance(reference, dict):
+        raise AdapterError("Image Factory asset reference is missing")
+    job_id = str(reference.get("job_id") or "")
+    role = str(reference.get("role") or default_role)
+    expected_sha256 = str(reference.get("sha256") or "")
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", job_id):
+        raise AdapterError("Image Factory job ID is invalid")
+    if role not in {"web_hero", "open_graph", "square", "facebook"}:
+        raise AdapterError("Image Factory asset role is invalid")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        raise AdapterError("Image Factory expected SHA-256 is invalid")
+    token = os.getenv("IMAGE_FACTORY_API_TOKEN", "").strip()
+    if len(token) < 32:
+        raise AdapterError("Image Factory API token is missing")
+    host = os.getenv("CONTENT_IMAGE_FACTORY_HOST", "image-factory").strip()
+    port = int(os.getenv("CONTENT_IMAGE_FACTORY_PORT", "8000"))
+    connection = http.client.HTTPConnection(host, port, timeout=30)
+    try:
+        connection.request(
+            "GET",
+            f"/api/v1/jobs/{job_id}/assets/{role}",
+            headers={"X-API-Key": token, "Accept": "image/*"},
+        )
+        response = connection.getresponse()
+        raw = response.read(25 * 1024 * 1024 + 1)
+        headers = {key.casefold(): value for key, value in response.getheaders()}
+    finally:
+        connection.close()
+    if response.status != 200:
+        raise AdapterError(f"Image Factory asset download failed: HTTP {response.status}")
+    if len(raw) > 25 * 1024 * 1024:
+        raise AdapterError("Image Factory asset exceeds the size limit")
+    actual_sha256 = hashlib.sha256(raw).hexdigest()
+    if actual_sha256 != expected_sha256 or headers.get("x-content-sha256") != expected_sha256:
+        raise AdapterError("Image Factory asset SHA-256 verification failed")
+    if headers.get("x-release-state") != "TEST_ONLY_REVIEW_REQUIRED":
+        raise AdapterError("Image Factory release state is invalid")
+    media_type = headers.get("content-type", "").split(";", 1)[0].casefold()
+    if media_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise AdapterError("Image Factory asset MIME type is invalid")
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            image.verify()
+    except Exception as exc:
+        raise AdapterError("Image Factory asset is not a valid image") from exc
+    return raw, media_type, actual_sha256
 
 
 class BaseAdapter:
@@ -292,6 +348,385 @@ class NIMAdapter(BaseAdapter):
         if bool(data.get(enabled_field)):
             raise ReadbackError("NIM rollback readback still reports enabled")
         return data
+
+
+class _NIMAdminEditParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.values: dict[str, str] = {}
+        self.selected: dict[str, str] = {}
+        self.options: dict[str, list[str]] = {}
+        self.current_textarea: str | None = None
+        self.current_select: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        tag = tag.casefold()
+        name = str(values.get("name") or "")
+        if tag == "input" and name:
+            self.values[name] = str(values.get("value") or "")
+        elif tag == "textarea" and name:
+            self.current_textarea = name
+            self.values[name] = ""
+        elif tag == "select" and name:
+            self.current_select = name
+        elif tag == "option" and self.current_select:
+            option = str(values.get("value") or "")
+            self.options.setdefault(self.current_select, []).append(option)
+            if "selected" in values:
+                self.selected[self.current_select] = option
+
+    def handle_data(self, data: str) -> None:
+        if self.current_textarea:
+            self.values[self.current_textarea] += data
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.casefold()
+        if tag == "textarea":
+            self.current_textarea = None
+        elif tag == "select":
+            self.current_select = None
+
+
+class NIMAdminSessionAdapter(BaseAdapter):
+    """Verified legacy NIM admin-session route with live readback and rollback."""
+
+    channel = "nim_cms"
+    REQUIRED_CONFIG_KEYS = {
+        "base_url",
+        "login_submit_path",
+        "create_path",
+        "read_path",
+        "disable_path",
+        "default_category_id",
+    }
+
+    @staticmethod
+    def _origin(value: str) -> str:
+        parsed = urlparse(value)
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    def preflight(self, job: PublicationJobIn) -> None:
+        super().preflight(job)
+        if self.binding.config.get("mode") != "admin_session_live":
+            raise RegistryError("NIM admin-session mode is not live")
+        if self.REQUIRED_CONFIG_KEYS - set(self.binding.config):
+            raise RegistryError("verified NIM admin-session contract is incomplete")
+        if not all(self.binding.secret.get(name) for name in ("login_url", "username", "password")):
+            raise RegistryError("NIM admin-session credentials are incomplete")
+        if self._origin(str(self.binding.secret["login_url"])) != self._origin(
+            str(self.binding.config["base_url"])
+        ):
+            raise RegistryError("NIM login origin does not match the bound site")
+        payload = job.channel_payloads.get(self.channel, {})
+        if payload.get("publish_live") is not True:
+            raise RegistryError("NIM admin-session route requires explicit live publication")
+        if not str(payload.get("featured_image_id") or "").strip() and not isinstance(
+            payload.get("image_factory"), dict
+        ):
+            raise RegistryError(
+                "NIM live publication requires a featured image because the public article template fails without one"
+            )
+        if set(job.channels) != {self.channel}:
+            raise RegistryError("NIM live publication must be a standalone channel job")
+        category_id = str(self.binding.config["default_category_id"])
+        if not category_id.isdigit() or int(category_id) < 1:
+            raise RegistryError("NIM default category ID is invalid")
+
+    def _login(self, job: PublicationJobIn, key: str) -> None:
+        login_url = str(self.binding.secret["login_url"])
+        self.client.request(
+            self.channel,
+            "GET",
+            login_url,
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-admin-login-form",
+            idempotency_key=key,
+        )
+        response = self.client.request(
+            self.channel,
+            "POST",
+            urljoin(
+                str(self.binding.config["base_url"]),
+                str(self.binding.config["login_submit_path"]),
+            ),
+            data={
+                "params[email]": str(self.binding.secret["username"]),
+                "params[password]": str(self.binding.secret["password"]),
+                "redirect": "/admin_site",
+            },
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-admin-login",
+            idempotency_key=key,
+        )
+        if "params[password]" in response.text:
+            raise AdapterError("NIM admin-session login was not accepted")
+
+    def _load_article_form(self, job: PublicationJobIn, key: str) -> None:
+        response = self.client.request(
+            self.channel,
+            "GET",
+            urljoin(str(self.binding.config["base_url"]), "/admin_article/add"),
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-admin-add-form",
+            idempotency_key=key,
+        )
+        parser = _NIMAdminEditParser()
+        parser.feed(response.text)
+        if "params[hu_HU]" not in parser.values:
+            raise AdapterError("NIM admin article form is not available")
+        configured_category = str(self.binding.config.get("default_category_id") or "")
+        # NIM loads primary-category options through JavaScript after the initial
+        # form response, so absence from this static HTML is not evidence that the
+        # configured category is invalid. Registry preflight already validates the
+        # configured numeric ID; retain it here.
+        category = configured_category
+        authors = [
+            value for value in parser.options.get("params[user_public]", []) if value
+        ]
+        configured_author = str(self.binding.config.get("default_author_id") or "")
+        author = configured_author if configured_author in authors else (authors[0] if authors else "")
+        self._article_form_defaults = {"category": category, "author": author}
+
+    def _upload_featured_image(self, job: PublicationJobIn, key: str) -> str:
+        channel_payload = job.channel_payloads[self.channel]
+        existing = str(channel_payload.get("featured_image_id") or "").strip()
+        if existing:
+            return existing
+        raw, media_type, content_sha256 = _image_factory_asset(
+            channel_payload, default_role="web_hero"
+        )
+        suffix = ".png" if media_type == "image/png" else ".webp" if media_type == "image/webp" else ".jpg"
+        safe_asset = re.sub(r"[^a-z0-9-]+", "-", job.content_asset_id.casefold()).strip("-")
+        filename = f"content-factory-{safe_asset[:80]}-{content_sha256[:12]}{suffix}"
+        relative_path = f"content/{filename}"
+        public_url = urljoin(str(self.binding.config["base_url"]), relative_path)
+        try:
+            existing_response = self.client.request(
+                self.channel,
+                "GET",
+                public_url,
+                correlation_id=job.correlation_id,
+                request_id=f"{job.job_id}-nim-image-existing",
+                idempotency_key=key,
+            )
+        except PublishingHttpError as exc:
+            if exc.status != 404:
+                raise
+        else:
+            if hashlib.sha256(existing_response.content).hexdigest() == content_sha256:
+                return relative_path
+            raise AdapterError("NIM image path already exists with different content")
+        upload = self.client.request(
+            self.channel,
+            "POST",
+            urljoin(str(self.binding.config["base_url"]), "/admin_filemanager/upload"),
+            data={"dir": "content"},
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": urljoin(
+                    str(self.binding.config["base_url"]), "/admin_filemanager/dialog"
+                ),
+                "Origin": str(self.binding.config["base_url"]).rstrip("/"),
+            },
+            files={"file": (filename, raw, media_type)},
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-image-upload",
+            idempotency_key=sha({"key": key, "image_sha256": content_sha256}),
+        )
+        if upload.status_code != 200:
+            raise AdapterError("NIM image upload was not accepted")
+        verify = self.client.request(
+            self.channel,
+            "GET",
+            public_url,
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-image-verify",
+            idempotency_key=key,
+        )
+        if hashlib.sha256(verify.content).hexdigest() != content_sha256:
+            raise AdapterError("NIM uploaded image SHA-256 verification failed")
+        return relative_path
+
+    def _article_payload(self, job: PublicationJobIn) -> dict[str, Any]:
+        channel_payload = job.channel_payloads[self.channel]
+        defaults = getattr(self, "_article_form_defaults", {})
+        return {
+            "redirect": urljoin(str(self.binding.config["base_url"]), "/admin_article/add"),
+            # NIM's save_new endpoint fails with HTTP 500 when a record is
+            # created enabled. Create it disabled, then use the admin enable
+            # endpoint once the exact new ID has been discovered.
+            "params[enable]": "0",
+            # The legacy NIM form renders these SEO/language selects with empty
+            # values. Sending synthetic values makes save_new fail with HTTP 500.
+            "params[language]": "",
+            "params[hu_HU]": job.title,
+            "params[hu_HU_url]": job.canonical_slug,
+            "params[hu_HU_title]": job.seo_title or job.title,
+            "params[hu_HU_text]": job.body_html,
+            "params[hu_HU_metadescription]": job.meta_description or job.excerpt,
+            "params[hu_HU_customscript]": "",
+            "params[hu_HU_robots_type]": "",
+            "params[hu_HU_robots]": "",
+            "params[hu_HU_canonical]": job.canonical_url or "",
+            "params[categorie]": str(defaults.get("category") or ""),
+            "params[categories]": "",
+            "params[categories][]": "",
+            "params[user_public]": str(defaults.get("author") or ""),
+            "params[date_public]": datetime.now(UTC).date().isoformat(),
+            "params[date_start]": "",
+            "params[date_end]": "",
+            "params[image]": str(
+                getattr(self, "_uploaded_featured_image_id", "")
+                or channel_payload.get("featured_image_id")
+                or ""
+            ),
+            "params[related][]": "",
+            "params[labels]": "",
+            "params[labels][]": "",
+            "params[images]": "",
+            "params[images][]": "",
+        }
+
+    def _find_created_article_id(self, job: PublicationJobIn, key: str) -> str:
+        search_url = urljoin(
+            str(self.binding.config["base_url"]),
+            f"/admin_article/page?key={quote(job.canonical_slug)}",
+        )
+        response = self.client.request(
+            self.channel,
+            "GET",
+            search_url,
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-admin-created-lookup",
+            idempotency_key=key,
+        )
+        for row in re.findall(r"<tr\b[^>]*>.*?</tr>", response.text, flags=re.I | re.S):
+            if job.canonical_slug not in row:
+                continue
+            match = re.search(r"/admin_article/(?:edit/)?(\d+)(?:[/?#\"']|$)", row)
+            if not match:
+                match = re.search(
+                    r"name=[\"']id[\"'][^>]*value=[\"'](\d+)[\"']",
+                    row,
+                    flags=re.I,
+                )
+            if match:
+                return match.group(1)
+        raise AdapterError("NIM admin creation succeeded without a discoverable article ID")
+
+    def _readback_live(self, job: PublicationJobIn, external_id: str) -> AdapterResult:
+        path = str(self.binding.config["read_path"]).format(external_id=quote(external_id))
+        response = self.client.request(
+            self.channel,
+            "GET",
+            urljoin(str(self.binding.config["base_url"]), path),
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-admin-live-readback",
+            idempotency_key=job.idempotency_key,
+        )
+        parser = _NIMAdminEditParser()
+        parser.feed(response.text)
+        if parser.values.get("params[hu_HU]", "").strip() != job.title.strip():
+            raise ReadbackError("NIM admin live title mismatch")
+        if parser.values.get("params[hu_HU_url]", "").strip() != job.canonical_slug:
+            raise ReadbackError("NIM admin live slug mismatch")
+        if parser.values.get("params[hu_HU_text]", "").strip() != job.body_html.strip():
+            raise ReadbackError("NIM admin live body mismatch")
+        if parser.selected.get("params[enable]") != "1":
+            raise ReadbackError("NIM article is not enabled")
+        admin_url = urljoin(str(self.binding.config["base_url"]), path)
+        public_prefix = str(self.binding.config.get("public_path_prefix") or "/blog/")
+        public_url = urljoin(
+            str(self.binding.config["base_url"]),
+            f"{public_prefix.rstrip('/')}/{job.canonical_slug}",
+        )
+        public_response = self.client.request(
+            self.channel,
+            "GET",
+            public_url,
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-public-readback",
+            idempotency_key=job.idempotency_key,
+        )
+        if job.title not in public_response.text:
+            raise ReadbackError("NIM public page title is not visible")
+        featured_image_present = bool(parser.values.get("params[image]", "").strip())
+        return AdapterResult(
+            external_id=external_id,
+            public_url=public_url,
+            admin_url=admin_url,
+            content_hash=job.content_hash,
+            canonical_url=public_url,
+            readback={
+                "draft_only": False,
+                "enabled": True,
+                "title_verified": True,
+                "slug_verified": True,
+                "body_verified": True,
+                "public_title_verified": True,
+                "featured_image_present": featured_image_present,
+                "image_required_followup": not featured_image_present,
+            },
+            published_at=datetime.now(UTC),
+        )
+
+    def publish(self, job: PublicationJobIn, key: str) -> AdapterResult:
+        self.preflight(job)
+        self._login(job, key)
+        self._uploaded_featured_image_id = self._upload_featured_image(job, key)
+        self._load_article_form(job, key)
+        response = self.client.request(
+            self.channel,
+            "POST",
+            urljoin(
+                str(self.binding.config["base_url"]),
+                str(self.binding.config["create_path"]),
+            ),
+            data=self._article_payload(job),
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-admin-create-live",
+            idempotency_key=key,
+        )
+        location = str(response.headers.get("Location") or "")
+        match = re.search(r"/admin_article/(?:edit/)?(\d+)(?:[/?#]|$)", location)
+        if not match:
+            match = re.search(r"admin_article/(?:edit/)?(\d+)", response.text)
+        external_id = match.group(1) if match else self._find_created_article_id(job, key)
+        self.client.request(
+            self.channel,
+            "POST",
+            urljoin(str(self.binding.config["base_url"]), str(self.binding.config["disable_path"])),
+            data={
+                "id": external_id,
+                "value": "1",
+                "redirect": urljoin(
+                    str(self.binding.config["base_url"]),
+                    str(self.binding.config["read_path"]).format(external_id=external_id),
+                ),
+            },
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-admin-enable-live",
+            idempotency_key=key,
+        )
+        return self._readback_live(job, external_id)
+
+    def rollback(self, job: PublicationJobIn, result: AdapterResult, reason: str) -> dict[str, Any]:
+        response = self.client.request(
+            self.channel,
+            "POST",
+            urljoin(str(self.binding.config["base_url"]), str(self.binding.config["disable_path"])),
+            data={"id": result.external_id, "value": "0", "redirect": "/admin_article"},
+            correlation_id=job.correlation_id,
+            request_id=f"{job.job_id}-nim-admin-disable",
+            idempotency_key=job.idempotency_key,
+        )
+        return {
+            "rollback_id": f"RB-{uuid4().hex}",
+            "readback": {"disabled": True, "response_received": response is not None},
+            "action": "disabled_live_article",
+            "reason": reason,
+        }
 
 
 class WordPressAdapter(BaseAdapter):
@@ -570,16 +1005,47 @@ class MetaAdapter(BaseAdapter):
         self.preflight(job)
         payload = job.channel_payloads.get(self.channel, {})
         canonical = job.canonical_url
-        if not canonical or not canonical.startswith("https://"):
-            raise AdapterError("Verified canonical web URL is required before social publish")
         if self.channel == "facebook":
             page_id = str(self.binding.config["page_id"])
+            message = str(payload.get("message") or job.excerpt)
+            if canonical and canonical not in message:
+                message = f"{message}\n\n{canonical}"
+            if isinstance(payload.get("image_factory"), dict):
+                raw, media_type, content_sha256 = _image_factory_asset(
+                    payload, default_role="facebook"
+                )
+                suffix = (
+                    ".png"
+                    if media_type == "image/png"
+                    else ".webp"
+                    if media_type == "image/webp"
+                    else ".jpg"
+                )
+                created = json_response(
+                    self.client.request(
+                        self.channel,
+                        "POST",
+                        self._url(f"{quote(page_id)}/photos"),
+                        data=self._auth({"message": message, "published": True}),
+                        files={
+                            "source": (
+                                f"{job.content_asset_id}-{content_sha256[:12]}{suffix}",
+                                raw,
+                                media_type,
+                            )
+                        },
+                        correlation_id=job.correlation_id,
+                        request_id=f"{job.job_id}-facebook-photo-publish",
+                        idempotency_key=key,
+                    )
+                )
+                external_id = str(created.get("post_id") or created.get("id") or "")
+                if not external_id:
+                    raise AdapterError("Facebook photo publish did not return object ID")
+                return self._readback(job, external_id)
             image_url = str(payload.get("image_url") or "")
             if not image_url.startswith("https://"):
-                raise AdapterError("Facebook HTTPS image_url is required")
-            message = str(payload.get("message") or job.excerpt)
-            if canonical not in message:
-                message = f"{message}\n\n{canonical}"
+                raise AdapterError("Facebook image_factory or HTTPS image_url is required")
             created = json_response(
                 self.client.request(
                     self.channel,
@@ -599,6 +1065,8 @@ class MetaAdapter(BaseAdapter):
             )
             external_id = str(created.get("post_id") or created.get("id") or "")
         else:
+            if not canonical or not canonical.startswith("https://"):
+                raise AdapterError("Verified canonical web URL is required before Instagram publish")
             account_id = str(self.binding.config["instagram_account_id"])
             image_url = str(payload.get("image_url") or "")
             if not image_url.startswith("https://"):
@@ -773,6 +1241,8 @@ class ForumDraftAdapter(BaseAdapter):
 
 def build_adapter(binding: Binding, client: ProductionHttpClient) -> BaseAdapter:
     if binding.channel == "nim_cms":
+        if binding.config.get("mode") == "admin_session_live":
+            return NIMAdminSessionAdapter(binding, client)
         return NIMAdapter(binding, client)
     if binding.channel == "wordpress":
         return WordPressAdapter(binding, client)

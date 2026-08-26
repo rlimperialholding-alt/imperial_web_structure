@@ -1,0 +1,254 @@
+{
+  "schema_version": "1.0",
+  "registry_id": "IMPERIAL_CANONICAL_FIRST_CONTACT_TEMPLATES_HU",
+  "registry_version": 2,
+  "locale": "hu-HU",
+  "status": [
+    "OWNER_APPROVED",
+    "CANONICAL"
+  ],
+  "origin": "HUMAN_AUTHORED_LOCKED",
+  "human_author_id": "owner-user",
+  "ai_modification_allowed": false,
+  "server_runtime_path": "/opt/imperial-intelligence/config/outbound/canonical_first_contact_templates_hu_v1.json",
+  "fallback_policy": "PROHIBITED",
+  "generic_copy_override_policy": "PROHIBITED",
+  "selection_pipeline": [
+    "HARD_GATES",
+    "RECIPIENT_CLASSIFICATION_VERIFIED",
+    "EXCLUSION_SCREENING_VERIFIED",
+    "REFERENCES_VERIFIED_OR_APPROVED_ZERO_REFERENCE_FALLBACK",
+    "VERIFIED_BUSINESS_CONTEXT_REQUIRED_FOR_REFERRAL_PARTNER",
+    "RECIPIENT_TYPE_EXACT_MATCH",
+    "CANONICAL_TEMPLATE_RENDER"
+  ],
+  "classification_policy": {
+    "unknown_recipient_type": "NO_SEND",
+    "uncertain_land_owner_vs_real_estate_agent": "NO_SEND",
+    "missing_classification_verification": "NO_SEND",
+    "missing_exclusion_screening_verification": "NO_SEND"
+  },
+  "hard_gates": [
+    {
+      "gate_id": "BLOCK_TURCZER_JOZSEF",
+      "decision": "NO_SEND",
+      "scope": "ALL_CONTACTS",
+      "normalized_any": [
+        "turczer jozsef"
+      ]
+    },
+    {
+      "gate_id": "BLOCK_OTTHON_CENTRUM_BUDAPEST_II_IIA_XII",
+      "decision": "NO_SEND",
+      "scope": "OFFICES_AND_ALL_CONTACTS",
+      "normalized_all_any": [
+        [
+          "otthon centrum",
+          "oc ingatlan"
+        ],
+        [
+          "budapest ii kerulet",
+          "budapest ii",
+          "ii kerulet",
+          "2 kerulet",
+          "budapest iia",
+          "iia kerulet",
+          "2a kerulet",
+          "budapest xii kerulet",
+          "budapest xii",
+          "xii kerulet",
+          "12 kerulet"
+        ]
+      ]
+    },
+    {
+      "gate_id": "BLOCK_GDN_INGATLANHALOZAT",
+      "decision": "NO_SEND",
+      "scope": "FULL_NETWORK_AND_ALL_CONTACTS",
+      "normalized_word_any": [
+        "gdn"
+      ],
+      "normalized_any": [
+        "gdn ingatlanhalozat",
+        "gdn ingatlan"
+      ]
+    }
+  ],
+  "templates": [
+    {
+      "template_id": "ARCHITECT_OFFICE_FIRST_CONTACT_HU",
+      "recipient_type": "architect_office",
+      "recipient_condition": "recipient_type == 'architect_office' AND recipient_classification_verified == true AND exclusion_screening_verified == true",
+      "status": [
+        "OWNER_APPROVED",
+        "CANONICAL"
+      ],
+      "origin": "HUMAN_AUTHORED_LOCKED",
+      "ai_modification_allowed": false,
+      "sender_brand_id": "imperial",
+      "subject": "együttműködés",
+      "subject_status": "OWNER_APPROVED",
+      "subject_sha256_utf8": "906da7ca17aa2f81d7db42ccf826db301ab498a5984c0408197f76731e3071bb",
+      "owner_approved_body_text": "Tisztelt XY!\n\nAzért kerestük fel az Ön irodáját, mert láttuk munkáit (XY, CC, ZZ), és szeretnénk Önnel együttműködni.\n\nCégünk, az XY 1989 óta foglalkozik családi házak generálkivitelezésével, készházak építésével.\n\nSzeretnénk bővíteni a tervezői kapcsolatainkat, mert jelenleg kapacitáshiánnyal küzdünk ezen a területen – és az Ön által tervezett házakhoz is szívesen kapcsolódnánk kivitelezőként.\n\nVan szabad kapacitása? Érdekli az együttműködés?",
+      "owner_approved_body_text_sha256_utf8": "3e1bc84d24270e3da52e943d5c2325889805cff4a3e3eda6a1427daa253eab10",
+      "owner_approved_body_text_utf8_bytes": 500,
+      "allowed_replacements": [
+        "recipient_name",
+        "reference_names_2_or_3",
+        "sender_company_name"
+      ],
+      "reference_policy": {
+        "verified_reference_count_allowed": [
+          0,
+          2,
+          3
+        ],
+        "one_reference": "NO_SEND",
+        "unverified_reference": "NO_SEND",
+        "zero_reference_opening_sentence": "Azért kerestük fel az Ön irodáját, mert láttuk munkáit, és szeretnénk Önnel együttműködni."
+      },
+      "html_formatting": {
+        "bold_exact_sentences": [
+          "Szeretnénk bővíteni a tervezői kapcsolatainkat, mert jelenleg kapacitáshiánnyal küzdünk ezen a területen – és az Ön által tervezett házakhoz is szívesen kapcsolódnánk kivitelezőként."
+        ]
+      }
+    },
+    {
+      "template_id": "LAND_OWNER_FIRST_CONTACT_HU",
+      "recipient_type": "land_owner",
+      "recipient_condition": "recipient_type == 'land_owner' AND recipient_classification_verified == true AND exclusion_screening_verified == true",
+      "status": [
+        "OWNER_APPROVED",
+        "CANONICAL"
+      ],
+      "origin": "HUMAN_AUTHORED_LOCKED",
+      "ai_modification_allowed": false,
+      "sender_brand_id": "imperial",
+      "subject": "szeretnék érdeklődni a telek iránt",
+      "subject_status": "OWNER_APPROVED",
+      "subject_sha256_utf8": "792451ca4fd342fdf19cf530caa910030e8a5e06f96eec39f3b02700ea4159e5",
+      "owner_approved_body_text": "Tisztelt [Név]!\nCégünk, az Imperial Holding, előregyártott készházak és típusházak építésével foglalkozik, és úgy gondoljuk, hogy az Ön telkében van lehetőség.\nSzívesen felvennénk a kínálatunkba DÍJMENTESEN, mert sokan keresnek nálunk a típusházakhoz eladó telkeket.\nItt meg tudja nézni a weboldalunkon, milyen telkekkel dolgozunk jelenleg: https://imperialholding.hu/termek/telek-kereso\nNem kérünk Öntől pénzt semmilyen formában, jutalékot sem: a lehetőség mindkettőnknek előnyös, mi a típusházat adjuk el, Ön pedig a telket. Nem kérünk semmilyen kötelezettséget, csak szeretnénk együttműködni Önnel.\nÉrdekli?\nÜdvözlettel:\nImperial Holding\ninfo@imperialholding.hu\nLeiratkozás: [egyedi leiratkozási link]",
+      "owner_approved_body_text_sha256_utf8": "aa1894dfc0a53401d3fdd5c737cbdf737acea3d325d44eb38f70b36474703500",
+      "owner_approved_body_text_utf8_bytes": 763,
+      "allowed_replacements": [
+        "recipient_name",
+        "unsubscribe_url"
+      ],
+      "html_formatting": {
+        "bold_exact_sentences": []
+      }
+    },
+    {
+      "template_id": "REAL_ESTATE_AGENT_FIRST_CONTACT_HU",
+      "recipient_type": "real_estate_agent",
+      "recipient_condition": "recipient_type == 'real_estate_agent' AND recipient_classification_verified == true AND exclusion_screening_verified == true",
+      "status": [
+        "OWNER_APPROVED",
+        "CANONICAL"
+      ],
+      "origin": "HUMAN_AUTHORED_LOCKED",
+      "ai_modification_allowed": false,
+      "sender_brand_id": "imperial",
+      "subject": "ház eladásában kérnék segítséget",
+      "subject_status": "OWNER_APPROVED",
+      "subject_sha256_utf8": "4f5460a60567e226c1fb4c4e4a28b59315738a2eda21ce37eebdbf6d28b43334",
+      "owner_approved_body_text": "Tisztelt [Név]!\nCégünk, az Imperial Holding, előregyártott készházak és típusházak építésével foglalkozik, és úgy gondoljuk, hogy az Ön által hirdetett telekben van lehetőség.\n2,5% jutalékot fizetünk azoknak az ingatlanos partnereinknek, akik a hirdetett telkeik mellé valamelyik típusházunkat is eladják.\nJelenleg is számos ingatlan-irodával dolgozunk együtt az ország minden pontján. Mi elkészítjük a hirdetést Önnek egy olyan típusházzal, ami építhető erre a telekre, látványtervvel, alaprajzzal és műszaki leírással. Ha Ön meghirdeti a telekkel együtt, és érkezik rá vevő, 2,5% jutalékot fizetünk Önnek a típusterv árából.\nÉrdekli ez a lehetőség?\nÜdvözlettel:\nImperial Holding\ninfo@imperialholding.hu\nLeiratkozás: [egyedi leiratkozási link]",
+      "owner_approved_body_text_sha256_utf8": "9df3c674a73e346a122c60162af06f73cfd55e6da49596c89f3ccbd25e8ade8d",
+      "owner_approved_body_text_utf8_bytes": 811,
+      "allowed_replacements": [
+        "recipient_name",
+        "unsubscribe_url"
+      ],
+      "html_formatting": {
+        "bold_exact_sentences": [
+          "2,5% jutalékot fizetünk azoknak az ingatlanos partnereinknek, akik a hirdetett telkeik mellé valamelyik típusházunkat is eladják."
+        ]
+      }
+    },
+    {
+      "template_id": "REFERRAL_PARTNER_FIRST_CONTACT_HU",
+      "recipient_type": "referral_partner",
+      "recipient_condition": "recipient_type == 'referral_partner' AND recipient_classification_verified == true AND exclusion_screening_verified == true AND business_context_verified == true AND business_context_evidence_url is verified",
+      "recipient_scope": [
+        "building_material_retailer",
+        "building_material_network",
+        "commercial_referral_partner_with_new_build_or_major_renovation_customers"
+      ],
+      "higher_priority_template_ids": [
+        "ARCHITECT_OFFICE_FIRST_CONTACT_HU",
+        "LAND_OWNER_FIRST_CONTACT_HU",
+        "REAL_ESTATE_AGENT_FIRST_CONTACT_HU"
+      ],
+      "status": [
+        "OWNER_APPROVED",
+        "CANONICAL"
+      ],
+      "origin": "HUMAN_AUTHORED_LOCKED",
+      "human_author_id": "owner-user",
+      "ai_modification_allowed": false,
+      "llm_rewrite_allowed": false,
+      "sender_brand_id": "imperial",
+      "subject": "együttműködés",
+      "subject_status": "OWNER_APPROVED_IMMUTABLE",
+      "subject_immutable": true,
+      "subject_sha256_utf8": "906da7ca17aa2f81d7db42ccf826db301ab498a5984c0408197f76731e3071bb",
+      "owner_approved_body_text": "Tisztelt [Név]!\n\nCégünk 1989 óta családi házak, készházak kulcsrakész kivitelezésével foglalkozik, és új partnereket keresünk.\n\nKidolgoztunk egy rendszert, amelyben olyan partnerek tudnak ajánlani bennünket, akiknél a mi célpiacunk megfordul - és ezért 2,5% jutalékot fizetünk. Egy átlagos 50 milliós családi ház esetében 1 250 000 forintot.\n\nAz Önök [konkrét üzlet/hálózat/termékkör] vásárlói között rendszeresen megjelennek teljesen új házat építeni akaró, vagy nagy felújítást tervező ügyfelek. Mi mindkettőnek tudunk segíteni. Az Imperial PartnerPonttal az Ön üzlete egy saját kódot kap. Ezt átadják az ügyfélnek - semmi más dolguk nincs vele - és mi onnantól átvesszük az egészet. A folyamat az Önök számára is végig nyomon követhető - nyilvántartást vezetünk minden megkeresésről.\n\nHa az ajánlásból szerződés lesz, 2,5% jutalékot fizetünk egy összegben Önöknek. Érdekli ez a lehetőség, beszéljünk róla? Dolgozott már hasonlóval?",
+      "owner_approved_body_text_sha256_utf8": "21eb74dc15610754cef51e44af0f2553b0437127864e6fa965e1748a277d90c4",
+      "owner_approved_body_text_utf8_bytes": 1030,
+      "allowed_replacements": [
+        "recipient_name",
+        "verified_business_context"
+      ],
+      "required_variables": [
+        {
+          "token": "[Név]",
+          "input_field": "recipient_name",
+          "verification": "REQUIRED_NONEMPTY",
+          "missing_state": "template-variable-missing"
+        },
+        {
+          "token": "[konkrét üzlet/hálózat/termékkör]",
+          "input_field": "business_context",
+          "verification": "VERIFIED_FACTUAL_VALUE_WITH_HTTPS_EVIDENCE_REQUIRED",
+          "missing_state": "template-variable-missing"
+        }
+      ],
+      "paragraph_policy": {
+        "plain_text_separator": "ONE_EMPTY_LINE",
+        "exact_separator": "\\n\\n"
+      },
+      "html_formatting": {
+        "bold_exact_sentences": [
+          "és ezért 2,5% jutalékot fizetünk. Egy átlagos 50 milliós családi ház esetében 1 250 000 forintot.",
+          "semmi más dolguk nincs vele"
+        ]
+      },
+      "owner_approval_reference": {
+        "approval_path": "OWNER_DIRECT_REVIEW",
+        "source": "Codex task continuation from ChatGPT conversation 6a8c13d4-e3cc-83eb-ab7a-95d5bc99d130",
+        "final_subject_and_body_supplied_verbatim": true,
+        "explicit_canonical_registration_requested": true
+      }
+    }
+  ],
+  "archived_templates": [
+    {
+      "template_id": "PARTNERPOINT_LEGACY_1_PERCENT_FIRST_CONTACT_HU",
+      "recipient_type": "referral_partner",
+      "status": [
+        "ARCHIVED",
+        "DEACTIVATED"
+      ],
+      "active": false,
+      "fallback_allowed": false,
+      "replaced_by": "REFERRAL_PARTNER_FIRST_CONTACT_HU",
+      "archive_reason": "Owner replaced the former 1% PartnerPont first-touch for this recipient type with the canonical 2.5% first-contact template.",
+      "subject": "1% új bevétel a meglévő vevőforgalomból",
+      "body_text": "Tisztelt [Név]!\n\nAz Önök [konkrét üzlet/hálózat/termékkör] vásárlói között rendszeresen megjelennek teljes új házat építő vagy nagy felújást szervező ügyfelek. Az Imperial PartnerPonttal az üzlet egy saját QR-kódot és landinget kap. Az ügyfél maga kér ingyenes teljesprojekt-előszűrést; Önöknek nem kell ügyféladatot átadni vagy kivitelezési felelősséget vállalni.\n\nHa az elfogadott ajánlásból Imperial-szerződés lesz, és a jogosult nettó szerződéses érték legalább 20%-a ténylegesen befolyt, a partner a teljes 1% jutalékot egy összegben kapja meg, feltéve hogy az attribúció, a tisztasági ellenőrzés és a számla rendben van. Egyetlen telephelyes, 30 napos pilottal indulnánk, kizárólagosság nélkül.\n\nMegfelel egy 20 perces egyeztetés a héten?\n\nÜdvözlettel:\nMolnár Andrea | Imperial Holding",
+      "body_text_sha256_utf8": "0fc813ba227558648dd8ef48d1d8a307f303091562c0047087e2d1da5c4815a1",
+      "body_text_utf8_bytes": 867,
+      "archived_audit_source": "01 – Imperial PartnerPont – működési kézikönyv és scriptbook v1.1 / 5.4 Első e-mail",
+      "archived_at": "2026-08-26"
+    }
+  ]
+}

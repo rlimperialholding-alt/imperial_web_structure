@@ -34,10 +34,15 @@ class GrowthSettings:
     canonical_route_max_response_bytes: int
     canonical_processing_enabled: bool
     canonical_analysis_text_chars: int
+    canonical_question_answer_enabled: bool
+    canonical_question_answer_batch_size: int
     canonical_content_factory_enabled: bool
     canonical_internal_handoff_enabled: bool
     canonical_internal_handoff_at: str
     canonical_internal_handoff_secret_file: str
+    canonical_publication_digest_enabled: bool
+    canonical_publication_digest_at: str
+    canonical_publication_digest_recipient: str
     deepseek_api_key_file: str
     deepseek_base_url: str
     deepseek_routine_model: str
@@ -90,6 +95,13 @@ def settings() -> GrowthSettings:
         canonical_analysis_text_chars=max(
             1_000, min(20_000, int(os.getenv("CANONICAL_ANALYSIS_TEXT_CHARS", "6000")))
         ),
+        canonical_question_answer_enabled=os.getenv(
+            "CANONICAL_QUESTION_ANSWER_ENABLED", "true"
+        ).lower()
+        == "true",
+        canonical_question_answer_batch_size=max(
+            1, min(100, int(os.getenv("CANONICAL_QUESTION_ANSWER_BATCH_SIZE", "50")))
+        ),
         canonical_content_factory_enabled=os.getenv(
             "CANONICAL_CONTENT_FACTORY_ENABLED", "false"
         ).lower()
@@ -104,6 +116,16 @@ def settings() -> GrowthSettings:
         canonical_internal_handoff_secret_file=os.getenv(
             "CANONICAL_INTERNAL_HANDOFF_SECRET_FILE",
             "/run/secrets/growth/internal-handoff-smtp.json",
+        ),
+        canonical_publication_digest_enabled=os.getenv(
+            "CANONICAL_PUBLICATION_DIGEST_ENABLED", "false"
+        ).lower()
+        == "true",
+        canonical_publication_digest_at=os.getenv(
+            "CANONICAL_PUBLICATION_DIGEST_AT", "10:00"
+        ),
+        canonical_publication_digest_recipient=os.getenv(
+            "CANONICAL_PUBLICATION_DIGEST_RECIPIENT", "molnar.andrea@imperialholding.hu"
         ),
         deepseek_api_key_file=os.getenv(
             "DEEPSEEK_API_KEY_FILE", "/run/secrets/growth/deepseek-api-key"
@@ -281,8 +303,11 @@ class GrowthRegistry:
             sender = str(brand.get("sender_email") or "").lower()
             if "@" not in sender or not brand.get("domain_key") or not brand.get("secret_ref"):
                 raise GrowthRegistryError(f"Brand sender binding is incomplete: {brand_id}")
-            if not isinstance(brand.get("templates"), dict) or "default" not in brand["templates"]:
-                raise GrowthRegistryError(f"Brand outreach template missing: {brand_id}")
+            if brand.get("templates"):
+                raise GrowthRegistryError(
+                    "Brand-local outreach templates are prohibited; use the canonical "
+                    f"first-contact registry: {brand_id}"
+                )
             _managed_secret(str(brand["secret_ref"]))
         for signal_type, brand_id in self.routing.items():
             if brand_id not in self.brands:
