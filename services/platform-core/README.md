@@ -2,6 +2,16 @@
 
 A meglévő Imperial Intelligence Control Center additív továbbfejlesztése. A platform a már kanonizált folyamatok (köztük a HouseBuild, PlotCheck és PlanCheck) üzleti motorját maga futtatja, a külön forrásmodulokhoz pedig közös ProjectID-, esemény-, adatbefogadási, audit- és webes megjelenítési réteget ad.
 
+## Telek Acquisition v1
+
+A közös Growth Ops rendszer most a családi házas építési telek jelzéseket is képes
+idempotensen átadni egy ugyanabban a Postgresben működő, fail-closed folyamatnak. DEAL,
+hirdetési meghatalmazás, PlotCheck, kiadott típusház, BuildConfig kereskedelmi kapuk,
+négy-szem jóváhagyás és publikációs read-back proof nélkül nincs külső írás. A név szerint
+felsorolt ingatlanportálok licensed connector hiányában alapállapotban tiltottak.
+
+Részletes leírás: `docs/LAND_ACQUISITION_V1.md`.
+
 ## Ebben a kiadásban elkészült
 
 ### Enterprise Import Center
