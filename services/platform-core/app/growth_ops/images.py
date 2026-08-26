@@ -69,6 +69,54 @@ def _asset(job: dict[str, Any], role: str) -> dict[str, Any]:
     }
 
 
+def _minimum_qa_score() -> int:
+    return max(
+        85,
+        min(100, int(os.getenv("CANONICAL_IMAGE_FACTORY_QA_MIN_SCORE", "90"))),
+    )
+
+
+def _approved_fallback(*, artifact_sha256: str, failed_job_id: str) -> dict[str, Any] | None:
+    """Return one explicitly configured, previously QA-approved unbranded image."""
+    batch_id = os.getenv("CANONICAL_IMAGE_FALLBACK_BATCH_ID", "").strip()
+    job_id = os.getenv("CANONICAL_IMAGE_FALLBACK_JOB_ID", "").strip()
+    if not batch_id and not job_id:
+        return None
+    if not batch_id or not job_id:
+        raise CanonicalImageFactoryError("image_factory_fallback_configuration_incomplete")
+    response = _request("GET", f"/api/v1/batches/{batch_id}")
+    jobs = [
+        job
+        for job in response.get("jobs") or []
+        if isinstance(job, dict) and str(job.get("job_id") or "") == job_id
+    ]
+    if len(jobs) != 1:
+        raise CanonicalImageFactoryError("image_factory_fallback_job_missing")
+    job = jobs[0]
+    if (
+        str(job.get("status") or "") != "COMPLETED"
+        or int(job.get("qa_score") or 0) < _minimum_qa_score()
+        or str(job.get("release_state") or "") != "TEST_ONLY_REVIEW_REQUIRED"
+    ):
+        raise CanonicalImageFactoryError("image_factory_fallback_not_release_approved")
+    state = {
+        "artifact_sha256": artifact_sha256,
+        "batch_id": batch_id,
+        "job_id": job_id,
+        "qa_score": int(job["qa_score"]),
+        "release_state": "TEST_ONLY_REVIEW_REQUIRED",
+        "fallback_reason": "primary_generation_failed",
+        "fallback_for_failed_job_id": failed_job_id,
+        "web_hero": _asset(job, "web_hero"),
+    }
+    state["facebook"] = dict(state["web_hero"])
+    auto_release = os.getenv("CANONICAL_IMAGE_AUTO_RELEASE_ENABLED", "false").casefold() == "true"
+    state["status"] = (
+        "FALLBACK_AUTO_RELEASE_APPROVED" if auto_release else "FALLBACK_REVIEW_REQUIRED"
+    )
+    return state
+
+
 def sync_canonical_image(
     package: dict[str, Any], *, content_asset_id: str, article_slug: str
 ) -> tuple[str, dict[str, Any]]:
@@ -144,12 +192,26 @@ def sync_canonical_image(
     state["status"] = external_status
     if external_status in {"QUEUED", "PROCESSING", "SUBMITTED"}:
         return "pending", state
-    if external_status in {"FAILED", "NEEDS_REVIEW"}:
-        state["error_type"] = "provider_quota_or_generation_failure" if external_status == "FAILED" else "visual_review_required"
+    if external_status == "FAILED":
+        fallback = _approved_fallback(
+            artifact_sha256=artifact_sha256,
+            failed_job_id=str(job.get("job_id") or state["job_id"]),
+        )
+        if fallback:
+            return (
+                "ready"
+                if fallback["status"] == "FALLBACK_AUTO_RELEASE_APPROVED"
+                else "review_required",
+                fallback,
+            )
+        state["error_type"] = "provider_quota_or_generation_failure"
+        return "failed", state
+    if external_status == "NEEDS_REVIEW":
+        state["error_type"] = "visual_review_required"
         return "failed", state
     if external_status != "COMPLETED":
         raise CanonicalImageFactoryError("image_factory_status_invalid")
-    minimum_score = max(85, min(100, int(os.getenv("CANONICAL_IMAGE_FACTORY_QA_MIN_SCORE", "90"))))
+    minimum_score = _minimum_qa_score()
     score = int(job.get("qa_score") or 0)
     if score < minimum_score:
         state["qa_score"] = score
