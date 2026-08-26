@@ -3,11 +3,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from datetime import UTC, datetime, timedelta
-from html import escape
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -19,13 +20,7 @@ from ..audit import audit
 from ..config import settings as platform_settings
 from ..models import MailSendingDomain, MailSuppression
 from .canonical_policy import (
-    LAND_AGENT_COMMISSION_ANCHOR,
     LAND_AGENT_HARD_GATE_REASONS,
-    LAND_AGENT_SUBJECT,
-    LAND_CATALOG_URL,
-    LAND_OUTREACH_SERVICE_ANCHOR,
-    LAND_OWNER_FREE_AD_ANCHOR,
-    LAND_OWNER_SUBJECT,
     assert_outreach_copy,
     contains_no_monitoring_entity,
     land_agent_hard_gate_reason,
@@ -42,6 +37,11 @@ from .models import (
 )
 from .registry import BrandBinding, GrowthRegistry, GrowthRegistryError, settings, writes_unlocked
 from .schemas import GrowthSignalIn, GrowthSignalReceipt, OutreachEventIn, OutreachReleaseIn
+
+LAND_RECIPIENT_TYPES_BY_ROLE = {
+    "listing_agent": "real_estate_agent",
+    "property_owner": "land_owner",
+}
 
 
 def utcnow() -> datetime:
@@ -128,6 +128,111 @@ def _is_public_land_listing_contact(data: GrowthSignalIn) -> bool:
     )
 
 
+def _canonical_screening_values(data: GrowthSignalIn) -> list[object]:
+    return [
+        data.recipient_name,
+        data.company_name,
+        data.recipient_organization_name,
+        data.recipient_office_name,
+        data.recipient_email,
+        data.recipient_role,
+        data.sender_company_name,
+        *data.reference_names,
+        data.business_context,
+        data.business_context_evidence_url,
+        data.summary,
+        data.evidence_url,
+        data.public_contact_url,
+    ]
+
+
+def _is_recipient_hard_gate_error(exc: Exception) -> bool:
+    reason = str(exc)
+    return (
+        reason in LAND_AGENT_HARD_GATE_REASONS
+        or reason == "no_monitoring_hard_gate_blocked"
+        or reason.startswith("canonical_hard_gate_blocked:")
+        or reason.startswith("outbound_recipient_hard_gate_no_send:")
+        or reason.startswith("cross_brand_customer_facing_content_no_send:")
+    )
+
+
+def _incoming_hard_gate_reason(
+    data: GrowthSignalIn, canonical_registry: CanonicalFirstContactRegistry
+) -> str | None:
+    land_agent_gate = _land_agent_gate_reason(data)
+    if land_agent_gate:
+        return land_agent_gate
+    if contains_no_monitoring_entity(
+        "\n".join(str(value or "") for value in _canonical_screening_values(data))
+    ):
+        return "no_monitoring_hard_gate_blocked"
+    canonical_gate = canonical_registry.hard_gate_match(
+        _canonical_screening_values(data)
+    )
+    return f"canonical_hard_gate_blocked:{canonical_gate}" if canonical_gate else None
+
+
+def _block_existing_signal_for_new_hard_gate(
+    db: Session,
+    existing: GrowthSignal,
+    data: GrowthSignalIn,
+    reason: str,
+) -> None:
+    before = {
+        "status": existing.status,
+        "recipient_email": existing.recipient_email,
+        "recipient_organization_name": existing.recipient_organization_name,
+        "recipient_office_name": existing.recipient_office_name,
+    }
+    for field in (
+        "company_name",
+        "recipient_organization_name",
+        "recipient_office_name",
+        "recipient_email",
+        "recipient_role",
+        "summary",
+        "evidence_url",
+        "public_contact_url",
+        "source_payload_hash",
+    ):
+        incoming = getattr(data, field)
+        if incoming is not None:
+            setattr(existing, field, incoming)
+    existing.last_seen_at = utcnow()
+    existing.status = "blocked"
+    existing.rejection_reasons_json = canonical_json([reason])
+    unsent_rows = list(
+        db.scalars(
+            select(OutreachMessage).where(
+                OutreachMessage.signal_id == existing.signal_id,
+                OutreachMessage.status.in_(("queued", "claimed")),
+            ).with_for_update()
+        )
+    )
+    for row in unsent_rows:
+        row.status = "blocked"
+        row.last_error = reason
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+    audit(
+        db,
+        actor="growth-ops",
+        action="growth_existing_outreach_new_hard_gate_blocked",
+        entity_type="growth_signal",
+        entity_id=existing.signal_id,
+        before=before,
+        after={
+            "status": existing.status,
+            "reason": reason,
+            "source_payload_hash": data.source_payload_hash,
+            "blocked_outreach_ids": [row.outreach_id for row in unsent_rows],
+        },
+    )
+    db.commit()
+
+
 def _land_agent_gate_reason(signal: GrowthSignalIn | GrowthSignal) -> str | None:
     if signal.signal_type != "residential_building_plot":
         return None
@@ -173,23 +278,26 @@ def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
         reasons.append("named_or_unknown_mailbox_requires_consent_or_request")
     if data.contact_basis == "public_property_listing" and not public_land_contact:
         reasons.append("invalid_public_property_listing_contact")
-    if not public_land_contact:
-        if data.recipient_type == "unknown":
-            reasons.append("recipient_type_unclassified_no_send")
-        if not data.recipient_classification_verified:
-            reasons.append("recipient_classification_not_verified_no_send")
-        if not data.exclusion_screening_verified:
-            reasons.append("exclusion_screening_not_verified_no_send")
-        if data.recipient_type != "unknown" and not data.recipient_name:
-            reasons.append("recipient_name_missing")
-        if data.recipient_type == "architect_office" and not data.sender_company_name:
-            reasons.append("sender_company_name_missing")
-        if data.recipient_type == "referral_partner" and not (
-            data.business_context
-            and data.business_context_verified
-            and data.business_context_evidence_url
-        ):
-            reasons.append("template-variable-missing")
+    if data.recipient_type == "unknown":
+        reasons.append("recipient_type_unclassified_no_send")
+    if not data.recipient_classification_verified:
+        reasons.append("recipient_classification_not_verified_no_send")
+    if not data.exclusion_screening_verified:
+        reasons.append("exclusion_screening_not_verified_no_send")
+    if data.recipient_type != "unknown" and not data.recipient_name:
+        reasons.append("recipient_name_missing")
+    if data.recipient_type == "architect_office" and not data.sender_company_name:
+        reasons.append("sender_company_name_missing")
+    if data.recipient_type == "referral_partner" and not (
+        data.business_context
+        and data.business_context_verified
+        and data.business_context_evidence_url
+    ):
+        reasons.append("template-variable-missing")
+    if public_land_contact:
+        required_recipient_type = LAND_RECIPIENT_TYPES_BY_ROLE[data.recipient_role]
+        if data.recipient_type != required_recipient_type:
+            reasons.append("land_recipient_role_type_mismatch_no_send")
     return sorted(set(reasons))
 
 
@@ -224,54 +332,12 @@ def _render_message(
     if not settings().base_url.startswith("https://"):
         raise GrowthRegistryError("HTTPS GROWTH_OPS_BASE_URL is required")
     unsubscribe_url = f"{settings().base_url}/growth/unsubscribe/{unsubscribe_token}"
-    if signal.signal_type == "residential_building_plot":
-        recipient = signal.company_name or (data.recipient_name if data else None) or "Címzett"
-        brand_name = str(binding.config.get("brand_name") or binding.brand_id)
-        if signal.recipient_role == "listing_agent":
-            subject = LAND_AGENT_SUBJECT
-            body = (
-                f"Tisztelt {recipient}!\n\n"
-                f"Cégünk, az {brand_name}, {LAND_OUTREACH_SERVICE_ANCHOR}, "
-                "és úgy gondoljuk, hogy az Ön által hirdetett telekben van lehetőség.\n\n"
-                f"{LAND_AGENT_COMMISSION_ANCHOR}\n\n"
-                "Jelenleg is számos ingatlan-irodával dolgozunk együtt az ország "
-                "minden pontján. Mi elkészítjük a hirdetést Önnek egy olyan "
-                "típusházzal, ami építhető erre a telekre, látványtervvel, "
-                "alaprajzzal és műszaki leírással. Ha Ön meghirdeti a telekkel "
-                "együtt, és érkezik rá vevő, 2,5% jutalékot fizetünk Önnek a "
-                "típusterv árából.\n\nÉrdekli ez a lehetőség?\n\n"
-                f"Üdvözlettel:\n{brand_name}\n{binding.sender_email}\n\n"
-                f"Leiratkozás: {unsubscribe_url}"
-            )
-            body_html = _email_html(body, bold_sentence=LAND_AGENT_COMMISSION_ANCHOR)
-        elif signal.recipient_role == "property_owner":
-            subject = LAND_OWNER_SUBJECT
-            body = (
-                f"Tisztelt {recipient}!\n\n"
-                f"Cégünk, az {brand_name}, {LAND_OUTREACH_SERVICE_ANCHOR}, "
-                "és úgy gondoljuk, hogy az Ön telkében van lehetőség.\n\n"
-                f"{LAND_OWNER_FREE_AD_ANCHOR}\n\n"
-                "Itt meg tudja nézni a weboldalunkon, milyen telkekkel dolgozunk "
-                f"jelenleg: {LAND_CATALOG_URL}\n\n"
-                "Nem kérünk Öntől pénzt semmilyen formában, jutalékot sem: a "
-                "lehetőség mindkettőnknek előnyös, mi a típusházat adjuk el, Ön "
-                "pedig a telket. Nem kérünk semmilyen kötelezettséget, csak "
-                "szeretnénk együttműködni Önnel.\n\nÉrdekli?\n\n"
-                f"Üdvözlettel:\n{brand_name}\n{binding.sender_email}\n\n"
-                f"Leiratkozás: {unsubscribe_url}"
-            )
-            body_html = _email_html(body)
-        else:
-            raise GrowthRegistryError("Building-plot recipient role is required")
-        assert_outreach_copy(body)
-        return subject, body, {
-            "template_policy": "owner_locked_land_outreach_v1",
-            "sender_brand_id": binding.brand_id,
-            "recipient_role": signal.recipient_role,
-            "body_html": body_html,
-        }
     if data is None:
         raise GrowthRegistryError("canonical_first_contact_input_missing")
+    if signal.signal_type == "residential_building_plot":
+        required_recipient_type = LAND_RECIPIENT_TYPES_BY_ROLE.get(signal.recipient_role)
+        if not required_recipient_type or data.recipient_type != required_recipient_type:
+            raise GrowthRegistryError("land_recipient_role_type_mismatch_no_send")
     rendered = CanonicalFirstContactRegistry.load().render(
         recipient_type=data.recipient_type,
         recipient_name=data.recipient_name,
@@ -284,33 +350,13 @@ def _render_message(
         unsubscribe_url=unsubscribe_url,
         recipient_classification_verified=data.recipient_classification_verified,
         exclusion_screening_verified=data.exclusion_screening_verified,
-        screening_values=[
-            data.recipient_name,
-            data.company_name,
-            data.recipient_email,
-            data.business_context,
-            data.business_context_evidence_url,
-            data.summary,
-            data.evidence_url,
-            data.public_contact_url,
-        ],
+        screening_values=_canonical_screening_values(data),
     )
     if rendered.sender_brand_id != binding.brand_id:
         raise GrowthRegistryError("canonical_template_sender_brand_conflicts_with_routing")
     if not rendered.sendable or not rendered.subject:
         raise GrowthRegistryError(";".join(rendered.blocked_reasons))
     return rendered.subject, rendered.body_text, rendered.metadata()
-
-
-def _email_html(body_text: str, *, bold_sentence: str | None = None) -> str:
-    paragraphs: list[str] = []
-    bold_escaped = escape(bold_sentence) if bold_sentence else None
-    for paragraph in body_text.split("\n\n"):
-        safe = escape(paragraph).replace("\n", "<br>\n")
-        if bold_escaped and bold_escaped in safe:
-            safe = safe.replace(bold_escaped, f"<strong>{bold_escaped}</strong>", 1)
-        paragraphs.append(f"<p>{safe}</p>")
-    return "<!doctype html><html><body>" + "".join(paragraphs) + "</body></html>"
 
 
 def _recipient_suppressed(db: Session, email: str) -> bool:
@@ -387,14 +433,15 @@ def _queue_message(
     )
     body_html = str(canonical_metadata["body_html"])
     key = sha({"signal_id": signal.signal_id, "brand_id": binding.brand_id, "step": step})
-    payload_hash = sha(
-        {
-            "from": binding.sender_email,
-            "to": signal.recipient_email,
-            "subject": subject,
-            "body": body,
-            "body_html": canonical_metadata["body_html"],
-        }
+    payload_hash = _outreach_payload_sha256(
+        sender_email=binding.sender_email,
+        recipient_email=signal.recipient_email or "",
+        subject=subject,
+        body_text=body,
+        body_html=body_html,
+        idempotency_key=key,
+        unsubscribe_token_hash=hashlib.sha256(token.encode()).hexdigest(),
+        canonical_metadata=canonical_metadata,
     )
     row = OutreachMessage(
         outreach_id=f"OUT-{uuid4().hex[:20].upper()}",
@@ -414,7 +461,7 @@ def _queue_message(
         status="queued",
         available_at=available_at,
     )
-    db.add(row)
+    policy_release_audit: dict[str, Any] | None = None
     if (
         step == 0
         and signal.signal_type == "residential_building_plot"
@@ -425,18 +472,21 @@ def _queue_message(
         row.release_approved_by = "owner-policy:land-public-listing-v1:2026-08-25"
         row.release_approved_at = utcnow()
         row.release_token_hash = _release_digest(row, row.release_approved_by)
+        policy_release_audit = {
+            "payload_sha256": row.payload_sha256,
+            "signal_id": signal.signal_id,
+            "recipient_role": signal.recipient_role,
+            "policy_scope": "single_initial_public_building_plot_outreach",
+        }
+    db.add(row)
+    if policy_release_audit is not None:
         audit(
             db,
             actor=row.release_approved_by,
             action="growth_outreach_policy_released",
             entity_type="growth_outreach",
             entity_id=row.outreach_id,
-            after={
-                "payload_sha256": row.payload_sha256,
-                "signal_id": signal.signal_id,
-                "recipient_role": signal.recipient_role,
-                "policy_scope": "single_initial_public_building_plot_outreach",
-            },
+            after=policy_release_audit,
         )
     return row
 
@@ -447,36 +497,41 @@ def ingest_signal(
     *,
     run_id: str | None = None,
 ) -> GrowthSignalReceipt:
-    land_agent_gate = _land_agent_gate_reason(data)
-    if land_agent_gate:
-        raise GrowthRegistryError(land_agent_gate)
-    hard_gate_values = "\n".join(
-        value
-        for value in (
-            data.company_name,
-            data.summary,
-            data.evidence_url,
-            data.public_contact_url,
+    pre_registry_hard_gate = _land_agent_gate_reason(data)
+    if not pre_registry_hard_gate and contains_no_monitoring_entity(
+        "\n".join(str(value or "") for value in _canonical_screening_values(data))
+    ):
+        pre_registry_hard_gate = "no_monitoring_hard_gate_blocked"
+    if pre_registry_hard_gate:
+        existing = db.scalar(
+            select(GrowthSignal)
+            .where(
+                GrowthSignal.source_id == data.source_id,
+                GrowthSignal.external_key == data.external_key,
+            )
+            .with_for_update()
         )
-        if value
-    )
-    if contains_no_monitoring_entity(hard_gate_values):
-        raise GrowthRegistryError("no_monitoring_hard_gate_blocked")
+        if existing:
+            _block_existing_signal_for_new_hard_gate(
+                db, existing, data, pre_registry_hard_gate
+            )
+        raise GrowthRegistryError(pre_registry_hard_gate)
     canonical_registry = CanonicalFirstContactRegistry.load()
-    hard_gate = canonical_registry.hard_gate_match(
-        [
-            data.recipient_name,
-            data.company_name,
-            data.recipient_email,
-            data.business_context,
-            data.business_context_evidence_url,
-            data.summary,
-            data.evidence_url,
-            data.public_contact_url,
-        ]
-    )
-    if hard_gate:
-        raise GrowthRegistryError(f"canonical_hard_gate_blocked:{hard_gate}")
+    hard_gate_reason = _incoming_hard_gate_reason(data, canonical_registry)
+    if hard_gate_reason:
+        existing = db.scalar(
+            select(GrowthSignal)
+            .where(
+                GrowthSignal.source_id == data.source_id,
+                GrowthSignal.external_key == data.external_key,
+            )
+            .with_for_update()
+        )
+        if existing:
+            _block_existing_signal_for_new_hard_gate(
+                db, existing, data, hard_gate_reason
+            )
+        raise GrowthRegistryError(hard_gate_reason)
     registry = GrowthRegistry.load()
     registry.validate_signal_source(
         source_id=data.source_id,
@@ -494,7 +549,7 @@ def ingest_signal(
                 ),
                 GrowthSignal.dedupe_hash == dedupe_hash,
             )
-        )
+        ).with_for_update()
     )
     if existing:
         existing.last_seen_at = utcnow()
@@ -571,7 +626,7 @@ def ingest_signal(
                 data=data,
             )
             row.status = "queued"
-        except GrowthRegistryError as exc:
+        except (GrowthRegistryError, ValueError) as exc:
             reasons.append(str(exc))
             if "template-variable-missing" in str(exc):
                 row.status = "template-variable-missing"
@@ -646,7 +701,7 @@ def run_motor(db: Session, motor_key: str, *, scheduled_for: datetime | None = N
                 try:
                     receipt = ingest_signal(db, signal, run_id=run.run_id)
                 except GrowthRegistryError as exc:
-                    if str(exc) not in LAND_AGENT_HARD_GATE_REASONS:
+                    if not _is_recipient_hard_gate_error(exc):
                         raise
                     hard_gate_blocked += 1
                     continue
@@ -740,12 +795,40 @@ def _release_expired_claims(db: Session) -> None:
             OutreachMessage.lease_expires_at <= now,
         )
     ).all():
-        row.status = "dead_letter" if row.attempt_count >= row.max_attempts else "queued"
-        row.available_at = now
+        if not _delivery_verification_pending(row):
+            try:
+                receipt = json.loads(row.receipt_json or "{}")
+            except (TypeError, json.JSONDecodeError):
+                receipt = {}
+            receipt["delivery_verification"] = {
+                "status": "pending_verification",
+                "retry_safe": False,
+                "provider_message_id": row.provider_message_id,
+                "detail": {"reason": "worker_lease_expired_delivery_ambiguous"},
+            }
+            row.receipt_json = canonical_json(receipt)
+            audit(
+                db,
+                actor="growth-worker",
+                action="growth_outreach_delivery_pending_verification",
+                entity_type="growth_outreach",
+                entity_id=row.outreach_id,
+                after={
+                    "provider_message_id": row.provider_message_id,
+                    "reason": "worker_lease_expired_delivery_ambiguous",
+                    "retry_safe": False,
+                },
+            )
+            _trip_runtime_kill_switch()
+        # A worker may have died after Gmail accepted the POST but before the
+        # provider id/readback could be committed. Gmail search is useful for
+        # later recovery, but is not a safe automatic retry boundary because
+        # SENT search visibility can lag. Keep every ambiguous claim held.
+        row.status = "claimed"
         row.claimed_by = None
         row.claimed_at = None
         row.lease_expires_at = None
-        row.last_error = "worker lease expired"
+        row.last_error = "delivery_ambiguous_pending_verification"
 
 
 def claim_outreach(db: Session) -> OutreachMessage | None:
@@ -775,22 +858,6 @@ def claim_outreach(db: Session) -> OutreachMessage | None:
     return row
 
 
-def _payload_matches(row: OutreachMessage) -> bool:
-    metadata = _canonical_metadata(row)
-    return hmac.compare_digest(
-        row.payload_sha256,
-        sha(
-            {
-                "from": row.sender_email,
-                "to": row.recipient_email,
-                "subject": row.subject,
-                "body": row.body_text,
-                "body_html": metadata.get("body_html"),
-            }
-        ),
-    )
-
-
 def _canonical_metadata(row: OutreachMessage) -> dict[str, Any]:
     try:
         receipt = json.loads(row.receipt_json or "{}")
@@ -802,25 +869,141 @@ def _canonical_metadata(row: OutreachMessage) -> dict[str, Any]:
     return metadata
 
 
+def _canonical_metadata_sha256(metadata: dict[str, Any]) -> str:
+    return sha(metadata)
+
+
+def _outreach_payload_sha256(
+    *,
+    sender_email: str,
+    recipient_email: str,
+    subject: str,
+    body_text: str,
+    body_html: str | None,
+    idempotency_key: str,
+    unsubscribe_token_hash: str,
+    canonical_metadata: dict[str, Any],
+) -> str:
+    return sha(
+        {
+            "from": sender_email,
+            "to": recipient_email,
+            "subject": subject,
+            "body": body_text,
+            "body_html": body_html,
+            "idempotency_key": idempotency_key,
+            "unsubscribe_token_hash": unsubscribe_token_hash,
+            "canonical_metadata_sha256": _canonical_metadata_sha256(
+                canonical_metadata
+            ),
+        }
+    )
+
+
+def _payload_matches(row: OutreachMessage) -> bool:
+    metadata = _canonical_metadata(row)
+    expected = _outreach_payload_sha256(
+        sender_email=row.sender_email,
+        recipient_email=row.recipient_email,
+        subject=row.subject,
+        body_text=row.body_text,
+        body_html=row.body_html,
+        idempotency_key=row.idempotency_key,
+        unsubscribe_token_hash=row.unsubscribe_token_hash,
+        canonical_metadata=metadata,
+    )
+    return hmac.compare_digest(row.payload_sha256, expected)
+
+
+def _current_canonical_screening_values(
+    signal: GrowthSignal, render_input: dict[str, Any]
+) -> list[str]:
+    reference_names = render_input.get("reference_names")
+    if not isinstance(reference_names, list) or not all(
+        isinstance(value, str) for value in reference_names
+    ):
+        raise GrowthRegistryError("canonical_reference_names_unreadable")
+    expected = [
+        render_input.get("recipient_name"),
+        signal.company_name,
+        signal.recipient_organization_name,
+        signal.recipient_office_name,
+        signal.recipient_email,
+        signal.recipient_role,
+        render_input.get("sender_company_name"),
+        *reference_names,
+        render_input.get("business_context"),
+        render_input.get("business_context_evidence_url"),
+        signal.summary,
+        signal.evidence_url,
+        signal.public_contact_url,
+    ]
+    return [str(value or "") for value in expected]
+
+
+def _assert_current_canonical_screening(
+    signal: GrowthSignal, metadata: dict[str, Any]
+) -> list[str]:
+    render_input = metadata.get("render_input")
+    if not isinstance(render_input, dict):
+        raise GrowthRegistryError("canonical_render_input_missing")
+    expected_values = _current_canonical_screening_values(signal, render_input)
+    registry = CanonicalFirstContactRegistry.load()
+    hard_gate = registry.hard_gate_match(expected_values)
+    if hard_gate:
+        raise GrowthRegistryError(f"canonical_hard_gate_blocked:{hard_gate}")
+    if render_input.get("screening_values") != expected_values:
+        raise GrowthRegistryError("canonical_screening_values_changed_after_queue")
+    return expected_values
+
+
 def _assert_canonical_payload(row: OutreachMessage) -> tuple[dict[str, Any], str]:
     metadata = _canonical_metadata(row)
     if metadata.get("sender_brand_id") != row.brand_id:
         raise GrowthRegistryError("canonical_sender_brand_conflicts_with_outreach")
-    if metadata.get("template_policy") == "owner_locked_land_outreach_v1":
-        assert_outreach_copy(row.body_text)
-        body_html = str(metadata.get("body_html") or "")
-        if not body_html or row.body_html != body_html:
-            raise GrowthRegistryError("owner_locked_land_html_mismatch")
-        if metadata.get("recipient_role") == "listing_agent":
-            required_bold = f"<strong>{escape(LAND_AGENT_COMMISSION_ANCHOR)}</strong>"
-            if required_bold not in body_html:
-                raise GrowthRegistryError("land_agent_commission_bold_format_missing")
-        return metadata, body_html
+    expected_idempotency_key = sha(
+        {
+            "signal_id": row.signal_id,
+            "brand_id": row.brand_id,
+            "step": row.sequence_step,
+        }
+    )
+    if not hmac.compare_digest(row.idempotency_key, expected_idempotency_key):
+        raise GrowthRegistryError("outreach_idempotency_key_binding_mismatch")
+    render_input = metadata.get("render_input")
+    if not isinstance(render_input, dict):
+        raise GrowthRegistryError("canonical_render_input_missing")
+    unsubscribe_url = str(render_input.get("unsubscribe_url") or "")
+    try:
+        parsed_unsubscribe = urlsplit(unsubscribe_url)
+    except ValueError as exc:
+        raise GrowthRegistryError("canonical_unsubscribe_url_binding_mismatch") from exc
+    token_match = re.search(r"(?:^|/)growth/unsubscribe/([^/]+)$", parsed_unsubscribe.path)
+    if (
+        parsed_unsubscribe.scheme != "https"
+        or not parsed_unsubscribe.hostname
+        or parsed_unsubscribe.username is not None
+        or parsed_unsubscribe.password is not None
+        or parsed_unsubscribe.query
+        or parsed_unsubscribe.fragment
+        or token_match is None
+    ):
+        raise GrowthRegistryError("canonical_unsubscribe_url_binding_mismatch")
+    expected_token_hash = hashlib.sha256(token_match.group(1).encode()).hexdigest()
+    if not hmac.compare_digest(row.unsubscribe_token_hash, expected_token_hash):
+        raise GrowthRegistryError("canonical_unsubscribe_token_binding_mismatch")
+    expected_unsubscribe_url = (
+        f"{settings().base_url}/growth/unsubscribe/{token_match.group(1)}"
+    )
+    if not hmac.compare_digest(unsubscribe_url, expected_unsubscribe_url):
+        raise GrowthRegistryError("canonical_unsubscribe_origin_binding_mismatch")
     body_html = CanonicalFirstContactRegistry.load().assert_current_render(
         metadata=metadata,
         subject=row.subject,
         body_text=row.body_text,
     )
+    if row.body_html != body_html:
+        raise GrowthRegistryError("canonical_rendered_html_payload_mismatch")
     return metadata, body_html
 
 
@@ -832,6 +1015,11 @@ def _release_digest(row: OutreachMessage, approved_by: str) -> str:
         {
             "outreach_id": row.outreach_id,
             "payload_sha256": row.payload_sha256,
+            "idempotency_key": row.idempotency_key,
+            "unsubscribe_token_hash": row.unsubscribe_token_hash,
+            "canonical_metadata_sha256": _canonical_metadata_sha256(
+                _canonical_metadata(row)
+            ),
             "approved_by": approved_by,
         }
     )
@@ -841,7 +1029,11 @@ def _release_digest(row: OutreachMessage, approved_by: str) -> str:
 def release_outreach(
     db: Session, outreach_id: str, data: OutreachReleaseIn
 ) -> OutreachMessage:
-    row = db.scalar(select(OutreachMessage).where(OutreachMessage.outreach_id == outreach_id))
+    row = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.outreach_id == outreach_id)
+        .with_for_update()
+    )
     if not row:
         raise KeyError(outreach_id)
     if row.status != "queued":
@@ -852,9 +1044,12 @@ def release_outreach(
     hard_gate_reason = _land_agent_gate_reason(signal)
     if hard_gate_reason:
         raise GrowthRegistryError(hard_gate_reason)
+    if not _payload_matches(row):
+        raise GrowthRegistryError("outreach_payload_hash_mismatch")
     if not hmac.compare_digest(row.payload_sha256, data.inspected_payload_sha256):
         raise GrowthRegistryError("Inspected outreach payload hash does not match")
-    _assert_canonical_payload(row)
+    canonical_metadata, _body_html = _assert_canonical_payload(row)
+    _assert_current_canonical_screening(signal, canonical_metadata)
     row.release_approved_by = data.approved_by.strip()
     row.release_approved_at = utcnow()
     row.release_token_hash = _release_digest(row, row.release_approved_by)
@@ -874,7 +1069,12 @@ def release_outreach(
 
 
 def _release_matches(row: OutreachMessage) -> bool:
-    if not row.release_token_hash or not row.release_approved_by or not row.release_approved_at:
+    if (
+        not row.release_token_hash
+        or not row.release_approved_by
+        or not row.release_approved_at
+        or not _payload_matches(row)
+    ):
         return False
     return hmac.compare_digest(
         row.release_token_hash, _release_digest(row, row.release_approved_by)
@@ -889,8 +1089,27 @@ def _trip_runtime_kill_switch() -> bool:
     return True
 
 
+def _delivery_verification_pending(row: OutreachMessage) -> bool:
+    if row.status != "claimed" or not row.receipt_json:
+        return False
+    try:
+        receipt = json.loads(row.receipt_json)
+    except (TypeError, json.JSONDecodeError):
+        return False
+    verification = receipt.get("delivery_verification")
+    return isinstance(verification, dict) and verification.get("status") == (
+        "pending_verification"
+    )
+
+
 def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
-    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
+    if _delivery_verification_pending(row):
+        return row
+    signal = db.scalar(
+        select(GrowthSignal)
+        .where(GrowthSignal.signal_id == row.signal_id)
+        .with_for_update()
+    )
     hard_gate_reason = _land_agent_gate_reason(signal) if signal else None
     if hard_gate_reason:
         row.status = "blocked"
@@ -919,6 +1138,14 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         if not _payload_matches(row):
             raise GrowthRegistryError("outreach_payload_hash_mismatch")
         canonical_metadata, body_html = _assert_canonical_payload(row)
+        _assert_current_canonical_screening(signal, canonical_metadata)
+        if signal.signal_type == "residential_building_plot":
+            required_recipient_type = LAND_RECIPIENT_TYPES_BY_ROLE.get(signal.recipient_role)
+            if (
+                not required_recipient_type
+                or canonical_metadata.get("recipient_type") != required_recipient_type
+            ):
+                raise GrowthRegistryError("land_recipient_role_type_mismatch_no_send")
         if not _release_matches(row):
             raise GrowthRegistryError("outreach_exact_payload_release_missing_or_invalid")
         if _recipient_suppressed(db, row.recipient_email):
@@ -938,7 +1165,24 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             body_html=body_html,
             idempotency_key=row.idempotency_key,
             reply_to=str(binding.config.get("reply_to") or binding.sender_email),
+            delivery_scope="external_customer",
         )
+        if (
+            receipt.provider != "gmail_api"
+            or receipt.detail.get("readback_verified") is not True
+            or not receipt.detail.get("readback_mime_sha256")
+            or not receipt.detail.get("rfc_message_id")
+        ):
+            raise EmailDeliveryError(
+                "accepted_but_unverified",
+                retry_safe=False,
+                accepted_but_unverified=True,
+                provider_message_id=receipt.provider_message_id,
+                detail={
+                    "reason": "external_delivery_receipt_not_gmail_readback_verified",
+                    "provider": receipt.provider,
+                },
+            )
         row.status = "sent"
         row.provider_message_id = receipt.provider_message_id
         row.receipt_json = canonical_json(
@@ -947,6 +1191,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                 "accepted_recipient": receipt.accepted_recipient,
                 "response_sha256": receipt.response_sha256,
                 "accepted": True,
+                "delivery_detail": receipt.detail,
                 "canonical_template": canonical_metadata,
             }
         )
@@ -970,14 +1215,70 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             },
         )
     except (GrowthRegistryError, EmailDeliveryError) as exc:
-        row.last_error = type(exc).__name__
+        if isinstance(exc, EmailDeliveryError) and exc.accepted_but_unverified:
+            try:
+                pending_receipt = json.loads(row.receipt_json or "{}")
+            except (TypeError, json.JSONDecodeError):
+                pending_receipt = {}
+            pending_receipt.update(
+                {
+                    "provider": "gmail_api",
+                    "accepted": True,
+                    "delivery_verification": {
+                        "status": "pending_verification",
+                        "retry_safe": False,
+                        "provider_message_id": exc.provider_message_id,
+                        "detail": exc.detail,
+                    },
+                }
+            )
+            row.status = "claimed"
+            row.last_error = exc.error_type
+            row.provider_message_id = exc.provider_message_id
+            row.receipt_json = canonical_json(pending_receipt)
+            row.claimed_by = None
+            row.claimed_at = None
+            row.lease_expires_at = None
+            audit(
+                db,
+                actor="growth-worker",
+                action="growth_outreach_delivery_pending_verification",
+                entity_type="growth_outreach",
+                entity_id=row.outreach_id,
+                after={
+                    "signal_id": row.signal_id,
+                    "provider_message_id": exc.provider_message_id,
+                    "retry_safe": False,
+                    "detail": exc.detail,
+                },
+            )
+            _trip_runtime_kill_switch()
+            db.commit()
+            return row
+        recipient_hard_gate = _is_recipient_hard_gate_error(exc)
+        row.last_error = str(exc) if recipient_hard_gate else type(exc).__name__
         row.claimed_by = None
         row.claimed_at = None
         row.lease_expires_at = None
-        retry_safe = not isinstance(exc, EmailDeliveryError) or exc.retry_safe
-        if row.attempt_count >= row.max_attempts or not retry_safe:
-            row.status = "dead_letter"
+        if recipient_hard_gate:
+            row.status = "blocked"
+            signal.status = "blocked"
+            signal.rejection_reasons_json = canonical_json([str(exc)])
+            audit(
+                db,
+                actor="growth-worker",
+                action="growth_outreach_hard_gate_blocked",
+                entity_type="growth_outreach",
+                entity_id=row.outreach_id,
+                after={"signal_id": row.signal_id, "reason": str(exc)},
+            )
         else:
+            retry_safe = not isinstance(exc, EmailDeliveryError) or exc.retry_safe
+        if not recipient_hard_gate and (
+            row.attempt_count >= row.max_attempts or not retry_safe
+        ):
+            row.status = "dead_letter"
+        elif not recipient_hard_gate:
             row.status = "queued"
             row.available_at = utcnow() + timedelta(minutes=2 ** min(row.attempt_count, 8))
         authentication_failure = isinstance(exc, EmailDeliveryError) and exc.authentication_failure

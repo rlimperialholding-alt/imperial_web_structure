@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from app.growth_ops.canonical_policy import LAND_AGENT_HARD_GATE_GDN
 from app.growth_ops.catalog import _fetch
 from app.growth_ops.models import GrowthSignal, OutreachMessage
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
+from app.growth_ops.schemas import GrowthSignalIn
 from app.growth_ops.service import (
     _queue_message,
     _release_matches,
@@ -54,6 +56,13 @@ from app.models import (
     OutboxMessage,
     PlotCheckCase,
     PlotRuleSet,
+)
+
+CANONICAL_REGISTRY_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "config"
+    / "outbound"
+    / "canonical_first_contact_templates_hu_v1.json"
 )
 
 
@@ -103,6 +112,49 @@ def _signal(db, *, signal_id: str = "SIG-LAND-UAT", payload_sha: str = "1" * 64)
     )
     db.commit()
     return signal
+
+
+def _public_land_outreach_input(
+    *,
+    recipient_role: str,
+    recipient_name: str,
+    recipient_email: str,
+    external_key: str,
+    organization_name: str | None = None,
+) -> GrowthSignalIn:
+    return GrowthSignalIn(
+        source_id="licensed-feed:uat",
+        external_key=external_key,
+        motor_key="construction",
+        source_bucket="property_development",
+        signal_type="residential_building_plot",
+        detected_at=datetime.now(UTC),
+        company_name=recipient_name,
+        company_registration_id=None,
+        recipient_organization_name=organization_name,
+        subject_type="natural_person",
+        recipient_role=recipient_role,
+        recipient_type=(
+            "real_estate_agent" if recipient_role == "listing_agent" else "land_owner"
+        ),
+        recipient_name=recipient_name,
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email=recipient_email,
+        recipient_email_type="named",
+        contact_basis="public_property_listing",
+        public_contact_url=f"https://example.test/listing/{external_key}",
+        location="sülysápi, 605 m²-es",
+        summary="Eladó belterületi építési telek Sülysápon.",
+        evidence_url=f"https://example.test/listing/{external_key}",
+        brand_id="imperial",
+        confidence=90,
+        urgency=50,
+        source_payload_hash="f" * 64,
+    )
 
 
 def _commercial_dependencies(db):
@@ -350,6 +402,9 @@ def test_named_portal_is_never_read_by_generic_scanner(monkeypatch):
 
 
 def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
+    monkeypatch.setenv(
+        "CANONICAL_FIRST_CONTACT_REGISTRY_FILE", str(CANONICAL_REGISTRY_PATH)
+    )
     monkeypatch.setattr(
         "app.growth_ops.service.settings",
         lambda: SimpleNamespace(base_url="https://growth.imperialholding.test"),
@@ -372,7 +427,7 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         location="sülysápi, 605 m²-es",
         summary="Eladó belterületi építési telek Sülysápon.",
         evidence_url="https://example.test/listing/COPY-001",
-        brand_id="Imperial",
+        brand_id="imperial",
         score=90,
         urgency=50,
         confidence=90,
@@ -381,7 +436,7 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         status="blocked",
     )
     binding = BrandBinding(
-        brand_id="Imperial",
+        brand_id="imperial",
         sender_email="info@imperialholding.hu",
         domain_key="imperialholding.hu",
         secret={},
@@ -397,12 +452,21 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
             },
         },
     )
-    subject, body, _metadata = _render_message(
+    agent_data = _public_land_outreach_input(
+        recipient_role="listing_agent",
+        recipient_name="Nagy Gergő",
+        recipient_email="nagy.gergo1@dh.hu",
+        external_key="COPY-001",
+        organization_name="Duna House",
+    )
+    subject, body, metadata = _render_message(
         signal,
         binding,
         step=0,
         unsubscribe_token="UAT-TOKEN",
+        data=agent_data,
     )
+    assert metadata["template_id"] == "REAL_ESTATE_AGENT_FIRST_CONTACT_HU"
     assert subject == "ház eladásában kérnék segítséget"
     assert (
         "Cégünk, az Imperial Holding, előregyártott készházak és típusházak "
@@ -420,12 +484,20 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
 
     signal.recipient_role = "property_owner"
     signal.company_name = "Kovács Péter"
-    subject, body, _metadata = _render_message(
+    owner_data = _public_land_outreach_input(
+        recipient_role="property_owner",
+        recipient_name="Kovács Péter",
+        recipient_email="owner@example.test",
+        external_key="COPY-002",
+    )
+    subject, body, metadata = _render_message(
         signal,
         binding,
         step=0,
         unsubscribe_token="UAT-OWNER-TOKEN",
+        data=owner_data,
     )
+    assert metadata["template_id"] == "LAND_OWNER_FIRST_CONTACT_HU"
     assert subject == "szeretnék érdeklődni a telek iránt"
     assert (
         "Cégünk, az Imperial Holding, előregyártott készházak és típusházak "
@@ -446,6 +518,9 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
 def test_owner_approved_public_land_initial_email_is_policy_released(
     db, monkeypatch, recipient_role
 ):
+    monkeypatch.setenv(
+        "CANONICAL_FIRST_CONTACT_REGISTRY_FILE", str(CANONICAL_REGISTRY_PATH)
+    )
     monkeypatch.setattr(
         "app.growth_ops.service.settings",
         lambda: SimpleNamespace(base_url="https://growth.imperialholding.test"),
@@ -471,7 +546,7 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
         location="sülysápi, 605 m²-es",
         summary="Eladó belterületi építési telek Sülysápon.",
         evidence_url="https://example.test/listing/RELEASE-001",
-        brand_id="Imperial",
+        brand_id="imperial",
         score=90,
         urgency=50,
         confidence=90,
@@ -480,7 +555,7 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
         status="accepted",
     )
     binding = BrandBinding(
-        brand_id="Imperial",
+        brand_id="imperial",
         sender_email="info@imperialholding.hu",
         domain_key="imperialholding.hu",
         secret={},
@@ -496,6 +571,15 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
     )
     db.add(signal)
     db.flush()
+    data = _public_land_outreach_input(
+        recipient_role=recipient_role,
+        recipient_name="Nyilvános hirdető",
+        recipient_email=f"{recipient_role}@example.test",
+        external_key=f"RELEASE-{recipient_role}",
+        organization_name=(
+            "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
+        ),
+    )
 
     initial = _queue_message(
         db,
@@ -504,6 +588,7 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
         step=0,
         available_at=datetime.now(UTC),
         enforce_recipient_cooldown=False,
+        data=data,
     )
     with pytest.raises(
         GrowthRegistryError, match="owner_approved_followup_template_missing_no_send"
@@ -515,11 +600,19 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
             step=1,
             available_at=datetime.now(UTC),
             enforce_recipient_cooldown=False,
+            data=data,
         )
 
     assert initial.release_approved_by == "owner-policy:land-public-listing-v1:2026-08-25"
     assert initial.release_approved_at is not None
     assert initial.release_token_hash and _release_matches(initial)
+    canonical_metadata = json.loads(initial.receipt_json)["canonical_template"]
+    assert canonical_metadata["template_id"] == (
+        "REAL_ESTATE_AGENT_FIRST_CONTACT_HU"
+        if recipient_role == "listing_agent"
+        else "LAND_OWNER_FIRST_CONTACT_HU"
+    )
+    assert "template_policy" not in canonical_metadata
     if recipient_role == "listing_agent":
         assert initial.body_html
         assert (

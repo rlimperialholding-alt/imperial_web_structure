@@ -2,11 +2,13 @@ from __future__ import annotations
 
 # ruff: noqa: E501
 import hashlib
+import json
 import os
 from pathlib import Path
 
 import pytest
 
+from app.growth_ops.canonical_policy import ACTIVE_CONTENT_BRANDS
 from app.growth_ops.canonical_templates import CanonicalFirstContactRegistry
 from app.growth_ops.registry import GrowthRegistryError
 
@@ -174,6 +176,68 @@ def test_registry_contains_only_owner_approved_exact_canonical_texts():
     assert legacy["replaced_by"] == "REFERRAL_PARTNER_FIRST_CONTACT_HU"
 
 
+def test_registry_requires_the_exact_fail_closed_brand_isolation_policy(tmp_path):
+    raw = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    raw.pop("brand_isolation_policy")
+    candidate = tmp_path / "canonical.json"
+    candidate.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(GrowthRegistryError, match="brand-isolation policy is missing"):
+        CanonicalFirstContactRegistry.load(candidate)
+
+
+def test_registry_rejects_a_weakened_brand_isolation_policy(tmp_path):
+    raw = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    raw["brand_isolation_policy"]["sender_brands"]["imperial"][
+        "forbidden_customer_facing_terms"
+    ].remove("Prefab")
+    candidate = tmp_path / "canonical.json"
+    candidate.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(GrowthRegistryError, match="brand-isolation policy changed"):
+        CanonicalFirstContactRegistry.load(candidate)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda raw: raw["hard_gates"][2]["normalized_word_any"].remove("gdn"),
+        lambda raw: raw["hard_gates"][1]["normalized_all_any"][1].remove(
+            "budapest xii kerulet"
+        ),
+        lambda raw: raw["hard_gates"][3]["normalized_any"].remove("kurucz hajnalka"),
+    ],
+)
+def test_registry_rejects_any_weakened_hard_gate_definition(tmp_path, mutate):
+    raw = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    mutate(raw)
+    candidate = tmp_path / "canonical.json"
+    candidate.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(GrowthRegistryError, match="hard-gate policy changed"):
+        CanonicalFirstContactRegistry.load(candidate)
+
+
+def test_registry_rejects_self_authenticated_owner_body_tampering(tmp_path):
+    raw = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    template = next(
+        item
+        for item in raw["templates"]
+        if item["template_id"] == "LAND_OWNER_FIRST_CONTACT_HU"
+    )
+    template["owner_approved_body_text"] += "\nNem jóváhagyott toldás."
+    body_bytes = template["owner_approved_body_text"].encode("utf-8")
+    template["owner_approved_body_text_sha256_utf8"] = hashlib.sha256(
+        body_bytes
+    ).hexdigest()
+    template["owner_approved_body_text_utf8_bytes"] = len(body_bytes)
+    candidate = tmp_path / "canonical.json"
+    candidate.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(GrowthRegistryError, match="registry byte hash changed"):
+        CanonicalFirstContactRegistry.load(candidate)
+
+
 def test_architect_render_replaces_only_approved_variables_and_bolds_exact_sentence():
     rendered = _render(_registry())
     expected = (
@@ -204,6 +268,14 @@ def test_one_architect_reference_fails_closed():
 def test_unverified_architect_references_fail_closed():
     with pytest.raises(GrowthRegistryError, match="references_not_verified"):
         _render(_registry(), reference_names_verified=False)
+
+
+def test_architect_sender_company_must_match_the_imperial_sender_brand():
+    with pytest.raises(
+        GrowthRegistryError,
+        match="canonical_sender_company_conflicts_with_sender_brand_no_send",
+    ):
+        _render(_registry(), sender_company_name="Prefab")
 
 
 @pytest.mark.parametrize(
@@ -280,6 +352,103 @@ def test_referral_partner_render_is_exact_and_only_replaces_the_two_allowed_fiel
 
 
 @pytest.mark.parametrize(
+    ("business_context", "blocked_brand"),
+    [
+        ("Prefab értékesítési hálózat", "Prefab"),
+        ("Pre\u200bfab értékesítési hálózat", "Prefab"),
+        ("RED Property értékesítési hálózat", "RED Property"),
+        ("Imperial Intelligence értékesítési hálózat", "Imperial Intelligence"),
+    ],
+)
+def test_verified_variable_cannot_inject_a_second_customer_facing_brand(
+    business_context, blocked_brand
+):
+    with pytest.raises(
+        GrowthRegistryError,
+        match=rf"cross_brand_customer_facing_content_no_send:{blocked_brand}",
+    ):
+        _render(
+            _registry(),
+            recipient_type="referral_partner",
+            recipient_name="Kovács Anna",
+            sender_company_name=None,
+            reference_names=[],
+            reference_names_verified=False,
+            business_context=business_context,
+            business_context_verified=True,
+            business_context_evidence_url="https://example.test/uzleteink",
+        )
+
+
+def test_every_non_imperial_active_brand_and_its_concatenated_form_is_blocked():
+    registry = _registry()
+    forbidden_terms = registry.raw["brand_isolation_policy"]["sender_brands"][
+        "imperial"
+    ]["forbidden_customer_facing_terms"]
+
+    for brand in ACTIVE_CONTENT_BRANDS:
+        if brand == "Imperial":
+            continue
+        assert brand in forbidden_terms
+        for candidate in {brand, brand.replace(" ", "")}:
+            with pytest.raises(
+                GrowthRegistryError,
+                match="cross_brand_customer_facing_content_no_send",
+            ):
+                _render(
+                    registry,
+                    recipient_type="referral_partner",
+                    recipient_name="Kovács Anna",
+                    sender_company_name=None,
+                    reference_names=[],
+                    reference_names_verified=False,
+                    business_context=f"{candidate} értékesítési hálózat",
+                    business_context_verified=True,
+                    business_context_evidence_url="https://example.test/uzleteink",
+                )
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "bautica.hu",
+        "casa-moderna.hu",
+        "baufreund.hu",
+        "danishfabrik.hu",
+        "timberhaus.hu",
+        "red-property",
+        "property-360",
+        "everyday-homes",
+        "venture-studio",
+        "family-homes",
+        "imperial-construction",
+        "imperial-intelligence",
+        "imperial-technologies",
+        "imperial-knowledge",
+        "exitflow.hu",
+        "veritas-construct",
+        "baushield.hu",
+    ],
+)
+def test_common_slug_and_domain_aliases_cannot_bypass_brand_isolation(alias):
+    with pytest.raises(
+        GrowthRegistryError,
+        match="cross_brand_customer_facing_content_no_send",
+    ):
+        _render(
+            _registry(),
+            recipient_type="referral_partner",
+            recipient_name="Kovács Anna",
+            sender_company_name=None,
+            reference_names=[],
+            reference_names_verified=False,
+            business_context=f"{alias} értékesítési hálózat",
+            business_context_verified=True,
+            business_context_evidence_url="https://example.test/uzleteink",
+        )
+
+
+@pytest.mark.parametrize(
     "changes",
     [
         {"business_context": None},
@@ -308,8 +477,27 @@ def test_referral_partner_missing_or_unverified_business_context_fails_closed(ch
     ("screening_values", "gate_id"),
     [
         (["Turczer József"], "BLOCK_TURCZER_JOZSEF"),
+        (["József Turczer"], "BLOCK_TURCZER_JOZSEF"),
         (["Otthon Centrum", "Budapest II. kerületi iroda"], "BLOCK_OTTHON_CENTRUM"),
+        (["Otthon Centrum", "II. kerületi iroda"], "BLOCK_OTTHON_CENTRUM"),
+        (["Otthon Centrum", "II/A. kerületi iroda"], "BLOCK_OTTHON_CENTRUM"),
+        (["Otthon Centrum", "2-A kerületi iroda"], "BLOCK_OTTHON_CENTRUM"),
+        (["Otthon Centrum", "XII. kerületi iroda"], "BLOCK_OTTHON_CENTRUM"),
+        (["OC.hu", "Budapest II/A. kerületi iroda"], "BLOCK_OTTHON_CENTRUM"),
+        (["OC.hu", "1024 Budapest, Bem rakpart"], "BLOCK_OTTHON_CENTRUM"),
+        (["OC.hu", "1126 Budapest, MOM Park"], "BLOCK_OTTHON_CENTRUM"),
         (["GDN Ingatlanhálózat – Bármely iroda"], "BLOCK_GDN_INGATLANHALOZAT"),
+        (["G.D.N. Ingatlanhálózat"], "BLOCK_GDN_INGATLANHALOZAT"),
+        (["TurczerJózsef"], "BLOCK_TURCZER_JOZSEF"),
+        (["JózsefTurczer"], "BLOCK_TURCZER_JOZSEF"),
+        (["LeierHungária Kft."], "BLOCK_LEIER_INCIDENT_CONTAINMENT"),
+        (["LEIERHUNGARIA"], "BLOCK_LEIER_INCIDENT_CONTAINMENT"),
+        (["LeierGroup"], "BLOCK_LEIER_INCIDENT_CONTAINMENT"),
+        (["https://g-d-n.hu/iroda"], "BLOCK_GDN_INGATLANHALOZAT"),
+        (
+            ["Leier Hungária Kft.", "info@leier.hu"],
+            "BLOCK_LEIER_INCIDENT_CONTAINMENT",
+        ),
     ],
 )
 def test_named_hard_gates_run_before_template_render(screening_values, gate_id):

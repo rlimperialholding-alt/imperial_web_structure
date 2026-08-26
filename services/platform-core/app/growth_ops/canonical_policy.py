@@ -385,9 +385,12 @@ def _identity_fold(value: str | None) -> str:
 def _blocked_oc_office(office_name: str) -> bool:
     normalized = _identity_fold(office_name)
     district_pattern = re.compile(
-        r"\b(?:ii(?:\s+a)?|2(?:\s+a)?|xii|12)\s+kerulet\b|\b(?:2|12)ker\b"
+        r"\b(?:ii(?:\s*a)?|2(?:\s*a)?|xii|12)\s+kerulet(?:i)?\b|"
+        r"\b(?:2|12)\s*ker\b"
     )
     if district_pattern.search(normalized):
+        return True
+    if normalized.strip() in {"ii", "ii a", "iia", "xii"}:
         return True
     if re.search(r"\b(?:102\d|112\d)\b", normalized):
         return True
@@ -424,7 +427,7 @@ def land_agent_hard_gate_reason(
     )
     if re.search(r"\b(?:turczer\s+jozsef|jozsef\s+turczer)\b", identity):
         return LAND_AGENT_HARD_GATE_TURCZER
-    if re.search(r"\bgdn\b", identity):
+    if re.search(r"\bg\s*d\s*n\b", identity):
         return LAND_AGENT_HARD_GATE_GDN
     if not organization_name or not organization_name.strip():
         return LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED

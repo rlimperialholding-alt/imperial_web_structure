@@ -660,6 +660,7 @@ def test_publication_digest_includes_hash_bound_blocked_forum_draft(db, monkeypa
     assert topic.question in captured["body_text"]
     assert answer.answer_sha256 in captured["body_text"]
     assert answer.answer_text in captured["body_text"]
+    assert captured["delivery_scope"] == "internal"
 
 
 def test_publication_digest_contains_every_quarantined_forum_draft(db, monkeypatch):
@@ -917,6 +918,7 @@ def test_internal_handoff_is_fixed_recipient_and_idempotent(db, monkeypatch):
     assert second["idempotent"] is True
     assert len(sent) == 1
     assert sent[0]["to_email"] == IORA_EXECUTIVE_EMAIL
+    assert sent[0]["delivery_scope"] == "internal"
     assert row.recipient_email == IORA_EXECUTIVE_EMAIL
     assert "IORA" in row.body_text
     assert "nem indult közvetlen megkeresés" in row.body_text

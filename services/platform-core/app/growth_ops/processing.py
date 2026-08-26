@@ -2138,6 +2138,7 @@ def send_publication_digest(db: Session, *, now: datetime | None = None) -> dict
             subject=subject,
             body_text=body_text,
             idempotency_key=payload_hash,
+            delivery_scope="internal",
         )
     except (GrowthRegistryError, EmailDeliveryError) as exc:
         row.attempt_count += 1
@@ -2165,7 +2166,7 @@ def _smtp_binding() -> BrandBinding:
     except (OSError, json.JSONDecodeError) as exc:
         raise GrowthRegistryError("Internal handoff SMTP secret is unreadable") from exc
     return BrandBinding(
-        brand_id="Imperial",
+        brand_id="imperial",
         sender_email=IORA_INTERNAL_SENDER,
         domain_key="imperialholding.hu",
         secret=secret,
@@ -2271,6 +2272,7 @@ def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[s
             subject=subject,
             body_text=body,
             idempotency_key=payload_hash,
+            delivery_scope="internal",
         )
     except (GrowthRegistryError, EmailDeliveryError) as exc:
         row.attempt_count += 1

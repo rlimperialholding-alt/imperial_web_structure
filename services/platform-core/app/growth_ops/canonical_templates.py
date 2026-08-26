@@ -6,6 +6,7 @@ import json
 import os
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,219 @@ REQUIRED_TEMPLATE_IDS = {
 }
 OWNER_APPROVED = {"OWNER_APPROVED", "CANONICAL"}
 LEGACY_REFERRAL_TEMPLATE_ID = "PARTNERPOINT_LEGACY_1_PERCENT_FIRST_CONTACT_HU"
+EXPECTED_REGISTRY_SHA256 = "fd0706651007b9a9374058c0d664de73634a314eec54dac56042d2f348e7de3c"
+EXPECTED_SELECTION_PIPELINE = [
+    "HARD_GATES",
+    "RECIPIENT_CLASSIFICATION_VERIFIED",
+    "EXCLUSION_SCREENING_VERIFIED",
+    "REFERENCES_VERIFIED_OR_APPROVED_ZERO_REFERENCE_FALLBACK",
+    "VERIFIED_BUSINESS_CONTEXT_REQUIRED_FOR_REFERRAL_PARTNER",
+    "RECIPIENT_TYPE_EXACT_MATCH",
+    "CANONICAL_TEMPLATE_RENDER",
+]
+EXPECTED_BRAND_ISOLATION_POLICY = {
+    "customer_facing_brand_count": "EXACTLY_ONE",
+    "cross_brand_decision": "NO_SEND",
+    "rewrite_policy": "PROHIBITED",
+    "sender_brands": {
+        "imperial": {
+            "required_company_name": "Imperial Holding",
+            "required_identity_terms_any": ["Imperial"],
+            "forbidden_customer_facing_terms": [
+                "Prefab.hu",
+                "Prefab",
+                "Bautica",
+                "Bautica.hu",
+                "Casa Moderna",
+                "CasaModerna",
+                "Casa-Moderna",
+                "casa-moderna.hu",
+                "BauFreund",
+                "Bau Freund",
+                "Bau-Freund",
+                "baufreund.hu",
+                "Danish Fabrik",
+                "DanishFabrik",
+                "Danish-Fabrik",
+                "danishfabrik.hu",
+                "TimberHaus",
+                "Timber Haus",
+                "Timber-Haus",
+                "timberhaus.hu",
+                "RED Property",
+                "REDProperty",
+                "RED-Property",
+                "Property360",
+                "Property 360",
+                "Property-360",
+                "property360.hu",
+                "Everyday Homes",
+                "EverydayHomes",
+                "Everyday-Homes",
+                "everydayhomes.hu",
+                "Venture Studio",
+                "VentureStudio",
+                "Venture-Studio",
+                "venturestudio.hu",
+                "Family Homes",
+                "FamilyHomes",
+                "Family-Homes",
+                "familyhomes.hu",
+                "Imperial Construction",
+                "ImperialConstruction",
+                "Imperial-Construction",
+                "Budapesti Magasépítő Vállalat",
+                "budapesti-magasepito-vallalat",
+                "Imperial Intelligence",
+                "ImperialIntelligence",
+                "Imperial-Intelligence",
+                "Imperial Technologies",
+                "ImperialTechnologies",
+                "Imperial-Technologies",
+                "Imperial Knowledge",
+                "ImperialKnowledge",
+                "Imperial-Knowledge",
+                "ExitFlow",
+                "Exit Flow",
+                "Exit-Flow",
+                "exitflow.hu",
+                "Veritas Construct",
+                "VeritasConstruct",
+                "Veritas-Construct",
+                "veritasconstruct.hu",
+                "Veritas",
+                "BauShield",
+                "Bau Shield",
+                "Bau-Shield",
+                "baushield.hu",
+            ],
+        }
+    },
+}
+EXPECTED_HARD_GATES: list[dict[str, Any]] = [
+    {
+        "gate_id": "BLOCK_TURCZER_JOZSEF",
+        "decision": "NO_SEND",
+        "scope": "ALL_CONTACTS",
+        "normalized_any": [
+            "turczer jozsef",
+            "jozsef turczer",
+            "turczerjozsef",
+            "jozsefturczer",
+        ],
+    },
+    {
+        "gate_id": "BLOCK_OTTHON_CENTRUM_BUDAPEST_II_IIA_XII",
+        "decision": "NO_SEND",
+        "scope": "OFFICES_AND_ALL_CONTACTS",
+        "normalized_all_any": [
+            ["otthon centrum", "oc ingatlan", "oc hu"],
+            [
+                "budapest ii kerulet",
+                "budapest ii keruleti",
+                "budapest ii",
+                "ii kerulet",
+                "ii keruleti",
+                "ii",
+                "2 kerulet",
+                "2 keruleti",
+                "budapest ii a kerulet",
+                "budapest ii a keruleti",
+                "budapest ii a",
+                "ii a kerulet",
+                "ii a keruleti",
+                "ii a",
+                "budapest iia kerulet",
+                "budapest iia keruleti",
+                "budapest iia",
+                "iia kerulet",
+                "iia keruleti",
+                "iia",
+                "budapest 2 a kerulet",
+                "budapest 2 a keruleti",
+                "budapest 2 a",
+                "2 a kerulet",
+                "2 a keruleti",
+                "2 a",
+                "budapest 2a kerulet",
+                "budapest 2a keruleti",
+                "budapest 2a",
+                "2a kerulet",
+                "2a keruleti",
+                "2a",
+                "budapest xii kerulet",
+                "budapest xii keruleti",
+                "budapest xii",
+                "xii kerulet",
+                "xii keruleti",
+                "xii",
+                "12 kerulet",
+                "12 keruleti",
+                "bem rakpart",
+                "tdg",
+                "hidegkuti ut",
+                "lajos utca",
+                "uromi utca",
+                "mom park",
+                "varosmajor utca",
+                "1020",
+                "1021",
+                "1022",
+                "1023",
+                "1024",
+                "1025",
+                "1026",
+                "1027",
+                "1028",
+                "1029",
+                "1120",
+                "1121",
+                "1122",
+                "1123",
+                "1124",
+                "1125",
+                "1126",
+                "1127",
+                "1128",
+                "1129",
+            ],
+        ],
+    },
+    {
+        "gate_id": "BLOCK_GDN_INGATLANHALOZAT",
+        "decision": "NO_SEND",
+        "scope": "FULL_NETWORK_AND_ALL_CONTACTS",
+        "normalized_word_any": ["gdn"],
+        "normalized_any": ["gdn ingatlanhalozat", "gdn ingatlan", "g d n"],
+    },
+    {
+        "gate_id": "BLOCK_LEIER_INCIDENT_CONTAINMENT",
+        "decision": "NO_SEND",
+        "scope": "FULL_ENTITY_DOMAINS_AND_ALL_CONTACTS_UNTIL_OWNER_CLEARANCE",
+        "normalized_any": [
+            "leier",
+            "leier hungaria",
+            "leierhungaria",
+            "leier group",
+            "leiergroup",
+            "leier hu",
+            "leier eu",
+            "leier at",
+            "info leier hu",
+            "kpertekesites leier hu",
+            "kurucz hajnalka",
+        ],
+    },
+]
+REQUIRED_HARD_GATE_CASES = {
+    "BLOCK_TURCZER_JOZSEF": ["Turczer József"],
+    "BLOCK_OTTHON_CENTRUM_BUDAPEST_II_IIA_XII": [
+        "Otthon Centrum",
+        "Budapest II. kerületi iroda",
+    ],
+    "BLOCK_GDN_INGATLANHALOZAT": ["GDN Ingatlanhálózat"],
+    "BLOCK_LEIER_INCIDENT_CONTAINMENT": ["Leier Hungária", "info@leier.hu"],
+}
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -36,7 +250,11 @@ def _sha256_text(value: str) -> str:
 
 def _normalize(value: object) -> str:
     decomposed = unicodedata.normalize("NFKD", str(value or ""))
-    ascii_like = "".join(char for char in decomposed if not unicodedata.combining(char))
+    ascii_like = "".join(
+        char
+        for char in decomposed
+        if not unicodedata.combining(char) and unicodedata.category(char) != "Cf"
+    )
     return " ".join(re.sub(r"[^0-9a-z]+", " ", ascii_like.casefold()).split())
 
 
@@ -135,7 +353,7 @@ class CanonicalFirstContactRegistry:
         return cls(raw, source_bytes=source_bytes, source_path=source_path)
 
     def _validate(self) -> None:
-        if self.raw.get("schema_version") != "1.0" or self.raw.get("registry_version") != 2:
+        if self.raw.get("schema_version") != "1.0" or self.raw.get("registry_version") != 3:
             raise GrowthRegistryError("Unsupported canonical first-contact registry version")
         if set(self.raw.get("status") or []) != OWNER_APPROVED:
             raise GrowthRegistryError("Canonical registry status is not OWNER_APPROVED/CANONICAL")
@@ -147,14 +365,34 @@ class CanonicalFirstContactRegistry:
             raise GrowthRegistryError("Canonical fallback policy must be PROHIBITED")
         if self.raw.get("generic_copy_override_policy") != "PROHIBITED":
             raise GrowthRegistryError("Generic copy override policy must be PROHIBITED")
-        if list(self.raw.get("selection_pipeline") or [])[:1] != ["HARD_GATES"]:
-            raise GrowthRegistryError("Hard gates must run before canonical template selection")
+        brand_policy = self.raw.get("brand_isolation_policy")
+        if not isinstance(brand_policy, dict):
+            raise GrowthRegistryError("Canonical brand-isolation policy is missing")
+        if brand_policy != EXPECTED_BRAND_ISOLATION_POLICY:
+            raise GrowthRegistryError("Canonical brand-isolation policy changed")
+        if list(self.raw.get("selection_pipeline") or []) != EXPECTED_SELECTION_PIPELINE:
+            raise GrowthRegistryError("Canonical selection pipeline changed")
         if set(self.templates_by_id) != set(REQUIRED_TEMPLATE_IDS.values()):
             raise GrowthRegistryError("Exactly the four required canonical templates must exist")
         if set(self.templates_by_recipient_type) != set(REQUIRED_TEMPLATE_IDS):
             raise GrowthRegistryError("Canonical recipient_type mapping is incomplete")
         if len(self.templates_by_id) != 4 or len(self.templates_by_recipient_type) != 4:
             raise GrowthRegistryError("Canonical template IDs and recipient types must be unique")
+        hard_gates = self.raw.get("hard_gates")
+        if not isinstance(hard_gates, list):
+            raise GrowthRegistryError("Canonical hard gates must be a list")
+        if hard_gates != EXPECTED_HARD_GATES:
+            raise GrowthRegistryError("Canonical hard-gate policy changed")
+        gate_ids = {
+            str(gate.get("gate_id") or "")
+            for gate in hard_gates
+            if isinstance(gate, dict) and gate.get("decision") == "NO_SEND"
+        }
+        if not set(REQUIRED_HARD_GATE_CASES).issubset(gate_ids):
+            raise GrowthRegistryError("Required canonical hard gate is missing")
+        for gate_id, screening_values in REQUIRED_HARD_GATE_CASES.items():
+            if self.hard_gate_match(screening_values) != gate_id:
+                raise GrowthRegistryError(f"Canonical hard gate is ineffective: {gate_id}")
 
         for recipient_type, template_id in REQUIRED_TEMPLATE_IDS.items():
             template = self.templates_by_id[template_id]
@@ -239,8 +477,10 @@ class CanonicalFirstContactRegistry:
             raise GrowthRegistryError("Legacy 1% PartnerPont body hash mismatch")
         if len(legacy_bytes) != legacy.get("body_text_utf8_bytes"):
             raise GrowthRegistryError("Legacy 1% PartnerPont body byte length mismatch")
+        if self.source_sha256 != EXPECTED_REGISTRY_SHA256:
+            raise GrowthRegistryError("Canonical registry byte hash changed")
 
-    def hard_gate_match(self, screening_values: list[object]) -> str | None:
+    def hard_gate_match(self, screening_values: Sequence[object]) -> str | None:
         normalized = _normalize("\n".join(str(value or "") for value in screening_values))
         padded = f" {normalized} "
 
@@ -264,6 +504,33 @@ class CanonicalFirstContactRegistry:
             ):
                 return str(gate.get("gate_id"))
         return None
+
+    def _assert_brand_isolation(
+        self, *, sender_brand_id: str, subject: str, body_text: str
+    ) -> None:
+        policy = (self.raw.get("brand_isolation_policy") or {}).get(
+            "sender_brands", {}
+        ).get(sender_brand_id)
+        if not isinstance(policy, dict):
+            raise GrowthRegistryError("canonical_sender_brand_isolation_missing_no_send")
+        customer_facing_text = f"{subject}\n{body_text}"
+        normalized = f" {_normalize(customer_facing_text)} "
+
+        def contains(term: object) -> bool:
+            normalized_term = _normalize(term)
+            return bool(normalized_term) and f" {normalized_term} " in normalized
+
+        forbidden = [
+            str(term)
+            for term in policy.get("forbidden_customer_facing_terms") or []
+            if contains(term)
+        ]
+        if forbidden:
+            raise GrowthRegistryError(
+                "cross_brand_customer_facing_content_no_send:" + ",".join(forbidden)
+            )
+        if not any(contains(term) for term in policy.get("required_identity_terms_any") or []):
+            raise GrowthRegistryError("canonical_sender_identity_missing_no_send")
 
     def _body_html(self, body_text: str, template: dict[str, Any]) -> str:
         escaped = html.escape(body_text)
@@ -326,6 +593,15 @@ class CanonicalFirstContactRegistry:
         name = _validated_text(recipient_name, field="recipient_name")
         if recipient_type == "architect_office":
             sender = _validated_text(sender_company_name, field="sender_company_name")
+            expected_sender = str(
+                self.raw["brand_isolation_policy"]["sender_brands"][
+                    str(template["sender_brand_id"])
+                ]["required_company_name"]
+            )
+            if _normalize(sender) != _normalize(expected_sender):
+                raise GrowthRegistryError(
+                    "canonical_sender_company_conflicts_with_sender_brand_no_send"
+                )
             references = [
                 _validated_text(item, field="reference_names") for item in reference_names or []
             ]
@@ -384,6 +660,12 @@ class CanonicalFirstContactRegistry:
             ("owner_approved_subject_missing_no_fallback",) if subject is None else ()
         )
         body_html = self._body_html(body, template)
+        if subject is not None:
+            self._assert_brand_isolation(
+                sender_brand_id=str(template["sender_brand_id"]),
+                subject=str(subject),
+                body_text=body,
+            )
         return RenderedFirstContact(
             template_id=str(template["template_id"]),
             recipient_type=recipient_type,

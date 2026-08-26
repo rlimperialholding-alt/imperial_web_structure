@@ -2,4 +2,5 @@ services/platform-core/app/static/prevalidated-commercial-sources/*.json text eo
 services/platform-core/data/copy_gate/*.json text eol=lf
 services/platform-core/app/static/brand-assets/*.json text eol=lf
 services/platform-core/app/static/brand-assets/**/*.svg text eol=lf
+config/outbound/canonical_first_contact_templates_hu_v1.json text eol=lf
 *.sh text eol=lf
