@@ -21,6 +21,47 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Inspect Meta Ads token permissions without writing
+        continue-on-error: true
+        shell: bash
+        env:
+          META_ADS_ACCESS_TOKEN: ${{ secrets.META_ADS_ACCESS_TOKEN }}
+        run: |
+          node <<'NODE'
+          const token = process.env.META_ADS_ACCESS_TOKEN;
+          if (!token) {
+            console.log(JSON.stringify({ok: false, reason: 'META_ADS_ACCESS_TOKEN_NOT_CONFIGURED'}));
+            process.exitCode = 1;
+          } else {
+            const base = 'https://graph.facebook.com/v25.0';
+            const permissionsResponse = await fetch(`${base}/me/permissions?access_token=${encodeURIComponent(token)}`);
+            const permissionsPayload = await permissionsResponse.json();
+            const permissions = (permissionsPayload.data || []).map(item => ({
+              permission: item.permission,
+              status: item.status
+            }));
+            const accountResponse = await fetch(
+              `${base}/act_286070571789380?fields=id,name,account_status&access_token=${encodeURIComponent(token)}`
+            );
+            const accountPayload = await accountResponse.json();
+            const result = {
+              ok: permissionsResponse.ok && accountResponse.ok,
+              permissions,
+              account: accountResponse.ok ? accountPayload : null,
+              permissionError: permissionsResponse.ok ? null : permissionsPayload?.error?.message || null,
+              accountError: accountResponse.ok ? null : accountPayload?.error?.message || null
+            };
+            console.log(JSON.stringify(result));
+            if (process.env.GITHUB_STEP_SUMMARY) {
+              require('node:fs').appendFileSync(
+                process.env.GITHUB_STEP_SUMMARY,
+                `## Meta Ads permission probe\n\n\`${JSON.stringify(result)}\`\n`
+              );
+            }
+            if (!result.ok) process.exitCode = 1;
+          }
+          NODE
+
       - id: google-auth
         name: Authenticate with keyless Workload Identity Federation
         uses: google-github-actions/auth@v3
