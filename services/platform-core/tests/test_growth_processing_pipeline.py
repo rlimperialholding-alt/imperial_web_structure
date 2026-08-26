@@ -132,6 +132,29 @@ def test_hash_bound_quality_gate_blocks_every_public_route_without_image(db, mon
     assert "WAITING_FOR_IMAGE" in obligation.evidence_json
 
 
+def test_legacy_text_only_payload_conflicts_with_the_new_image_bound_identity():
+    job = SimpleNamespace(
+        brand_id="bautica",
+        content_asset_id="QCA-1",
+        content_version_id="VERSION-1",
+        content_hash="a" * 64,
+        channels=["facebook"],
+        visual_asset_package_id="IMGF-APPROVED-1",
+    )
+    legacy = {
+        "brand_id": job.brand_id,
+        "content_asset_id": job.content_asset_id,
+        "content_version_id": job.content_version_id,
+        "content_hash": job.content_hash,
+        "channels": job.channels,
+        "visual_asset_package_id": None,
+    }
+
+    assert processing._same_publication_identity(json.dumps(legacy), job) is False
+    legacy["visual_asset_package_id"] = job.visual_asset_package_id
+    assert processing._same_publication_identity(json.dumps(legacy), job) is True
+
+
 @pytest.mark.parametrize(
     ("available_channel", "expected_channel", "expected_cms", "expected_facebook"),
     [
