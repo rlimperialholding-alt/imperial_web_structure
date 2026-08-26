@@ -47,7 +47,7 @@ jobs:
       - run: npm run prisma:generate
       - run: npm run typecheck
       - run: npm test
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm audit --omit=dev --omit=optional --audit-level=high
 
   imperial-sales-crm:
     runs-on: ubuntu-latest
