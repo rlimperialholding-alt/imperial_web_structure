@@ -1644,6 +1644,24 @@ def _publishing_route_available(brand_id: str, channel: str) -> bool:
     return True
 
 
+def _same_publication_identity(payload_json: str, job: PublicationJobIn) -> bool:
+    try:
+        prior = json.loads(payload_json)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(prior, dict):
+        return False
+    identity = (
+        "brand_id",
+        "content_asset_id",
+        "content_version_id",
+        "content_hash",
+        "channels",
+        "visual_asset_package_id",
+    )
+    return all(prior.get(field) == getattr(job, field) for field in identity)
+
+
 def enqueue_daily_publications(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
     """Queue only exact, HMAC-bound artifacts that passed every automated release gate."""
     current = now or datetime.now(UTC)
@@ -1681,15 +1699,7 @@ def enqueue_daily_publications(db: Session, *, now: datetime | None = None) -> d
             )
             if not existing:
                 raise
-            prior = PublicationJobIn.model_validate_json(existing.payload_json)
-            identity = (
-                "brand_id",
-                "content_asset_id",
-                "content_version_id",
-                "content_hash",
-                "channels",
-            )
-            if any(getattr(prior, field) != getattr(job, field) for field in identity):
+            if not _same_publication_identity(existing.payload_json, job):
                 return "BLOCKED", existing.job_id, False, True
             return existing.status, existing.job_id, True, False
 
