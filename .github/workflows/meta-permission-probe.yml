@@ -26,11 +26,14 @@ jobs:
             const payload = await response.json();
             return { ok: response.ok, status: response.status, payload };
           };
-          const [permissions, identity, debug, account] = await Promise.all([
+          const [permissions, identity, debug, account, systemUser, businessSystemUsers, assignedAdAccounts] = await Promise.all([
             read('/me/permissions'),
             read('/me?fields=id,name'),
             read(`/debug_token?input_token=${encodeURIComponent(token)}`),
-            read('/act_286070571789380?fields=id,name,account_status,permitted_tasks')
+            read('/act_286070571789380?fields=id,name,account_status'),
+            read('/122108445387408916?fields=id,name,role'),
+            read('/268626736867097/system_users?fields=id,name,role'),
+            read('/122108445387408916/assigned_ad_accounts?fields=id,name,tasks')
           ]);
           const result = {
             permissions: permissions.payload?.data || permissions.payload?.error || null,
@@ -43,7 +46,10 @@ jobs:
               scopes: debug.payload?.data?.scopes || [],
               granular_scopes: debug.payload?.data?.granular_scopes || []
             } : debug.payload?.error || null,
-            account: account.ok ? account.payload : account.payload?.error || null
+            account: account.ok ? account.payload : account.payload?.error || null,
+            system_user: systemUser.ok ? systemUser.payload : systemUser.payload?.error || null,
+            business_system_users: businessSystemUsers.ok ? businessSystemUsers.payload : businessSystemUsers.payload?.error || null,
+            assigned_ad_accounts: assignedAdAccounts.ok ? assignedAdAccounts.payload : assignedAdAccounts.payload?.error || null
           };
           console.log(JSON.stringify(result));
           NODE
