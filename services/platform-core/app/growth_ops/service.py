@@ -1081,12 +1081,13 @@ def run_once(db: Session) -> dict[str, Any]:
             "followups": 0,
             "sent": 0,
         }
-    heartbeat(db, status="healthy")
+
     runs = run_due_motors(db)
     followups = schedule_followups(db) if writes_unlocked() else 0
     sent = dispatch_batch(db) if writes_unlocked() else 0
+    content_ok = content_factory.get("status") == "complete"
     result = {
-        "status": "healthy",
+        "status": "healthy" if content_ok else "degraded",
         "runs": len(runs),
         "wide_run": wide_run.run_id if wide_run else None,
         "route_scan": route_scan,
@@ -1096,10 +1097,20 @@ def run_once(db: Session) -> dict[str, Any]:
         "land_takedown": land_takedown,
         "followups": followups,
         "sent": sent,
+        "blocking_errors": (
+            []
+            if content_ok
+            else [
+                "daily_content_not_complete",
+                *[
+                    f"unresolved_brand:{brand}"
+                    for brand in content_factory.get("unresolved_brands", [])
+                ],
+            ]
+        ),
     }
-    heartbeat(db, status="healthy", detail=result)
+    heartbeat(db, status=result["status"], detail=result)
     return result
-
 
 def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
     try:

@@ -112,6 +112,12 @@ class NIMAdapter(BaseAdapter):
         }
         if required_fields - set(contract["field_map"]):
             raise RegistryError("NIM field mapping does not cover mandatory contract fields")
+        readback_map = contract["readback_map"]
+        if not (
+            readback_map.get("visual_asset_package_id")
+            or readback_map.get("featured_image_url")
+        ):
+            raise RegistryError("NIM visual readback mapping is missing")
 
     def _headers(self, method: str, path: str, payload: dict[str, Any], key: str) -> dict[str, str]:
         contract = self.binding.config["contract"]
@@ -183,6 +189,16 @@ class NIMAdapter(BaseAdapter):
             raise ReadbackError("NIM content hash mismatch")
         if str(value("title")).strip() != job.title.strip():
             raise ReadbackError("NIM title mismatch")
+        visual_id_field = mapping.get("visual_asset_package_id")
+        visual_url_field = mapping.get("featured_image_url")
+        if visual_id_field:
+            if str(data.get(visual_id_field) or "") != job.visual_asset_package_id:
+                raise ReadbackError("NIM visual asset readback mismatch")
+        elif visual_url_field:
+            if not str(data.get(visual_url_field) or "").startswith("https://"):
+                raise ReadbackError("NIM featured image readback missing")
+        else:
+            raise ReadbackError("NIM visual readback mapping missing at runtime")
         if not bool(value("public_visible")) or not bool(value("enabled")):
             raise ReadbackError("NIM public visibility is not proven")
         public_url = str(value("public_url") or "")
@@ -321,7 +337,7 @@ class WordPressAdapter(BaseAdapter):
     def _upload_media(self, job: PublicationJobIn, key: str) -> int | None:
         media = job.channel_payloads.get(self.channel, {}).get("media")
         if not media:
-            return None
+            raise AdapterError("WordPress media payload is required")
         url = str(media.get("url") or "")
         if not url.startswith("https://"):
             raise AdapterError("WordPress media URL must use HTTPS")
@@ -386,6 +402,8 @@ class WordPressAdapter(BaseAdapter):
             raise ReadbackError("WordPress content hash mismatch")
         if str((data.get("title") or {}).get("raw") or "").strip() != job.title.strip():
             raise ReadbackError("WordPress title mismatch")
+        if int(data.get("featured_media") or 0) <= 0:
+            raise ReadbackError("WordPress featured image readback missing")
         public_url = str(data.get("link") or "")
         if not public_url.startswith("https://"):
             raise ReadbackError("WordPress permalink missing")
@@ -499,7 +517,7 @@ class MetaAdapter(BaseAdapter):
 
     def _readback(self, job: PublicationJobIn, external_id: str) -> AdapterResult:
         fields = (
-            "id,permalink_url,created_time,message,is_published"
+            "id,permalink_url,created_time,message,is_published,full_picture"
             if self.channel == "facebook"
             else "id,permalink,caption,media_type,media_url,timestamp"
         )
@@ -520,6 +538,12 @@ class MetaAdapter(BaseAdapter):
             )
             or job.excerpt
         )
+        if (
+            self.channel == "facebook"
+            and job.canonical_url
+            and job.canonical_url not in expected_copy
+        ):
+            expected_copy = f"{expected_copy}\\n\\n{job.canonical_url}"
         actual_copy = str(data.get("message" if self.channel == "facebook" else "caption") or "")
         if actual_copy.strip() != expected_copy.strip():
             raise ReadbackError("Meta content readback mismatch")
@@ -528,6 +552,10 @@ class MetaAdapter(BaseAdapter):
             raise ReadbackError("Meta permalink missing")
         if self.channel == "facebook" and data.get("is_published") is False:
             raise ReadbackError("Facebook post is not public")
+        if self.channel == "facebook" and not str(data.get("full_picture") or "").startswith("https://"):
+            raise ReadbackError("Facebook image readback missing")
+        if self.channel == "instagram" and not str(data.get("media_url") or "").startswith("https://"):
+            raise ReadbackError("Instagram image readback missing")
         return AdapterResult(
             external_id=external_id,
             public_url=permalink,
@@ -546,25 +574,30 @@ class MetaAdapter(BaseAdapter):
             raise AdapterError("Verified canonical web URL is required before social publish")
         if self.channel == "facebook":
             page_id = str(self.binding.config["page_id"])
-            body = self._auth(
-                {
-                    "message": payload.get("message") or job.excerpt,
-                    "link": canonical,
-                    "published": True,
-                }
-            )
+            image_url = str(payload.get("image_url") or "")
+            if not image_url.startswith("https://"):
+                raise AdapterError("Facebook HTTPS image_url is required")
+            message = str(payload.get("message") or job.excerpt)
+            if canonical not in message:
+                message = f"{message}\n\n{canonical}"
             created = json_response(
                 self.client.request(
                     self.channel,
                     "POST",
-                    self._url(f"{quote(page_id)}/feed"),
-                    data=body,
+                    self._url(f"{quote(page_id)}/photos"),
+                    data=self._auth(
+                        {
+                            "url": image_url,
+                            "caption": message,
+                            "published": "true",
+                        }
+                    ),
                     correlation_id=job.correlation_id,
-                    request_id=f"{job.job_id}-facebook-publish",
+                    request_id=f"{job.job_id}-facebook-photo-publish",
                     idempotency_key=key,
                 )
             )
-            external_id = str(created.get("id") or "")
+            external_id = str(created.get("post_id") or created.get("id") or "")
         else:
             account_id = str(self.binding.config["instagram_account_id"])
             image_url = str(payload.get("image_url") or "")

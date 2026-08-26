@@ -30,6 +30,12 @@ from .models import (
     SourceCoverageAttempt,
     SourceCoverageRoute,
 )
+from .publication_integrity import (
+    PublicationIntegrityError,
+    stable_id,
+    validate_content_package,
+    validate_question_permalink,
+)
 from .registry import BrandBinding, GrowthRegistryError, settings
 
 
@@ -154,6 +160,9 @@ def process_source_attempt(
                     "question": "literal or evidence-grounded customer/professional question",
                     "question_kind": "literal|inferred_from_evidence",
                     "evidence_excerpt": "verbatim source excerpt grounding the question",
+                    "source_permalink": (
+                        "exact public post permalink containing the literal question"
+                    ),
                 }
             ],
         },
@@ -286,15 +295,32 @@ def process_source_attempt(
         question = str(item.get("question") or "").strip()
         question_kind = str(item.get("question_kind") or "literal").strip()
         excerpt = str(item.get("evidence_excerpt") or "").strip()
+        # Only an observed literal question with an exact post permalink may enter the
+        # publishable Question Radar table. Inferred topics stay in the analysis audit only.
         if (
-            "?" not in question
-            or question_kind not in {"literal", "inferred_from_evidence"}
+            not 20 <= len(question) <= 500
+            or "?" not in question
+            or question_kind != "literal"
             or contains_no_monitoring_entity(question + excerpt)
             or not _evidence_present(excerpt, text)
-            or (question_kind == "literal" and not _evidence_present(question, text))
+            or not _evidence_present(question, text)
         ):
             continue
-        dedupe = _sha({"day": local_day.isoformat(), "question": _norm(question)})
+        try:
+            exact_source_url = validate_question_permalink(
+                route_url=route.route_url,
+                candidate_url=str(item.get("source_permalink") or route.route_url),
+                source_text=text,
+            )
+        except PublicationIntegrityError:
+            continue
+        dedupe = _sha(
+            {
+                "day": local_day.isoformat(),
+                "question": _norm(question),
+                "source_url": exact_source_url,
+            }
+        )
         if db.scalar(
             select(QuestionRadarTopic.id).where(
                 QuestionRadarTopic.local_date == local_day,
@@ -309,14 +335,18 @@ def process_source_attempt(
                 question=question,
                 brand_id=_brand(route),
                 use_case="source_observed_question",
-                source_url=route.route_url,
-                classification=(
-                    "observed_literal" if question_kind == "literal" else "inferred_from_evidence"
-                ),
+                source_url=exact_source_url,
+                classification="observed_literal",
                 dedupe_hash=dedupe,
             )
         )
-        safe_questions.append({"question": question, "evidence_excerpt": excerpt})
+        safe_questions.append(
+            {
+                "question": question,
+                "evidence_excerpt": excerpt,
+                "source_url": exact_source_url,
+            }
+        )
         question_count += 1
     attempt.analysis_status = "completed"
     attempt.analysis_json = _json(
@@ -333,77 +363,54 @@ def process_source_attempt(
 def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
     cfg = settings()
     if not cfg.canonical_content_factory_enabled:
-        return {"status": "disabled", "generated": 0}
+        return {"status": "disabled", "generated": 0, "required": len(ACTIVE_CONTENT_BRANDS)}
+
     local_day = _local_day(now)
     obligations = db.scalars(
         select(DailyContentObligation)
         .where(DailyContentObligation.local_date == local_day)
         .order_by(DailyContentObligation.brand_id)
     ).all()
-    pending = [row for row in obligations if row.status in {"pending", "failed"}]
-    if not pending:
-        return {"status": "complete", "generated": 0}
+    by_brand = {row.brand_id: row for row in obligations}
+    for brand_id in ACTIVE_CONTENT_BRANDS:
+        if brand_id in by_brand:
+            continue
+        row = DailyContentObligation(
+            local_date=local_day,
+            brand_id=brand_id,
+            status="pending",
+        )
+        db.add(row)
+        by_brand[brand_id] = row
+    db.flush()
+    obligations = [by_brand[brand_id] for brand_id in ACTIVE_CONTENT_BRANDS]
+    pending = [row for row in obligations if row.status in {"pending", "failed", "drafted"}]
+
     evidence_questions = db.scalars(
         select(QuestionRadarTopic)
-        .where(QuestionRadarTopic.local_date == local_day)
+        .where(
+            QuestionRadarTopic.local_date == local_day,
+            QuestionRadarTopic.classification == "observed_literal",
+            QuestionRadarTopic.source_url.is_not(None),
+        )
         .order_by(QuestionRadarTopic.id.desc())
-        .limit(40)
+        .limit(80)
     ).all()
     evidence_leads = db.scalars(
         select(GrowthSignal)
         .where(func.date(GrowthSignal.created_at) == local_day)
         .order_by(GrowthSignal.id.desc())
-        .limit(40)
+        .limit(80)
     ).all()
     evidence = {
         "questions": [
-            {"question": row.question, "source_url": row.source_url} for row in evidence_questions
+            {"question": row.question, "source_url": row.source_url}
+            for row in evidence_questions
         ],
         "opportunities": [
-            {"summary": row.summary, "evidence_url": row.evidence_url} for row in evidence_leads
+            {"summary": row.summary, "evidence_url": row.evidence_url}
+            for row in evidence_leads
         ],
-    }
-    try:
-        result = complete_json(
-            db,
-            system_prompt=(
-                "Magyar szakmai tartalomgyári szerkesztő vagy. Minden felsorolt márkához egy "
-                "hasznos, természetes, tényszerű belső tartalomtervet készíts. Ne adj árat, "
-                "garanciát, határidőígéretet, piacelsőségi vagy nem bizonyított állítást. "
-                "A kimenet még nem publikálható: karanténterv."
-            ),
-            user_prompt=_json(
-                {
-                    "brands": [row.brand_id for row in pending],
-                    "evidence": evidence,
-                    "schema": {
-                        "packages": [
-                            {
-                                "brand_id": "exact input brand",
-                                "title": "Hungarian title",
-                                "format": "article|social_post|faq",
-                                "body": "Hungarian draft",
-                                "source_urls": ["only supplied URLs"],
-                            }
-                        ]
-                    },
-                }
-            ),
-            purpose="canonical_daily_content_factory",
-            run_id=None,
-            max_tokens=8000,
-        )
-        payload = json.loads(result.content)
-    except (GrowthRegistryError, json.JSONDecodeError, TypeError, ValueError) as exc:
-        for row in pending:
-            row.status = "failed"
-            row.evidence_json = _json({"error_type": type(exc).__name__})
-        db.commit()
-        return {"status": "failed", "generated": 0, "error_type": type(exc).__name__}
-    packages = {
-        str(item.get("brand_id")): item
-        for item in payload.get("packages", [])
-        if isinstance(item, dict) and item.get("brand_id")
     }
     allowed_urls = {
         str(item.get(key))
@@ -414,43 +421,102 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         for item in values
         if item.get(key)
     }
+
     generated = 0
+    failed_brands: list[str] = []
     for row in pending:
-        package = packages.get(row.brand_id)
-        if (
-            not package
-            or not str(package.get("title") or "").strip()
-            or not str(package.get("body") or "").strip()
-            or contains_no_monitoring_entity(_json(package))
-        ):
-            package = {
-                "brand_id": row.brand_id,
-                "title": f"{row.brand_id}: napi szakmai kérdésfigyelő",
-                "format": "faq",
-                "body": (
-                    "Belső szerkesztési vázlat. A napi forrásfigyelésből származó, "
-                    "bizonyított kérdések és projektjelzések szakmai feldolgozására szolgál. "
-                    "Publikálás előtt tény-, márka- és végső megjelenési ellenőrzés szükséges."
-                ),
-                "source_urls": [],
-                "fallback_reason": "model_package_missing",
-            }
-        source_urls = package.get("source_urls")
-        package["source_urls"] = (
-            [url for url in source_urls if isinstance(url, str) and url in allowed_urls]
-            if isinstance(source_urls, list)
-            else []
+        errors: list[str] = []
+        accepted: dict[str, Any] | None = None
+        request_id: str | None = None
+        attempt_count = 0
+        for attempt_count in range(1, 4):
+            try:
+                result = complete_json(
+                    db,
+                    system_prompt=(
+                        "Magyar szakmai tartalomgyári szerkesztő vagy. Pontosan egy, a megadott "
+                        "márkához illő, természetes és tényszerű belső tartalomtervet készíts. "
+                        "Ne adj árat, garanciát, határidőígéretet, piacelsőségi vagy nem "
+                        "bizonyított állítást. A kimenet karanténterv, önmagában nem "
+                        "publikálható. Csak a kapott forrás URL-eket használhatod."
+                    ),
+                    user_prompt=_json(
+                        {
+                            "brand_id": row.brand_id,
+                            "attempt": attempt_count,
+                            "evidence": evidence,
+                            "schema": {
+                                "package": {
+                                    "brand_id": row.brand_id,
+                                    "title": "Hungarian title",
+                                    "format": "article|social_post|faq",
+                                    "body": "Hungarian draft, minimum 300 characters",
+                                    "source_urls": ["only supplied URLs"],
+                                }
+                            },
+                        }
+                    ),
+                    purpose="canonical_daily_content_factory_brand",
+                    run_id=None,
+                    max_tokens=4000,
+                )
+                payload = json.loads(result.content)
+                package = payload.get("package") if isinstance(payload, dict) else None
+                accepted = validate_content_package(
+                    package,
+                    expected_brand=row.brand_id,
+                    allowed_urls=allowed_urls,
+                )
+                request_id = result.request_id
+                break
+            except (
+                PublicationIntegrityError,
+                GrowthRegistryError,
+                json.JSONDecodeError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                errors.append(f"{type(exc).__name__}:{str(exc)[:160]}")
+
+        if accepted is None:
+            row.status = "failed"
+            row.evidence_json = _json(
+                {
+                    "publication_state": "GENERATION_FAILED",
+                    "attempts": attempt_count,
+                    "errors": errors,
+                }
+            )
+            failed_brands.append(row.brand_id)
+            continue
+
+        accepted["publication_state"] = "QUARANTINED_INTERNAL_DRAFT"
+        accepted["deepseek_request_id"] = request_id
+        accepted["attempts"] = attempt_count
+        row.content_asset_id = stable_id(
+            "QCA-", local_day.isoformat(), row.brand_id, length=20
         )
-        package["publication_state"] = "QUARANTINED_INTERNAL_DRAFT"
-        package["deepseek_request_id"] = result.request_id
-        row.content_asset_id = f"QCA-{uuid4().hex[:20].upper()}"
-        row.evidence_json = _json(package)
+        row.evidence_json = _json(accepted)
         row.status = "quarantined"
         generated += 1
+
     db.commit()
+    completed_statuses = {"quarantined", "release_passed", "published"}
+    completed_brands = sorted(
+        row.brand_id for row in obligations if row.status in completed_statuses
+    )
+    unresolved = sorted(
+        row.brand_id for row in obligations if row.status not in completed_statuses
+    )
+    complete = len(completed_brands) == len(ACTIVE_CONTENT_BRANDS) and not unresolved
     return {
-        "status": "complete" if generated == len(pending) else "partial",
+        "status": "complete" if complete else "partial",
         "generated": generated,
+        "required": len(ACTIVE_CONTENT_BRANDS),
+        "completed": len(completed_brands),
+        "completed_brands": completed_brands,
+        "failed_brands": sorted(set(failed_brands)),
+        "unresolved_brands": unresolved,
     }
 
 
