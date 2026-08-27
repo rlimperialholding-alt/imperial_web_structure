@@ -16,7 +16,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -80,6 +80,52 @@ def _matches_brand_focus(value: object, focus: tuple[str, ...]) -> bool:
 
 def _sha(value: Any) -> str:
     return hashlib.sha256(_json(value).encode()).hexdigest()
+
+
+PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
+PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
+PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
+
+
+def _normalized_email(value: str) -> str:
+    return value.strip().casefold()
+
+
+def _publication_digest_idempotency_key(
+    *, message_type: str, recipient: str, local_report_date: date
+) -> str:
+    material = f"{message_type}{_normalized_email(recipient)}{local_report_date.isoformat()}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _publication_digest_kill_switch_active(config: object) -> bool:
+    path = Path(
+        str(
+            getattr(
+                config,
+                "canonical_publication_digest_kill_switch_file",
+                "/run/secrets/publishing/kill-switch",
+            )
+        )
+    )
+    return path.is_file()
+
+
+def _lock_summary_delivery_claims(db: Session) -> None:
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    lock_key = int.from_bytes(
+        hashlib.sha256(b"imperial:summary-email:delivery-claims").digest()[:8],
+        byteorder="big",
+        signed=True,
+    )
+    db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _complete_json_payload(db: Session, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
@@ -2351,38 +2397,224 @@ def send_publication_digest(
     *,
     now: datetime | None = None,
     recipient_email: str | None = None,
-    report_type: str = "daily_publication_digest",
+    report_type: str = PUBLICATION_DIGEST_MESSAGE_TYPE,
     bypass_due: bool = False,
+    caller_idempotency_key: str | None = None,
+    controlled_test: bool = False,
 ) -> dict[str, Any]:
-    current = now or datetime.now(UTC)
-    local_now = current.astimezone(ZoneInfo(settings().timezone))
-    hour, minute = (int(part) for part in settings().canonical_publication_digest_at.split(":"))
+    # Caller-supplied keys are deliberately ignored. The server owns the one
+    # logical identity for recipient + report type + Budapest-local day.
+    del caller_idempotency_key
+    config = settings()
+    current = _aware_utc(now or datetime.now(UTC))
+    local_now = current.astimezone(ZoneInfo(config.timezone))
+    hour, minute = (
+        int(part) for part in config.canonical_publication_digest_at.split(":")
+    )
     if not bypass_due and (local_now.hour, local_now.minute) < (hour, minute):
         return {"status": "not_due"}
+
     local_day = local_now.date()
-    recipient = (recipient_email or settings().canonical_publication_digest_recipient).strip()
+    recipient = _normalized_email(
+        recipient_email or config.canonical_publication_digest_recipient
+    )
+    default_recipient = _normalized_email(
+        config.canonical_publication_digest_recipient
+    )
+    standard_delivery = (
+        report_type == PUBLICATION_DIGEST_MESSAGE_TYPE
+        and recipient == default_recipient
+    )
+    controlled_bypass = (
+        controlled_test
+        and bypass_due
+        and not standard_delivery
+        and report_type.startswith("controlled_")
+        and recipient.endswith("@imperialholding.hu")
+    )
+    if controlled_test and not controlled_bypass:
+        return {"status": "blocked", "reason": "invalid_controlled_test_scope"}
+    if standard_delivery and _publication_digest_kill_switch_active(config):
+        return {"status": "blocked", "reason": "publication_kill_switch_active"}
+    if not config.canonical_publication_digest_enabled:
+        return {"status": "blocked", "reason": "publication_digest_disabled"}
+
     handoff_type_key = (
         report_type
-        if recipient.casefold()
-        == settings().canonical_publication_digest_recipient.strip().casefold()
-        else f"{report_type[:60]}:{hashlib.sha256(recipient.casefold().encode()).hexdigest()[:12]}"
-    )
-    existing = db.scalar(
-        select(CanonicalInternalHandoff).where(
-            CanonicalInternalHandoff.local_date == local_day,
-            CanonicalInternalHandoff.handoff_type == handoff_type_key,
+        if recipient == default_recipient
+        else (
+            f"{report_type[:60]}:"
+            f"{hashlib.sha256(recipient.encode()).hexdigest()[:12]}"
         )
     )
-    if existing and existing.status == "sent":
-        return {"status": "sent", "idempotent": True, "handoff_id": existing.handoff_id}
-    if (
-        existing
-        and existing.status == "blocked"
-        and str(existing.last_error or "").startswith("sev1_quarantined_")
-    ):
-        return {"status": "blocked", "idempotent": True, "handoff_id": existing.handoff_id}
+    server_idempotency_key = _publication_digest_idempotency_key(
+        message_type=report_type,
+        recipient=recipient,
+        local_report_date=local_day,
+    )
+    tenant_scope = "imperial-holding"
+    delivery_identity = _email_delivery_identity(
+        recipient=recipient,
+        report_type=report_type,
+        local_day=local_day,
+        tenant_scope=tenant_scope,
+    )
+
+    _lock_summary_delivery_claims(db)
+    existing = db.scalar(
+        select(CanonicalInternalHandoff)
+        .where(
+            CanonicalInternalHandoff.local_date == local_day,
+            CanonicalInternalHandoff.handoff_type == handoff_type_key,
+            CanonicalInternalHandoff.recipient_email == recipient,
+        )
+        .with_for_update()
+    )
+    delivery = db.scalar(
+        select(CanonicalEmailDelivery).where(
+            CanonicalEmailDelivery.identity_sha256 == delivery_identity
+        )
+    )
+    if existing:
+        if existing.idempotency_key is None:
+            existing.idempotency_key = server_idempotency_key
+        if existing.status == "sent":
+            db.commit()
+            return {
+                "status": "sent",
+                "idempotent": True,
+                "handoff_id": existing.handoff_id,
+                "idempotency_key": server_idempotency_key,
+            }
+        if (
+            existing.status == "blocked"
+            and str(existing.last_error or "").startswith("sev1_quarantined_")
+        ):
+            db.commit()
+            return {
+                "status": "blocked",
+                "idempotent": True,
+                "handoff_id": existing.handoff_id,
+                "idempotency_key": server_idempotency_key,
+            }
+        # Claims created before the durable delivery ledger cannot prove
+        # whether Gmail accepted the message. They are never retried.
+        if delivery is None:
+            if existing.status == "claimed":
+                claimed_at = _aware_utc(existing.claimed_at or existing.updated_at)
+                if claimed_at <= current - PUBLICATION_DIGEST_STALE_CLAIM_AFTER:
+                    existing.status = "dead_letter"
+                    existing.last_error = (
+                        "stale_claim_ambiguous_delivery_manual_review"
+                    )
+                db.commit()
+                return {
+                    "status": existing.status,
+                    "idempotent": True,
+                    "handoff_id": existing.handoff_id,
+                    "idempotency_key": server_idempotency_key,
+                }
+            if existing.status in {"failed", "pending", "dead_letter"} or (
+                existing.status == "blocked" and existing.attempt_count > 0
+            ):
+                if existing.status != "dead_letter":
+                    existing.status = "dead_letter"
+                    existing.last_error = (
+                        "pre_hotfix_attempt_quarantined_no_automatic_retry"
+                    )
+                db.commit()
+                return {
+                    "status": "dead_letter",
+                    "idempotent": True,
+                    "handoff_id": existing.handoff_id,
+                    "idempotency_key": server_idempotency_key,
+                }
+        elif delivery.status == "failed_terminal":
+            existing.status = "dead_letter"
+            db.commit()
+            return {
+                "status": "dead_letter",
+                "idempotent": True,
+                "handoff_id": existing.handoff_id,
+                "idempotency_key": server_idempotency_key,
+            }
+
+    # Circuit breakers apply before reserving a new logical handoff. A retry or
+    # Gmail reconciliation for the same handoff must not be blocked by itself.
+    if existing is None:
+        claimed_since_day = current - PUBLICATION_DIGEST_RECIPIENT_INTERVAL
+        recipient_attempts = int(
+            db.scalar(
+                select(func.count())
+                .select_from(CanonicalInternalHandoff)
+                .where(
+                    CanonicalInternalHandoff.recipient_email == recipient,
+                    CanonicalInternalHandoff.claimed_at > claimed_since_day,
+                )
+            )
+            or 0
+        )
+        if recipient_attempts >= 1:
+            db.commit()
+            return {
+                "status": "blocked",
+                "reason": "recipient_rolling_24h_hard_gate",
+            }
+        if standard_delivery:
+            claimed_since_minute = current - timedelta(minutes=1)
+            minute_attempts = int(
+                db.scalar(
+                    select(func.count())
+                    .select_from(CanonicalInternalHandoff)
+                    .where(
+                        CanonicalInternalHandoff.handoff_type
+                        == PUBLICATION_DIGEST_MESSAGE_TYPE,
+                        CanonicalInternalHandoff.claimed_at >= claimed_since_minute,
+                    )
+                )
+                or 0
+            )
+            rolling_attempts = int(
+                db.scalar(
+                    select(func.count())
+                    .select_from(CanonicalInternalHandoff)
+                    .where(
+                        CanonicalInternalHandoff.handoff_type
+                        == PUBLICATION_DIGEST_MESSAGE_TYPE,
+                        CanonicalInternalHandoff.claimed_at > claimed_since_day,
+                    )
+                )
+                or 0
+            )
+            if (
+                minute_attempts
+                >= getattr(
+                    config,
+                    "canonical_publication_digest_per_minute_limit",
+                    1,
+                )
+            ):
+                db.commit()
+                return {
+                    "status": "blocked",
+                    "reason": "minute_circuit_breaker_open",
+                }
+            if (
+                rolling_attempts
+                >= getattr(
+                    config,
+                    "canonical_publication_digest_rolling_24h_limit",
+                    20,
+                )
+            ):
+                db.commit()
+                return {
+                    "status": "blocked",
+                    "reason": "rolling_24h_circuit_breaker_open",
+                }
+
     local_start = datetime.combine(
-        local_day, datetime.min.time(), ZoneInfo(settings().timezone)
+        local_day, datetime.min.time(), ZoneInfo(config.timezone)
     ).astimezone(UTC)
     jobs = db.scalars(
         select(PublishingJobRecord)
@@ -2391,7 +2623,10 @@ def send_publication_digest(
     ).all()
     radar_rows = db.execute(
         select(QuestionRadarAnswer, QuestionRadarTopic)
-        .join(QuestionRadarTopic, QuestionRadarTopic.topic_id == QuestionRadarAnswer.topic_id)
+        .join(
+            QuestionRadarTopic,
+            QuestionRadarTopic.topic_id == QuestionRadarAnswer.topic_id,
+        )
         .where(QuestionRadarAnswer.created_at >= local_start)
         .order_by(QuestionRadarAnswer.created_at)
     ).all()
@@ -2408,16 +2643,24 @@ def send_publication_digest(
             payload = {}
         title = str(payload.get("title") or job.content_asset_id)
         states = db.scalars(
-            select(PublishingChannelState).where(PublishingChannelState.job_id == job.job_id)
+            select(PublishingChannelState).where(
+                PublishingChannelState.job_id == job.job_id
+            )
         ).all()
-        verified = [state for state in states if state.status == "READBACK_VERIFIED"]
+        verified = [
+            state for state in states if state.status == "READBACK_VERIFIED"
+        ]
         for state in verified:
-            channel_name = "Facebook" if state.channel == "facebook" else "weboldal"
+            channel_name = (
+                "Facebook" if state.channel == "facebook" else "weboldal"
+            )
             lines.append(
                 f"- {job.brand_id} / {channel_name}: {title} – "
                 f"{state.public_url or state.canonical_url}"
             )
-            channel_payload = (payload.get("channel_payloads") or {}).get(state.channel) or {}
+            channel_payload = (
+                (payload.get("channel_payloads") or {}).get(state.channel) or {}
+            )
             if state.channel == "facebook" and not isinstance(
                 channel_payload.get("image_factory"), dict
             ):
@@ -2425,23 +2668,28 @@ def send_publication_digest(
                     f"- {job.brand_id} / Facebook: {title} – "
                     f"kép utólagos hozzáadása szükséges ({state.public_url})"
                 )
-        nim_payload = (payload.get("channel_payloads") or {}).get("nim_cms") or {}
+        nim_payload = (
+            (payload.get("channel_payloads") or {}).get("nim_cms") or {}
+        )
         if (
             "nim_cms" in payload.get("channels", [])
             and not str(nim_payload.get("featured_image_id") or "").strip()
             and not isinstance(nim_payload.get("image_factory"), dict)
         ):
             image_lines.append(
-                f"- {job.brand_id} / weboldal: {title} – borítókép szükséges az élesítéshez"
+                f"- {job.brand_id} / weboldal: {title} – "
+                "borítókép szükséges az élesítéshez"
             )
         if job.status in {"BLOCKED", "FAILED", "ROLLBACK_FAILED"}:
             failure_lines.append(
-                f"- {job.brand_id}: {title} – {job.status}: {str(job.last_error or '')[:180]}"
+                f"- {job.brand_id}: {title} – {job.status}: "
+                f"{str(job.last_error or '')[:180]}"
             )
     for answer, topic in radar_rows:
         if answer.status == "quarantined":
             radar_lines.append(
-                f"- BLOKKOLT TERVEZET / {answer.brand_id} / SHA-256: {answer.answer_sha256}\n"
+                f"- BLOKKOLT TERVEZET / {answer.brand_id} / "
+                f"SHA-256: {answer.answer_sha256}\n"
                 f"  Kérdés: {topic.question}\n"
                 f"  Forrás: {answer.source_url}\n"
                 f"  Választervezet: {answer.answer_text}"
@@ -2459,31 +2707,43 @@ def send_publication_digest(
     if radar_reason_counts:
         radar_lines.append(
             "- Nem publikálható, belső feldolgozásban maradt: "
-            + ", ".join(f"{reason}={count}" for reason, count in radar_reason_counts.most_common())
+            + ", ".join(
+                f"{reason}={count}"
+                for reason, count in radar_reason_counts.most_common()
+            )
         )
     if radar_failed:
         radar_lines.append(f"- Sikertelen válaszgenerálás: {radar_failed}")
-    subject = f"Napi automatikus publikációs összesítő – {local_day.isoformat()}"
+
+    subject = (
+        f"Napi automatikus publikációs összesítő – {local_day.isoformat()}"
+    )
     body_text = (
         "Kedves Andi!\n\n"
         "Kiment tartalmak:\n"
-        + ("\n".join(lines) if lines else "- Ma még nincs visszaigazolt közzététel.")
+        + (
+            "\n".join(lines)
+            if lines
+            else "- Ma még nincs visszaigazolt közzététel."
+        )
         + "\n\nKépet igénylő, már közzétett tartalmak:\n"
         + ("\n".join(image_lines) if image_lines else "- Nincs.")
         + "\n\nSikertelen vagy blokkolt tételek:\n"
         + ("\n".join(failure_lines) if failure_lines else "- Nincs.")
-        + "\n\nKérdésradar-válaszok (belső ellenőrzés, egyik sem publikált):\n"
-        + ("\n\n".join(radar_lines) if radar_lines else "- Ma még nincs új tétel.")
+        + "\n\nKérdésradar-válaszok "
+        "(belső ellenőrzés, egyik sem publikált):\n"
+        + (
+            "\n\n".join(radar_lines)
+            if radar_lines
+            else "- Ma még nincs új tétel."
+        )
         + "\n\nMegjegyzés: a Facebook automatikus publikáció aktív. "
-        "A NIM-alapú weboldalak publikus cikkoldala borítókép nélkül hibát ad, "
-        "ezért csak ellenőrzött, sikeresen feltöltött képpel élesíthetők."
+        "A NIM-alapú weboldalak publikus cikkoldala borítókép nélkül "
+        "hibát ad, ezért csak ellenőrzött, sikeresen feltöltött képpel "
+        "élesíthetők."
     )
     payload_hash = _sha(
-        {
-            "to": recipient,
-            "subject": subject,
-            "body": body_text,
-        }
+        {"to": recipient, "subject": subject, "body": body_text}
     )
     row = existing or CanonicalInternalHandoff(
         handoff_id=f"CPD-{uuid4().hex[:20].upper()}",
@@ -2493,6 +2753,7 @@ def send_publication_digest(
         subject=subject,
         body_text=body_text,
         payload_sha256=payload_hash,
+        idempotency_key=server_idempotency_key,
         counts_json=_json(
             {
                 "published": len(lines),
@@ -2500,46 +2761,50 @@ def send_publication_digest(
                 "failed": len(failure_lines),
                 "question_radar_answers": len(radar_rows),
                 "question_radar_quarantined_in_digest": sum(
-                    1 for answer, _topic in radar_rows if answer.status == "quarantined"
+                    1
+                    for answer, _topic in radar_rows
+                    if answer.status == "quarantined"
                 ),
                 "question_radar_ineligible": sum(
-                    1 for answer, _topic in radar_rows if answer.status == "ineligible"
+                    1
+                    for answer, _topic in radar_rows
+                    if answer.status == "ineligible"
                 ),
             }
         ),
     )
-    if not existing:
+    if existing is None:
         db.add(row)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            duplicate = db.scalar(
+                select(CanonicalInternalHandoff).where(
+                    CanonicalInternalHandoff.idempotency_key
+                    == server_idempotency_key
+                )
+            )
+            if duplicate is None:
+                raise
+            return {
+                "status": duplicate.status,
+                "idempotent": True,
+                "handoff_id": duplicate.handoff_id,
+                "idempotency_key": server_idempotency_key,
+            }
     else:
-        # The first durable payload for a logical day is immutable. Later runs
-        # reconcile that exact message and cannot silently change its content.
+        # The first durable payload for a logical day is immutable.
         subject = row.subject
         body_text = row.body_text
         payload_hash = row.payload_sha256
-    if not settings().canonical_publication_digest_enabled:
-        row.status = "blocked"
-        row.last_error = "publication_digest_disabled"
-        db.commit()
-        return {"status": "blocked", "handoff_id": row.handoff_id}
-    tenant_scope = "imperial-holding"
-    identity_sha256 = _email_delivery_identity(
-        recipient=recipient,
-        report_type=report_type,
-        local_day=local_day,
-        tenant_scope=tenant_scope,
-    )
-    delivery = db.scalar(
-        select(CanonicalEmailDelivery).where(
-            CanonicalEmailDelivery.identity_sha256 == identity_sha256
-        )
-    )
+
     if delivery is None:
         delivery = CanonicalEmailDelivery(
             delivery_id=f"CED-{uuid4().hex[:20].upper()}",
             handoff_id=row.handoff_id,
-            identity_sha256=identity_sha256,
-            recipient_normalized=recipient.casefold(),
+            identity_sha256=delivery_identity,
+            recipient_normalized=recipient,
             report_type=report_type,
             local_date=local_day,
             tenant_scope=tenant_scope,
@@ -2553,70 +2818,172 @@ def send_publication_digest(
             db.rollback()
             delivery = db.scalar(
                 select(CanonicalEmailDelivery).where(
-                    CanonicalEmailDelivery.identity_sha256 == identity_sha256
+                    CanonicalEmailDelivery.identity_sha256
+                    == delivery_identity
                 )
             )
+    else:
+        db.commit()
     if delivery is None:
-        return {"status": "failed", "error_type": "delivery_identity_reservation_failed"}
+        return {
+            "status": "failed",
+            "error_type": "delivery_identity_reservation_failed",
+        }
     if delivery.payload_sha256 != payload_hash:
         delivery.status = "failed_terminal"
         delivery.last_error = "logical_identity_payload_mismatch_no_send"
         delivery.lease_token = None
         delivery.lease_expires_at = None
-        row.status = "blocked"
+        row = db.scalar(
+            select(CanonicalInternalHandoff).where(
+                CanonicalInternalHandoff.handoff_id == row.handoff_id
+            )
+        )
+        row.status = "dead_letter"
         row.last_error = delivery.last_error
         db.commit()
         return {
             "status": "blocked",
             "handoff_id": row.handoff_id,
             "error_type": delivery.last_error,
+            "idempotency_key": server_idempotency_key,
         }
 
     delivery, claim_status, reconcile_only = _claim_email_delivery(
-        db, identity_sha256=identity_sha256, current=current
+        db,
+        identity_sha256=delivery_identity,
+        current=current,
+    )
+    row = db.scalar(
+        select(CanonicalInternalHandoff).where(
+            CanonicalInternalHandoff.handoff_id == row.handoff_id
+        )
     )
     if delivery is None:
         return {"status": "failed", "error_type": "delivery_claim_missing"}
     if claim_status == "sent":
-        return {"status": "sent", "idempotent": True, "handoff_id": row.handoff_id}
+        row.status = "sent"
+        row.attempt_count = delivery.attempt_count
+        row.provider_message_id = delivery.provider_message_id
+        row.sent_at = delivery.accepted_at
+        row.last_error = None
+        db.commit()
+        return {
+            "status": "sent",
+            "idempotent": True,
+            "handoff_id": row.handoff_id,
+            "idempotency_key": server_idempotency_key,
+        }
     if claim_status in {"in_progress", "backoff"}:
-        return {"status": claim_status, "idempotent": True, "handoff_id": row.handoff_id}
+        db.commit()
+        return {
+            "status": claim_status,
+            "idempotent": True,
+            "handoff_id": row.handoff_id,
+            "idempotency_key": server_idempotency_key,
+        }
     if claim_status == "failed_terminal":
-        return {"status": "blocked", "idempotent": True, "handoff_id": row.handoff_id}
+        row.status = "dead_letter"
+        db.commit()
+        return {
+            "status": "dead_letter",
+            "idempotent": True,
+            "handoff_id": row.handoff_id,
+            "idempotency_key": server_idempotency_key,
+        }
+
+    row.status = "claimed"
+    row.claimed_at = row.claimed_at or current
+    row.attempt_count = delivery.attempt_count
+    row.last_error = None
+    db.commit()
+
+    if (
+        standard_delivery
+        and not controlled_bypass
+        and _publication_digest_kill_switch_active(config)
+    ):
+        delivery = db.scalar(
+            select(CanonicalEmailDelivery).where(
+                CanonicalEmailDelivery.identity_sha256 == delivery_identity
+            )
+        )
+        row = db.scalar(
+            select(CanonicalInternalHandoff).where(
+                CanonicalInternalHandoff.handoff_id == row.handoff_id
+            )
+        )
+        delivery.status = "failed_retryable"
+        delivery.last_error = "kill_switch_activated_after_claim_no_send"
+        delivery.next_attempt_at = current + timedelta(minutes=5)
+        delivery.lease_token = None
+        delivery.lease_expires_at = None
+        row.status = "failed"
+        row.last_error = delivery.last_error
+        db.commit()
+        return {
+            "status": "blocked",
+            "reason": "publication_kill_switch_active",
+            "handoff_id": row.handoff_id,
+            "idempotency_key": server_idempotency_key,
+        }
+
     try:
         receipt = SMTPEmailAdapter(_smtp_binding()).send(
             to_email=recipient,
             subject=subject,
             body_text=body_text,
-            idempotency_key=identity_sha256,
+            idempotency_key=server_idempotency_key,
             delivery_scope="internal",
             reconcile_only=reconcile_only,
         )
     except (GrowthRegistryError, EmailDeliveryError) as exc:
         delivery = db.scalar(
             select(CanonicalEmailDelivery).where(
-                CanonicalEmailDelivery.identity_sha256 == identity_sha256
+                CanonicalEmailDelivery.identity_sha256 == delivery_identity
             )
         )
-        error_name = exc.error_type if isinstance(exc, EmailDeliveryError) else type(exc).__name__
+        row = db.scalar(
+            select(CanonicalInternalHandoff).where(
+                CanonicalInternalHandoff.handoff_id == row.handoff_id
+            )
+        )
+        error_name = (
+            exc.error_type
+            if isinstance(exc, EmailDeliveryError)
+            else type(exc).__name__
+        )
         if isinstance(exc, EmailDeliveryError) and exc.accepted_but_unverified:
             delivery.status = "accepted_unverified"
             delivery.provider_message_id = exc.provider_message_id
             delivery.next_attempt_at = current + timedelta(minutes=5)
-            if "multiple_exact_candidates" in str(exc.detail.get("reason") or ""):
-                delivery.incident_reference = f"EMAIL-DUP-{uuid4().hex[:16].upper()}"
-        elif isinstance(exc, EmailDeliveryError) and exc.retry_safe and not reconcile_only:
+            row.status = "dead_letter"
+            row.provider_message_id = exc.provider_message_id
+            if "multiple_exact_candidates" in str(
+                exc.detail.get("reason") or ""
+            ):
+                delivery.incident_reference = (
+                    f"EMAIL-DUP-{uuid4().hex[:16].upper()}"
+                )
+        elif (
+            isinstance(exc, EmailDeliveryError)
+            and exc.retry_safe
+            and not reconcile_only
+        ):
             delivery.status = "failed_retryable"
             delay_minutes = min(60, 2 ** min(delivery.attempt_count, 5))
-            delivery.next_attempt_at = current + timedelta(minutes=delay_minutes)
+            delivery.next_attempt_at = current + timedelta(
+                minutes=delay_minutes
+            )
+            row.status = "failed"
         else:
             delivery.status = "failed_terminal"
             delivery.next_attempt_at = None
+            row.status = "dead_letter"
         delivery.last_error = error_name
         delivery.lease_token = None
         delivery.lease_expires_at = None
         row.attempt_count = delivery.attempt_count
-        row.status = "failed" if delivery.status != "failed_terminal" else "blocked"
         row.last_error = error_name
         db.commit()
         return {
@@ -2624,17 +2991,52 @@ def send_publication_digest(
             "handoff_id": row.handoff_id,
             "error_type": error_name,
             "reconcile_only": reconcile_only,
+            "idempotency_key": server_idempotency_key,
         }
+    except Exception as exc:
+        delivery = db.scalar(
+            select(CanonicalEmailDelivery).where(
+                CanonicalEmailDelivery.identity_sha256 == delivery_identity
+            )
+        )
+        row = db.scalar(
+            select(CanonicalInternalHandoff).where(
+                CanonicalInternalHandoff.handoff_id == row.handoff_id
+            )
+        )
+        delivery.status = "failed_terminal"
+        delivery.last_error = type(exc).__name__
+        delivery.next_attempt_at = None
+        delivery.lease_token = None
+        delivery.lease_expires_at = None
+        row.status = "dead_letter"
+        row.attempt_count = delivery.attempt_count
+        row.last_error = type(exc).__name__
+        db.commit()
+        return {
+            "status": "failed_terminal",
+            "handoff_id": row.handoff_id,
+            "error_type": type(exc).__name__,
+            "idempotency_key": server_idempotency_key,
+        }
+
     delivery = db.scalar(
         select(CanonicalEmailDelivery).where(
-            CanonicalEmailDelivery.identity_sha256 == identity_sha256
+            CanonicalEmailDelivery.identity_sha256 == delivery_identity
+        )
+    )
+    row = db.scalar(
+        select(CanonicalInternalHandoff).where(
+            CanonicalInternalHandoff.handoff_id == row.handoff_id
         )
     )
     delivery.status = "sent"
     delivery.provider_message_id = receipt.provider_message_id
     delivery.accepted_at = current
     receipt_detail = getattr(receipt, "detail", {}) or {}
-    delivery.verified_at = current if receipt_detail.get("readback_verified") else None
+    delivery.verified_at = (
+        current if receipt_detail.get("readback_verified") else None
+    )
     delivery.last_error = None
     delivery.next_attempt_at = None
     delivery.lease_token = None
@@ -2647,9 +3049,12 @@ def send_publication_digest(
     db.commit()
     return {
         "status": "sent",
-        "idempotent": bool(receipt_detail.get("recovered_existing_sent")),
+        "idempotent": bool(
+            receipt_detail.get("recovered_existing_sent")
+        ),
         "handoff_id": row.handoff_id,
         "reconcile_only": reconcile_only,
+        "idempotency_key": server_idempotency_key,
     }
 
 
@@ -2672,15 +3077,30 @@ def _smtp_binding() -> BrandBinding:
     )
 
 
-def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
-    current = now or datetime.now(UTC)
-    local_now = current.astimezone(ZoneInfo(settings().timezone))
-    hour, minute = (int(part) for part in settings().canonical_internal_handoff_at.split(":"))
+def send_internal_handoff(
+    db: Session, *, now: datetime | None = None
+) -> dict[str, Any]:
+    current = _aware_utc(now or datetime.now(UTC))
+    config = settings()
+    local_now = current.astimezone(ZoneInfo(config.timezone))
+    hour, minute = (
+        int(part) for part in config.canonical_internal_handoff_at.split(":")
+    )
     if (local_now.hour, local_now.minute) < (hour, minute):
         return {"status": "not_due"}
+
     local_day = local_now.date()
+    message_type = "daily_executive"
+    recipient = _normalized_email(IORA_EXECUTIVE_EMAIL)
+    idempotency_key = _publication_digest_idempotency_key(
+        message_type=message_type,
+        recipient=recipient,
+        local_report_date=local_day,
+    )
     daily = db.scalar(
-        select(CanonicalGrowthDailyRun).where(CanonicalGrowthDailyRun.local_date == local_day)
+        select(CanonicalGrowthDailyRun).where(
+            CanonicalGrowthDailyRun.local_date == local_day
+        )
     )
     signals = db.scalars(
         select(GrowthSignal)
@@ -2697,7 +3117,8 @@ def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[s
                 select(func.count())
                 .select_from(GrowthSignal)
                 .where(
-                    GrowthSignal.motor_key == "ivs", func.date(GrowthSignal.created_at) == local_day
+                    GrowthSignal.motor_key == "ivs",
+                    func.date(GrowthSignal.created_at) == local_day,
                 )
             )
             or 0
@@ -2707,22 +3128,28 @@ def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[s
     for index, signal in enumerate(signals, start=1):
         lead_lines.append(
             f"{index}. {signal.brand_id} / {signal.motor_key}\n"
-            f"   Szervezet vagy projekt: {signal.company_name or 'név nélkül rögzített projekt'}\n"
+            "   Szervezet vagy projekt: "
+            f"{signal.company_name or 'név nélkül rögzített projekt'}\n"
             f"   Helyszín: {signal.location or 'nincs megadva'}\n"
             f"   Pontszám: {signal.score}; sürgősség: {signal.urgency}; "
             f"bizalom: {signal.confidence}\n"
             f"   Összefoglaló: {signal.summary}\n"
             f"   Forrás: {signal.evidence_url}"
         )
-    subject = f"Imperial napi belső feldolgozás – {local_day.isoformat()}"
+    subject = (
+        f"Imperial napi belső feldolgozás – {local_day.isoformat()}"
+    )
     body = (
         f"Kedves {IORA_EXECUTIVE_NAME}!\n\n"
-        "A mai automatikus rendszerfutás belső feldolgozási összefoglalója:\n"
+        "A mai automatikus rendszerfutás belső feldolgozási "
+        "összefoglalója:\n"
         f"- forrásútvonal-kísérletek: {counts['route_attempts']}\n"
-        f"- forrásbizonyítékkal rögzített lehetőségek: {counts['unique_leads']}\n"
+        f"- forrásbizonyítékkal rögzített lehetőségek: "
+        f"{counts['unique_leads']}\n"
         f"- kérdésradar-témák: {counts['question_topics']}\n"
         f"- elkészített márkatartalmak: {counts['content_brands']}/19\n"
-        f"- IORA lehetőségek (csak belső ellenőrzésre): {counts['iora_opportunities']}\n\n"
+        "- IORA lehetőségek (csak belső ellenőrzésre): "
+        f"{counts['iora_opportunities']}\n\n"
         "Mai leadek és projektjelzések teljes listája:\n"
         + (
             "\n\n".join(lead_lines)
@@ -2730,43 +3157,107 @@ def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[s
             else "- Ma még nincs forrásbizonyítékkal rögzített lead."
         )
         + "\n\n"
-        "Az IORA találatokból nem indult közvetlen megkeresés. A belső átadás a publikálástól "
-        "függetlenül, kötelezően fennmarad."
+        "Az IORA találatokból nem indult közvetlen megkeresés. "
+        "A belső átadás a publikálástól függetlenül, kötelezően "
+        "fennmarad."
     )
-    payload_hash = _sha({"to": IORA_EXECUTIVE_EMAIL, "subject": subject, "body": body})
+    payload_hash = _sha(
+        {"to": recipient, "subject": subject, "body": body}
+    )
+
+    _lock_summary_delivery_claims(db)
     row = db.scalar(
-        select(CanonicalInternalHandoff).where(
+        select(CanonicalInternalHandoff)
+        .where(
             CanonicalInternalHandoff.local_date == local_day,
-            CanonicalInternalHandoff.handoff_type == "daily_executive",
+            CanonicalInternalHandoff.handoff_type == message_type,
+            CanonicalInternalHandoff.recipient_email == recipient,
         )
+        .with_for_update()
     )
-    if row and row.status == "sent":
-        if daily and daily.internal_handoff_status != "sent":
-            daily.internal_handoff_status = "sent"
-            db.commit()
-        return {"status": "sent", "idempotent": True, "handoff_id": row.handoff_id}
-    if not row:
-        row = CanonicalInternalHandoff(
-            handoff_id=f"CIH-{uuid4().hex[:20].upper()}",
-            local_date=local_day,
-            recipient_email=IORA_EXECUTIVE_EMAIL,
-            subject=subject,
-            body_text=body,
-            payload_sha256=payload_hash,
-            counts_json=_json(counts),
-        )
-        db.add(row)
-        db.flush()
-    # Executive summaries are review artifacts only. They must never enter an
-    # automatic delivery transport, including partial or retried daily runs.
-    row.status = "blocked"
-    row.last_error = "automatic_executive_delivery_prohibited"
+    if row:
+        if row.idempotency_key is None:
+            row.idempotency_key = idempotency_key
+        if row.claimed_at is None and row.attempt_count > 0:
+            row.claimed_at = row.sent_at or row.updated_at or row.created_at
+        if row.status == "claimed":
+            claimed_at = _aware_utc(row.claimed_at or row.updated_at)
+            if claimed_at <= current - PUBLICATION_DIGEST_STALE_CLAIM_AFTER:
+                row.status = "dead_letter"
+                row.last_error = (
+                    "stale_claim_ambiguous_delivery_manual_review"
+                )
+        elif row.status in {"failed", "pending"} and row.attempt_count > 0:
+            row.status = "dead_letter"
+            row.last_error = (
+                "pre_hotfix_attempt_quarantined_no_automatic_retry"
+            )
+        elif (
+            row.status == "blocked"
+            and row.attempt_count > 0
+            and row.last_error != "automatic_executive_delivery_prohibited"
+        ):
+            row.status = "dead_letter"
+            row.last_error = (
+                "pre_hotfix_attempt_quarantined_no_automatic_retry"
+            )
+        elif row.status != "sent" and row.status != "dead_letter":
+            row.status = "blocked"
+            row.last_error = "automatic_executive_delivery_prohibited"
+        if daily:
+            daily.internal_handoff_status = (
+                "sent" if row.status == "sent" else "required_blocked"
+            )
+        db.commit()
+        return {
+            "status": row.status,
+            "idempotent": True,
+            "handoff_id": row.handoff_id,
+            "idempotency_key": idempotency_key,
+            "reason": row.last_error,
+        }
+
+    row = CanonicalInternalHandoff(
+        handoff_id=f"CIH-{uuid4().hex[:20].upper()}",
+        local_date=local_day,
+        handoff_type=message_type,
+        recipient_email=recipient,
+        subject=subject,
+        body_text=body,
+        payload_sha256=payload_hash,
+        idempotency_key=idempotency_key,
+        counts_json=_json(counts),
+        status="blocked",
+        attempt_count=0,
+        claimed_at=None,
+        last_error="automatic_executive_delivery_prohibited",
+    )
+    db.add(row)
     if daily:
         daily.internal_handoff_status = "required_blocked"
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        duplicate = db.scalar(
+            select(CanonicalInternalHandoff).where(
+                CanonicalInternalHandoff.idempotency_key == idempotency_key
+            )
+        )
+        if duplicate is None:
+            raise
+        return {
+            "status": duplicate.status,
+            "idempotent": True,
+            "handoff_id": duplicate.handoff_id,
+            "idempotency_key": idempotency_key,
+            "reason": duplicate.last_error,
+        }
+    # Review artifact only: automatic executive transport is prohibited.
     return {
         "status": "blocked",
         "idempotent": True,
         "handoff_id": row.handoff_id,
+        "idempotency_key": idempotency_key,
         "reason": row.last_error,
     }

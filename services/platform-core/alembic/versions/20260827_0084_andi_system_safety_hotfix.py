@@ -1,7 +1,7 @@
 """Add fail-closed freshness, routing and canonical email delivery state.
 
-Revision ID: 20260827_0082
-Revises: 20260826_0081
+Revision ID: 20260827_0084
+Revises: 20260827_0083
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "20260827_0082"
-down_revision = "20260826_0081"
+revision = "20260827_0084"
+down_revision = "20260827_0083"
 branch_labels = None
 depends_on = None
 
