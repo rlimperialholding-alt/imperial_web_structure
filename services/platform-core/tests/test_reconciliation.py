@@ -13,7 +13,16 @@ allowlist, so the real content digests of ``seed.py``, ``SOURCE_LOCK.json``,
 the operational process catalog and two ``manifest.json`` rows are now
 *documented fail-closed* candidates: the tracked-secret probe reports them by
 path (never plaintext) and exits nonzero until an R3 baseline attestation
-covers them, while every other probe still evaluates and passes. There is NO
+covers them, while every other probe still evaluates and passes. The Task36
+review remediation additionally made the audited identity occurrence-aware:
+the comparison unit includes the finding line number, so a value baselined on
+one line can no longer suppress a new occurrence of the same digest on a
+different line. Against the *stale protected baseline* (whose rotation is a
+separate R3 attestation and out of scope here) that strictly widens the
+documented fail-closed set: values whose baseline lines no longer match the
+working tree (line drift after the baseline was attested) are now reported
+too, which is exactly the intended fail-closed behavior of the per-line
+identity. There is NO
 snapshot or environment seam for the secret probe: a
 command-level test proves the ``II_RECON_SECRETS_SNAPSHOT`` variable (the
 removed seam) has no effect, and non-command-level tests exercise the secret
@@ -57,15 +66,35 @@ REQUIRED_LOCK_VERSION_FIELDS = (
     "partner_field_version",
     "commercial_integration_version",
 )
-# A Task35 remediation óta dokumentáltan fail-closed jelöltek: a strukturális
-# osztályozó már nem ismer sem futtatható forrást, sem általános mezőnevet,
-# ezért ezek a valós (de struktúrálisan nem bizonyítható) tartalomdigestek az
-# R3 baseline-attesztációig osztályozatlanok maradnak.
+# A dokumentáltan fail-closed jelöltek: (1) a Task35 remediation óta a
+# strukturális osztályozó által nem bizonyítható, baseline-hiányos valós
+# tartalomdigestek (4 fájl), és (2) a Task36 remediation óta az
+# occurrence-aware identitás miatt láthatóvá vált sor-eltolódások: a baseline
+# ugyan hordozza a digestet, de a sor (path, type, hash, line) azonosság már
+# nem egyezik a munkafával -- ezek az R3 baseline-attesztációig szintén
+# osztályozatlanok maradnak. A védett baseline forgatása normál feladat
+# részeként tilos, ezért a lista a jelenlegi dokumentált állapotot rögzíti.
 _UNCLASSIFIED_CANDIDATE_FILES = (
+    "services/operational-guidance/INTEGRATION-FILE-MANIFEST.json",
     "services/operational-guidance/config/operational-process-catalog-v1.0.json",
+    "services/operational-guidance/config/website-targets.json",
+    "services/operational-guidance/deploy/staging/staging.env.template",
+    "services/operational-guidance/tests/test_brand_registry.py",
+    "services/operational-guidance/tests/test_ingatlan_connector.py",
+    "services/operational-guidance/tests/test_production_hardening.py",
     "services/platform-core/SOURCE_LOCK.json",
     "services/platform-core/app/seed.py",
     "services/platform-core/app/static/prevalidated-commercial-sources/manifest.json",
+    "services/platform-core/docs/CANONICAL_SOURCE_VERIFICATION_COMMERCIAL_V1.json",
+    "services/platform-core/tests/conftest.py",
+    "services/platform-core/tests/test_canonical_sync_routes.py",
+    "services/platform-core/tests/test_commercial_integration.py",
+    "services/platform-core/tests/test_governance_workspace.py",
+    "services/platform-core/tests/test_house_plan_execution.py",
+    "services/platform-core/tests/test_market_service_api.py",
+    "services/platform-core/tests/test_security.py",
+    "services/platform-core/tests/test_user_administration.py",
+    "services/platform-core/tests/test_website_content_control.py",
 )
 # A reconciliation script altal olvasott kornyezeti feluliras-kulcsok. A
 # direct in-process probe tesztek ezeket mindig torlik, hogy ambient
@@ -166,8 +195,14 @@ def canonical_scan_document() -> dict:
 
 
 @pytest.fixture(scope="session")
-def live_secret_fingerprints(canonical_scan_document: dict) -> set[tuple[str, str, str]]:
-    """Canonical tracked-secret fingerprints shared by the tamper tests."""
+def live_secret_fingerprints(
+    canonical_scan_document: dict,
+) -> set[tuple[str, str, str, int | None]]:
+    """Canonical tracked-secret fingerprints shared by the tamper tests.
+
+    The identity is occurrence-aware: ``(path, type, fingerprint, line)``,
+    exactly as ``reconcile_tracked_secrets`` compares baseline vs. live scan.
+    """
     return check_secret_baseline._fingerprints(canonical_scan_document)
 
 
@@ -188,10 +223,11 @@ def _pin_canonical_scan(
 
 
 def _find_live_baseline_entry(
-    baseline: dict, live: set[tuple[str, str, str]]
+    baseline: dict, live: set[tuple[str, str, str, int | None]]
 ) -> tuple[str, int, dict]:
     # Csak olyan bejegyzés alkalmas a tamper-tesztre, amely (a) valóban él a
-    # live scanben (nem stale), és (b) strukturálisan NEM osztályozható -- egy
+    # live scanben (nem stale) az occurrence-aware (path, type, hash, line)
+    # identitással, és (b) strukturálisan NEM osztályozható -- egy
     # content-digest/drive-id típusú bejegyzés eltávolítása után a klasszifikátor
     # tisztázná, és a probe tévesen PASS-t adna.
     for filename, findings in baseline.get("results", {}).items():
@@ -200,6 +236,7 @@ def _find_live_baseline_entry(
                 filename.replace("\\", "/"),
                 str(finding.get("type", "")),
                 str(finding.get("hashed_secret", "")),
+                check_secret_baseline._normalized_line_number(finding),
             )
             if (
                 fingerprint in live
@@ -223,13 +260,17 @@ def test_reconciliation_command_fails_closed_on_unclassified_digest_candidates()
     # dokumentáltan fail-closed: a strukturális osztályozó már nem ismer sem
     # futtatható forrást (app/seed.py), sem általános mezőneveket
     # (sha256/checksum), ezért a valós tartalomdigestek -- az R3
-    # baseline-attesztációig -- osztályozatlanok maradnak, és a parancs
-    # pontosan ezeket a fájlokat nevezi meg (plaintext nélkül). Az
+    # baseline-attesztációig -- osztályozatlanok maradnak. A Task36
+    # remediation occurrence-aware identitása (sorszám a kulcsban) a védett,
+    # de sor-eltolódott baseline mellett szigorúan bővíti a fail-closed
+    # halmazt: a baseline-ban hordozott, de másik soron álló digestek is
+    # osztályozatlanok, amíg az R3 attesztáció friss sorazonosítót nem ad.
+    # A parancs pontosan ezeket a fájlokat nevezi meg (plaintext nélkül). Az
     # összesített kilépési kód nem nulla, a többi négy probe viszont lefut és
     # PASS-t jelent: egyetlen hiba sem takarhatja el a többiek állítását.
     result = _run_reconciliation()
     assert result.returncode != 0
-    assert "113 unclassified candidate(s) in 4 tracked file(s)" in result.stderr
+    assert "236 unclassified candidate(s) in 20 tracked file(s)" in result.stderr
     for path in _UNCLASSIFIED_CANDIDATE_FILES:
         assert path in result.stderr
     assert "bounded hash/path-only audit report written to" in result.stderr
