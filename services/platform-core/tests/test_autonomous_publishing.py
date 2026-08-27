@@ -216,6 +216,19 @@ def test_readiness_still_rejects_a_stale_degraded_worker(db, fake_runtime, monke
     assert payload["worker_status"] == "degraded"
 
 
+def test_nim_daily_gate_accepts_native_featured_image_readback():
+    assert service._nim_readback_image_verified(
+        {"featured_image_present": True},
+        {"visual_asset_package_id": "VAP-001"},
+        {},
+    )
+    assert not service._nim_readback_image_verified(
+        {"featured_image_present": False},
+        {"visual_asset_package_id": "VAP-001"},
+        {},
+    )
+
+
 @pytest.mark.parametrize(
     ("channel", "error"),
     [

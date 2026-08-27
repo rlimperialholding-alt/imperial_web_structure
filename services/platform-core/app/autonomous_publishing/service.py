@@ -728,6 +728,21 @@ def _daily_gate_deadline_reached(now: datetime | None = None) -> bool:
     return local_now.hour >= max(0, min(23, hour))
 
 
+def _nim_readback_image_verified(
+    readback: dict[str, Any], payload: dict[str, Any], config: dict[str, Any]
+) -> bool:
+    mapping = ((config.get("contract") or {}).get("readback_map") or {})
+    visual_id_field = mapping.get("visual_asset_package_id")
+    visual_url_field = mapping.get("featured_image_url")
+    if visual_id_field:
+        return str(readback.get(visual_id_field) or "") == str(
+            payload.get("visual_asset_package_id") or ""
+        )
+    if visual_url_field:
+        return str(readback.get(visual_url_field) or "").startswith("https://")
+    return readback.get("featured_image_present") is True
+
+
 def daily_publication_integrity(
     db: Session, *, now: datetime | None = None
 ) -> dict[str, Any]:
@@ -802,15 +817,7 @@ def daily_publication_integrity(
         elif channel == "nim_cms":
             brand = registry.brands.get(str(brand_id)) or {}
             config = ((brand.get("channels") or {}).get("nim_cms") or {})
-            mapping = ((config.get("contract") or {}).get("readback_map") or {})
-            visual_id_field = mapping.get("visual_asset_package_id")
-            visual_url_field = mapping.get("featured_image_url")
-            if visual_id_field:
-                image_verified = str(readback.get(visual_id_field) or "") == str(
-                    payload.get("visual_asset_package_id") or ""
-                )
-            elif visual_url_field:
-                image_verified = str(readback.get(visual_url_field) or "").startswith("https://")
+            image_verified = _nim_readback_image_verified(readback, payload, config)
         if not image_verified:
             invalid.append(f"{brand_id}/{channel}:image_not_verified")
             continue
