@@ -84,13 +84,19 @@ Audited-set contract:
   path -- and evidence-backed:
   ``content-digest`` (a 64-hex value bound on its own line to exactly one of
   ``reference_sha256``/``fragment_sha256``/``claim_snapshot_sha256``/
-  ``source_sha256``/``checksum``/``sha256``, and only inside the repository's
-  documented content-registry files) and ``drive-resource-id`` (a Google
+  ``source_sha256``, and only inside the repository's dedicated, provably
+  static content-registry files -- never inside an executable source file,
+  and never under a generic key name such as ``sha256``/``checksum``) and
+  ``drive-resource-id`` (a Google
   Drive/Docs resource identifier in the documented ``1`` + 32/43
   ``[A-Za-z0-9_-]`` form bound to exactly the ``id``/``sourceId`` key in the
   two documented Drive index files, which must additionally be corroborated by
   a Drive/Docs URL or an explicit ``drive`` provenance marker in the same
   file);
+* findings are classified per line, never per digest: the same value reported
+  on several lines is cleared only when *every* line occurrence is proven
+  non-secret on that exact line; one unprovable line keeps the whole finding
+  unclassified and fails closed;
 * every candidate that neither the baseline nor a structural classifier
   clears is **unclassified**, and unclassified means fail closed with status 1
   -- new detector types, new files and new value shapes all land here by
@@ -442,9 +448,7 @@ def _assert_pinned_scanner() -> None:
         )
 
 
-def _run_driver_scan(
-    files: list[str], repo_root: Path
-) -> subprocess.CompletedProcess[bytes]:
+def _run_driver_scan(files: list[str], repo_root: Path) -> subprocess.CompletedProcess[bytes]:
     """Scan exactly the given file list with the pinned driver subprocess.
 
     The file list travels on stdin, so no platform command-line length limit
@@ -468,6 +472,12 @@ def _run_driver_scan(
             )
         except subprocess.TimeoutExpired as exc:
             raise ScanFailure("scan driver chunk timed out.") from exc
+        except OSError as exc:
+            # The driver could not even be spawned (missing interpreter,
+            # unreadable driver file, ...). The message is fixed and carries
+            # no environment, path or secret material; a raw traceback must
+            # never surface instead of the controlled fail-closed status.
+            raise ScanFailure("scan driver could not start.") from exc
         if attempt <= len(_SPAWN_RETRY_DELAYS) and _is_transient_windows_start_failure(
             completed.returncode
         ):
@@ -507,7 +517,7 @@ def _accounted_files(stderr: bytes) -> set[str]:
         marker = line.find(_CHECKING_FILE_PREFIX)
         if marker == -1:
             continue
-        accounted.add(_normalize(line[marker + len(_CHECKING_FILE_PREFIX):].strip()))
+        accounted.add(_normalize(line[marker + len(_CHECKING_FILE_PREFIX) :].strip()))
     return accounted
 
 
@@ -546,17 +556,13 @@ def _live_scan(files: list[str], repo_root: Path) -> dict[str, Any]:
             try:
                 probe_path.write_text(_probe_line(), encoding="utf-8")
             except OSError as exc:
-                raise ScanFailure(
-                    f"sentinel probe could not be written: {probe_name}."
-                ) from exc
+                raise ScanFailure(f"sentinel probe could not be written: {probe_name}.") from exc
             return probe_name, _run_driver_scan([*chunk, probe_name], repo_root)
         finally:
             try:
                 probe_path.unlink(missing_ok=True)
             except OSError as exc:
-                raise ScanFailure(
-                    f"sentinel probe could not be removed: {probe_name}."
-                ) from exc
+                raise ScanFailure(f"sentinel probe could not be removed: {probe_name}.") from exc
 
     with ThreadPoolExecutor(max_workers=_SCAN_WORKERS) as pool:
         completed = list(pool.map(lambda pair: _run_chunk(*pair), enumerate(chunks)))
@@ -607,9 +613,7 @@ def _live_scan(files: list[str], repo_root: Path) -> dict[str, Any]:
     missing = requested - accounted
     if missing:
         raise ScanFailure(
-            "scanner did not account for requested file(s): "
-            + ", ".join(sorted(missing))
-            + "."
+            "scanner did not account for requested file(s): " + ", ".join(sorted(missing)) + "."
         )
     return {"results": merged}
 
@@ -647,31 +651,35 @@ def _read_text_for_classification(path: Path) -> list[str]:
 # reproduce the scanner's own SHA-1 fingerprint. Nothing here trusts a
 # filename alone or a remembered hash, so a genuine secret cannot inherit
 # clearance, and adding one to an otherwise classified file still fails
-# closed. Each rule is additionally narrowed to *exact* field names and
-# *exact* file paths: the repository's documented content registries, nothing
-# more. Extending either set is an R3 security decision, never a gate fix.
+# closed. Each rule is additionally narrowed to *exact*, non-generic field
+# names and *exact* file paths: dedicated, provably static content-registry
+# documents only -- never executable source files, never ``*.py``. Extending
+# either set is an R3 security decision, never a gate fix. Clearance is
+# decided per reported line, so a value whose occurrences span a classified
+# digest line and an unprovable line stays unclassified.
 
 # The exact digest field names used by the repository's content registries.
-# Any other key -- ``api_sha256``, ``some_checksum``, a name merely ending in
-# ``sha256`` -- stays unclassified.
+# Only precise, non-generic names qualify: any other key -- ``api_sha256``,
+# ``some_checksum``, a name merely ending in ``sha256``, and the generic
+# ``sha256``/``checksum`` themselves -- stays unclassified.
 _CONTENT_DIGEST_KEYS = frozenset(
     {
         "reference_sha256",
         "fragment_sha256",
         "claim_snapshot_sha256",
         "source_sha256",
-        "checksum",
-        "sha256",
     }
 )
 # The exact content-registry files whose 64-hex values are content digests by
-# construction. The same exact key in any other file stays unclassified.
+# construction. Every entry is a dedicated, provably static registry document
+# (JSON data, no executable content); an executable source file must never be
+# added to this set, and the same exact key in any other file -- including
+# every ``.py`` file -- stays unclassified.
 _CONTENT_DIGEST_PATHS = frozenset(
     {
         "services/platform-core/app/static/prevalidated-commercial-sources/manifest.json",
         "services/operational-guidance/config/operational-process-catalog-v1.0.json",
         "services/platform-core/SOURCE_LOCK.json",
-        "services/platform-core/app/seed.py",
         "services/platform-core/docs/DEVELOPMENT_DISCOVERY_COMMERCIAL_V1.json",
     }
 )
@@ -753,6 +761,13 @@ def _classify_additions(
     Returns ``(classified counts by classification name, unclassified set)``.
     Every finding that no structural classifier proves is returned as
     unclassified, so the caller fails closed on it.
+
+    Classification is per line, never per digest: the pinned driver preserves
+    one finding entry per reported line, and a ``(path, type, hash)`` triple
+    is cleared only when *every* one of its line entries is proven non-secret
+    on that exact line. The same value reported once as a bound content digest
+    and once as an unbound token on another line therefore stays unclassified
+    -- a genuine secret can never ride along on a classified line's digest.
     """
     by_path: dict[str, list[dict[str, Any]]] = {}
     for filename, findings in current.get("results", {}).items():
@@ -769,29 +784,43 @@ def _classify_additions(
             continue
         lines = _read_text_for_classification(repo_root / path)
         document = "\n".join(lines)
+        by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for finding in by_path.get(path, []):
-            finding_type = str(finding.get("type", ""))
-            hashed = str(finding.get("hashed_secret", ""))
+            by_key.setdefault(
+                (
+                    str(finding.get("type", "")),
+                    str(finding.get("hashed_secret", "")),
+                ),
+                [],
+            ).append(finding)
+        for (finding_type, hashed), entries in by_key.items():
             if (finding_type, hashed) not in wanted:
                 continue
             rule = _STRUCTURAL_CLASSIFIERS.get(finding_type)
             if rule is None:
                 continue
             name, predicate = rule
-            try:
-                line_number = int(finding.get("line_number", 0))
-            except (TypeError, ValueError):
+            all_lines_classified = True
+            for finding in entries:
+                try:
+                    line_number = int(finding.get("line_number", 0))
+                except (TypeError, ValueError):
+                    line_number = 0
+                # 1-based and in range, or this line stays unclassified. A
+                # zero or negative number must never wrap around to another
+                # line.
+                if not 1 <= line_number <= len(lines):
+                    all_lines_classified = False
+                    continue
+                if not predicate(lines[line_number - 1], hashed, document, path):
+                    all_lines_classified = False
+            if not all_lines_classified:
                 continue
-            # 1-based and in range, or the finding stays unclassified. A zero or
-            # negative number must never wrap around to a different line.
-            if not 1 <= line_number <= len(lines):
-                continue
-            if predicate(lines[line_number - 1], hashed, document, path):
-                classified[name] = classified.get(name, 0) + 1
-                # Discard from both sets: the same fingerprint may be reported
-                # on several lines, and it must be counted exactly once.
-                wanted.discard((finding_type, hashed))
-                remaining.discard((path, finding_type, hashed))
+            classified[name] = classified.get(name, 0) + 1
+            # The same fingerprint may be reported on several lines: it is
+            # counted exactly once, and only after every line occurrence was
+            # proven non-secret.
+            remaining.discard((path, finding_type, hashed))
     return classified, remaining
 
 

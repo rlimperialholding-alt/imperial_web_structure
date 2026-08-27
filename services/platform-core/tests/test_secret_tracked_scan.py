@@ -28,12 +28,21 @@ Proves the tracked-file contract of ``check_secret_baseline.py``:
   explicitly-truncated hash/path-only audit report;
 * a candidate outside the baseline is cleared only by a structural classifier
   that re-derives the value from the working tree and reproduces the
-  scanner's fingerprint, narrowed to exact field names and exact file paths:
-  an unbound hex value, the exact digest key outside the registry files, a
-  lookalike key (``api_sha256``), an uncorroborated Drive-shaped identifier,
-  the exact Drive key outside the Drive index files, an unclassifiable
-  detector type, and a genuine credential added to an otherwise-classified
-  file all still fail closed;
+  scanner's fingerprint, narrowed to exact, non-generic field names and exact
+  file paths: an unbound hex value, the exact digest key outside the registry
+  files, a lookalike key (``api_sha256``), an uncorroborated Drive-shaped
+  identifier, the exact Drive key outside the Drive index files, an
+  unclassifiable detector type, and a genuine credential added to an
+  otherwise-classified file all still fail closed;
+* the classifier allowlist contains no executable source file and no generic
+  digest key name (``sha256``/``checksum`` are out); the real digest values
+  of ``app/seed.py`` stay unclassified, and the pinned driver preserves one
+  finding entry per line so the same digest reported on a classified line and
+  on an unclassifiable line fails closed;
+* an ``OSError`` while spawning the pinned driver becomes a secret-free
+  ``ScanFailure``, never a raw traceback;
+* the runtime audit directory is git-ignored, its artifact never appears in
+  ``git status``, and a planted audit file cannot act as suppression input;
 * there is no snapshot or environment seam: tests exercise the live path
   exclusively through direct pytest ``monkeypatch`` seams, and setting the
   pytest environment marker has no effect on the scan;
@@ -62,16 +71,19 @@ import base64
 import hashlib
 import inspect
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from detect_secrets.settings import default_settings
 
 PLATFORM_CORE = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = PLATFORM_CORE / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import _detect_secrets_scan_driver  # noqa: E402
 import check_secret_baseline  # noqa: E402
 
 REPO_ROOT = check_secret_baseline.REPO_ROOT
@@ -637,7 +649,9 @@ def test_missing_sentinel_probe_fails_closed(
     baseline = _empty_baseline(repo)
     _git(repo, "add", "tracked.py", baseline.name)
     _commit(repo)
-    monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _driver_fake(include_probe=False))
+    monkeypatch.setattr(
+        check_secret_baseline, "_run_driver_scan", _driver_fake(include_probe=False)
+    )
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 2
     assert "sentinel probe was not detected" in message
@@ -747,9 +761,7 @@ def test_probe_write_error_fails_closed_and_leaves_no_probe_file(
     assert list(repo.glob(check_secret_baseline._PROBE_PREFIX + "*")) == []
 
 
-def test_probe_delete_error_fails_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_probe_delete_error_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A probe that cannot be removed is a controlled fail-closed error."""
     repo = _init_repo(tmp_path / "repo")
     (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
@@ -945,9 +957,7 @@ def test_content_digest_classifier_rejects_a_lookalike_key(tmp_path: Path) -> No
     """
     repo = _init_repo(tmp_path / "repo")
     digest = hashlib.sha256(b"synthetic-lookalike-key").hexdigest()
-    _write_tracked(
-        repo, _DIGEST_MANIFEST_PATH, '{\n  "api_sha256": "' + digest + '"\n}\n'
-    )
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "api_sha256": "' + digest + '"\n}\n')
     baseline = _empty_baseline(repo)
     _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
     _commit(repo)
@@ -1091,9 +1101,7 @@ def test_out_of_range_line_number_never_wraps_to_another_line(
     file, so an out-of-range number must fail closed instead of wrapping.
     """
     digest_line, _ = _digest_line("reference_sha256", b"synthetic-content-digest")
-    _write_tracked(
-        tmp_path, _DIGEST_MANIFEST_PATH, '{\n  "x": 1,\n' + digest_line + "}\n"
-    )
+    _write_tracked(tmp_path, _DIGEST_MANIFEST_PATH, '{\n  "x": 1,\n' + digest_line + "}\n")
     hashed = hashlib.sha1(
         hashlib.sha256(b"synthetic-content-digest").hexdigest().encode("utf-8")
     ).hexdigest()
@@ -1142,6 +1150,172 @@ def test_same_fingerprint_on_several_lines_is_counted_once(tmp_path: Path) -> No
     assert unclassified == set()
 
 
+def test_pinned_driver_preserves_one_entry_per_line_for_the_same_digest(
+    tmp_path: Path,
+) -> None:
+    """A driver sosem lapítja össze az azonos digestű, különböző soros találatokat.
+
+    Ugyanaz a 64-hex érték egy kötött digest-soron és egy kötetlen soron: a
+    korábbi ``(type, hashed_secret)`` dedup csak a legkisebb sorszámot tartotta
+    volna meg, a review HIGH exploitját adva. Az új szerződés szerint minden
+    sor külön bejegyzésként él tovább.
+    """
+    digest = hashlib.sha256(b"synthetic-per-line-driver").hexdigest()
+    target = tmp_path / "tracked.json"
+    target.write_text(
+        '{\n  "reference_sha256": "' + digest + '",\n  "unbound": "' + digest + '",\n}\n',
+        encoding="utf-8",
+    )
+    hashed = hashlib.sha1(digest.encode("utf-8")).hexdigest()
+    with default_settings():
+        entries = _detect_secrets_scan_driver._scan_and_dedupe(str(target))
+    hex_entries = [
+        entry
+        for entry in entries
+        if entry.get("type") == "Hex High Entropy String" and entry.get("hashed_secret") == hashed
+    ]
+    assert {entry.get("line_number") for entry in hex_entries} == {2, 3}
+
+
+def test_identical_digest_on_classified_and_unclassified_lines_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Azonos digestű, eltérő sorokon szereplő classified és unclassified találat.
+
+    A review HIGH exploitjának közvetlen regressziója: ugyanaz az érték a 2.
+    soron kötött digest-kulcshoz (osztályozható), a 3. soron kötetlen
+    pozícióban (nem osztályozható) áll. Az élő scan mindkét sort jelenti, a
+    classifier csak akkor tisztázhatná a hármast, ha *minden* sor bizonyítottan
+    ártalmatlan -- így a reconciliation fail-closed marad.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    digest = hashlib.sha256(b"synthetic-mixed-line").hexdigest()
+    _write_tracked(
+        repo,
+        _DIGEST_MANIFEST_PATH,
+        '{\n  "reference_sha256": "' + digest + '",\n  "unbound": "' + digest + '",\n}\n',
+    )
+    baseline = _empty_baseline(repo)
+    _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
+    _commit(repo)
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1, message
+    assert "unclassified candidate(s)" in message
+    assert _DIGEST_MANIFEST_PATH in message
+    assert "content-digest" not in message
+    audit = repo / "services" / "platform-core" / "runtime" / "tracked-secret-delta-audit.json"
+    assert audit.is_file()
+    document = json.loads(audit.read_text(encoding="utf-8"))
+    assert document["classification"] == "unclassified"
+
+
+def test_classifier_allowlist_has_no_executable_source_or_generic_keys() -> None:
+    """A strukturális osztályozó engedménye sehol sem érinthet futtatható
+    forrást, és nem ismerhet általános mezőneveket."""
+    paths = check_secret_baseline._CONTENT_DIGEST_PATHS
+    assert "services/platform-core/app/seed.py" not in paths
+    assert all(path.endswith(".json") for path in paths)
+    assert check_secret_baseline._CONTENT_DIGEST_KEYS == frozenset(
+        {
+            "reference_sha256",
+            "fragment_sha256",
+            "claim_snapshot_sha256",
+            "source_sha256",
+        }
+    )
+    assert "services/platform-core/app/seed.py" not in (
+        check_secret_baseline._DRIVE_RESOURCE_ID_PATHS
+    )
+    assert all(path.endswith(".json") for path in check_secret_baseline._DRIVE_RESOURCE_ID_PATHS)
+
+
+def test_real_seed_source_digest_values_stay_unclassified() -> None:
+    """A valódi ``app/seed.py`` digestértékei fail-closed módon osztályozatlanok.
+
+    A fájl a forrásban hordozza a tartalomdigestjeit (pl. CALCULATION_SOURCES
+    sha256 mezői); miután kikerült a classifier allowlistből, ezek valós, de
+    strukturálisan nem bizonyítható jelöltek -- a szabály szerint
+    osztályozatlanok maradnak, és R3 baseline-attesztációt igényelnek.
+    """
+    seed_path = REPO_ROOT / "services" / "platform-core" / "app" / "seed.py"
+    source_text = seed_path.read_text(encoding="utf-8")
+    digest_match = re.search(r'"([0-9a-f]{64})"', source_text)
+    assert digest_match is not None, "seed.py továbbra is tartalmaz digestet"
+    value = digest_match.group(1)
+    line_number = source_text[: digest_match.start()].count("\n") + 1
+    hashed = hashlib.sha1(value.encode("utf-8")).hexdigest()
+    document = {
+        "results": {
+            "services/platform-core/app/seed.py": [
+                {
+                    "type": "Hex High Entropy String",
+                    "hashed_secret": hashed,
+                    "line_number": line_number,
+                }
+            ]
+        }
+    }
+    additions = {("services/platform-core/app/seed.py", "Hex High Entropy String", hashed)}
+    classified, unclassified = check_secret_baseline._classify_additions(
+        document, additions, REPO_ROOT
+    )
+    assert classified == {}
+    assert unclassified == additions
+
+
+def test_driver_spawn_oserror_becomes_secret_free_scan_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A driver indítási OSError-ja titokmentes ScanFailure, nem traceback."""
+
+    def _broken_spawn(args, **kwargs):
+        raise OSError("synthetic spawn failure")
+
+    monkeypatch.setattr(check_secret_baseline.subprocess, "run", _broken_spawn)
+    with pytest.raises(check_secret_baseline.ScanFailure) as excinfo:
+        check_secret_baseline._run_driver_scan(["synthetic.py"], check_secret_baseline.REPO_ROOT)
+    message = str(excinfo.value)
+    assert "could not start" in message
+    assert "synthetic spawn failure" not in message
+    assert "synthetic.py" not in message
+
+
+def test_runtime_audit_directory_is_git_ignored_and_absent_from_git_status() -> None:
+    """A runtime audit könyvtár git-ignored, az artifact sosem jelenik meg a
+    git státuszban.
+
+    A harmadik tulajdonságot -- az audit nem lehet suppression input -- a
+    ``test_runtime_audit_output_is_never_read_back_as_suppression_input``
+    bizonyítja viselkedésszinten: egy beültetett, „classified"-ra hamisított
+    audit sem tisztázhat élő jelöltet.
+    """
+    audit_relative = check_secret_baseline._audit_output_relative_path()
+    runtime_dir = audit_relative.rsplit("/", 1)[0]
+    for target in (runtime_dir, audit_relative):
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", "--", target],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+        ).returncode
+        assert ignored == 0, f"{target} must be git-ignored"
+    # Az artifact létezzen is a lemezen, hogy a státuszellenőrzés valóban az
+    # ignore-szabályt bizonyítsa, ne csak a hiányát.
+    audit_path = check_secret_baseline._unmatched_audit_path(REPO_ROOT)
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    audit_path.write_text(
+        json.dumps({"kind": "tracked-secret-delta-audit", "rows": []}),
+        encoding="utf-8",
+    )
+    status_output = subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=str(REPO_ROOT),
+        text=True,
+        encoding="utf-8",
+    )
+    assert "tracked-secret-delta-audit" not in status_output
+
+
 def test_unreadable_candidate_fails_closed_during_classification(tmp_path: Path) -> None:
     """A candidate that cannot be re-read is never silently cleared."""
     additions = {("missing.json", "Hex High Entropy String", "a" * 40)}
@@ -1165,9 +1339,7 @@ def test_repository_carries_no_tracked_secret_delta_artifact() -> None:
     ).splitlines()
     assert [path for path in tracked if "audited-delta" in path] == []
     assert [path for path in tracked if "tracked-secret-delta-audit" in path] == []
-    assert [
-        path for path in tracked if path.startswith("services/platform-core/runtime/")
-    ] == []
+    assert [path for path in tracked if path.startswith("services/platform-core/runtime/")] == []
 
 
 def test_live_scan_smoke_runs_the_real_scanner_on_a_trivial_repository(

@@ -14,8 +14,11 @@ Determinism contract:
 * the ``default_settings()`` context configures exactly the built-in plugin
   and filter set of the pinned CLI defaults;
 * files are scanned in the order given on stdin, and findings are deduplicated
-  per file on ``(type, hashed_secret)`` keeping the lowest line number, so the
-  emitted document is byte-identical on every host;
+  per file on ``(type, hashed_secret, line_number)``: one entry per reported
+  line is preserved, so the same value occurring on several lines is never
+  collapsed into the lowest line. The caller classifies every line separately
+  and fails closed if any line cannot be proven harmless; the emitted document
+  is byte-identical on every host;
 * the forced UTF-8 environment (set by the caller) makes file decoding and
   stdio encoding platform-independent.
 
@@ -49,17 +52,23 @@ def _line_number(entry: dict[str, Any]) -> int:
 
 
 def _scan_and_dedupe(filename: str) -> list[dict[str, Any]]:
-    """Scan one file and keep the lowest line number per (type, fingerprint)."""
-    findings: dict[tuple[str, str], dict[str, Any]] = {}
+    """Scan one file; keep one entry per (type, fingerprint, line).
+
+    Findings are never collapsed across line contexts: two occurrences of the
+    same value on different lines stay distinct entries, so the caller's
+    per-line classifier sees every line and fails closed on any line it
+    cannot prove harmless. Identical duplicate records on the same line are
+    reduced to one deterministic entry.
+    """
+    findings: dict[tuple[str, str, int], dict[str, Any]] = {}
     for candidate in scan.scan_file(filename):
         entry = candidate.json()
         key = (
             str(entry.get("type", "")),
             str(entry.get("hashed_secret", "")),
+            _line_number(entry),
         )
-        previous = findings.get(key)
-        if previous is None or _line_number(entry) < _line_number(previous):
-            findings[key] = entry
+        findings.setdefault(key, entry)
     return sorted(
         findings.values(),
         key=lambda entry: (

@@ -1,14 +1,20 @@
 """Focused Gate 8 reconciliation command tests.
 
-Proves the configured reconciliation command evaluates every probe, exits 0 on
-the valid repository, and exits nonzero (fail-closed) when a checked invariant
-is deliberately altered in a temporary, synthetic context. The valid repository
-carries no committed secret allowlist at all: candidates outside the protected
-``.secrets.baseline`` are cleared only by the scanner's structural classifiers
-(re-derived from the working tree and proven against the scanner's own
-fingerprint), so the tracked-secret probe passes deterministically on every
-platform while scanner-exempt files and stale audited entries are reported by
-name. There is NO snapshot or environment seam for the secret probe: a
+Proves the configured reconciliation command evaluates every probe, and exits
+nonzero (fail-closed) when a checked invariant is deliberately altered in a
+temporary, synthetic context. The repository carries no committed secret
+allowlist at all: candidates outside the protected ``.secrets.baseline`` are
+cleared only by the scanner's structural classifiers (re-derived from the
+working tree and proven against the scanner's own fingerprint), narrowed to
+dedicated, provably static content-registry files and precise, non-generic
+field names. The Task35 review remediation removed the executable
+``app/seed.py`` and the generic ``sha256``/``checksum`` keys from that
+allowlist, so the real content digests of ``seed.py``, ``SOURCE_LOCK.json``,
+the operational process catalog and two ``manifest.json`` rows are now
+*documented fail-closed* candidates: the tracked-secret probe reports them by
+path (never plaintext) and exits nonzero until an R3 baseline attestation
+covers them, while every other probe still evaluates and passes. There is NO
+snapshot or environment seam for the secret probe: a
 command-level test proves the ``II_RECON_SECRETS_SNAPSHOT`` variable (the
 removed seam) has no effect, and non-command-level tests exercise the secret
 probe exclusively through direct pytest ``monkeypatch`` seams (pytest-bound,
@@ -50,6 +56,16 @@ REQUIRED_LOCK_VERSION_FIELDS = (
     "application_version",
     "partner_field_version",
     "commercial_integration_version",
+)
+# A Task35 remediation óta dokumentáltan fail-closed jelöltek: a strukturális
+# osztályozó már nem ismer sem futtatható forrást, sem általános mezőnevet,
+# ezért ezek a valós (de struktúrálisan nem bizonyítható) tartalomdigestek az
+# R3 baseline-attesztációig osztályozatlanok maradnak.
+_UNCLASSIFIED_CANDIDATE_FILES = (
+    "services/operational-guidance/config/operational-process-catalog-v1.0.json",
+    "services/platform-core/SOURCE_LOCK.json",
+    "services/platform-core/app/seed.py",
+    "services/platform-core/app/static/prevalidated-commercial-sources/manifest.json",
 )
 # A reconciliation script altal olvasott kornyezeti feluliras-kulcsok. A
 # direct in-process probe tesztek ezeket mindig torlik, hogy ambient
@@ -155,7 +171,9 @@ def live_secret_fingerprints(canonical_scan_document: dict) -> set[tuple[str, st
     return check_secret_baseline._fingerprints(canonical_scan_document)
 
 
-def _pin_canonical_scan(module: ModuleType, monkeypatch: pytest.MonkeyPatch, document: dict) -> None:
+def _pin_canonical_scan(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch, document: dict
+) -> None:
     """Direct pytest-bound seam: the probe's live scan returns the pinned document.
 
     This is the only way the tests avoid a live scan: a process-local
@@ -200,25 +218,29 @@ def _assert_no_secret_material(baseline: dict, output: str) -> None:
                 assert str(hashed_secret) not in output
 
 
-def test_reconciliation_command_passes_on_valid_repository() -> None:
-    # A valós repó determinisztikusan auditált: a kanonikus élő scan
-    # fingerprintjei vagy a védett baseline-ban vannak, vagy strukturális
-    # osztályozó igazolja őket (commitolt allowlist nélkül); a scanner-exempt
-    # bináris fájlok és a stale bejegyzések megnevezve jelennek meg. Az
-    # összesített kilépési kód 0.
+def test_reconciliation_command_fails_closed_on_unclassified_digest_candidates() -> None:
+    # A Task35 review-remediation óta a valós repó titok-probe-ja
+    # dokumentáltan fail-closed: a strukturális osztályozó már nem ismer sem
+    # futtatható forrást (app/seed.py), sem általános mezőneveket
+    # (sha256/checksum), ezért a valós tartalomdigestek -- az R3
+    # baseline-attesztációig -- osztályozatlanok maradnak, és a parancs
+    # pontosan ezeket a fájlokat nevezi meg (plaintext nélkül). Az
+    # összesített kilépési kód nem nulla, a többi négy probe viszont lefut és
+    # PASS-t jelent: egyetlen hiba sem takarhatja el a többiek állítását.
     result = _run_reconciliation()
-    assert result.returncode == 0, result.stderr
-    assert "reconciliation PASS: minden lokalis" in result.stdout
-    assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
-    # Megnevezett baseline-megfigyelés (stale-only bejegyzések), nem elrejtve:
-    assert "stale audited entry/entries" in result.stdout
-    # A scanner-exempt (bináris/figyelmen kívül hagyott kiterjesztésű)
-    # jelöltfájlok determinisztikus, path-szintű elszámolása:
-    assert "scanner-exempt by design" in result.stdout
+    assert result.returncode != 0
+    assert "113 unclassified candidate(s) in 4 tracked file(s)" in result.stderr
+    for path in _UNCLASSIFIED_CANDIDATE_FILES:
+        assert path in result.stderr
+    assert "bounded hash/path-only audit report written to" in result.stderr
+    assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
+    # A többi probe lefut és PASS-t jelent (anti-masking):
+    assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
     assert "alembic_head 20260816_0072" in result.stdout
     assert "reconciliation PASS: modulregiszter" in result.stdout
     assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
+    assert "minden lokalis" not in result.stdout
 
 
 def test_secret_probe_failure_cannot_mask_the_other_probe_assertions(
@@ -255,16 +277,20 @@ def test_command_level_snapshot_environment_variable_has_no_effect(
 
     Setting ``II_RECON_SECRETS_SNAPSHOT`` -- even next to the pytest marker
     -- must not change the command at all: the live scan still runs and the
-    valid repository still passes.
+    result is byte-identical to the no-override run (which is the documented
+    fail-closed state on the unclassified digest candidates).
     """
     result = _run_reconciliation(
         II_RECON_SECRETS_SNAPSHOT=str(tmp_path / "no-such-snapshot.json"),
         PYTEST_CURRENT_TEST="test_command_level_snapshot_environment_variable_has_no_effect",
     )
-    assert result.returncode == 0, result.stderr
-    assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
+    plain = _run_reconciliation()
+    assert result.returncode != 0
+    assert result.stdout == plain.stdout
+    assert result.stderr == plain.stderr
     assert "unavailable outside pytest" not in result.stderr
-    assert "minden lokalis" in result.stdout
+    assert "unclassified candidate(s)" in result.stderr
+    assert "minden lokalis" not in result.stdout
 
 
 def test_unexpected_probe_exception_cannot_mask_the_other_probes(
@@ -283,11 +309,13 @@ def test_unexpected_probe_exception_cannot_mask_the_other_probes(
     assert result.returncode != 0
     assert "_corpus_probe varatlan hiba: JSONDecodeError" in result.stderr
     assert "this is not valid json" not in result.stderr
-    assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
+    # A titok-probe is lefut: a dokumentált fail-closed állapotot jelenti az
+    # osztályozatlan digestjelöltekre (nem maszkolódik el a corpuszhiba mögött).
+    assert "unclassified candidate(s)" in result.stderr
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
     assert "reconciliation PASS: modulregiszter" in result.stdout
     assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
-    assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
+    assert "reconciliation FAIL: 2 probe(s) sikertelen" in result.stderr
     assert "minden lokalis" not in result.stdout
 
 
