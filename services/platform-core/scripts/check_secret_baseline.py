@@ -684,9 +684,9 @@ _CONTENT_DIGEST_PATHS = frozenset(
     }
 )
 # A 64-hex content digest bound on its own line to exactly one of the digest
-# keys: ``"reference_sha256": "<64 hex>"``, ``sha256=<64 hex>``. The key
-# alternation is generated from ``_CONTENT_DIGEST_KEYS`` (longest first), so
-# the documented set and the compiled pattern can never drift apart.
+# keys: ``"reference_sha256": "<64 hex>"`` or ``source_sha256=<64 hex>``. The
+# key alternation is generated from ``_CONTENT_DIGEST_KEYS`` (longest first),
+# so the documented set and the compiled pattern can never drift apart.
 _CONTENT_DIGEST_RE = re.compile(
     r"(?<![A-Za-z0-9_])[\"']?(?:"
     + "|".join(sorted(_CONTENT_DIGEST_KEYS, key=len, reverse=True))
