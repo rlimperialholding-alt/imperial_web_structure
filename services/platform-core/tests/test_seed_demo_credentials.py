@@ -13,15 +13,19 @@ tényleges seed-viselkedésre állít.
 from __future__ import annotations
 
 import dataclasses
+import json
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
 from app import seed
-from app.models import User
+from app.models import PartnerFieldAccess, PartnerWorker, User
+from app.security import verify_password
 from app.seed import (
+    DEMO_CREDENTIALS_STATE_ENV,
     DEMO_LOGIN_ENV,
     DEMO_PARTNER_CODE,
     DEMO_PARTNER_CODE_ENV,
@@ -30,6 +34,7 @@ from app.seed import (
     demo_accounts_allowed,
     demo_login_value,
     demo_partner_code,
+    demo_runtime_credentials,
     seed_database,
 )
 
@@ -165,6 +170,202 @@ class TestDemoSeedKeepsStoredHashesInSync:
         assert refreshed is not None
         assert refreshed.password_hash == DEMO_PASSWORD_HASH
         assert refreshed.password_hash != STALE_HASH
+
+
+class TestDemoCredentialsRuntimeState:
+    """A demo-belépés közös, nem követett futásidejű állapota.
+
+    Többfolyamatos és újraindítás utáni konzisztencia: a generált demo
+    login és partner-kód a közös (git-ignored) állapotfájlban él, minden
+    írás után visszaolvasásra kerül, így a seedelő és a login oldalt
+    renderelő folyamat garantáltan ugyanazt az értéket látja.
+    """
+
+    def test_shared_state_makes_values_stable_across_processes(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "demo-credentials-state.json"
+        first = demo_runtime_credentials({}, state_path=state_path)
+        # Második "folyamat": üres környezet, ugyanaz a közös állapotfájl.
+        second = demo_runtime_credentials({}, state_path=state_path)
+        assert first == second
+        assert state_path.is_file()
+        document = json.loads(state_path.read_text(encoding="utf-8"))
+        assert document["demoLogin"] == first[0]
+        assert document["demoPartnerCode"] == first[1]
+        assert len(first[0]) == 24
+        assert re.fullmatch(r"[0-9]{6}", first[1])
+
+    def test_existing_state_is_authoritative_without_rewrite(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "demo-credentials-state.json"
+        demo_runtime_credentials(
+            {
+                DEMO_LOGIN_ENV: "operator-supplied-demo-value",
+                DEMO_PARTNER_CODE_ENV: "112233",
+            },
+            state_path=state_path,
+        )
+        before = state_path.read_text(encoding="utf-8")
+        resolved = demo_runtime_credentials({}, state_path=state_path)
+        assert resolved == ("operator-supplied-demo-value", "112233")
+        assert state_path.read_text(encoding="utf-8") == before
+
+    def test_environment_override_replaces_and_persists(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "demo-credentials-state.json"
+        demo_runtime_credentials({}, state_path=state_path)
+        overridden = demo_runtime_credentials(
+            {DEMO_LOGIN_ENV: "new-operator-value"}, state_path=state_path
+        )
+        assert overridden[0] == "new-operator-value"
+        # A többi folyamat (env override nélkül) is az override-olt értéket
+        # látja: az override a közös állapotba íródik.
+        assert demo_runtime_credentials({}, state_path=state_path) == overridden
+
+    def test_corrupt_state_falls_back_to_generated_values(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "demo-credentials-state.json"
+        state_path.write_text("{not valid json", encoding="utf-8")
+        resolved = demo_runtime_credentials({}, state_path=state_path)
+        assert len(resolved[0]) == 24
+        assert re.fullmatch(r"[0-9]{6}", resolved[1])
+        document = json.loads(state_path.read_text(encoding="utf-8"))
+        assert document["demoLogin"] == resolved[0]
+        assert document["demoPartnerCode"] == resolved[1]
+
+    def test_non_string_or_missing_state_fields_are_rejected(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "demo-credentials-state.json"
+        state_path.write_text(
+            json.dumps({"demoLogin": 123, "demoPartnerCode": "112233"}),
+            encoding="utf-8",
+        )
+        assert seed._read_demo_credentials_state(state_path) is None
+        state_path.write_text(json.dumps(["demoLogin", "demoPartnerCode"]), encoding="utf-8")
+        assert seed._read_demo_credentials_state(state_path) is None
+        state_path.write_text(
+            json.dumps({"demoLogin": "", "demoPartnerCode": "112233"}),
+            encoding="utf-8",
+        )
+        assert seed._read_demo_credentials_state(state_path) is None
+        assert seed._read_demo_credentials_state(tmp_path / "missing.json") is None
+        state_path.write_text(
+            json.dumps({"demoLogin": "ok-login", "demoPartnerCode": "112233"}),
+            encoding="utf-8",
+        )
+        assert seed._read_demo_credentials_state(state_path) == ("ok-login", "112233")
+
+    def test_default_state_path_lives_in_the_git_ignored_runtime_directory(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv(DEMO_CREDENTIALS_STATE_ENV, raising=False)
+        path = seed._demo_credentials_state_path()
+        assert "runtime" in path.parts
+        assert path.name == "demo-credentials-state.json"
+        # A teljes runtime könyvtár git-ignored, tehát a plaintext demo
+        # értékek soha nem kerülhetnek tracked fájlba.
+        repo_root = Path(seed.__file__).resolve().parents[3]
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", str(path)],
+            cwd=str(repo_root),
+            capture_output=True,
+        ).returncode
+        assert ignored == 0
+
+    def test_production_credentials_never_touch_the_shared_state(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        state_path = tmp_path / "demo-credentials-state.json"
+        monkeypatch.delenv(DEMO_LOGIN_ENV, raising=False)
+        monkeypatch.delenv(DEMO_PARTNER_CODE_ENV, raising=False)
+        monkeypatch.setattr(seed, "settings", _production_settings(demo_features_enabled=True))
+        monkeypatch.setattr(seed, "_demo_credentials_state_path", lambda: state_path)
+        login, partner = seed._process_demo_credentials()
+        assert not state_path.exists()
+        assert len(login) == 24
+        assert re.fullmatch(r"[0-9]{6}", partner)
+
+
+class TestPartnerDemoAccessGate:
+    """A szintetikus partneri terepi hozzáférés production kapuja és reseed
+    hash-szinkronja."""
+
+    def test_seed_creates_partner_access_with_current_demo_code_hash(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            seed, "settings", dataclasses.replace(seed.settings, environment="development")
+        )
+        access = db.scalar(
+            select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == "PFA-GOD-DEMO")
+        )
+        assert access is not None, "a fixture-nek demo hozzáférést kell létrehoznia"
+        assert verify_password(DEMO_PARTNER_CODE, access.access_code_hash)
+
+    def test_reseed_updates_existing_partner_access_hash_to_current_code(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Közvetlen restart/reseed regresszió: az új folyamat új kódot hoz,
+        a már létező PartnerFieldAccess hash-e a login oldal által kiírt
+        aktuális kódhoz frissül."""
+        monkeypatch.setattr(
+            seed, "settings", dataclasses.replace(seed.settings, environment="development")
+        )
+        access = db.scalar(
+            select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == "PFA-GOD-DEMO")
+        )
+        assert access is not None
+        assert verify_password(DEMO_PARTNER_CODE, access.access_code_hash)
+
+        # Újraindítás szimulációja: az új folyamat más partner-kódot használ.
+        monkeypatch.setattr(seed, "DEMO_PARTNER_CODE", "112233")
+        seed_database(db)
+        db.flush()
+
+        refreshed = db.scalar(
+            select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == "PFA-GOD-DEMO")
+        )
+        assert refreshed is not None
+        # A PBKDF2 hash sózott, ezért közvetlen összehasonlítás helyett
+        # verify_password bizonyítja, hogy a tárolt hash az új kódhoz tartozik.
+        assert verify_password("112233", refreshed.access_code_hash)
+        assert not verify_password("000000", refreshed.access_code_hash)
+
+    def test_production_seed_creates_no_synthetic_partner_access(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Production útvonalon nem jöhet létre gyenge vagy aktív szintetikus
+        partneri hozzáférés -- a DEMO_FEATURES_ENABLED flag erőltetése esetén
+        sem."""
+        for worker in db.scalars(select(PartnerWorker)).all():
+            db.delete(worker)
+        for access in db.scalars(select(PartnerFieldAccess)).all():
+            db.delete(access)
+        db.flush()
+
+        monkeypatch.setattr(seed, "settings", _production_settings(demo_features_enabled=True))
+        assert demo_accounts_allowed() is False
+        seed_database(db)
+        db.flush()
+
+        assert db.scalars(select(PartnerFieldAccess)).all() == []
+
+    def test_disabled_demo_runtime_creates_no_partner_access_even_in_development(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for worker in db.scalars(select(PartnerWorker)).all():
+            db.delete(worker)
+        for access in db.scalars(select(PartnerFieldAccess)).all():
+            db.delete(access)
+        db.flush()
+
+        monkeypatch.setattr(
+            seed,
+            "settings",
+            dataclasses.replace(
+                seed.settings, environment="development", demo_features_enabled=False
+            ),
+        )
+        assert demo_accounts_allowed() is False
+        seed_database(db)
+        db.flush()
+
+        assert db.scalars(select(PartnerFieldAccess)).all() == []
 
 
 class TestProductionDemoAccountGate:

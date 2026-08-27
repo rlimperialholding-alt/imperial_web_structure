@@ -7,7 +7,9 @@ import tempfile
 from pathlib import Path
 
 from demo_runtime_path_isolation import (
+    isolate_demo_credentials_state_path,
     isolate_demo_runtime_path,
+    restore_demo_credentials_state_path,
     restore_demo_runtime_path,
 )
 
@@ -25,6 +27,11 @@ os.environ.setdefault("PLATFORM_RUNTIME_ROOT", str(pytest_temp_root / "runtime")
 # reversible and test-scoped. Must be set before app.demo_runtime reads the
 # variable at import time.
 _previous_demo_runtime_path, _ = isolate_demo_runtime_path(pytest_temp_root)
+# The demo-credential state (shared demo login / partner code) must never be
+# written to the real repository runtime directory either; the same
+# unconditional, reversible isolation applies. Must be set before app.seed
+# resolves the state path at import time.
+_previous_demo_credentials_state_path, _ = isolate_demo_credentials_state_path(pytest_temp_root)
 
 
 def _cleanup_pytest_temp_root() -> None:
@@ -74,9 +81,7 @@ os.environ.setdefault("HOUSE_DESIGNER_ADAPTERS_ENABLED", "true")
 os.environ.setdefault("HOUSE_DESIGN_ORDER_INTAKE_ENABLED", "true")
 os.environ.setdefault("MARKET_EVIDENCE_KEK", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 os.environ.setdefault("MARKET_EVIDENCE_KEY_ID", "test-mci-evidence-kek-v1")
-os.environ.setdefault(
-    "HOUSE_DESIGNER_SITE_KEK", "YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk="
-)
+os.environ.setdefault("HOUSE_DESIGNER_SITE_KEK", "YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk=")
 os.environ.setdefault("HOUSE_DESIGNER_SITE_KEY_ID", "test-hd-site-kek-v1")
 os.environ.setdefault(
     "HOUSE_DESIGNER_PRICING_HMAC_SECRET",
@@ -135,4 +140,5 @@ def pytest_sessionfinish(session, exitstatus):
     del session, exitstatus
     engine.dispose()
     restore_demo_runtime_path(_previous_demo_runtime_path)
+    restore_demo_credentials_state_path(_previous_demo_credentials_state_path)
     _cleanup_pytest_temp_root()

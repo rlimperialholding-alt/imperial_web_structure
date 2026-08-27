@@ -5,6 +5,7 @@ import json
 import os
 import re
 import secrets
+import tempfile
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -14,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .demo_runtime import _replace_with_transient_retry
 from .models import (
     CalculationSourceRegistry,
     CopySourceRecord,
@@ -98,9 +100,6 @@ def demo_partner_code(environ: Mapping[str, str] | None = None) -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-DEMO_PARTNER_CODE = demo_partner_code(os.environ)
-
-
 def demo_accounts_allowed() -> bool:
     """Fail-closed kapu: production adatbázisba demo fiók nem kerülhet.
 
@@ -115,7 +114,130 @@ def demo_accounts_allowed() -> bool:
     return settings.demo_runtime_enabled
 
 
-DEMO_PASSWORD = demo_login_value(os.environ)
+# --- A demo-belépés közös, nem követett futásidejű állapota ------------------
+#
+# A generált demo-belépési érték és partner-kód többfolyamatos és újraindítás
+# utáni konzisztenciája determinisztikusan biztonságos: az a folyamat, amelyik
+# a demo fiókokat seedeli, és az a folyamat, amelyik a login oldalt rendereli,
+# ugyanazt az értéket használja -- több worker és újraindítás után is. Az
+# érték egyetlen közös, atomosan cserélt állapotfájlban él, amely a git-ignored
+# ``services/platform-core/runtime/`` könyvtárban van, tehát semmilyen
+# plaintext demo érték nem jelenhet meg a tracked munkafában. A tesztek a
+# ``DEMO_CREDENTIALS_STATE_PATH`` környezeti változóval a pytest temp-gyökerébe
+# irányítják át, hogy a suite soha ne írja a repository runtime könyvtárát.
+
+DEMO_CREDENTIALS_STATE_ENV = "DEMO_CREDENTIALS_STATE_PATH"
+
+
+def _demo_credentials_state_path() -> Path:
+    """A közös, nem követett demo-hitelesítő állapotfájl útvonala.
+
+    Alapértelmezés: ``services/platform-core/runtime/demo-credentials-state.json``.
+    Az egész ``runtime`` könyvtár git-ignored, így a plaintext demo értékek
+    (a login oldal nem-production módban egyébként is kiírja őket) soha nem
+    kerülhetnek tracked fájlba.
+    """
+    override = os.environ.get(DEMO_CREDENTIALS_STATE_ENV, "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[1] / "runtime" / "demo-credentials-state.json"
+
+
+def _read_demo_credentials_state(state_path: Path) -> tuple[str, str] | None:
+    """Beolvassa a megosztott állapotot; hiányzó/sérült fájl esetén ``None``.
+
+    A ``None`` eredmény nem fail-closed hiba, hanem öngyógyító állapot: az
+    érték ilyenkor újragenerálódik, a sérült állapot pedig a következő
+    atomi írással felülíródik.
+    """
+    try:
+        document = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(document, dict):
+        return None
+    login = document.get("demoLogin")
+    partner = document.get("demoPartnerCode")
+    if not isinstance(login, str) or not login or not isinstance(partner, str) or not partner:
+        return None
+    return login, partner
+
+
+def _write_demo_credentials_state(state_path: Path, login: str, partner: str) -> None:
+    """Atomosan írja a közös állapotot a dokumentált Windows retry-szerződéssel."""
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        dir=state_path.parent, prefix=f".{state_path.name}.", suffix=".tmp"
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "schemaVersion": "1.0",
+                    "kind": "demo-credentials-runtime-state",
+                    "demoLogin": login,
+                    "demoPartnerCode": partner,
+                },
+                handle,
+                ensure_ascii=False,
+                indent=2,
+            )
+            handle.write("\n")
+        _replace_with_transient_retry(temporary_path, state_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def demo_runtime_credentials(
+    environ: Mapping[str, str] | None = None,
+    state_path: Path | None = None,
+) -> tuple[str, str]:
+    """``(demo login, partner kód)`` -- folyamatok és újraindítások között stabil.
+
+    Sorrend: (1) explicit környezeti override; (2) a közös, nem követett
+    futásidejű állapotfájl; (3) biztonságosan generált érték, amely azonnal a
+    közös állapotba íródik. Minden írás után az állapot visszaolvasásra kerül,
+    így párhuzamos írók is a fájl tartalmához konvergálnak: a seedelő és a
+    login oldalt renderelő folyamat garantáltan ugyanazt az értéket látja.
+
+    A production kaput a hívó alkalmazza: production módban ezt a függvényt
+    nem szabad meghívni, mert a plaintext demo értékek kizárólag
+    nem-production, demo-engedélyezett környezetben írhatók futásidejű
+    állapotba (lásd ``_process_demo_credentials``).
+    """
+    values = os.environ if environ is None else environ
+    path = _demo_credentials_state_path() if state_path is None else state_path
+    override_login = values.get(DEMO_LOGIN_ENV, "").strip()
+    override_partner = values.get(DEMO_PARTNER_CODE_ENV, "").strip()
+    persisted = _read_demo_credentials_state(path)
+    if not override_login and not override_partner and persisted is not None:
+        return persisted
+    stored_login, stored_partner = persisted if persisted is not None else ("", "")
+    login = override_login or stored_login or demo_login_value(values)
+    partner = override_partner or stored_partner or demo_partner_code(values)
+    _write_demo_credentials_state(path, login, partner)
+    converged = _read_demo_credentials_state(path)
+    if converged is not None:
+        return converged
+    return login, partner
+
+
+def _process_demo_credentials() -> tuple[str, str]:
+    """A folyamat tényleges demo-hitelesítői a production kapu mögött.
+
+    Production (vagy letiltott demo runtime) esetén a közös állapotfájlhoz
+    hozzá sem nyúlunk: az érték env-override vagy folyamatonkénti véletlen, és
+    semmilyen felületen nem jelenik meg. Demo-engedélyezett környezetben a
+    megosztott futásidejű állapot garantálja a többfolyamatos és újraindítás
+    utáni konzisztenciát.
+    """
+    if demo_accounts_allowed():
+        return demo_runtime_credentials(os.environ)
+    return demo_login_value(os.environ), demo_partner_code(os.environ)
+
+
+DEMO_PASSWORD, DEMO_PARTNER_CODE = _process_demo_credentials()
 # Synthetic accounts share one process-local hash so test database resets do
 # not repeat the intentionally expensive PBKDF2 operation twelve times.
 DEMO_PASSWORD_HASH = hash_password(DEMO_PASSWORD)
@@ -367,15 +489,40 @@ def seed_operations_demo(db: Session) -> None:
     db.add_all(orders)
     db.add(DeliveryNoteProjection(delivery_note_id="DN-GOD-101", order_id="ORD-GOD-101", project_id="IMP-GOD-014", note_number="SZL-2026-0719-01", source_url="https://drive.google.com/", received_at=now-timedelta(days=1), receiver="Projektvezető", item_summary="Falazóanyag", ordered_quantity=Decimal("36"), received_quantity=Decimal("34"), unit="raklap", actual_specification="Jóváhagyott típus", quality_status="accepted", damage_or_shortage="2 raklap hiány", plan_match="variance", document_status="incomplete", performance_declaration_status="pending", elog_evidence_status="pending"))
     db.add(MaterialLot(lot_id="LOT-GOD-101", project_id="IMP-GOD-014", delivery_note_id="DN-GOD-101", material="Falazóanyag", received_quantity=Decimal("34"), current_quantity=Decimal("21"), unit="raklap", storage_location="Északi depó", planned_use_location="Falszerkezet", actual_use_location="Falszerkezet", custodian="Falazó brigád", weather_protection="adequate", evidence_url="https://drive.google.com/", status="in_stock"))
-    partner_access = PartnerFieldAccess(access_id="PFA-GOD-DEMO", company_name="Minta Falazó Kft.", company_tax_number="12345678-2-41", contact_name="Nagy László brigádvezető", contact_phone="+36 30 000 0000", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", access_code_hash=hash_password(DEMO_PARTNER_CODE), active=True, valid_from=now-timedelta(days=2), valid_until=now+timedelta(days=60), attendance_required=True, can_report_changes=True)
-    db.add(partner_access)
+    db.add(MaterialMovement(movement_id="MOV-GOD-101", lot_id="LOT-GOD-101", project_id="IMP-GOD-014", movement_type="use", quantity=Decimal("13"), from_location="Északi depó", to_location="Falszerkezet", responsible="Falazó brigád", occurred_at=now-timedelta(hours=8), note="Napi felhasználás"))
+    db.add(MaterialUsageControl(control_id="USE-GOD-101", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", lot_id="LOT-GOD-101", subcontractor="Falazó brigád", planned_quantity=Decimal("30"), waste_pct=Decimal("5"), allowed_quantity=Decimal("31.5"), actual_quantity=Decimal("33"), unit="raklap", unit_cost_huf=Decimal("132000"), damage_huf=Decimal("0"), decision_status="review_required", contractual_basis="Alvállalkozói szerződés anyagfelelősségi pontja"))
+
+
+def seed_partner_field_demo_access(db: Session) -> None:
+    """A szintetikus partneri terepi hozzáférés seedelése.
+
+    Kizárólag a ``demo_accounts_allowed()`` fail-closed kapun belül készülhet:
+    production adatbázisba -- a ``DEMO_FEATURES_ENABLED`` flagtől függetlenül --
+    gyenge vagy aktív szintetikus partneri hozzáférés egyetlen seed-útvonalon
+    sem kerülhet. Újrafutás (reseed/restart) esetén a már létező hozzáférés
+    hash-e biztonságosan frissül az aktuális folyamat demo partner-kódjához,
+    így a login oldal által kiírt kód újraindítás után is működik. A függvény
+    a ``seed_operations_demo`` PMPhase-korlátjától függetlenül fut, tehát a
+    hash-szinkron akkor is megtörténik, ha a demo üzemeltetési adatok már
+    léteznek.
+    """
+    if not demo_accounts_allowed():
+        return
+    now = datetime.now(timezone.utc)
+    partner_hash = hash_password(DEMO_PARTNER_CODE)
+    existing = db.scalar(
+        select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == "PFA-GOD-DEMO")
+    )
+    if existing is not None:
+        existing.access_code_hash = partner_hash
+        return
+    db.add(PartnerFieldAccess(access_id="PFA-GOD-DEMO", company_name="Minta Falazó Kft.", company_tax_number="12345678-2-41", contact_name="Nagy László brigádvezető", contact_phone="+36 30 000 0000", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", access_code_hash=partner_hash, active=True, valid_from=now-timedelta(days=2), valid_until=now+timedelta(days=60), attendance_required=True, can_report_changes=True))
     db.add_all([
         PartnerWorker(worker_id="PWR-GOD-001", access_id="PFA-GOD-DEMO", name="Nagy László", role="Brigádvezető", active=True),
         PartnerWorker(worker_id="PWR-GOD-002", access_id="PFA-GOD-DEMO", name="Kiss József", role="Kőműves", active=True),
         PartnerWorker(worker_id="PWR-GOD-003", access_id="PFA-GOD-DEMO", name="Szabó Péter", role="Segédmunkás", active=True),
     ])
-    db.add(MaterialMovement(movement_id="MOV-GOD-101", lot_id="LOT-GOD-101", project_id="IMP-GOD-014", movement_type="use", quantity=Decimal("13"), from_location="Északi depó", to_location="Falszerkezet", responsible="Falazó brigád", occurred_at=now-timedelta(hours=8), note="Napi felhasználás"))
-    db.add(MaterialUsageControl(control_id="USE-GOD-101", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", lot_id="LOT-GOD-101", subcontractor="Falazó brigád", planned_quantity=Decimal("30"), waste_pct=Decimal("5"), allowed_quantity=Decimal("31.5"), actual_quantity=Decimal("33"), unit="raklap", unit_cost_huf=Decimal("132000"), damage_huf=Decimal("0"), decision_status="review_required", contractual_basis="Alvállalkozói szerződés anyagfelelősségi pontja"))
+
 
 def seed_commercial_integration(db: Session) -> None:
     records: list[dict[str, Any]] = [
@@ -694,4 +841,5 @@ def seed_database(db: Session) -> None:
         retire_seeded_content_quality_sources(db)
     seed_workspace_demo(db)
     seed_operations_demo(db)
+    seed_partner_field_demo_access(db)
     db.commit()
