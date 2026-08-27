@@ -40,7 +40,7 @@ from .canonical_policy import (
     publication_contract_for_brand,
 )
 from .deepseek import complete_json
-from .email import EmailDeliveryError, SMTPEmailAdapter
+from .email import SMTPEmailAdapter
 from .images import CanonicalImageFactoryError, sync_canonical_image
 from .models import (
     CanonicalGrowthDailyRun,
@@ -109,11 +109,11 @@ def _publication_digest_kill_switch_active(config: object) -> bool:
     return path.is_file()
 
 
-def _lock_publication_digest_claims(db: Session) -> None:
+def _lock_summary_delivery_claims(db: Session) -> None:
     if db.get_bind().dialect.name != "postgresql":
         return
     lock_key = int.from_bytes(
-        hashlib.sha256(b"imperial:daily-publication-digest:delivery-claims").digest()[:8],
+        hashlib.sha256(b"imperial:summary-email:delivery-claims").digest()[:8],
         byteorder="big",
         signed=True,
     )
@@ -2118,7 +2118,7 @@ def send_publication_digest(
     if not config.canonical_publication_digest_enabled:
         return {"status": "blocked", "reason": "publication_digest_disabled"}
 
-    _lock_publication_digest_claims(db)
+    _lock_summary_delivery_claims(db)
     existing = db.scalar(
         select(CanonicalInternalHandoff).where(
             CanonicalInternalHandoff.local_date == local_day,
@@ -2184,8 +2184,6 @@ def send_publication_digest(
             select(func.count())
             .select_from(CanonicalInternalHandoff)
             .where(
-                CanonicalInternalHandoff.handoff_type
-                == PUBLICATION_DIGEST_MESSAGE_TYPE,
                 CanonicalInternalHandoff.recipient_email == recipient,
                 CanonicalInternalHandoff.claimed_at >= claimed_since_day,
             )
@@ -2415,11 +2413,19 @@ def _smtp_binding() -> BrandBinding:
 
 def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
     current = now or datetime.now(UTC)
-    local_now = current.astimezone(ZoneInfo(settings().timezone))
-    hour, minute = (int(part) for part in settings().canonical_internal_handoff_at.split(":"))
+    config = settings()
+    local_now = current.astimezone(ZoneInfo(config.timezone))
+    hour, minute = (int(part) for part in config.canonical_internal_handoff_at.split(":"))
     if (local_now.hour, local_now.minute) < (hour, minute):
         return {"status": "not_due"}
     local_day = local_now.date()
+    message_type = "daily_executive"
+    recipient = _normalized_email(IORA_EXECUTIVE_EMAIL)
+    idempotency_key = _publication_digest_idempotency_key(
+        message_type=message_type,
+        recipient=recipient,
+        local_report_date=local_day,
+    )
     daily = db.scalar(
         select(CanonicalGrowthDailyRun).where(CanonicalGrowthDailyRun.local_date == local_day)
     )
@@ -2474,54 +2480,110 @@ def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[s
         "Az IORA találatokból nem indult közvetlen megkeresés. A belső átadás a publikálástól "
         "függetlenül, kötelezően fennmarad."
     )
-    payload_hash = _sha({"to": IORA_EXECUTIVE_EMAIL, "subject": subject, "body": body})
+    payload_hash = _sha({"to": recipient, "subject": subject, "body": body})
+    _lock_summary_delivery_claims(db)
     row = db.scalar(
         select(CanonicalInternalHandoff).where(
             CanonicalInternalHandoff.local_date == local_day,
-            CanonicalInternalHandoff.handoff_type == "daily_executive",
+            CanonicalInternalHandoff.handoff_type == message_type,
+            CanonicalInternalHandoff.recipient_email == recipient,
         )
+        .with_for_update()
     )
-    if row and row.status == "sent":
-        if daily and daily.internal_handoff_status != "sent":
-            daily.internal_handoff_status = "sent"
-            db.commit()
-        return {"status": "sent", "idempotent": True, "handoff_id": row.handoff_id}
-    if not row:
-        row = CanonicalInternalHandoff(
-            handoff_id=f"CIH-{uuid4().hex[:20].upper()}",
-            local_date=local_day,
-            recipient_email=IORA_EXECUTIVE_EMAIL,
+    if row:
+        if row.idempotency_key is None:
+            row.idempotency_key = idempotency_key
+        if row.claimed_at is None and row.attempt_count > 0:
+            row.claimed_at = row.sent_at or row.updated_at or row.created_at
+        if row.status == "claimed":
+            claimed_at = _aware_utc(row.claimed_at or row.updated_at)
+            if claimed_at <= current - PUBLICATION_DIGEST_STALE_CLAIM_AFTER:
+                row.status = "dead_letter"
+                row.last_error = "stale_claim_ambiguous_delivery_manual_review"
+        elif row.status in {"failed", "pending"} or (
+            row.status == "blocked" and row.attempt_count > 0
+        ):
+            row.status = "dead_letter"
+            row.last_error = "pre_hotfix_attempt_quarantined_no_automatic_retry"
+        if daily:
+            daily.internal_handoff_status = (
+                "sent" if row.status == "sent" else "required_blocked"
+            )
+        db.commit()
+        return {
+            "status": row.status,
+            "idempotent": True,
+            "handoff_id": row.handoff_id,
+            "idempotency_key": idempotency_key,
+        }
+
+    row = CanonicalInternalHandoff(
+        handoff_id=f"CIH-{uuid4().hex[:20].upper()}",
+        local_date=local_day,
+        handoff_type=message_type,
+        recipient_email=recipient,
+        subject=subject,
+        body_text=body,
+        payload_sha256=payload_hash,
+        idempotency_key=idempotency_key,
+        counts_json=_json(counts),
+        status="claimed" if config.canonical_internal_handoff_enabled else "blocked",
+        attempt_count=1 if config.canonical_internal_handoff_enabled else 0,
+        claimed_at=current if config.canonical_internal_handoff_enabled else None,
+        last_error=(
+            None
+            if config.canonical_internal_handoff_enabled
+            else "internal_handoff_disabled"
+        ),
+    )
+    db.add(row)
+    try:
+        if daily and not config.canonical_internal_handoff_enabled:
+            daily.internal_handoff_status = "required_blocked"
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        duplicate = db.scalar(
+            select(CanonicalInternalHandoff).where(
+                CanonicalInternalHandoff.idempotency_key == idempotency_key
+            )
+        )
+        if duplicate is None:
+            raise
+        return {
+            "status": duplicate.status,
+            "idempotent": True,
+            "handoff_id": duplicate.handoff_id,
+            "idempotency_key": idempotency_key,
+        }
+    if not config.canonical_internal_handoff_enabled:
+        return {
+            "status": "blocked",
+            "handoff_id": row.handoff_id,
+            "idempotency_key": idempotency_key,
+        }
+    try:
+        receipt = SMTPEmailAdapter(_smtp_binding()).send(
+            to_email=recipient,
             subject=subject,
             body_text=body,
-            payload_sha256=payload_hash,
-            counts_json=_json(counts),
+            idempotency_key=idempotency_key,
+            delivery_scope="internal",
         )
-        db.add(row)
-        db.flush()
-    if not settings().canonical_internal_handoff_enabled:
-        row.status = "blocked"
-        row.last_error = "internal_handoff_disabled"
+    except Exception as exc:
+        row.status = "dead_letter"
+        error_type = getattr(exc, "error_type", type(exc).__name__)
+        row.last_error = f"{type(exc).__name__}:{error_type}:manual_review_required"
+        row.provider_message_id = getattr(exc, "provider_message_id", None)
         if daily:
             daily.internal_handoff_status = "required_blocked"
         db.commit()
-        return {"status": "blocked", "handoff_id": row.handoff_id}
-    try:
-        receipt = SMTPEmailAdapter(_smtp_binding()).send(
-            to_email=IORA_EXECUTIVE_EMAIL,
-            subject=subject,
-            body_text=body,
-            idempotency_key=payload_hash,
-            delivery_scope="internal",
-        )
-    except (GrowthRegistryError, EmailDeliveryError) as exc:
-        row.attempt_count += 1
-        row.status = "failed"
-        row.last_error = type(exc).__name__
-        if daily:
-            daily.internal_handoff_status = "required_failed"
-        db.commit()
-        return {"status": "failed", "handoff_id": row.handoff_id, "error_type": type(exc).__name__}
-    row.attempt_count += 1
+        return {
+            "status": "dead_letter",
+            "handoff_id": row.handoff_id,
+            "error_type": str(error_type),
+            "idempotency_key": idempotency_key,
+        }
     row.status = "sent"
     row.provider_message_id = receipt.provider_message_id
     row.sent_at = current
@@ -2529,4 +2591,9 @@ def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[s
     if daily:
         daily.internal_handoff_status = "sent"
     db.commit()
-    return {"status": "sent", "idempotent": False, "handoff_id": row.handoff_id}
+    return {
+        "status": "sent",
+        "idempotent": False,
+        "handoff_id": row.handoff_id,
+        "idempotency_key": idempotency_key,
+    }

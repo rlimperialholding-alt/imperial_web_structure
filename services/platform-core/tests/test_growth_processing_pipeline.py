@@ -849,6 +849,87 @@ def test_publication_digest_enforces_recipient_rolling_24_hour_hard_gate(
     assert len(calls) == 2
 
 
+def test_andrea_hard_gate_counts_every_system_summary_type(db, monkeypatch):
+    now = datetime(2026, 8, 21, 8, 5, tzinfo=UTC)
+    recipient = "molnar.andrea@imperialholding.hu"
+    db.add(
+        CanonicalInternalHandoff(
+            handoff_id="CIH-QUESTION-RADAR-SUMMARY",
+            local_date=date(2026, 8, 21),
+            handoff_type="question_radar_usable_digest",
+            recipient_email=recipient,
+            subject="Kérdésradar összesítő",
+            body_text="Korábbi rendszerösszesítő.",
+            payload_sha256="b" * 64,
+            idempotency_key=processing._publication_digest_idempotency_key(
+                message_type="question_radar_usable_digest",
+                recipient=recipient,
+                local_report_date=date(2026, 8, 21),
+            ),
+            counts_json="{}",
+            status="sent",
+            attempt_count=1,
+            claimed_at=now - timedelta(hours=1),
+            sent_at=now - timedelta(hours=1),
+        )
+    )
+    db.commit()
+
+    class TransportMustNotRun:
+        def __init__(self, *_args, **_kwargs):
+            pytest.fail("Andrea's rolling 24-hour hard gate reached the transport")
+
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(processing, "SMTPEmailAdapter", TransportMustNotRun)
+
+    result = processing.send_publication_digest(db, now=now)
+
+    assert result == {
+        "status": "blocked",
+        "reason": "recipient_rolling_24h_hard_gate",
+    }
+
+
+def test_failed_internal_summary_is_quarantined_without_transport_retry(db, monkeypatch):
+    row = CanonicalInternalHandoff(
+        handoff_id="CIH-PRE-HOTFIX-FAILED",
+        local_date=date(2026, 8, 21),
+        handoff_type="daily_executive",
+        recipient_email=IORA_EXECUTIVE_EMAIL,
+        subject="Imperial napi belső feldolgozás – 2026-08-21",
+        body_text="Korábbi sikertelen összesítő.",
+        payload_sha256="a" * 64,
+        counts_json="{}",
+        status="failed",
+        attempt_count=7,
+        last_error="EmailDeliveryError",
+    )
+    db.add(row)
+    db.commit()
+
+    class TransportMustNotRun:
+        def __init__(self, *_args, **_kwargs):
+            pytest.fail("pre-hotfix failed summary reached the email transport")
+
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(processing, "SMTPEmailAdapter", TransportMustNotRun)
+
+    result = processing.send_internal_handoff(
+        db, now=datetime(2026, 8, 21, 16, 31, tzinfo=UTC)
+    )
+
+    assert result["status"] == "dead_letter"
+    assert result["idempotent"] is True
+    assert row.status == "dead_letter"
+    assert row.attempt_count == 7
+    assert row.claimed_at is not None
+    assert row.idempotency_key == processing._publication_digest_idempotency_key(
+        message_type="daily_executive",
+        recipient=IORA_EXECUTIVE_EMAIL,
+        local_report_date=date(2026, 8, 21),
+    )
+
+
 def test_source_hard_gate_blocks_before_model(db, monkeypatch):
     called = False
 
