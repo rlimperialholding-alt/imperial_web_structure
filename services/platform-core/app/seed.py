@@ -130,14 +130,19 @@ def demo_accounts_allowed() -> bool:
 # folyamat generál és persistál, minden párhuzamos folyamat a persistált
 # állapothoz konvergál -- korábban két egyidejű folyamat is üres állapotot
 # olvashatott, különböző értékeket generálhatott és mindkettő írhatott
-# (a Task36 review HIGH-ja). A lock-várakozás korlátos; a korlát kimerülése,
-# nem biztonságos (szimlink/nem reguláris) állapot vagy lock, illetve a
-# sikeres írás utáni ellenőrizhetetlen visszaolvasás fail-closed
-# ``DemoCredentialsStateError`` -- sosem egy ellenőrizetlen vagy divergens
-# érték visszaadása. A lock és az állapotfájl egyaránt a git-ignored runtime
-# könyvtárban él. A tesztek a ``DEMO_CREDENTIALS_STATE_PATH`` környezeti
-# változóval a pytest temp-gyökerébe irányítják át mindkettőt, hogy a suite
-# soha ne írja a repository runtime könyvtárát.
+# (a Task36 review HIGH-ja). A vegyes override/no-override versenyre
+# ugyanez a koordináció érvényes (Task37 review HIGH regressziója): az
+# override nélküli hívó csak lock alatt olvasott értéket adhat vissza, így
+# nem rögzítheti egy párhuzamos override-írás előtti, elavult állapotot --
+# minden folyamat pontosan egy persistált állapothoz konvergál. A
+# lock-várakozás korlátos; a korlát kimerülése, nem biztonságos
+# (szimlink/nem reguláris) állapot vagy lock, illetve a sikeres írás utáni
+# ellenőrizhetetlen visszaolvasás fail-closed ``DemoCredentialsStateError``
+# -- sosem egy ellenőrizetlen vagy divergens érték visszaadása. A lock és az
+# állapotfájl egyaránt a git-ignored runtime könyvtárban él. A tesztek a
+# ``DEMO_CREDENTIALS_STATE_PATH`` környezeti változóval a pytest
+# temp-gyökerébe irányítják át mindkettőt, hogy a suite soha ne írja a
+# repository runtime könyvtárát.
 
 DEMO_CREDENTIALS_STATE_ENV = "DEMO_CREDENTIALS_STATE_PATH"
 # A creation-lock megszerzésére szánt, dokumentált, korlátos várakozási ablak.
@@ -350,12 +355,22 @@ def demo_runtime_credentials(
 
     Az első létrehozás és a felülírás atomi exclusive-create lock mögött
     történik: pontosan egy folyamat generál és persistál, minden párhuzamos
-    folyamat a persistált állapothoz konvergál (a várakozó folyamat közben
-    folyamatosan újraolvassa az állapotfájlt, így a holder sikeres írása után
-    azonnal konvergál). A lock-várakozás korlátos; a korlát kimerülése, nem
-    biztonságos (szimlink/nem reguláris) állapot vagy lock, illetve a sikeres
-    írás utáni ellenőrizhetetlen visszaolvasás fail-closed
-    ``DemoCredentialsStateError``.
+    folyamat a persistált állapothoz konvergál. A lock-várakozás korlátos; a
+    korlát kimerülése, nem biztonságos (szimlink/nem reguláris) állapot vagy
+    lock, illetve a sikeres írás utáni ellenőrizhetetlen visszaolvasás
+    fail-closed ``DemoCredentialsStateError``.
+
+    Vegyes override/no-override verseny (Task37 review HIGH regressziója): a
+    lock nélküli gyorsút kizárólag explicit override-os hívónak jár, mert az
+    ő visszatérési értékét a saját override-ja horgonyozza. Override nélküli
+    hívó a persistált állapot lock nélküli előolvasásával éppen egy másik
+    folyamat override-írásának közepén térhetne vissza a lecserélendő,
+    elavult állapottal -- ezért az ilyen hívó mindig a lockon keresztül
+    koordinál, és csak lock alatt olvasott, az aktuális persistált állapotot
+    tükröző értéket adhat vissza (a várakozó hívó nem térhet vissza lock
+    nélküli köztes olvasással). Így minden párhuzamos folyamat -- override-os
+    és override nélküli egyaránt -- pontosan egy persistált állapothoz
+    konvergál.
 
     A production kaput a hívó alkalmazza: production módban ezt a függvényt
     nem szabad meghívni, mert a plaintext demo értékek kizárólag
@@ -366,9 +381,19 @@ def demo_runtime_credentials(
     path = _demo_credentials_state_path() if state_path is None else state_path
     override_login = values.get(DEMO_LOGIN_ENV, "").strip()
     override_partner = values.get(DEMO_PARTNER_CODE_ENV, "").strip()
-    persisted = _read_demo_credentials_state(path)
-    if persisted is not None and _matches_overrides(persisted, override_login, override_partner):
-        return persisted
+    # A gyorsút csak explicit override-os hívónak jár: az ő értékét a saját
+    # override-ja horgonyozza, így egy párhuzamos override-írás közbeni
+    # előolvasás sem adhat vissza olyan állapotot, amely ne teljesítené a
+    # hívó saját override-jait. Override nélküli hívó esetén az előolvasás
+    # épp egy másik folyamat lecserélendő, elavult állapotát rögzíthetné --
+    # az ilyen hívó kizárólag lock alatt olvasott értéket adhat vissza.
+    has_override = bool(override_login or override_partner)
+    if has_override:
+        persisted = _read_demo_credentials_state(path)
+        if persisted is not None and _matches_overrides(
+            persisted, override_login, override_partner
+        ):
+            return persisted
     lock_path = _demo_credentials_lock_path(path)
     _assert_safe_runtime_target(lock_path, "lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -380,13 +405,17 @@ def demo_runtime_credentials(
                 )
             finally:
                 _release_demo_state_lock(lock_path)
-        # Egy másik folyamat éppen dolgozik: ha az állapot már elérhető és
-        # teljesíti a hívó override-jait, lock nélkül konvergálunk rá.
-        converged = _read_demo_credentials_state(path)
-        if converged is not None and _matches_overrides(
-            converged, override_login, override_partner
-        ):
-            return converged
+        # Egy másik folyamat éppen dolgozik. Explicit override-os hívó akkor
+        # térhet vissza lock nélküli olvasással, ha az állapot már elérhető
+        # és teljesíti a saját override-jait; override nélküli hívó tovább
+        # vár a lockra, mert egy köztes olvasás az éppen futó override-írás
+        # előtti, elavult állapotot rögzíthetné.
+        if has_override:
+            converged = _read_demo_credentials_state(path)
+            if converged is not None and _matches_overrides(
+                converged, override_login, override_partner
+            ):
+                return converged
         time.sleep(delay)
     raise DemoCredentialsStateError(
         "demo credential creation lock could not be acquired within the bounded retry window."

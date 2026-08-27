@@ -315,8 +315,12 @@ class TestDemoCredentialsConcurrentCreation:
         env = {**os.environ, DEMO_CREDENTIALS_STATE_ENV: str(state_path)}
         return [
             subprocess.Popen(
-                [sys.executable, "-c", TestDemoCredentialsConcurrentCreation._worker_code(),
-                 str(platform_core)],
+                [
+                    sys.executable,
+                    "-c",
+                    TestDemoCredentialsConcurrentCreation._worker_code(),
+                    str(platform_core),
+                ],
                 cwd=str(platform_core),
                 env=env,
                 stdout=subprocess.PIPE,
@@ -339,9 +343,7 @@ class TestDemoCredentialsConcurrentCreation:
             results.append((lines[0], lines[1]))
         return results
 
-    def test_concurrent_first_creation_converges_and_restarts_stably(
-        self, tmp_path: Path
-    ) -> None:
+    def test_concurrent_first_creation_converges_and_restarts_stably(self, tmp_path: Path) -> None:
         """Négy egyidejű folyamat, egyetlen konvergens állapot, restart-stabilitás."""
         state_path = tmp_path / "demo-credentials-state.json"
         lock_path = tmp_path / "demo-credentials-state.json.lock"
@@ -396,9 +398,7 @@ class TestDemoCredentialsConcurrentCreation:
         assert (document["demoLogin"], document["demoPartnerCode"]) == (login, partner)
         assert document["kind"] == "demo-credentials-runtime-state"
 
-    def test_creation_lock_is_exclusive_and_reentrant_after_release(
-        self, tmp_path: Path
-    ) -> None:
+    def test_creation_lock_is_exclusive_and_reentrant_after_release(self, tmp_path: Path) -> None:
         """Az exclusive-create lock pontosan egy folyamatnak jár egyszerre."""
         lock_path = tmp_path / "demo-credentials-state.json.lock"
         assert seed._try_create_demo_state_lock(lock_path) is True
@@ -451,6 +451,177 @@ class TestDemoCredentialsConcurrentCreation:
             pytest.skip("symlink creation is unavailable on this host")
         with pytest.raises(seed.DemoCredentialsStateError):
             demo_runtime_credentials({}, state_path=state_path)
+
+
+class TestDemoCredentialsMixedOverrideConcurrency:
+    """Vegyes override/no-override többfolyamatos verseny regressziója.
+
+    A Task37 review HIGH közvetlen bizonyítéka: egy override nélküli
+    folyamat a lock nélküli előolvasással éppen egy másik folyamat
+    override-írásának közepén térhetett vissza a lecserélendő, elavult
+    állapottal. A javítás után az override nélküli hívó mindig a lockon
+    keresztül koordinál, és csak lock alatt olvasott értéket adhat vissza:
+    a vegyes versenyben minden folyamat -- override-os és override nélküli
+    egyaránt -- pontosan egy persistált állapothoz konvergál, újraindítás
+    után is. Minden alfolyamat valódi OS-folyamat, amely a tényleges
+    ``app.seed`` modult importálja. A plaintext szintetikus értékek
+    kizárólag a tmp_path alatti állapotfájlban és a folyamatok stdoutján
+    jelennek meg -- tracked forrásba, logba, reportba vagy proofba soha.
+    """
+
+    @staticmethod
+    def _override_writer_code() -> str:
+        return (
+            "import sys, time\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from app import seed\n"
+            "state_path = seed.Path(sys.argv[2])\n"
+            "lock_path = seed._demo_credentials_lock_path(state_path)\n"
+            "if not seed._try_create_demo_state_lock(lock_path):\n"
+            "    raise SystemExit(9)\n"
+            "print('LOCKED', flush=True)\n"
+            "time.sleep(float(sys.argv[3]))\n"
+            "converged = seed._resolve_demo_state_under_lock(\n"
+            "    state_path, sys.argv[4], '', {}\n"
+            ")\n"
+            "seed._release_demo_state_lock(lock_path)\n"
+            "print(converged[0], flush=True)\n"
+            "print(converged[1], flush=True)\n"
+        )
+
+    @staticmethod
+    def _reader_code() -> str:
+        return (
+            "import sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from app import seed\n"
+            "pair = seed.demo_runtime_credentials({}, state_path=seed.Path(sys.argv[2]))\n"
+            "print(pair[0], flush=True)\n"
+            "print(pair[1], flush=True)\n"
+        )
+
+    def test_mixed_override_and_no_override_processes_converge(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Override-írás közbeni no-override olvasók: nincs elavult visszatérés."""
+        monkeypatch.delenv(DEMO_LOGIN_ENV, raising=False)
+        monkeypatch.delenv(DEMO_PARTNER_CODE_ENV, raising=False)
+        state_path = tmp_path / "demo-credentials-state.json"
+        lock_path = tmp_path / "demo-credentials-state.json.lock"
+        pre_login = "pre-" + "override-" + "login"
+        pre_partner = "000111"
+        override_login = "operator-" + "supplied-" + "value"
+        seed._write_demo_credentials_state(state_path, pre_login, pre_partner)
+
+        platform_core = Path(seed.__file__).resolve().parents[1]
+        env = {**os.environ, DEMO_CREDENTIALS_STATE_ENV: str(state_path)}
+        env.pop(DEMO_LOGIN_ENV, None)
+        env.pop(DEMO_PARTNER_CODE_ENV, None)
+
+        # Az override-író a lockot fogva tartja a kritikus szakaszban, hogy az
+        # olvasók az írás KÖZBEN próbálkozzanak -- a régi, elavult állapot
+        # éppen elérhető a lemezen, ezért a lock nélküli gyorsút visszaadná.
+        writer = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                self._override_writer_code(),
+                str(platform_core),
+                str(state_path),
+                "1.5",
+                override_login,
+            ],
+            cwd=str(platform_core),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert writer.stdout is not None
+        first_line = writer.stdout.readline().strip()
+        assert first_line == "LOCKED", writer.stderr.read() if writer.stderr else ""
+
+        # A lock fogása közben indított, override nélküli olvasók: a javítás
+        # nélkül azonnal az elavult (pre-override) állapotot kapnák; a
+        # lock-koordinációval a persistált override-állapothoz konvergálnak.
+        readers = [
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    self._reader_code(),
+                    str(platform_core),
+                    str(state_path),
+                ],
+                cwd=str(platform_core),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            for _ in range(3)
+        ]
+        for reader in readers:
+            stdout, stderr = reader.communicate(timeout=120)
+            assert reader.returncode == 0, stderr
+            assert stdout.splitlines() == [override_login, pre_partner], stdout
+
+        writer_stdout, writer_stderr = writer.communicate(timeout=120)
+        assert writer.returncode == 0, writer_stderr
+        assert writer_stdout.splitlines()[-2:] == [override_login, pre_partner]
+
+        # A persistált állapot pontosan az override-pár, a lock felszabadult:
+        document = json.loads(state_path.read_text(encoding="utf-8"))
+        assert (document["demoLogin"], document["demoPartnerCode"]) == (
+            override_login,
+            pre_partner,
+        )
+        assert not lock_path.exists()
+
+        # Újraindítás-stabilitás: egy későbbi, egyedüli folyamat ugyanazt kapja.
+        restart = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                self._reader_code(),
+                str(platform_core),
+                str(state_path),
+            ],
+            cwd=str(platform_core),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        stdout, stderr = restart.communicate(timeout=120)
+        assert restart.returncode == 0, stderr
+        assert stdout.splitlines() == [override_login, pre_partner]
+
+        # Disclosure: a plaintext szintetikus értékek sehol a tracked
+        # forrásban, és a munkafa sem piszkolódott.
+        repo_root = Path(seed.__file__).resolve().parents[3]
+        grep = subprocess.run(
+            ["git", "grep", "-l", "-e", override_login, "-e", pre_login],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        assert grep.returncode == 1, grep.stdout
+        status_output = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=str(repo_root),
+            text=True,
+            encoding="utf-8",
+        )
+        assert override_login not in status_output
+        assert "demo-credentials-state" not in status_output
 
 
 class TestPartnerDemoAccessGate:
