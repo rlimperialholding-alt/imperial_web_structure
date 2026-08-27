@@ -584,10 +584,15 @@ class NIMAdminSessionAdapter(BaseAdapter):
             "params[categorie]": str(defaults.get("category") or ""),
             "params[categories]": "",
             "params[user_public]": str(defaults.get("author") or ""),
-            # The native NIM form leaves the publication date blank and lets the
-            # enable action establish the live timestamp. Supplying an ISO date
-            # creates a record that some NIM versions cannot render or reopen.
-            "params[date_public]": "",
+            # Legacy NIM public article queries require an explicit publication
+            # day even when the record is enabled. A date-only value matches the
+            # native admin form and avoids the invalid timestamp payload that
+            # older installations cannot reopen.
+            "params[date_public]": (
+                job.desired_publish_at.date().isoformat()
+                if job.desired_publish_at
+                else datetime.now(UTC).date().isoformat()
+            ),
             "params[date_start]": "",
             "params[date_end]": "",
             "params[image]": str(

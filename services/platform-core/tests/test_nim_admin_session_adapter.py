@@ -86,6 +86,7 @@ def job(*, featured_image_id: str = "") -> PublicationJobIn:
         },
         cms_route="NIM",
         idempotency_key="2" * 64,
+        desired_publish_at=datetime(2026, 8, 27, tzinfo=UTC),
         correlation_id="CORR-NIM-1",
         release_token="r" * 32,
         release_token_hash="3" * 64,
@@ -153,7 +154,7 @@ def test_admin_session_adapter_publishes_with_image_and_reads_it_back() -> None:
     assert create_call["data"]["params[language]"] == ""
     assert create_call["data"]["params[hu_HU_robots_type]"] == ""
     assert create_call["data"]["params[hu_HU_robots]"] == "INDEX, FOLLOW"
-    assert create_call["data"]["params[date_public]"] == ""
+    assert create_call["data"]["params[date_public]"] == "2026-08-27"
     assert "params[categories][]" not in create_call["data"]
     assert "params[related][]" not in create_call["data"]
     assert "params[labels][]" not in create_call["data"]
