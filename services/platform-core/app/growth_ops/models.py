@@ -430,9 +430,18 @@ class SourceCoverageAttempt(Base):
 class CanonicalInternalHandoff(Base):
     __tablename__ = "canonical_internal_handoffs"
     __table_args__ = (
-        UniqueConstraint("local_date", "handoff_type", name="uq_canonical_handoff_day_type"),
+        UniqueConstraint(
+            "handoff_type",
+            "recipient_email",
+            "local_date",
+            name="uq_canonical_handoff_type_recipient_day",
+        ),
+        UniqueConstraint(
+            "idempotency_key",
+            name="uq_canonical_handoff_idempotency_key",
+        ),
         CheckConstraint(
-            "status IN ('pending','sent','failed','blocked')",
+            "status IN ('pending','claimed','sent','failed','blocked','dead_letter')",
             name="ck_canonical_handoff_status",
         ),
     )
@@ -445,9 +454,11 @@ class CanonicalInternalHandoff(Base):
     subject: Mapped[str] = mapped_column(String(500))
     body_text: Mapped[str] = mapped_column(Text)
     payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True)
     counts_json: Mapped[str] = mapped_column(Text, default="{}")
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     provider_message_id: Mapped[str | None] = mapped_column(String(500), index=True)
     last_error: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

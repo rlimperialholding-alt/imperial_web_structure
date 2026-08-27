@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.growth_ops import processing
 from app.growth_ops.canonical_policy import ACTIVE_CONTENT_BRANDS, IORA_EXECUTIVE_EMAIL
+from app.growth_ops.email import EmailDeliveryError
 from app.growth_ops.models import (
     CanonicalInternalHandoff,
     DailyContentObligation,
@@ -57,6 +58,9 @@ def _settings(**overrides):
         "canonical_publication_digest_enabled": True,
         "canonical_publication_digest_at": "10:00",
         "canonical_publication_digest_recipient": "molnar.andrea@imperialholding.hu",
+        "canonical_publication_digest_kill_switch_file": "unused-by-test",
+        "canonical_publication_digest_per_minute_limit": 1,
+        "canonical_publication_digest_rolling_24h_limit": 20,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -749,6 +753,216 @@ def test_publication_digest_contains_every_quarantined_forum_draft(db, monkeypat
     assert result["status"] == "sent"
     assert captured["body_text"].count("BLOKKOLT TERVEZET") == 27
     assert "Teljes szakmai választervezet 26" in captured["body_text"]
+
+
+def test_publication_digest_15_second_worker_loop_calls_gmail_exactly_once(
+    db, monkeypatch
+):
+    calls = []
+
+    class FakeMailer:
+        def __init__(self, _binding):
+            pass
+
+        def send(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(provider_message_id="MSG-DIGEST-ONCE")
+
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(processing, "_smtp_binding", lambda: SimpleNamespace())
+    monkeypatch.setattr(processing, "SMTPEmailAdapter", FakeMailer)
+    started = datetime(2026, 8, 21, 8, 5, tzinfo=UTC)
+
+    results = [
+        processing.send_publication_digest(
+            db,
+            now=started + timedelta(seconds=15 * index),
+            caller_idempotency_key=f"{index + 1000:064x}",
+        )
+        for index in range(8)
+    ]
+
+    expected_key = processing._publication_digest_idempotency_key(
+        message_type=processing.PUBLICATION_DIGEST_MESSAGE_TYPE,
+        recipient="molnar.andrea@imperialholding.hu",
+        local_report_date=date(2026, 8, 21),
+    )
+    assert len(calls) == 1
+    assert calls[0]["idempotency_key"] == expected_key
+    assert results[0]["status"] == "sent"
+    assert all(result["status"] == "sent" for result in results[1:])
+    assert all(result["idempotency_key"] == expected_key for result in results)
+    row = db.scalar(
+        select(CanonicalInternalHandoff).where(
+            CanonicalInternalHandoff.handoff_type
+            == processing.PUBLICATION_DIGEST_MESSAGE_TYPE
+        )
+    )
+    assert row is not None
+    assert row.status == "sent"
+    assert row.attempt_count == 1
+    assert row.idempotency_key == expected_key
+
+
+def test_publication_digest_ambiguous_delivery_is_held_without_blind_retry(
+    db, monkeypatch
+):
+    calls = 0
+
+    class AmbiguousMailer:
+        def __init__(self, _binding):
+            pass
+
+        def send(self, **_kwargs):
+            nonlocal calls
+            calls += 1
+            raise EmailDeliveryError(
+                "accepted_but_unverified",
+                retry_safe=False,
+                accepted_but_unverified=True,
+                provider_message_id="MSG-MAYBE-DELIVERED",
+            )
+
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(processing, "_smtp_binding", lambda: SimpleNamespace())
+    monkeypatch.setattr(processing, "SMTPEmailAdapter", AmbiguousMailer)
+    started = datetime(2026, 8, 21, 8, 5, tzinfo=UTC)
+
+    first = processing.send_publication_digest(db, now=started)
+    second = processing.send_publication_digest(
+        db, now=started + timedelta(seconds=15), caller_idempotency_key="f" * 64
+    )
+
+    assert calls == 1
+    assert first["status"] == "accepted_unverified"
+    assert second["status"] == "backoff"
+    assert second["idempotent"] is True
+    row = db.scalar(
+        select(CanonicalInternalHandoff).where(
+            CanonicalInternalHandoff.handoff_type
+            == processing.PUBLICATION_DIGEST_MESSAGE_TYPE
+        )
+    )
+    assert row is not None
+    assert row.status == "dead_letter"
+    assert row.attempt_count == 1
+    assert row.provider_message_id == "MSG-MAYBE-DELIVERED"
+
+
+def test_publication_digest_enforces_recipient_rolling_24_hour_hard_gate(
+    db, monkeypatch
+):
+    calls = []
+
+    class FakeMailer:
+        def __init__(self, _binding):
+            pass
+
+        def send(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(provider_message_id=f"MSG-DIGEST-{len(calls)}")
+
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(processing, "_smtp_binding", lambda: SimpleNamespace())
+    monkeypatch.setattr(processing, "SMTPEmailAdapter", FakeMailer)
+    first_at = datetime(2026, 8, 21, 8, 5, tzinfo=UTC)
+
+    first = processing.send_publication_digest(db, now=first_at)
+    blocked = processing.send_publication_digest(
+        db, now=first_at + timedelta(hours=23, minutes=59)
+    )
+    after_gate = processing.send_publication_digest(
+        db, now=first_at + timedelta(hours=24, minutes=1)
+    )
+
+    assert first["status"] == "sent"
+    assert blocked == {
+        "status": "blocked",
+        "reason": "recipient_rolling_24h_hard_gate",
+    }
+    assert after_gate["status"] == "sent"
+    assert len(calls) == 2
+
+
+def test_andrea_hard_gate_counts_every_system_summary_type(db, monkeypatch):
+    now = datetime(2026, 8, 21, 8, 5, tzinfo=UTC)
+    recipient = "molnar.andrea@imperialholding.hu"
+    db.add(
+        CanonicalInternalHandoff(
+            handoff_id="CIH-QUESTION-RADAR-SUMMARY",
+            local_date=date(2026, 8, 21),
+            handoff_type="question_radar_usable_digest",
+            recipient_email=recipient,
+            subject="Kérdésradar összesítő",
+            body_text="Korábbi rendszerösszesítő.",
+            payload_sha256="b" * 64,
+            idempotency_key=processing._publication_digest_idempotency_key(
+                message_type="question_radar_usable_digest",
+                recipient=recipient,
+                local_report_date=date(2026, 8, 21),
+            ),
+            counts_json="{}",
+            status="sent",
+            attempt_count=1,
+            claimed_at=now - timedelta(hours=1),
+            sent_at=now - timedelta(hours=1),
+        )
+    )
+    db.commit()
+
+    class TransportMustNotRun:
+        def __init__(self, *_args, **_kwargs):
+            pytest.fail("Andrea's rolling 24-hour hard gate reached the transport")
+
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(processing, "SMTPEmailAdapter", TransportMustNotRun)
+
+    result = processing.send_publication_digest(db, now=now)
+
+    assert result == {
+        "status": "blocked",
+        "reason": "recipient_rolling_24h_hard_gate",
+    }
+
+
+def test_failed_internal_summary_is_quarantined_without_transport_retry(db, monkeypatch):
+    row = CanonicalInternalHandoff(
+        handoff_id="CIH-PRE-HOTFIX-FAILED",
+        local_date=date(2026, 8, 21),
+        handoff_type="daily_executive",
+        recipient_email=IORA_EXECUTIVE_EMAIL,
+        subject="Imperial napi belső feldolgozás – 2026-08-21",
+        body_text="Korábbi sikertelen összesítő.",
+        payload_sha256="a" * 64,
+        counts_json="{}",
+        status="failed",
+        attempt_count=7,
+        last_error="EmailDeliveryError",
+    )
+    db.add(row)
+    db.commit()
+
+    class TransportMustNotRun:
+        def __init__(self, *_args, **_kwargs):
+            pytest.fail("pre-hotfix failed summary reached the email transport")
+
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(processing, "SMTPEmailAdapter", TransportMustNotRun)
+
+    result = processing.send_internal_handoff(
+        db, now=datetime(2026, 8, 21, 16, 31, tzinfo=UTC)
+    )
+
+    assert result["status"] == "dead_letter"
+    assert result["idempotent"] is True
+    assert row.status == "dead_letter"
+    assert row.attempt_count == 7
+    assert row.claimed_at is not None
+    assert row.idempotency_key == processing._publication_digest_idempotency_key(
+        message_type="daily_executive",
+        recipient=IORA_EXECUTIVE_EMAIL,
+        local_report_date=date(2026, 8, 21),
+    )
 
 
 def test_source_hard_gate_blocks_before_model(db, monkeypatch):
