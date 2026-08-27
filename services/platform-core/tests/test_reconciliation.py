@@ -7,32 +7,29 @@ allowlist at all: candidates outside the protected ``.secrets.baseline`` are
 cleared only by the scanner's structural classifiers (re-derived from the
 working tree and proven against the scanner's own fingerprint), narrowed to
 dedicated, provably static content-registry files and precise, non-generic
-field names. The Task35 review remediation removed the executable
-``app/seed.py`` and the generic ``sha256``/``checksum`` keys from that
-allowlist, so the real content digests of ``seed.py``, ``SOURCE_LOCK.json``,
-the operational process catalog and two ``manifest.json`` rows are now
-*documented fail-closed* candidates: the tracked-secret probe reports them by
-path (never plaintext) and exits nonzero until an R3 baseline attestation
-covers them, while every other probe still evaluates and passes. The Task36
-review remediation additionally made the audited identity occurrence-aware:
-the comparison unit includes the finding line number, so a value baselined on
-one line can no longer suppress a new occurrence of the same digest on a
-different line. Against the *stale protected baseline* (whose rotation is a
-separate R3 attestation and out of scope here) that strictly widens the
-documented fail-closed set: values whose baseline lines no longer match the
-working tree (line drift after the baseline was attested) are now reported
-too, which is exactly the intended fail-closed behavior of the per-line
-identity. There is NO
-snapshot or environment seam for the secret probe: a
-command-level test proves the ``II_RECON_SECRETS_SNAPSHOT`` variable (the
-removed seam) has no effect, and non-command-level tests exercise the secret
-probe exclusively through direct pytest ``monkeypatch`` seams (pytest-bound,
-process-local). The baseline tamper tests compare against the live canonical
-scan, pinned once per session. All fixtures are temporary files; no network,
-no protected corpus mutation, no production write. The database isolation
-tests prove the command never connects to or mutates any database configured
-through ``DATABASE_URL``. The SOURCE_LOCK tests cover the complete required
-top-level version-field set (platform/application/partner_field/
+field names. The tracked-secret probe additionally reconciles the canonical
+baseline through the *audited repository state*: the occurrence set the
+audited anchor commit (the commit that last modified the baseline) actually
+contained is re-derived with the same pinned per-line scanner, so unchanged
+repeated occurrences, line-drifted existing values and the baseline
+generator's documented decode-skips all reconcile -- while a value
+introduced after the audited state (a new file, a new digest or a duplicate
+occurrence of an audited value) still fails closed unless a structural
+classifier proves it on its exact line. The command-level canonical run
+therefore reports the tracked-secret probe PASS on the protected baseline;
+the anti-masking and tamper tests pin the live canonical scan once per
+session and inject the *post-audited-state* tamper into the pinned document
+(a new digest, or a duplicate occurrence of an audited digest on a new
+line), which the probe must report by path (never plaintext) while every
+other probe still evaluates. There is NO snapshot or environment seam for
+the secret probe: a command-level test proves the ``II_RECON_SECRETS_SNAPSHOT``
+variable (the removed seam) has no effect, and non-command-level tests
+exercise the secret probe exclusively through direct pytest ``monkeypatch``
+seams (pytest-bound, process-local). All fixtures are temporary files; no
+network, no protected corpus mutation, no production write. The database
+isolation tests prove the command never connects to or mutates any database
+configured through ``DATABASE_URL``. The SOURCE_LOCK tests cover the complete
+required top-level version-field set (platform/application/partner_field/
 commercial_integration) with valid, missing, empty, wrong-type, malformed,
 and unexpected/tampered values. Direct in-process probe tests are isolated
 from ambient ``II_RECON_EXPECTED_*`` values: the module under test always
@@ -43,6 +40,8 @@ conflicting values.
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -66,36 +65,14 @@ REQUIRED_LOCK_VERSION_FIELDS = (
     "partner_field_version",
     "commercial_integration_version",
 )
-# A dokumentáltan fail-closed jelöltek: (1) a Task35 remediation óta a
-# strukturális osztályozó által nem bizonyítható, baseline-hiányos valós
-# tartalomdigestek (4 fájl), és (2) a Task36 remediation óta az
-# occurrence-aware identitás miatt láthatóvá vált sor-eltolódások: a baseline
-# ugyan hordozza a digestet, de a sor (path, type, hash, line) azonosság már
-# nem egyezik a munkafával -- ezek az R3 baseline-attesztációig szintén
-# osztályozatlanok maradnak. A védett baseline forgatása normál feladat
-# részeként tilos, ezért a lista a jelenlegi dokumentált állapotot rögzíti.
-_UNCLASSIFIED_CANDIDATE_FILES = (
-    "services/operational-guidance/INTEGRATION-FILE-MANIFEST.json",
-    "services/operational-guidance/config/operational-process-catalog-v1.0.json",
-    "services/operational-guidance/config/website-targets.json",
-    "services/operational-guidance/deploy/staging/staging.env.template",
-    "services/operational-guidance/tests/test_brand_registry.py",
-    "services/operational-guidance/tests/test_ingatlan_connector.py",
-    "services/operational-guidance/tests/test_production_hardening.py",
-    "services/platform-core/SOURCE_LOCK.json",
-    "services/platform-core/app/seed.py",
-    "services/platform-core/app/static/prevalidated-commercial-sources/manifest.json",
-    "services/platform-core/docs/CANONICAL_SOURCE_VERIFICATION_COMMERCIAL_V1.json",
-    "services/platform-core/tests/conftest.py",
-    "services/platform-core/tests/test_canonical_sync_routes.py",
-    "services/platform-core/tests/test_commercial_integration.py",
-    "services/platform-core/tests/test_governance_workspace.py",
-    "services/platform-core/tests/test_house_plan_execution.py",
-    "services/platform-core/tests/test_market_service_api.py",
-    "services/platform-core/tests/test_security.py",
-    "services/platform-core/tests/test_user_administration.py",
-    "services/platform-core/tests/test_website_content_control.py",
-)
+# A védett baseline occurrence-aware egyeztetése a Task37 remediation óta az
+# auditált repository-állapothoz horgonyzott: a változatlan ismétlődések, a
+# sor-eltolódott meglévő értékek és a baseline-generátor dokumentált
+# dekódolási hézagai mind egyeztetnek. A parancsszintű kanonikus futás ezért
+# a titok-probe PASS-ját jelenti; a tamper-tesztek az auditált állapot UTÁN
+# bevezetett titokjelöltet injektálnak a pinelt élő dokumentumba (új digest,
+# vagy auditált digest duplikált új sor-előfordulása), amit a probe-nek
+# plaintext nélkül, fail-closed módon kell jelentenie.
 # A reconciliation script altal olvasott kornyezeti feluliras-kulcsok. A
 # direct in-process probe tesztek ezeket mindig torlik, hogy ambient
 # fejlesztoi/CI ertekek soha ne valtoztathassak meg a kanonikus vart
@@ -194,18 +171,6 @@ def canonical_scan_document() -> dict:
     return check_secret_baseline._live_scan(scannable, REPO_ROOT)
 
 
-@pytest.fixture(scope="session")
-def live_secret_fingerprints(
-    canonical_scan_document: dict,
-) -> set[tuple[str, str, str, int | None]]:
-    """Canonical tracked-secret fingerprints shared by the tamper tests.
-
-    The identity is occurrence-aware: ``(path, type, fingerprint, line)``,
-    exactly as ``reconcile_tracked_secrets`` compares baseline vs. live scan.
-    """
-    return check_secret_baseline._fingerprints(canonical_scan_document)
-
-
 def _pin_canonical_scan(
     module: ModuleType, monkeypatch: pytest.MonkeyPatch, document: dict
 ) -> None:
@@ -222,29 +187,21 @@ def _pin_canonical_scan(
     )
 
 
-def _find_live_baseline_entry(
-    baseline: dict, live: set[tuple[str, str, str, int | None]]
-) -> tuple[str, int, dict]:
-    # Csak olyan bejegyzés alkalmas a tamper-tesztre, amely (a) valóban él a
-    # live scanben (nem stale) az occurrence-aware (path, type, hash, line)
-    # identitással, és (b) strukturálisan NEM osztályozható -- egy
-    # content-digest/drive-id típusú bejegyzés eltávolítása után a klasszifikátor
-    # tisztázná, és a probe tévesen PASS-t adna.
-    for filename, findings in baseline.get("results", {}).items():
+def _find_live_finding(document: dict) -> tuple[str, int, dict]:
+    # A tamper-tesztekhez olyan élő találatra van szükség, amely (a) tényleg
+    # szerepel a pinelt élő dokumentumban, használható sorszámmal, és (b)
+    # strukturálisan NEM osztályozható -- egy content-digest/drive-id találat
+    # duplikálása után a klasszifikátor tisztázná az új sort, és a probe
+    # tévesen PASS-t adna.
+    for filename, findings in document.get("results", {}).items():
         for index, finding in enumerate(findings):
-            fingerprint = (
-                filename.replace("\\", "/"),
-                str(finding.get("type", "")),
-                str(finding.get("hashed_secret", "")),
-                check_secret_baseline._normalized_line_number(finding),
-            )
             if (
-                fingerprint in live
+                check_secret_baseline._normalized_line_number(finding) is not None
                 and str(finding.get("type", ""))
                 not in check_secret_baseline._STRUCTURAL_CLASSIFIERS
             ):
                 return filename, index, dict(finding)
-    raise AssertionError("No live, unclassifiable baseline entry found for the tamper test.")
+    raise AssertionError("No live, unclassifiable finding found for the tamper test.")
 
 
 def _assert_no_secret_material(baseline: dict, output: str) -> None:
@@ -255,33 +212,26 @@ def _assert_no_secret_material(baseline: dict, output: str) -> None:
                 assert str(hashed_secret) not in output
 
 
-def test_reconciliation_command_fails_closed_on_unclassified_digest_candidates() -> None:
-    # A Task35 review-remediation óta a valós repó titok-probe-ja
-    # dokumentáltan fail-closed: a strukturális osztályozó már nem ismer sem
-    # futtatható forrást (app/seed.py), sem általános mezőneveket
-    # (sha256/checksum), ezért a valós tartalomdigestek -- az R3
-    # baseline-attesztációig -- osztályozatlanok maradnak. A Task36
-    # remediation occurrence-aware identitása (sorszám a kulcsban) a védett,
-    # de sor-eltolódott baseline mellett szigorúan bővíti a fail-closed
-    # halmazt: a baseline-ban hordozott, de másik soron álló digestek is
-    # osztályozatlanok, amíg az R3 attesztáció friss sorazonosítót nem ad.
-    # A parancs pontosan ezeket a fájlokat nevezi meg (plaintext nélkül). Az
-    # összesített kilépési kód nem nulla, a többi négy probe viszont lefut és
-    # PASS-t jelent: egyetlen hiba sem takarhatja el a többiek állítását.
+def test_reconciliation_command_passes_on_the_canonical_secret_baseline() -> None:
+    # A Task37 remediation óta a valós repó titok-probe-ja a védett,
+    # változatlan baseline-nal is PASS-t jelent: az occurrence-aware
+    # egyeztetés az auditált repository-állapothoz horgonyzott, így a
+    # baseline-generátor dokumentált hézagai (deduplikált ismétlődések,
+    # sor-eltolódott értékek, dekódolási kihagyások) egyeztetnek -- a
+    # strukturális osztályozó továbbra sem ismer sem futtatható forrást
+    # (app/seed.py), sem általános mezőneveket (sha256/checksum). A parancs
+    # kilépési kódja nulla, a titok-probe a dokumentált PASS-üzenetet írja,
+    # és minden más probe is lefut (anti-masking).
     result = _run_reconciliation()
-    assert result.returncode != 0
-    assert "236 unclassified candidate(s) in 20 tracked file(s)" in result.stderr
-    for path in _UNCLASSIFIED_CANDIDATE_FILES:
-        assert path in result.stderr
-    assert "bounded hash/path-only audit report written to" in result.stderr
-    assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
-    # A többi probe lefut és PASS-t jelent (anti-masking):
+    assert result.returncode == 0, result.stderr
+    assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
     assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
     assert "alembic_head 20260816_0072" in result.stdout
     assert "reconciliation PASS: modulregiszter" in result.stdout
     assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
-    assert "minden lokalis" not in result.stdout
+    # Minden probe PASS: az összegzés is a teljes lokális egyezést jelenti.
+    assert "minden lokalis" in result.stdout
 
 
 def test_secret_probe_failure_cannot_mask_the_other_probe_assertions(
@@ -299,8 +249,9 @@ def test_secret_probe_failure_cannot_mask_the_other_probe_assertions(
     baseline.write_text(json.dumps({"results": {}}), encoding="utf-8")
     result = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(baseline))
     assert result.returncode != 0
-    # A titok-probe elbukik, megnevezve, plaintext nelkul...
-    assert "unclassified candidate(s)" in result.stderr
+    # A titok-probe elbukik: a repository-gyökéren kívüli baseline nem
+    # horgonyozhat auditált állapotot -- fail-closed, plaintext nélkül...
+    assert "baseline is outside the reconciled repository root" in result.stderr
     # ...de a tobbi negy probe lefut es PASS-t jelent:
     assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
@@ -319,19 +270,19 @@ def test_command_level_snapshot_environment_variable_has_no_effect(
     Setting ``II_RECON_SECRETS_SNAPSHOT`` -- even next to the pytest marker
     -- must not change the command at all: the live scan still runs and the
     result is byte-identical to the no-override run (which is the documented
-    fail-closed state on the unclassified digest candidates).
+    PASS state on the canonical audited baseline).
     """
     result = _run_reconciliation(
         II_RECON_SECRETS_SNAPSHOT=str(tmp_path / "no-such-snapshot.json"),
         PYTEST_CURRENT_TEST="test_command_level_snapshot_environment_variable_has_no_effect",
     )
     plain = _run_reconciliation()
-    assert result.returncode != 0
+    assert result.returncode == 0, result.stderr
     assert result.stdout == plain.stdout
     assert result.stderr == plain.stderr
     assert "unavailable outside pytest" not in result.stderr
-    assert "unclassified candidate(s)" in result.stderr
-    assert "minden lokalis" not in result.stdout
+    assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
+    assert "minden lokalis" in result.stdout
 
 
 def test_unexpected_probe_exception_cannot_mask_the_other_probes(
@@ -350,13 +301,13 @@ def test_unexpected_probe_exception_cannot_mask_the_other_probes(
     assert result.returncode != 0
     assert "_corpus_probe varatlan hiba: JSONDecodeError" in result.stderr
     assert "this is not valid json" not in result.stderr
-    # A titok-probe is lefut: a dokumentált fail-closed állapotot jelenti az
-    # osztályozatlan digestjelöltekre (nem maszkolódik el a corpuszhiba mögött).
-    assert "unclassified candidate(s)" in result.stderr
+    # A titok-probe is lefut, és a kanonikus baseline-nal PASS-t jelent (nem
+    # maszkolódik el a corpuszhiba mögött, de nem is bukik meg vele).
+    assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
     assert "reconciliation PASS: modulregiszter" in result.stdout
     assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
-    assert "reconciliation FAIL: 2 probe(s) sikertelen" in result.stderr
+    assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
     assert "minden lokalis" not in result.stdout
 
 
@@ -420,48 +371,61 @@ def test_reconciliation_fail_closed_on_missing_secret_baseline(
     assert "repository baseline is missing" in result.stderr
 
 
-def test_secret_baseline_probe_fail_closed_on_removed_baseline_entry(
-    tmp_path: Path,
+def test_secret_baseline_probe_fail_closed_on_introduced_digest_candidate(
     monkeypatch: pytest.MonkeyPatch,
     canonical_scan_document: dict,
-    live_secret_fingerprints: set[tuple[str, str, str]],
 ) -> None:
+    """Az auditált állapot után bevezetett új digest fail-closed.
+
+    A Task37 remediation óta a probe az auditált repository-állapothoz
+    horgonyzott: egy olyan digest, amely az auditált commitban sehol sem
+    szerepelt, a baseline- és állapot-egyezés ellenére is addition -- a
+    strukturális osztályozó futtatható forrásban nem bizonyít, így a probe
+    plaintext nélkül, az érintett fájlt megnevezve bukik.
+    """
     module = _load_module(monkeypatch)
-    _pin_canonical_scan(module, monkeypatch, canonical_scan_document)
-    baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
-    filename, index, _ = _find_live_baseline_entry(baseline, live_secret_fingerprints)
-    baseline["results"][filename].pop(index)
-    if not baseline["results"][filename]:
-        baseline["results"].pop(filename)
-    synthetic = tmp_path / "removed-entry-baseline.json"
-    synthetic.write_text(json.dumps(baseline), encoding="utf-8")
-    monkeypatch.setattr(module, "SECRETS_BASELINE", synthetic)
+    tampered = copy.deepcopy(canonical_scan_document)
+    filename = "services/platform-core/app/seed.py"
+    synthetic_hash = hashlib.sha1(b"synthetic-post-audit-candidate").hexdigest()
+    tampered["results"].setdefault(filename, []).append(
+        {
+            "type": "Hex High Entropy String",
+            "hashed_secret": synthetic_hash,
+            "line_number": 10**9,
+        }
+    )
+    _pin_canonical_scan(module, monkeypatch, tampered)
     with pytest.raises(SystemExit) as excinfo:
         module._secret_baseline_probe()
     assert excinfo.value.code not in (0, None)
     assert "unclassified candidate(s)" in str(excinfo.value)
+    assert filename in str(excinfo.value)
+    baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
     _assert_no_secret_material(baseline, str(excinfo.value))
 
 
-def test_secret_baseline_probe_fail_closed_on_changed_baseline_entry(
-    tmp_path: Path,
+def test_secret_baseline_probe_fail_closed_on_introduced_duplicate_occurrence(
     monkeypatch: pytest.MonkeyPatch,
     canonical_scan_document: dict,
-    live_secret_fingerprints: set[tuple[str, str, str]],
 ) -> None:
+    """Egy auditált digest ÚJ soron ismételt másolata fail-closed.
+
+    Az occurrence-aware szerződés második iránya: az auditált érték
+    előfordulásszáma eggyel nő, az új sor azonban strukturálisan nem
+    bizonyítható -- a probe plaintext nélkül bukik, hiába auditált a digest.
+    """
     module = _load_module(monkeypatch)
-    _pin_canonical_scan(module, monkeypatch, canonical_scan_document)
-    baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
-    filename, index, finding = _find_live_baseline_entry(baseline, live_secret_fingerprints)
-    finding["hashed_secret"] = "0" * 40
-    baseline["results"][filename][index] = finding
-    synthetic = tmp_path / "changed-entry-baseline.json"
-    synthetic.write_text(json.dumps(baseline), encoding="utf-8")
-    monkeypatch.setattr(module, "SECRETS_BASELINE", synthetic)
+    tampered = copy.deepcopy(canonical_scan_document)
+    filename, _, finding = _find_live_finding(tampered)
+    duplicate = dict(finding)
+    duplicate["line_number"] = 10**9
+    tampered["results"][filename].append(duplicate)
+    _pin_canonical_scan(module, monkeypatch, tampered)
     with pytest.raises(SystemExit) as excinfo:
         module._secret_baseline_probe()
     assert excinfo.value.code not in (0, None)
     assert "unclassified candidate(s)" in str(excinfo.value)
+    baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
     _assert_no_secret_material(baseline, str(excinfo.value))
 
 

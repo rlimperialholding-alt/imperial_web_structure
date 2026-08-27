@@ -26,6 +26,12 @@ Proves the tracked-file contract of ``check_secret_baseline.py``:
 * new/changed/removed audited entries fail closed without revealing
   candidate plaintext, and unclassified candidates produce a bounded,
   explicitly-truncated hash/path-only audit report;
+* the audited occurrence state is anchored to git history (the commit that
+  last modified the baseline): unchanged canonical repeat occurrences and
+  line-drifted existing occurrences reconcile, while a value introduced
+  after the audited state -- a new file, a new digest or a duplicate
+  occurrence of an audited value -- fails closed unless a structural
+  classifier proves it on its exact line;
 * a candidate outside the baseline is cleared only by a structural classifier
   that re-derives the value from the working tree and reproduces the
   scanner's fingerprint, narrowed to exact, non-generic field names and exact
@@ -43,7 +49,10 @@ Proves the tracked-file contract of ``check_secret_baseline.py``:
   finding line number, so a value baselined on a classified line can never
   suppress a new occurrence of the same digest on a different unclassified
   line -- the new line must be proven harmless by the structural classifier
-  on that exact line or the reconciliation fails closed;
+  on that exact line or the reconciliation fails closed. A newly introduced
+  occurrence is one that exceeds the audited occurrence count of its value:
+  unchanged repeats and line drift reconcile, a duplicate copy of an audited
+  value still blocks;
 * an ``OSError`` while spawning the pinned driver becomes a secret-free
   ``ScanFailure``, never a raw traceback;
 * the runtime audit directory is git-ignored, its artifact never appears in
@@ -332,10 +341,10 @@ def test_untracked_build_cache_and_runtime_files_cannot_influence_reconciliation
     assert status == 0, message
     assert "0 tracked candidate(s) match the audited baseline." in message
 
-    # A runtime-jelölt tracked-re emelése után azonnal megjelenik — fail-closed,
-    # plaintext nélkül, hash/path-only audit-artefaktummal:
+    # A runtime-jelölt tracked-re emelése (az audited commit UTÁN, csak az
+    # indexben) azonnal megjelenik — fail-closed, plaintext nélkül,
+    # hash/path-only audit-artefaktummal:
     _git(repo, "add", "runtime/manifest.json")
-    _commit(repo)
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1
     assert "- runtime/manifest.json" in message
@@ -406,11 +415,18 @@ def test_baseline_file_excluded_exactly(tmp_path: Path) -> None:
 def test_new_tracked_candidate_fails_closed_without_revealing_plaintext(
     tmp_path: Path,
 ) -> None:
+    """A candidate introduced after the audited state fails closed, plaintext-free.
+
+    The tracked file carries only benign content at the audited commit; the
+    synthetic candidate is written into the working tree afterwards, so it has
+    no audited state and must be reported -- never silently reconciled.
+    """
     repo = _init_repo(tmp_path / "repo")
-    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
     baseline = _empty_baseline(repo)
     _git(repo, "add", "tracked.py", baseline.name)
     _commit(repo)
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1
@@ -440,12 +456,16 @@ def test_cp1250_undecodable_tracked_file_is_still_scanned(tmp_path: Path) -> Non
 
     repo = _init_repo(tmp_path / "repo")
     # ASCII kontroll ugyanazzal a jelölttel: minden locale alatt detektálható,
-    # így a teszt a dekódolást méri, nem a detektor hiányát.
-    (repo / "ascii_control.py").write_text(HEX_LINE, encoding="utf-8")
-    (repo / "hungarian.py").write_bytes(raw)
+    # így a teszt a dekódolást méri, nem a detektor hiányát. Mindkét jelölt az
+    # audited commit UTÁN kerül a munkafába (a commit csak ártalmatlan
+    # tartalmat hordoz), hogy az élő scannek addition-ként kelljen látnia őket.
+    (repo / "ascii_control.py").write_text("# synthetic\n", encoding="utf-8")
+    (repo / "hungarian.py").write_bytes(b"# synthetic\n")
     baseline = _empty_baseline(repo)
     _git(repo, "add", "ascii_control.py", "hungarian.py", baseline.name)
     _commit(repo)
+    (repo / "ascii_control.py").write_text(HEX_LINE, encoding="utf-8")
+    (repo / "hungarian.py").write_bytes(raw)
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1, message
@@ -869,10 +889,13 @@ def test_runtime_audit_output_is_never_read_back_as_suppression_input(
     the property the committed delta-audit allowlist violated.
     """
     repo = _init_repo(tmp_path / "repo")
-    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
     baseline = _empty_baseline(repo)
     _git(repo, "add", "tracked.py", baseline.name)
     _commit(repo)
+    # A jelölt az audited commit után kerül a munkafába: nincs auditált
+    # állapota, a beültetett audit sem tisztázhatja.
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
     fingerprint = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
     planted = check_secret_baseline._unmatched_audit_path(repo)
@@ -912,9 +935,7 @@ def test_audit_output_path_is_excluded_from_the_candidate_set(tmp_path: Path) ->
     (repo / "clean.py").write_text("# synthetic, no candidates\n", encoding="utf-8")
     audit = check_secret_baseline._unmatched_audit_path(repo)
     audit.parent.mkdir(parents=True, exist_ok=True)
-    planted_hashes = [
-        hashlib.sha1(f"synthetic-{index}".encode("utf-8")).hexdigest() for index in range(6)
-    ]
+    planted_hashes = [hashlib.sha1(f"synthetic-{index}".encode()).hexdigest() for index in range(6)]
     audit.write_text(json.dumps({"rows": [{"hashes": planted_hashes}]}), encoding="utf-8")
     baseline = _empty_baseline(repo)
     _git(repo, "add", "clean.py", baseline.name)
@@ -931,12 +952,16 @@ def test_audit_output_path_is_excluded_from_the_candidate_set(tmp_path: Path) ->
 
 
 def test_content_digest_classifier_clears_a_bound_sha256_value(tmp_path: Path) -> None:
+    """A bound 64-hex value introduced after the audited state is proven per
+    line by the structural classifier -- the audited commit itself carries
+    only benign content, so the finding really is an addition."""
     repo = _init_repo(tmp_path / "repo")
     line, _ = _digest_line("reference_sha256", b"synthetic-content-digest")
-    _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + line + '  "x": 1\n}\n')
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "x": 1\n}\n')
     baseline = _empty_baseline(repo)
     _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
     _commit(repo)
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + line + '  "x": 1\n}\n')
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 0, message
@@ -947,10 +972,11 @@ def test_content_digest_classifier_rejects_an_unbound_hex_value(tmp_path: Path) 
     """The same 64-hex value fails closed when it is not bound to a digest key."""
     repo = _init_repo(tmp_path / "repo")
     digest = hashlib.sha256(b"synthetic-content-digest").hexdigest()
-    _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "api_value": "' + digest + '"\n}\n')
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "x": 1\n}\n')
     baseline = _empty_baseline(repo)
     _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
     _commit(repo)
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "api_value": "' + digest + '"\n}\n')
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1, message
@@ -963,10 +989,11 @@ def test_content_digest_classifier_rejects_exact_key_outside_registry_files(
     """The exact digest key in any other file stays unclassified (path context)."""
     repo = _init_repo(tmp_path / "repo")
     line, _ = _digest_line("reference_sha256", b"synthetic-content-digest")
-    (repo / "manifest.json").write_text("{\n" + line + '  "x": 1\n}\n', encoding="utf-8")
+    (repo / "manifest.json").write_text('{\n  "x": 1\n}\n', encoding="utf-8")
     baseline = _empty_baseline(repo)
     _git(repo, "add", "manifest.json", baseline.name)
     _commit(repo)
+    (repo / "manifest.json").write_text("{\n" + line + '  "x": 1\n}\n', encoding="utf-8")
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1, message
@@ -982,10 +1009,11 @@ def test_content_digest_classifier_rejects_a_lookalike_key(tmp_path: Path) -> No
     """
     repo = _init_repo(tmp_path / "repo")
     digest = hashlib.sha256(b"synthetic-lookalike-key").hexdigest()
-    _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "api_sha256": "' + digest + '"\n}\n')
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "x": 1\n}\n')
     baseline = _empty_baseline(repo)
     _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
     _commit(repo)
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "api_sha256": "' + digest + '"\n}\n')
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1, message
@@ -1023,10 +1051,13 @@ def test_drive_resource_id_requires_corroborating_provenance(tmp_path: Path) -> 
     """A Drive-shaped identifier alone is not enough; the file must prove it."""
     repo = _init_repo(tmp_path / "repo")
     line, resource_id, _ = _drive_id_line("sourceId", b"synthetic-drive-resource")
-    _write_tracked(repo, _DRIVE_ARTIFACTS_PATH, "{\n" + line + '  "x": 1\n}\n')
+    _write_tracked(repo, _DRIVE_ARTIFACTS_PATH, '{\n  "x": 1\n}\n')
     baseline = _empty_baseline(repo)
     _git(repo, "add", _DRIVE_ARTIFACTS_PATH, baseline.name)
     _commit(repo)
+    # Az audited commit után, korroboráló provenance nélkül bevezetett
+    # Drive-alakú azonosító: addition, amit a classifier nem bizonyíthat.
+    _write_tracked(repo, _DRIVE_ARTIFACTS_PATH, "{\n" + line + '  "x": 1\n}\n')
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     if status == 0:
@@ -1043,8 +1074,6 @@ def test_drive_resource_id_requires_corroborating_provenance(tmp_path: Path) -> 
         + resource_id
         + '/edit"\n}\n',
     )
-    _git(repo, "add", _DRIVE_ARTIFACTS_PATH)
-    _commit(repo)
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 0, message
@@ -1055,6 +1084,10 @@ def test_drive_resource_id_rejected_outside_drive_index_files(tmp_path: Path) ->
     """The exact Drive key with corroboration in another file stays unclassified."""
     repo = _init_repo(tmp_path / "repo")
     line, resource_id, _ = _drive_id_line("id", b"synthetic-drive-outside")
+    (repo / "artifacts.json").write_text('{\n  "x": 1\n}\n', encoding="utf-8")
+    baseline = _empty_baseline(repo)
+    _git(repo, "add", "artifacts.json", baseline.name)
+    _commit(repo)
     (repo / "artifacts.json").write_text(
         "{\n"
         + line
@@ -1063,9 +1096,6 @@ def test_drive_resource_id_rejected_outside_drive_index_files(tmp_path: Path) ->
         + '/edit"\n}\n',
         encoding="utf-8",
     )
-    baseline = _empty_baseline(repo)
-    _git(repo, "add", "artifacts.json", baseline.name)
-    _commit(repo)
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     if status == 0:
@@ -1078,10 +1108,11 @@ def test_unclassifiable_detector_type_fails_closed(tmp_path: Path) -> None:
     """``Secret Keyword`` has no structural classifier at all."""
     assert "Secret Keyword" not in check_secret_baseline._STRUCTURAL_CLASSIFIERS
     repo = _init_repo(tmp_path / "repo")
-    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
     baseline = _empty_baseline(repo)
     _git(repo, "add", "tracked.py", baseline.name)
     _commit(repo)
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1, message
@@ -1096,7 +1127,7 @@ def test_emitted_audit_report_is_bounded_and_states_its_truncation(tmp_path: Pat
         (
             f"path/file-{index}.json",
             "Hex High Entropy String",
-            hashlib.sha1(f"synthetic-{index}-{offset}".encode("utf-8")).hexdigest(),
+            hashlib.sha1(f"synthetic-{index}-{offset}".encode()).hexdigest(),
             offset + 1,
         )
         for index in range(rows + 4)
@@ -1222,21 +1253,25 @@ def test_identical_digest_on_classified_and_unclassified_lines_fails_closed(
     """Azonos digestű, eltérő sorokon szereplő classified és unclassified találat.
 
     A review HIGH exploitjának közvetlen regressziója: ugyanaz az érték a 2.
-    soron kötött digest-kulcshoz (osztályozható), a 3. soron kötetlen
-    pozícióban (nem osztályozható) áll. Az élő scan mindkét sort jelenti, a
-    classifier csak akkor tisztázhatná a hármast, ha *minden* sor bizonyítottan
-    ártalmatlan -- így a reconciliation fail-closed marad.
+    soron kötött digest-kulcshoz (a kötött sor az audited állapot része), a 3.
+    soron kötetlen pozícióban az audited commit UTÁN jelenik meg. Az élő scan
+    mindkét sort jelenti; a 3. sor a duplikált előfordulás miatt addition, a
+    classifier pedig azon a soron nem tudja bizonyítani ártalmatlanságát --
+    így a reconciliation fail-closed marad.
     """
     repo = _init_repo(tmp_path / "repo")
     digest = hashlib.sha256(b"synthetic-mixed-line").hexdigest()
     _write_tracked(
-        repo,
-        _DIGEST_MANIFEST_PATH,
-        '{\n  "reference_sha256": "' + digest + '",\n  "unbound": "' + digest + '",\n}\n',
+        repo, _DIGEST_MANIFEST_PATH, '{\n  "reference_sha256": "' + digest + '",\n  "x": 1\n}\n'
     )
     baseline = _empty_baseline(repo)
     _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
     _commit(repo)
+    _write_tracked(
+        repo,
+        _DIGEST_MANIFEST_PATH,
+        '{\n  "reference_sha256": "' + digest + '",\n  "unbound": "' + digest + '",\n  "x": 1\n}\n',
+    )
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1, message
@@ -1254,21 +1289,17 @@ def test_baselined_digest_on_a_new_unclassified_line_fails_closed(tmp_path: Path
 
     A Task36 review HIGH közvetlen regressziója: az azonos 64-hex digest a 2.
     soron a ``reference_sha256`` kulcshoz kötve áll -- ez a sor a védett
-    baseline-ban szerepel, tehát pontosan egyezik --, a 3. soron viszont
-    kötetlen pozícióban ismétlődik. A 3. sor új előfordulás: az
-    occurrence-aware identitás miatt az addition-halmazba kerül, a strukturális
-    osztályozó azon a soron nem tudja bizonyítani ártalmatlanságát, így a
-    reconciliation fail-closed marad. A baseline-létezés önmagában sosem
-    tisztázhatja az új sor-előfordulást.
+    baseline-ban szerepel, tehát pontosan egyezik --, a 3. soron viszont az
+    audited commit UTÁN, kötetlen pozícióban ismétlődik. A 3. sor a duplikált
+    előfordulás miatt addition: a strukturális osztályozó azon a soron nem
+    tudja bizonyítani ártalmatlanságát, így a reconciliation fail-closed
+    marad. A baseline-létezés önmagában sosem tisztázhatja az új
+    sor-előfordulást.
     """
     repo = _init_repo(tmp_path / "repo")
     digest_line, hashed = _digest_line("reference_sha256", b"synthetic-baselined-line")
     digest = hashlib.sha256(b"synthetic-baselined-line").hexdigest()
-    _write_tracked(
-        repo,
-        _DIGEST_MANIFEST_PATH,
-        '{\n' + digest_line + '  "unbound": "' + digest + '",\n}\n',
-    )
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + '  "x": 1\n}\n')
     # A baseline pontosan a classified (2.) sort tartalmazza -- a 3. sor
     # előfordulását nem.
     baseline = repo / "synthetic-baseline.json"
@@ -1290,6 +1321,12 @@ def test_baselined_digest_on_a_new_unclassified_line_fails_closed(tmp_path: Path
     )
     _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
     _commit(repo)
+    # Az audited commit után bevezetett, kötetlen sor: új előfordulás.
+    _write_tracked(
+        repo,
+        _DIGEST_MANIFEST_PATH,
+        "{\n" + digest_line + '  "unbound": "' + digest + '",\n  "x": 1\n}\n',
+    )
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1, message
@@ -1325,11 +1362,7 @@ def test_baselined_digest_on_a_new_classified_line_is_proven_per_line(
     """
     repo = _init_repo(tmp_path / "repo")
     digest_line, hashed = _digest_line("reference_sha256", b"synthetic-new-classified-line")
-    _write_tracked(
-        repo,
-        _DIGEST_MANIFEST_PATH,
-        "{\n" + digest_line + digest_line + '  "x": 1\n}\n',
-    )
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + '  "x": 1\n}\n')
     baseline = repo / "synthetic-baseline.json"
     baseline.write_text(
         json.dumps(
@@ -1349,6 +1382,9 @@ def test_baselined_digest_on_a_new_classified_line_is_proven_per_line(
     )
     _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
     _commit(repo)
+    # Az audited commit után bevezetett, kötött 3. sor: addition, amit a
+    # classifier azon a soron bizonyít.
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + digest_line + '  "x": 1\n}\n')
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 0, message
@@ -1392,6 +1428,261 @@ def test_baselined_classified_line_still_matches_the_audited_set_exactly(
     assert status == 0, message
     assert "1 tracked candidate(s) match the audited baseline" in message
     assert "structural classifier" not in message
+
+
+def test_unchanged_canonical_repeat_occurrences_reconcile(tmp_path: Path) -> None:
+    """Iránymutató 1: a kanonikus, deduplikált baseline változatlan ismétlődő
+    előfordulásokkal is sikeresen egyeztet.
+
+    A védett baseline-t generáló CLI minden (type, fingerprint) értéket
+    egyszer, az első soron rögzít -- a fájlban azonos érték több soron is
+    állhat (a valós website-targets.json mintájára). Az occurrence-aware
+    egyeztetés a baseline-sor pontos egyezése mellett a többi sort az
+    auditált állapottal egyezteti: változatlan fájl, tehát nem addition.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    # Minden kötőjeles szava 8 karakternél rövidebb, így a Base64-detektor
+    # (legalább 8 karakteres futam) nem lő be rá: csak a Secret Keyword talál.
+    placeholder = "not-a-" + "real-" + "secret-" + "value"
+    content = (
+        "{\n"
+        '  "brand_a": {"secret": "' + placeholder + '"},\n'
+        '  "brand_b": {"secret": "' + placeholder + '"},\n'
+        '  "brand_c": {"secret": "' + placeholder + '"},\n'
+        '  "brand_d": {"secret": "' + placeholder + '"}\n'
+        "}\n"
+    )
+    _write_tracked(repo, "config/website-targets.json", content)
+    hashed = hashlib.sha1(placeholder.encode("utf-8")).hexdigest()
+    baseline = repo / "synthetic-baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "results": {
+                    "config/website-targets.json": [
+                        {
+                            "type": "Secret Keyword",
+                            "hashed_secret": hashed,
+                            "line_number": 2,
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", "config/website-targets.json", baseline.name)
+    _commit(repo)
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 0, message
+    # A baseline-sor pontosan egyezik, a további három ismétlődés az auditált
+    # állapothoz konvergál -- egyik sem addition, classifier nélkül.
+    assert "1 tracked candidate(s) match the audited baseline" in message
+    assert "3 candidate(s) reconcile with the audited repository state" in message
+    assert "structural classifier" not in message
+
+
+def test_line_drifted_existing_occurrence_reconciles(tmp_path: Path) -> None:
+    """Iránymutató 1 (sor-eltolódás): egy auditált érték eltolódott sora nem
+    addition -- az előfordulásszám nem haladja meg az auditáltat."""
+    repo = _init_repo(tmp_path / "repo")
+    digest_line, hashed = _digest_line("reference_sha256", b"synthetic-line-drift")
+    target = _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + '  "x": 1\n}\n')
+    baseline = repo / "synthetic-baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "results": {
+                    _DIGEST_MANIFEST_PATH: [
+                        {
+                            "type": "Hex High Entropy String",
+                            "hashed_secret": hashed,
+                            "line_number": 2,
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
+    _commit(repo)
+    # Az auditált sor fölé kerülő, független szerkesztés: az érték a 2. sorról
+    # a 4. sorra csúszik -- az előfordulásszám nem nő, így nem addition.
+    drifted = '{\n  "added": 1,\n  "added": 2,\n' + digest_line + '  "x": 1\n}\n'
+    target.write_text(drifted, encoding="utf-8")
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 0, message
+    assert "1 candidate(s) reconcile with the audited repository state" in message
+    assert "structural classifier" not in message
+
+
+def test_duplicated_audited_value_blocks_without_structural_proof(tmp_path: Path) -> None:
+    """Iránymutató 2: az auditált digest ÚJ soron ismételt másolata addition.
+
+    Ugyanaz a 64-hex érték a 2. soron baseline-hoz kötötten áll, a 3. soron
+    viszont az audited commit után, kötetlen pozícióban ismétlődik. Az
+    előfordulásszám meghaladja az auditáltat, ezért a 3. sor új előfordulás:
+    a classifier azon a soron nem bizonyít, így a reconciliation fail-closed.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    digest_line, hashed = _digest_line("reference_sha256", b"synthetic-duplicated")
+    digest = hashlib.sha256(b"synthetic-duplicated").hexdigest()
+    target = _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + '  "x": 1\n}\n')
+    baseline = repo / "synthetic-baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "results": {
+                    _DIGEST_MANIFEST_PATH: [
+                        {
+                            "type": "Hex High Entropy String",
+                            "hashed_secret": hashed,
+                            "line_number": 2,
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
+    _commit(repo)
+    target.write_text(
+        "{\n" + digest_line + '  "unbound": "' + digest + '",\n  "x": 1\n}\n',
+        encoding="utf-8",
+    )
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1, message
+    assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
+    assert _DIGEST_MANIFEST_PATH in message
+    audit = repo / "services" / "platform-core" / "runtime" / "tracked-secret-delta-audit.json"
+    assert audit.is_file()
+    document = json.loads(audit.read_text(encoding="utf-8"))
+    row = document["rows"][0]
+    assert row["path"] == _DIGEST_MANIFEST_PATH
+    assert row["hashes"] == [hashed]
+    assert row["lineNumbers"] == [3]
+
+
+def test_new_tracked_file_after_the_audited_state_fails_closed(tmp_path: Path) -> None:
+    """Az audited commit után létrejött fájlnak nincs auditált állapota.
+
+    Egy teljesen új, titokjelöltet hordozó fájl (staged, de az audited commit
+    után) minden találata addition -- fail-closed, hacsak a strukturális
+    osztályozó nem bizonyítja.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
+    baseline = _empty_baseline(repo)
+    _git(repo, "add", "tracked.py", baseline.name)
+    _commit(repo)
+    (repo / "late.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    _git(repo, "add", "late.py")
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1
+    assert "- late.py" in message
+    assert _SYNTHETIC_VALUE not in message
+
+
+def test_uncommitted_baseline_fails_closed_on_the_audited_anchor(tmp_path: Path) -> None:
+    """Commit nélküli baseline nem horgonyozhat auditált állapotot.
+
+    A git-történetben nem létező baseline-fájlra nincs anchor commit: a
+    reconciliation fail-closed (status 2), nem feltételez auditált állapotot.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    baseline = _empty_baseline(repo)
+    _git(repo, "add", "tracked.py")
+    _commit(repo)
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 2
+    assert "baseline anchor commit" in message
+
+
+def test_baseline_outside_repository_root_fails_closed(tmp_path: Path) -> None:
+    """A reconciled gyökéren kívüli baseline fail-closed: nincs auditált állapot."""
+    repo = _init_repo(tmp_path / "repo")
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    _git(repo, "add", "tracked.py")
+    _commit(repo)
+    outside = tmp_path / "outside-baseline.json"
+    outside.write_text(json.dumps({"results": {}}), encoding="utf-8")
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(outside, repo_root=repo)
+    assert status == 2
+    assert "outside the reconciled repository root" in message
+
+
+def test_audited_state_scan_failure_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Az auditált állapot scan hibája fail-closed (status 2), nem PASS."""
+    repo = _init_repo(tmp_path / "repo")
+    (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
+    baseline = _empty_baseline(repo)
+    _git(repo, "add", "tracked.py", baseline.name)
+    _commit(repo)
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    monkeypatch.setattr(check_secret_baseline, "_run_audited_driver", _driver_fake(returncode=1))
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 2
+    assert "scan driver exit code 1" in message
+
+
+def test_faked_live_scan_cannot_fabricate_audited_coverage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Az auditált állapot a saját seamjén fut: egy hamisított élő scan nem
+    gyárthat auditált lefedettséget -- a hamis találat addition marad."""
+    repo = _init_repo(tmp_path / "repo")
+    (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
+    baseline = _empty_baseline(repo)
+    _git(repo, "add", "tracked.py", baseline.name)
+    _commit(repo)
+    synthetic_hash = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
+
+    def _fake_live(files: list[str], repo_root: Path) -> subprocess.CompletedProcess[bytes]:
+        return _driver_fake(
+            payload={
+                "tracked.py": [
+                    {
+                        "type": "Secret Keyword",
+                        "hashed_secret": synthetic_hash,
+                        "line_number": 1,
+                    }
+                ]
+            }
+        )(files, repo_root)
+
+    monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _fake_live)
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    # A valódi auditált scan az ártalmatlan commitot látja: a hamis találatnak
+    # nincs auditált állapota, így osztályozatlan marad.
+    assert status == 1, message
+    assert "- tracked.py" in message
+
+
+def test_audited_state_scan_leaves_no_temp_copies(tmp_path: Path) -> None:
+    """Az auditált állapot átmeneti másolatai mindig törlődnek a futás végén."""
+    repo = _init_repo(tmp_path / "repo")
+    (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
+    baseline = _empty_baseline(repo)
+    _git(repo, "add", "tracked.py", baseline.name)
+    _commit(repo)
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1, message
+    historical = repo.joinpath(*check_secret_baseline._HISTORICAL_SCAN_RELATIVE_DIR)
+    assert list(historical.glob("*")) == []
 
 
 def test_classifier_allowlist_has_no_executable_source_or_generic_keys() -> None:
@@ -1544,7 +1835,10 @@ def test_live_scan_smoke_runs_the_real_scanner_on_a_trivial_repository(
     passing per-file coverage check proves.
     """
     repo = _init_repo(tmp_path / "smoke-repo")
-    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    # A jelölt az audited commit UTÁN kerül a munkafába (a commit csak
+    # ártalmatlan tartalmat hordoz), hogy az élő scannel, a driverrel, a
+    # szondákkal és az accountinggel együtt a teljes addition-utat mérje.
+    (repo / "tracked.py").write_text("# synthetic\n", encoding="utf-8")
     (repo / "clean.py").write_text("# synthetic, no candidates\n", encoding="utf-8")
     (repo / "nulbytes.py").write_bytes(
         b"# synthetic header\x00with nul bytes\nplain text, no candidates\n"
@@ -1552,6 +1846,7 @@ def test_live_scan_smoke_runs_the_real_scanner_on_a_trivial_repository(
     baseline = _empty_baseline(repo)
     _git(repo, "add", "tracked.py", "clean.py", "nulbytes.py", baseline.name)
     _commit(repo)
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 1, message
