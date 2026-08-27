@@ -81,7 +81,15 @@ os.environ.setdefault("HOUSE_DESIGNER_ADAPTERS_ENABLED", "true")
 os.environ.setdefault("HOUSE_DESIGN_ORDER_INTAKE_ENABLED", "true")
 os.environ.setdefault("MARKET_EVIDENCE_KEK", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 os.environ.setdefault("MARKET_EVIDENCE_KEY_ID", "test-mci-evidence-kek-v1")
-os.environ.setdefault("HOUSE_DESIGNER_SITE_KEK", "YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk=")
+# A tordeles szandekos, ne legyen egy sorba vonva: a tracked-secret
+# reconciliation ezt az auditalt elofordulast a sor BAJTAZONOS tartalmaval
+# bizonyitja a baseline anchor commit ellen (scripts/check_secret_baseline.py,
+# _split_additions). Ujratordeles utan a sor tartalma megvaltozik, az
+# elofordulas addition lesz, es a kapu fail-closed -- akkor a vedett
+# .secrets.baseline R3-rotacioja szukseges.
+os.environ.setdefault(
+    "HOUSE_DESIGNER_SITE_KEK", "YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODk="
+)  # fmt: skip
 os.environ.setdefault("HOUSE_DESIGNER_SITE_KEY_ID", "test-hd-site-kek-v1")
 os.environ.setdefault(
     "HOUSE_DESIGNER_PRICING_HMAC_SECRET",
