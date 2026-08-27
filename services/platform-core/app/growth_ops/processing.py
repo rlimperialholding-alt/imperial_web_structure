@@ -16,7 +16,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -43,11 +43,13 @@ from .deepseek import complete_json
 from .email import EmailDeliveryError, SMTPEmailAdapter
 from .images import CanonicalImageFactoryError, sync_canonical_image
 from .models import (
+    CanonicalEmailDelivery,
     CanonicalGrowthDailyRun,
     CanonicalInternalHandoff,
     DailyContentObligation,
     GrowthSignal,
     QuestionRadarAnswer,
+    QuestionRadarIdentity,
     QuestionRadarTopic,
     SourceCoverageAttempt,
     SourceCoverageRoute,
@@ -107,11 +109,7 @@ def _single_content_package(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("brand_id") or payload.get("title"):
         return payload
     nested = next(
-        (
-            value
-            for value in payload.values()
-            if isinstance(value, dict) and value.get("title")
-        ),
+        (value for value in payload.values() if isinstance(value, dict) and value.get("title")),
         None,
     )
     if isinstance(nested, dict):
@@ -140,9 +138,7 @@ def _normalize_content_lengths(package: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _content_repair_errors(
-    package: dict[str, Any], contract: dict[str, Any]
-) -> list[str]:
+def _content_repair_errors(package: dict[str, Any], contract: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not str(package.get("title") or "").strip():
         errors.append("title_missing")
@@ -301,9 +297,7 @@ def _deterministic_publication_errors(
             r"[^\W\d_]+|\d+", str(package.get("brand_id") or ""), flags=re.UNICODE
         )
         brand_pattern = r"[\s_-]*".join(re.escape(token) for token in brand_tokens)
-        claim_text = (
-            re.sub(brand_pattern, "", raw, flags=re.IGNORECASE) if brand_pattern else raw
-        )
+        claim_text = re.sub(brand_pattern, "", raw, flags=re.IGNORECASE) if brand_pattern else raw
         if re.search(r"\d", claim_text):
             errors.append("unverified_numeric_claim")
         if re.search(
@@ -678,6 +672,20 @@ def _reply_eligibility(topic: QuestionRadarTopic) -> dict[str, Any]:
         reasons.append("question_length_out_of_range")
     if any(marker in question for marker in _MARKETING_QUESTION_MARKERS):
         reasons.append("marketing_or_navigation_prompt")
+    if topic.eligibility_status != "eligible":
+        reasons.append("freshness_not_eligible")
+    if topic.freshness_decision not in {"preferred_0_30_days", "accepted_31_90_days"}:
+        reasons.append("freshness_unverified_or_expired")
+    if topic.published_at is None or topic.age_days is None:
+        reasons.append("published_date_unverified")
+    elif topic.age_days < 0 or topic.age_days > 90:
+        reasons.append("published_date_out_of_range")
+    if topic.active_status != "active":
+        reasons.append("source_not_proven_active")
+    if topic.existing_answer_count is None:
+        reasons.append("answer_count_unverified")
+    elif topic.existing_answer_count != 0:
+        reasons.append("already_answered")
     host = (urlparse(canonical).hostname or "").casefold() if canonical else ""
     topic_context = f"{question} {_norm(topic.source_url)}"
     if (
@@ -693,7 +701,129 @@ def _reply_eligibility(topic: QuestionRadarTopic) -> dict[str, Any]:
         "eligible": not reasons,
         "reasons": sorted(set(reasons)),
         "source_url": canonical,
-        "policy": "question-radar-reply-eligibility-v1",
+        "policy": "question-radar-reply-eligibility-v2",
+    }
+
+
+_ACTIVE_SOURCE_STATUSES = {"active", "open", "nyitott", "aktív", "aktiv"}
+_INACTIVE_SOURCE_STATUSES = {
+    "archived",
+    "closed",
+    "deleted",
+    "expired",
+    "inactive",
+    "resolved",
+    "archivált",
+    "archivalt",
+    "lezárt",
+    "lezart",
+    "törölt",
+    "torolt",
+}
+
+
+def _parse_observed_date(value: object, *, observed_at: datetime) -> datetime | None:
+    """Parse only explicit ISO or small Hungarian relative-date forms."""
+
+    raw = _norm(str(value or "")).strip(".,")
+    local_now = observed_at.astimezone(ZoneInfo(settings().timezone))
+    local_date: date | None = None
+    if raw in {"ma", "today"}:
+        local_date = local_now.date()
+    elif raw in {"tegnap", "yesterday"}:
+        local_date = local_now.date() - timedelta(days=1)
+    else:
+        relative = re.fullmatch(r"(\d{1,3})\s*(napja|hete|hónapja|honapja|éve|eve)", raw)
+        if relative:
+            amount = int(relative.group(1))
+            unit = relative.group(2)
+            multiplier = (
+                1 if unit == "napja" else 7 if unit == "hete" else 30 if "nap" in unit else 365
+            )
+            local_date = local_now.date() - timedelta(days=amount * multiplier)
+        else:
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                try:
+                    local_date = date.fromisoformat(raw)
+                except ValueError:
+                    return None
+            else:
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=ZoneInfo(settings().timezone))
+                return parsed.astimezone(UTC)
+    if local_date is None:
+        return None
+    return datetime.combine(
+        local_date, datetime.min.time(), ZoneInfo(settings().timezone)
+    ).astimezone(UTC)
+
+
+def _question_freshness(
+    item: dict[str, Any], *, evidence_text: str, observed_at: datetime
+) -> dict[str, Any]:
+    reasons: list[str] = []
+    raw_date = str(item.get("published_at_raw") or "").strip()[:255]
+    raw_status = str(item.get("active_status_raw") or "").strip()[:255]
+    raw_answers = str(item.get("answer_count_raw") or "").strip()[:255]
+    published_at = _parse_observed_date(raw_date, observed_at=observed_at)
+    if not raw_date or not _evidence_present(raw_date, evidence_text, minimum=1):
+        reasons.append("published_date_not_observed")
+        published_at = None
+    elif published_at is None:
+        reasons.append("published_date_unparseable")
+    status_value = _norm(item.get("active_status") or raw_status)
+    if not raw_status or not _evidence_present(raw_status, evidence_text, minimum=2):
+        reasons.append("active_status_not_observed")
+        active_status = "unknown"
+    elif status_value in _ACTIVE_SOURCE_STATUSES:
+        active_status = "active"
+    elif status_value in _INACTIVE_SOURCE_STATUSES:
+        active_status = "inactive"
+        reasons.append("source_inactive")
+    else:
+        active_status = "unknown"
+        reasons.append("active_status_unrecognized")
+    try:
+        answer_count = int(item.get("existing_answer_count"))
+        if answer_count < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        answer_count = None
+        reasons.append("answer_count_invalid")
+    if not raw_answers or not _evidence_present(raw_answers, evidence_text, minimum=1):
+        answer_count = None
+        reasons.append("answer_count_not_observed")
+    elif answer_count:
+        reasons.append("already_answered")
+    local_day = _local_day(observed_at)
+    age_days = (
+        (local_day - published_at.astimezone(ZoneInfo(settings().timezone)).date()).days
+        if published_at
+        else None
+    )
+    if age_days is None:
+        freshness = "unverified"
+    elif age_days < 0:
+        freshness = "invalid_future"
+        reasons.append("published_date_in_future")
+    elif age_days <= 30:
+        freshness = "preferred_0_30_days"
+    elif age_days <= 90:
+        freshness = "accepted_31_90_days"
+    else:
+        freshness = "expired_over_90_days"
+        reasons.append("older_than_90_days")
+    return {
+        "published_at": published_at,
+        "published_at_raw": raw_date or None,
+        "age_days": age_days,
+        "active_status": active_status,
+        "existing_answer_count": answer_count,
+        "freshness_decision": freshness,
+        "eligibility_status": "eligible" if not reasons else "ineligible",
+        "reasons": sorted(set(reasons)),
     }
 
 
@@ -770,6 +900,11 @@ def process_source_attempt(
                     "question_kind": "literal|inferred_from_evidence",
                     "evidence_excerpt": "verbatim source excerpt grounding the question",
                     "source_permalink": "exact URL from same_site_link_candidates or null",
+                    "published_at_raw": "verbatim visible publication date or relative date",
+                    "active_status": "active|closed|archived|deleted|expired|unknown",
+                    "active_status_raw": "verbatim visible status evidence",
+                    "existing_answer_count": "visible non-negative integer or null",
+                    "answer_count_raw": "verbatim visible answer-count evidence",
                 }
             ],
         },
@@ -786,7 +921,9 @@ def process_source_attempt(
         " A source_permalink kizárólag a megadott same_site_link_candidates egyik "
         "pontos URL-je lehet;"
         " ne találj ki URL-t. Konkrét piactéri vagy fórumos projektnél a leadhez és a kérdéshez is"
-        " add meg a hozzá tartozó pontos hivatkozást."
+        " add meg a hozzá tartozó pontos hivatkozást. Kérdés csak akkor lehet jelölt, ha a "
+        "publikálás ideje, aktív állapota és a már meglévő válaszok száma is szó szerint "
+        "látható. Ezekhez mindig add vissza a raw bizonyítékot; hiány esetén ne találj ki értéket."
     )
     result = None
     payload = None
@@ -818,6 +955,7 @@ def process_source_attempt(
     local_day = _local_day(attempt.started_at)
     safe_leads: list[dict[str, Any]] = []
     safe_questions: list[dict[str, Any]] = []
+    question_decisions: list[dict[str, Any]] = []
     allowed_permalinks = {
         str(candidate["url"])
         for candidate in safe_link_candidates
@@ -936,6 +1074,13 @@ def process_source_attempt(
             or not _evidence_present(excerpt, evidence_text)
             or not _evidence_present(question, evidence_text)
         ):
+            question_decisions.append(
+                {
+                    "question": question[:500],
+                    "accepted": False,
+                    "reasons": ["literal_question_evidence_gate_failed"],
+                }
+            )
             continue
         try:
             exact_permalink = validate_question_permalink(
@@ -944,6 +1089,26 @@ def process_source_attempt(
                 source_text=evidence_text,
             )
         except PublicationIntegrityError:
+            question_decisions.append(
+                {
+                    "question": question,
+                    "accepted": False,
+                    "reasons": ["exact_post_permalink_missing"],
+                }
+            )
+            continue
+        freshness = _question_freshness(
+            item, evidence_text=evidence_text, observed_at=attempt.started_at
+        )
+        if freshness["eligibility_status"] != "eligible":
+            question_decisions.append(
+                {
+                    "question": question,
+                    "source_permalink": exact_permalink,
+                    "accepted": False,
+                    "reasons": freshness["reasons"],
+                }
+            )
             continue
         available_brands = _brands(route)
         reply_brand = next(
@@ -954,14 +1119,23 @@ def process_source_attempt(
             ),
             available_brands[0],
         )
-        # One transparent brand voice and one administrator handoff per exact thread.
-        if db.scalar(
-            select(QuestionRadarTopic.id).where(
-                QuestionRadarTopic.brand_id == reply_brand,
-                QuestionRadarTopic.source_url == exact_permalink,
-                QuestionRadarTopic.classification == "observed_literal",
+        platform = (urlparse(exact_permalink).hostname or "unknown").casefold()
+        identity_hash = _sha(
+            {
+                "platform": platform,
+                "source_url": exact_permalink,
+                "question": _norm(question),
+            }
+        )
+        if db.get(QuestionRadarIdentity, identity_hash):
+            question_decisions.append(
+                {
+                    "question": question,
+                    "source_permalink": exact_permalink,
+                    "accepted": False,
+                    "reasons": ["stable_identity_already_seen"],
+                }
             )
-        ):
             continue
         dedupe = _sha(
             {
@@ -978,9 +1152,32 @@ def process_source_attempt(
             )
         ):
             continue
+        topic_id = f"QRT-{uuid4().hex[:20].upper()}"
+        try:
+            with db.begin_nested():
+                db.add(
+                    QuestionRadarIdentity(
+                        identity_hash=identity_hash,
+                        platform=platform,
+                        canonical_source_url=exact_permalink,
+                        normalized_question=_norm(question),
+                        first_topic_id=topic_id,
+                    )
+                )
+                db.flush()
+        except IntegrityError:
+            question_decisions.append(
+                {
+                    "question": question,
+                    "source_permalink": exact_permalink,
+                    "accepted": False,
+                    "reasons": ["stable_identity_reserved_elsewhere"],
+                }
+            )
+            continue
         db.add(
             QuestionRadarTopic(
-                topic_id=f"QRT-{uuid4().hex[:20].upper()}",
+                topic_id=topic_id,
                 local_date=local_day,
                 question=question,
                 brand_id=reply_brand,
@@ -988,6 +1185,16 @@ def process_source_attempt(
                 source_url=exact_permalink,
                 classification="observed_literal",
                 dedupe_hash=dedupe,
+                identity_hash=identity_hash,
+                platform=platform,
+                published_at=freshness["published_at"],
+                published_at_raw=freshness["published_at_raw"],
+                age_days=freshness["age_days"],
+                active_status=freshness["active_status"],
+                existing_answer_count=freshness["existing_answer_count"],
+                freshness_decision=freshness["freshness_decision"],
+                eligibility_status=freshness["eligibility_status"],
+                rejection_reasons_json=_json(freshness["reasons"]),
             )
         )
         safe_questions.append(
@@ -996,6 +1203,18 @@ def process_source_attempt(
                 "evidence_excerpt": excerpt,
                 "brand_id": reply_brand,
                 "source_permalink": exact_permalink,
+                "published_at": freshness["published_at"].isoformat(),
+                "age_days": freshness["age_days"],
+                "freshness_decision": freshness["freshness_decision"],
+            }
+        )
+        question_decisions.append(
+            {
+                "question": question,
+                "source_permalink": exact_permalink,
+                "accepted": True,
+                "reasons": [],
+                "identity_hash": identity_hash,
             }
         )
         question_count += 1
@@ -1005,6 +1224,7 @@ def process_source_attempt(
             "deepseek_request_id": result.request_id,
             "accepted_leads": safe_leads,
             "accepted_questions": safe_questions,
+            "question_decisions": question_decisions,
         }
     )
     attempt.analysis_at = datetime.now(UTC)
@@ -1470,10 +1690,12 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         system_prompt=(
                             "Magyar senior szerkesztő vagy. A determinisztikus kiadási kapu által "
                             "blokkolt szöveget javítsd ki, ne magyarázd. A hibakódok minden okát "
-                            "távolítsd el; ne helyettesítsd másik nem igazolt állítással. Tartsd meg "
+                            "távolítsd el; ne helyettesítsd másik nem igazolt állítással. "
+                            "Tartsd meg "
                             "a márka pozícióját, a természetes magyar hangot, az egyetlen CTA-t és "
-                            "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. Forrás nélküli "
-                            "anyagban kizárólag óvatos döntési útmutató maradhat. A teljes javított "
+                            "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. "
+                            "Forrás nélküli anyagban kizárólag óvatos döntési útmutató "
+                            "maradhat. A teljes javított "
                             "package objektumot add vissza."
                         ),
                         user_prompt=_json(
@@ -1487,9 +1709,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                                 "schema": {"package": _quality_artifact(package)},
                             }
                         ),
-                        purpose=(
-                            f"canonical_daily_content_deterministic_repair:{row.brand_id}"
-                        ),
+                        purpose=(f"canonical_daily_content_deterministic_repair:{row.brand_id}"),
                         run_id=None,
                         high_stakes=False,
                         max_tokens=3500,
@@ -2045,21 +2265,122 @@ def enqueue_daily_publications(db: Session, *, now: datetime | None = None) -> d
     }
 
 
-def send_publication_digest(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
+def _email_delivery_identity(
+    *, recipient: str, report_type: str, local_day: date, tenant_scope: str
+) -> str:
+    return _sha(
+        {
+            "recipient": recipient.strip().casefold(),
+            "report_type": report_type,
+            "local_date": local_day.isoformat(),
+            "tenant_scope": tenant_scope,
+        }
+    )
+
+
+def _claim_email_delivery(
+    db: Session, *, identity_sha256: str, current: datetime
+) -> tuple[CanonicalEmailDelivery | None, str, bool]:
+    """Durably claim one logical delivery; stale/ambiguous claims reconcile only."""
+
+    row = db.scalar(
+        select(CanonicalEmailDelivery)
+        .where(CanonicalEmailDelivery.identity_sha256 == identity_sha256)
+        .with_for_update()
+    )
+    if row is None:
+        return None, "missing", False
+    if row.status == "sent":
+        return row, "sent", False
+    if row.status == "failed_terminal":
+        return row, "failed_terminal", False
+    next_attempt_at = row.next_attempt_at
+    if next_attempt_at and next_attempt_at.tzinfo is None:
+        next_attempt_at = next_attempt_at.replace(tzinfo=UTC)
+    if next_attempt_at and next_attempt_at > current:
+        return row, "backoff", row.status == "accepted_unverified"
+    reconcile_only = row.status == "accepted_unverified"
+    if row.status == "sending":
+        lease_expires_at = row.lease_expires_at
+        if lease_expires_at and lease_expires_at.tzinfo is None:
+            lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
+        if lease_expires_at and lease_expires_at > current:
+            return row, "in_progress", False
+        # A worker may have died after provider acceptance but before commit.
+        reconcile_only = True
+    original_status = row.status
+    original_lease_token = row.lease_token
+    lease_token = f"EMAIL-LEASE-{uuid4().hex.upper()}"
+    claim = update(CanonicalEmailDelivery).where(
+        CanonicalEmailDelivery.identity_sha256 == identity_sha256,
+        CanonicalEmailDelivery.status == original_status,
+    )
+    if original_status == "sending":
+        if original_lease_token is None:
+            claim = claim.where(CanonicalEmailDelivery.lease_token.is_(None))
+        else:
+            claim = claim.where(CanonicalEmailDelivery.lease_token == original_lease_token)
+    result = db.execute(
+        claim.values(
+            status="sending",
+            lease_token=lease_token,
+            lease_expires_at=current + timedelta(minutes=2),
+            attempt_count=CanonicalEmailDelivery.attempt_count + 1,
+            updated_at=current,
+        )
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        current_row = db.scalar(
+            select(CanonicalEmailDelivery).where(
+                CanonicalEmailDelivery.identity_sha256 == identity_sha256
+            )
+        )
+        return current_row, "in_progress", False
+    db.commit()
+    claimed = db.scalar(
+        select(CanonicalEmailDelivery).where(
+            CanonicalEmailDelivery.identity_sha256 == identity_sha256
+        )
+    )
+    return claimed, "claimed", reconcile_only
+
+
+def send_publication_digest(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    recipient_email: str | None = None,
+    report_type: str = "daily_publication_digest",
+    bypass_due: bool = False,
+) -> dict[str, Any]:
     current = now or datetime.now(UTC)
     local_now = current.astimezone(ZoneInfo(settings().timezone))
     hour, minute = (int(part) for part in settings().canonical_publication_digest_at.split(":"))
-    if (local_now.hour, local_now.minute) < (hour, minute):
+    if not bypass_due and (local_now.hour, local_now.minute) < (hour, minute):
         return {"status": "not_due"}
     local_day = local_now.date()
+    recipient = (recipient_email or settings().canonical_publication_digest_recipient).strip()
+    handoff_type_key = (
+        report_type
+        if recipient.casefold()
+        == settings().canonical_publication_digest_recipient.strip().casefold()
+        else f"{report_type[:60]}:{hashlib.sha256(recipient.casefold().encode()).hexdigest()[:12]}"
+    )
     existing = db.scalar(
         select(CanonicalInternalHandoff).where(
             CanonicalInternalHandoff.local_date == local_day,
-            CanonicalInternalHandoff.handoff_type == "daily_publication_digest",
+            CanonicalInternalHandoff.handoff_type == handoff_type_key,
         )
     )
     if existing and existing.status == "sent":
         return {"status": "sent", "idempotent": True, "handoff_id": existing.handoff_id}
+    if (
+        existing
+        and existing.status == "blocked"
+        and str(existing.last_error or "").startswith("sev1_quarantined_")
+    ):
+        return {"status": "blocked", "idempotent": True, "handoff_id": existing.handoff_id}
     local_start = datetime.combine(
         local_day, datetime.min.time(), ZoneInfo(settings().timezone)
     ).astimezone(UTC)
@@ -2159,7 +2480,7 @@ def send_publication_digest(db: Session, *, now: datetime | None = None) -> dict
     )
     payload_hash = _sha(
         {
-            "to": settings().canonical_publication_digest_recipient,
+            "to": recipient,
             "subject": subject,
             "body": body_text,
         }
@@ -2167,8 +2488,8 @@ def send_publication_digest(db: Session, *, now: datetime | None = None) -> dict
     row = existing or CanonicalInternalHandoff(
         handoff_id=f"CPD-{uuid4().hex[:20].upper()}",
         local_date=local_day,
-        handoff_type="daily_publication_digest",
-        recipient_email=settings().canonical_publication_digest_recipient,
+        handoff_type=handoff_type_key,
+        recipient_email=recipient,
         subject=subject,
         body_text=body_text,
         payload_sha256=payload_hash,
@@ -2190,32 +2511,146 @@ def send_publication_digest(db: Session, *, now: datetime | None = None) -> dict
     if not existing:
         db.add(row)
         db.flush()
+    else:
+        # The first durable payload for a logical day is immutable. Later runs
+        # reconcile that exact message and cannot silently change its content.
+        subject = row.subject
+        body_text = row.body_text
+        payload_hash = row.payload_sha256
     if not settings().canonical_publication_digest_enabled:
         row.status = "blocked"
         row.last_error = "publication_digest_disabled"
         db.commit()
         return {"status": "blocked", "handoff_id": row.handoff_id}
+    tenant_scope = "imperial-holding"
+    identity_sha256 = _email_delivery_identity(
+        recipient=recipient,
+        report_type=report_type,
+        local_day=local_day,
+        tenant_scope=tenant_scope,
+    )
+    delivery = db.scalar(
+        select(CanonicalEmailDelivery).where(
+            CanonicalEmailDelivery.identity_sha256 == identity_sha256
+        )
+    )
+    if delivery is None:
+        delivery = CanonicalEmailDelivery(
+            delivery_id=f"CED-{uuid4().hex[:20].upper()}",
+            handoff_id=row.handoff_id,
+            identity_sha256=identity_sha256,
+            recipient_normalized=recipient.casefold(),
+            report_type=report_type,
+            local_date=local_day,
+            tenant_scope=tenant_scope,
+            payload_sha256=payload_hash,
+            status="pending",
+        )
+        db.add(delivery)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            delivery = db.scalar(
+                select(CanonicalEmailDelivery).where(
+                    CanonicalEmailDelivery.identity_sha256 == identity_sha256
+                )
+            )
+    if delivery is None:
+        return {"status": "failed", "error_type": "delivery_identity_reservation_failed"}
+    if delivery.payload_sha256 != payload_hash:
+        delivery.status = "failed_terminal"
+        delivery.last_error = "logical_identity_payload_mismatch_no_send"
+        delivery.lease_token = None
+        delivery.lease_expires_at = None
+        row.status = "blocked"
+        row.last_error = delivery.last_error
+        db.commit()
+        return {
+            "status": "blocked",
+            "handoff_id": row.handoff_id,
+            "error_type": delivery.last_error,
+        }
+
+    delivery, claim_status, reconcile_only = _claim_email_delivery(
+        db, identity_sha256=identity_sha256, current=current
+    )
+    if delivery is None:
+        return {"status": "failed", "error_type": "delivery_claim_missing"}
+    if claim_status == "sent":
+        return {"status": "sent", "idempotent": True, "handoff_id": row.handoff_id}
+    if claim_status in {"in_progress", "backoff"}:
+        return {"status": claim_status, "idempotent": True, "handoff_id": row.handoff_id}
+    if claim_status == "failed_terminal":
+        return {"status": "blocked", "idempotent": True, "handoff_id": row.handoff_id}
     try:
         receipt = SMTPEmailAdapter(_smtp_binding()).send(
-            to_email=settings().canonical_publication_digest_recipient,
+            to_email=recipient,
             subject=subject,
             body_text=body_text,
-            idempotency_key=payload_hash,
+            idempotency_key=identity_sha256,
             delivery_scope="internal",
+            reconcile_only=reconcile_only,
         )
     except (GrowthRegistryError, EmailDeliveryError) as exc:
-        row.attempt_count += 1
-        row.status = "failed"
-        row.last_error = type(exc).__name__
+        delivery = db.scalar(
+            select(CanonicalEmailDelivery).where(
+                CanonicalEmailDelivery.identity_sha256 == identity_sha256
+            )
+        )
+        error_name = exc.error_type if isinstance(exc, EmailDeliveryError) else type(exc).__name__
+        if isinstance(exc, EmailDeliveryError) and exc.accepted_but_unverified:
+            delivery.status = "accepted_unverified"
+            delivery.provider_message_id = exc.provider_message_id
+            delivery.next_attempt_at = current + timedelta(minutes=5)
+            if "multiple_exact_candidates" in str(exc.detail.get("reason") or ""):
+                delivery.incident_reference = f"EMAIL-DUP-{uuid4().hex[:16].upper()}"
+        elif isinstance(exc, EmailDeliveryError) and exc.retry_safe and not reconcile_only:
+            delivery.status = "failed_retryable"
+            delay_minutes = min(60, 2 ** min(delivery.attempt_count, 5))
+            delivery.next_attempt_at = current + timedelta(minutes=delay_minutes)
+        else:
+            delivery.status = "failed_terminal"
+            delivery.next_attempt_at = None
+        delivery.last_error = error_name
+        delivery.lease_token = None
+        delivery.lease_expires_at = None
+        row.attempt_count = delivery.attempt_count
+        row.status = "failed" if delivery.status != "failed_terminal" else "blocked"
+        row.last_error = error_name
         db.commit()
-        return {"status": "failed", "handoff_id": row.handoff_id, "error_type": type(exc).__name__}
-    row.attempt_count += 1
+        return {
+            "status": delivery.status,
+            "handoff_id": row.handoff_id,
+            "error_type": error_name,
+            "reconcile_only": reconcile_only,
+        }
+    delivery = db.scalar(
+        select(CanonicalEmailDelivery).where(
+            CanonicalEmailDelivery.identity_sha256 == identity_sha256
+        )
+    )
+    delivery.status = "sent"
+    delivery.provider_message_id = receipt.provider_message_id
+    delivery.accepted_at = current
+    receipt_detail = getattr(receipt, "detail", {}) or {}
+    delivery.verified_at = current if receipt_detail.get("readback_verified") else None
+    delivery.last_error = None
+    delivery.next_attempt_at = None
+    delivery.lease_token = None
+    delivery.lease_expires_at = None
+    row.attempt_count = delivery.attempt_count
     row.status = "sent"
     row.provider_message_id = receipt.provider_message_id
     row.sent_at = current
     row.last_error = None
     db.commit()
-    return {"status": "sent", "idempotent": False, "handoff_id": row.handoff_id}
+    return {
+        "status": "sent",
+        "idempotent": bool(receipt_detail.get("recovered_existing_sent")),
+        "handoff_id": row.handoff_id,
+        "reconcile_only": reconcile_only,
+    }
 
 
 def _smtp_binding() -> BrandBinding:
@@ -2322,35 +2757,16 @@ def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[s
         )
         db.add(row)
         db.flush()
-    if not settings().canonical_internal_handoff_enabled:
-        row.status = "blocked"
-        row.last_error = "internal_handoff_disabled"
-        if daily:
-            daily.internal_handoff_status = "required_blocked"
-        db.commit()
-        return {"status": "blocked", "handoff_id": row.handoff_id}
-    try:
-        receipt = SMTPEmailAdapter(_smtp_binding()).send(
-            to_email=IORA_EXECUTIVE_EMAIL,
-            subject=subject,
-            body_text=body,
-            idempotency_key=payload_hash,
-            delivery_scope="internal",
-        )
-    except (GrowthRegistryError, EmailDeliveryError) as exc:
-        row.attempt_count += 1
-        row.status = "failed"
-        row.last_error = type(exc).__name__
-        if daily:
-            daily.internal_handoff_status = "required_failed"
-        db.commit()
-        return {"status": "failed", "handoff_id": row.handoff_id, "error_type": type(exc).__name__}
-    row.attempt_count += 1
-    row.status = "sent"
-    row.provider_message_id = receipt.provider_message_id
-    row.sent_at = current
-    row.last_error = None
+    # Executive summaries are review artifacts only. They must never enter an
+    # automatic delivery transport, including partial or retried daily runs.
+    row.status = "blocked"
+    row.last_error = "automatic_executive_delivery_prohibited"
     if daily:
-        daily.internal_handoff_status = "sent"
+        daily.internal_handoff_status = "required_blocked"
     db.commit()
-    return {"status": "sent", "idempotent": False, "handoff_id": row.handoff_id}
+    return {
+        "status": "blocked",
+        "idempotent": True,
+        "handoff_id": row.handoff_id,
+        "reason": row.last_error,
+    }

@@ -463,7 +463,7 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         signal,
         binding,
         step=0,
-        unsubscribe_token="UAT-TOKEN",
+        unsubscribe_token="UAT-XY-CC-ZZ-TOKEN",
         data=agent_data,
     )
     assert metadata["template_id"] == "REAL_ESTATE_AGENT_FIRST_CONTACT_HU"
@@ -480,7 +480,10 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
     assert "látványtervvel, alaprajzzal és műszaki leírással" in body
     assert "2,5% jutalékot fizetünk Önnek a típusterv árából" in body
     assert "Érdekli ez a lehetőség?" in body
-    assert "Leiratkozás: https://growth.imperialholding.test/growth/unsubscribe/UAT-TOKEN" in body
+    assert (
+        "Leiratkozás: "
+        "https://growth.imperialholding.test/growth/unsubscribe/UAT-XY-CC-ZZ-TOKEN"
+    ) in body
 
     signal.recipient_role = "property_owner"
     signal.company_name = "Kovács Péter"

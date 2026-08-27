@@ -246,10 +246,25 @@ class DailyContentObligation(Base):
     )
 
 
+class QuestionRadarIdentity(Base):
+    __tablename__ = "question_radar_identities"
+
+    identity_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(120), index=True)
+    canonical_source_url: Mapped[str] = mapped_column(String(1500))
+    normalized_question: Mapped[str] = mapped_column(Text)
+    first_topic_id: Mapped[str] = mapped_column(String(120), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class QuestionRadarTopic(Base):
     __tablename__ = "question_radar_topics"
     __table_args__ = (
         UniqueConstraint("local_date", "dedupe_hash", name="uq_question_radar_daily_hash"),
+        CheckConstraint(
+            "eligibility_status IN ('eligible','ineligible','quarantined')",
+            name="ck_question_radar_eligibility_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -261,6 +276,18 @@ class QuestionRadarTopic(Base):
     source_url: Mapped[str | None] = mapped_column(String(1500))
     classification: Mapped[str] = mapped_column(String(40), default="observed")
     dedupe_hash: Mapped[str] = mapped_column(String(64), index=True)
+    identity_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    platform: Mapped[str | None] = mapped_column(String(120), index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    published_at_raw: Mapped[str | None] = mapped_column(String(255))
+    age_days: Mapped[int | None] = mapped_column(Integer, index=True)
+    active_status: Mapped[str] = mapped_column(String(40), default="unknown", index=True)
+    existing_answer_count: Mapped[int | None] = mapped_column(Integer)
+    freshness_decision: Mapped[str] = mapped_column(String(40), default="unverified", index=True)
+    eligibility_status: Mapped[str] = mapped_column(String(30), default="quarantined", index=True)
+    rejection_reasons_json: Mapped[str] = mapped_column(
+        Text, default='["legacy_freshness_unverified"]'
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -269,7 +296,8 @@ class QuestionRadarAnswer(Base):
     __table_args__ = (
         UniqueConstraint("topic_id", name="uq_question_radar_answer_topic"),
         CheckConstraint(
-            "status IN ('ineligible','quarantined','release_ready','channel_blocked','published','failed')",
+            "status IN ('ineligible','quarantined','release_ready','channel_blocked',"
+            "'published','failed')",
             name="ck_question_radar_answer_status",
         ),
     )
@@ -336,9 +364,7 @@ class SourceCatalogRevision(Base):
 
 class SourceCoverageRoute(Base):
     __tablename__ = "source_coverage_routes"
-    __table_args__ = (
-        UniqueConstraint("route_id", name="uq_source_coverage_route_id"),
-    )
+    __table_args__ = (UniqueConstraint("route_id", name="uq_source_coverage_route_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     route_key: Mapped[str] = mapped_column(String(500), unique=True, index=True)
@@ -425,6 +451,42 @@ class CanonicalInternalHandoff(Base):
     provider_message_id: Mapped[str | None] = mapped_column(String(500), index=True)
     last_error: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class CanonicalEmailDelivery(Base):
+    __tablename__ = "canonical_email_deliveries"
+    __table_args__ = (
+        UniqueConstraint("identity_sha256", name="uq_canonical_email_delivery_identity"),
+        CheckConstraint(
+            "status IN ('pending','sending','sent','accepted_unverified',"
+            "'failed_retryable','failed_terminal')",
+            name="ck_canonical_email_delivery_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    delivery_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    handoff_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    identity_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    recipient_normalized: Mapped[str] = mapped_column(String(320), index=True)
+    report_type: Mapped[str] = mapped_column(String(80), index=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    tenant_scope: Mapped[str] = mapped_column(String(120), index=True)
+    payload_sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    provider_message_id: Mapped[str | None] = mapped_column(String(500), index=True)
+    lease_token: Mapped[str | None] = mapped_column(String(120), index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    incident_reference: Mapped[str | None] = mapped_column(String(160), index=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

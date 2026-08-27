@@ -35,7 +35,7 @@ import { registerHealthRoutes } from "./health-routes.js";
 import { registerIntegrationControlRoomRoutes } from "./integration-control-room-routes.js";
 import { IntegrationControlRoomService } from "../integration-control-room/service.js";
 import type { ConnectorOperationExecutor } from "../integration-control-room/ports.js";
-import { HumanAnnePublisherAdapter } from "../integration-control-room/adapters.js";
+import { HumanAnnePublisherAdapter, UnassignedTechnicalIncidentWriter } from "../integration-control-room/adapters.js";
 import {
   PrismaConnectorAccountRepository,
   PrismaSyncCheckpointRepository,
@@ -128,7 +128,7 @@ export async function buildServer(
       crmAuthScheme: config.CRM_AUTH_SCHEME,
       crmWorkspaceQueryParameter: config.CRM_WORKSPACE_QUERY_PARAMETER,
     }),
-    humanAnneService,
+    new UnassignedTechnicalIncidentWriter(),
     { now: () => new Date() },
     { next: () => randomUUID() },
     syncObserver,

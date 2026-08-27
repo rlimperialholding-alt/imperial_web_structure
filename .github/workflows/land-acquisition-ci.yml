@@ -59,4 +59,4 @@ jobs:
           DATABASE_URL: sqlite:////tmp/imperial-land-migration-ci.sqlite
         run: |
           alembic upgrade head
-          test "$(alembic current 2>/dev/null | head -1)" = "20260826_0081 (head) (mergepoint)"
+          test "$(alembic current 2>/dev/null | head -1)" = "20260827_0082 (head)"

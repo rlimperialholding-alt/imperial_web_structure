@@ -165,7 +165,9 @@ class PublishingExceptionRecord(Base):
     publication_proof_id: Mapped[str | None] = mapped_column(String(120), index=True)
     rollback_status: Mapped[str | None] = mapped_column(String(30), index=True)
     recommended_action: Mapped[str] = mapped_column(Text)
-    owner: Mapped[str] = mapped_column(String(255), default="Molnár Andrea", index=True)
+    owner: Mapped[str] = mapped_column(
+        String(255), default="SYSTEM-TECHNICAL-INCIDENTS", index=True
+    )
     status: Mapped[str] = mapped_column(String(30), default="OPEN", index=True)
     retry_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
     regate_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
