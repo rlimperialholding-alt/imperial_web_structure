@@ -33,6 +33,7 @@ from app.services.website_content import (
     rollback_release,
     set_kill_switch,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _published_asset(db, suffix: str = "BASE", brand_id: str = "imperial") -> ContentAssetRecord:
@@ -291,10 +292,10 @@ def test_fail_closed_brand_kill_switch_canonical_hash_and_role_controls(db):
 
 
 def test_website_content_control_ui_is_role_protected(client):
-    login = client.post("/login", data={"email": "marketing@imperial.local", "password": "Imperial2026!"}, follow_redirects=False)
+    login = client.post("/login", data={"email": "marketing@imperial.local", "password": DEMO_PASSWORD}, follow_redirects=False)
     assert login.status_code == 303
     assert client.get("/website-content-control").status_code == 200
     client.get("/logout")
-    login = client.post("/login", data={"email": "subcontractor@imperial.local", "password": "Imperial2026!"}, follow_redirects=False)
+    login = client.post("/login", data={"email": "subcontractor@imperial.local", "password": DEMO_PASSWORD}, follow_redirects=False)
     assert login.status_code == 303
     assert client.get("/website-content-control").status_code == 403

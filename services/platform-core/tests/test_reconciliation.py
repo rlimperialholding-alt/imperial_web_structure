@@ -1,12 +1,23 @@
 """Focused Gate 8 reconciliation command tests.
 
-Proves the configured reconciliation command exits 0 on the valid repository
-and exits nonzero (fail-closed) when a checked invariant is deliberately
-altered in a temporary, synthetic context. All fixtures are temporary files;
-no network, no protected corpus mutation, no production write. The database
-isolation tests prove the command never connects to or mutates any database
-configured through ``DATABASE_URL``. The SOURCE_LOCK tests cover the complete
-required top-level version-field set (platform/application/partner_field/
+Proves the configured reconciliation command evaluates every probe, exits 0 on
+the valid repository, and exits nonzero (fail-closed) when a checked invariant
+is deliberately altered in a temporary, synthetic context. The valid repository
+carries no committed secret allowlist at all: candidates outside the protected
+``.secrets.baseline`` are cleared only by the scanner's structural classifiers
+(re-derived from the working tree and proven against the scanner's own
+fingerprint), so the tracked-secret probe passes deterministically on every
+platform while scanner-exempt files and stale audited entries are reported by
+name. There is NO snapshot or environment seam for the secret probe: a
+command-level test proves the ``II_RECON_SECRETS_SNAPSHOT`` variable (the
+removed seam) has no effect, and non-command-level tests exercise the secret
+probe exclusively through direct pytest ``monkeypatch`` seams (pytest-bound,
+process-local). The baseline tamper tests compare against the live canonical
+scan, pinned once per session. All fixtures are temporary files; no network,
+no protected corpus mutation, no production write. The database isolation
+tests prove the command never connects to or mutates any database configured
+through ``DATABASE_URL``. The SOURCE_LOCK tests cover the complete required
+top-level version-field set (platform/application/partner_field/
 commercial_integration) with valid, missing, empty, wrong-type, malformed,
 and unexpected/tampered values. Direct in-process probe tests are isolated
 from ambient ``II_RECON_EXPECTED_*`` values: the module under test always
@@ -75,11 +86,14 @@ def _write_lock(tmp_path: Path, lock: dict) -> Path:
     return synthetic
 
 
-def _run_reconciliation(**env_overrides: str) -> subprocess.CompletedProcess[str]:
+def _run_reconciliation(
+    **env_overrides: str | None,
+) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     for key in (
         "II_RECON_CORPUS_MANIFEST",
         "II_RECON_SECRETS_BASELINE",
+        "II_RECON_SECRETS_SNAPSHOT",
         "II_RECON_SOURCE_LOCK",
         "II_RECON_EXPECTED_ALEMBIC_HEAD",
         "II_RECON_EXPECTED_PLATFORM_VERSION",
@@ -88,7 +102,11 @@ def _run_reconciliation(**env_overrides: str) -> subprocess.CompletedProcess[str
         "II_RECON_EXPECTED_COMMERCIAL_INTEGRATION_VERSION",
     ):
         env.pop(key, None)
-    env.update(env_overrides)
+    for key, value in env_overrides.items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
     return subprocess.run(
         [sys.executable, str(SCRIPT)],
         cwd=str(PLATFORM_CORE),
@@ -115,16 +133,49 @@ def _load_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
 
 @pytest.fixture(scope="session")
-def live_secret_fingerprints() -> set[tuple[str, str, str]]:
-    """One live tracked-secret scan shared by the baseline tamper tests."""
-    completed = check_secret_baseline._live_scan()
-    assert completed.returncode == 0, completed.stderr
-    return check_secret_baseline._fingerprints(json.loads(completed.stdout))
+def canonical_scan_document() -> dict:
+    """Exactly one canonical tracked-secret scan per session.
+
+    Both the tamper fingerprints and the direct monkeypatch seams derive from
+    this single scan, so the pinned scanner runs once instead of once per
+    consumer. The candidate set is derived and validated exactly as
+    production does.
+    """
+    candidates = check_secret_baseline._validate_candidates(
+        check_secret_baseline._git_tracked_candidates(REPO_ROOT, SECRETS_BASELINE_PATH),
+        REPO_ROOT,
+    )
+    scannable, _ = check_secret_baseline._classify_candidates(candidates, REPO_ROOT)
+    return check_secret_baseline._live_scan(scannable, REPO_ROOT)
+
+
+@pytest.fixture(scope="session")
+def live_secret_fingerprints(canonical_scan_document: dict) -> set[tuple[str, str, str]]:
+    """Canonical tracked-secret fingerprints shared by the tamper tests."""
+    return check_secret_baseline._fingerprints(canonical_scan_document)
+
+
+def _pin_canonical_scan(module: ModuleType, monkeypatch: pytest.MonkeyPatch, document: dict) -> None:
+    """Direct pytest-bound seam: the probe's live scan returns the pinned document.
+
+    This is the only way the tests avoid a live scan: a process-local
+    monkeypatch of the module-under-test's own reference, not an environment
+    variable and not a command-level flag.
+    """
+    monkeypatch.setattr(
+        module.check_secret_baseline,
+        "_live_scan",
+        lambda files, repo_root: document,
+    )
 
 
 def _find_live_baseline_entry(
     baseline: dict, live: set[tuple[str, str, str]]
 ) -> tuple[str, int, dict]:
+    # Csak olyan bejegyzés alkalmas a tamper-tesztre, amely (a) valóban él a
+    # live scanben (nem stale), és (b) strukturálisan NEM osztályozható -- egy
+    # content-digest/drive-id típusú bejegyzés eltávolítása után a klasszifikátor
+    # tisztázná, és a probe tévesen PASS-t adna.
     for filename, findings in baseline.get("results", {}).items():
         for index, finding in enumerate(findings):
             fingerprint = (
@@ -132,14 +183,16 @@ def _find_live_baseline_entry(
                 str(finding.get("type", "")),
                 str(finding.get("hashed_secret", "")),
             )
-            if fingerprint in live:
+            if (
+                fingerprint in live
+                and str(finding.get("type", ""))
+                not in check_secret_baseline._STRUCTURAL_CLASSIFIERS
+            ):
                 return filename, index, dict(finding)
-    raise AssertionError("No live baseline entry found for the tamper test.")
+    raise AssertionError("No live, unclassifiable baseline entry found for the tamper test.")
 
 
-def _assert_no_secret_material(
-    baseline: dict, output: str
-) -> None:
+def _assert_no_secret_material(baseline: dict, output: str) -> None:
     for findings in baseline.get("results", {}).values():
         for finding in findings:
             hashed_secret = finding.get("hashed_secret")
@@ -148,33 +201,118 @@ def _assert_no_secret_material(
 
 
 def test_reconciliation_command_passes_on_valid_repository() -> None:
+    # A valós repó determinisztikusan auditált: a kanonikus élő scan
+    # fingerprintjei vagy a védett baseline-ban vannak, vagy strukturális
+    # osztályozó igazolja őket (commitolt allowlist nélkül); a scanner-exempt
+    # bináris fájlok és a stale bejegyzések megnevezve jelennek meg. Az
+    # összesített kilépési kód 0.
     result = _run_reconciliation()
     assert result.returncode == 0, result.stderr
     assert "reconciliation PASS: minden lokalis" in result.stdout
     assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
     # Megnevezett baseline-megfigyelés (stale-only bejegyzések), nem elrejtve:
-    assert "stale baseline entry/entries" in result.stdout
+    assert "stale audited entry/entries" in result.stdout
+    # A scanner-exempt (bináris/figyelmen kívül hagyott kiterjesztésű)
+    # jelöltfájlok determinisztikus, path-szintű elszámolása:
+    assert "scanner-exempt by design" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
     assert "alembic_head 20260816_0072" in result.stdout
+    assert "reconciliation PASS: modulregiszter" in result.stdout
+    assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
 
 
-def test_reconciliation_fail_closed_on_corpus_sha_tamper(tmp_path: Path) -> None:
-    manifest = json.loads(CORPUS_MANIFEST_PATH.read_text(encoding="utf-8"))
-    tampered = {
-        "schemaVersion": "2.1",
-        "files": [
-            {"path": manifest["files"][0]["path"], "sha256": "0" * 64}
-        ],
-    }
-    synthetic = tmp_path / "tampered-manifest.json"
-    synthetic.write_text(json.dumps(tampered), encoding="utf-8")
-    result = _run_reconciliation(II_RECON_CORPUS_MANIFEST=str(synthetic))
+def test_secret_probe_failure_cannot_mask_the_other_probe_assertions(
+    tmp_path: Path,
+) -> None:
+    """Anti-masking, synthetic and independent of the repository's delta.
+
+    Task 31 failed because a platform-dependent secret scan aborted the run
+    before the SOURCE_LOCK/alembic/registry/migration assertions were ever
+    evaluated. Here the secret probe is forced to fail through the real live
+    scan against an empty audited baseline; every other probe must still run
+    and report.
+    """
+    baseline = tmp_path / "empty-baseline.json"
+    baseline.write_text(json.dumps({"results": {}}), encoding="utf-8")
+    result = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(baseline))
     assert result.returncode != 0
-    assert "corpusz-SHA elteres" in result.stderr
+    # A titok-probe elbukik, megnevezve, plaintext nelkul...
+    assert "unclassified candidate(s)" in result.stderr
+    # ...de a tobbi negy probe lefut es PASS-t jelent:
+    assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
+    assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
+    assert "alembic_head 20260816_0072" in result.stdout
+    assert "reconciliation PASS: modulregiszter" in result.stdout
+    assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
+    assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
     assert "minden lokalis" not in result.stdout
 
 
-def test_reconciliation_fail_closed_on_missing_corpus_file(tmp_path: Path) -> None:
+def test_command_level_snapshot_environment_variable_has_no_effect(
+    tmp_path: Path,
+) -> None:
+    """The removed snapshot seam cannot be re-enabled from the environment.
+
+    Setting ``II_RECON_SECRETS_SNAPSHOT`` -- even next to the pytest marker
+    -- must not change the command at all: the live scan still runs and the
+    valid repository still passes.
+    """
+    result = _run_reconciliation(
+        II_RECON_SECRETS_SNAPSHOT=str(tmp_path / "no-such-snapshot.json"),
+        PYTEST_CURRENT_TEST="test_command_level_snapshot_environment_variable_has_no_effect",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
+    assert "unavailable outside pytest" not in result.stderr
+    assert "minden lokalis" in result.stdout
+
+
+def test_unexpected_probe_exception_cannot_mask_the_other_probes(
+    tmp_path: Path,
+) -> None:
+    """An unexpected exception is named, counted and never masks other probes.
+
+    A malformed corpus manifest raises ``JSONDecodeError`` rather than a
+    ``SystemExit``; the aggregate loop must still evaluate every remaining
+    probe and must report only the exception class, never its message (which
+    could echo file content).
+    """
+    broken = tmp_path / "broken-manifest.json"
+    broken.write_text("{ this is not valid json", encoding="utf-8")
+    result = _run_reconciliation(II_RECON_CORPUS_MANIFEST=str(broken))
+    assert result.returncode != 0
+    assert "_corpus_probe varatlan hiba: JSONDecodeError" in result.stderr
+    assert "this is not valid json" not in result.stderr
+    assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
+    assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
+    assert "reconciliation PASS: modulregiszter" in result.stdout
+    assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
+    assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
+    assert "minden lokalis" not in result.stdout
+
+
+def test_corpus_probe_fail_closed_on_sha_tamper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module(monkeypatch)
+    manifest = json.loads(CORPUS_MANIFEST_PATH.read_text(encoding="utf-8"))
+    tampered = {
+        "schemaVersion": "2.1",
+        "files": [{"path": manifest["files"][0]["path"], "sha256": "0" * 64}],
+    }
+    synthetic = tmp_path / "tampered-manifest.json"
+    synthetic.write_text(json.dumps(tampered), encoding="utf-8")
+    monkeypatch.setattr(module, "CORPUS_MANIFEST", synthetic)
+    with pytest.raises(SystemExit) as excinfo:
+        module._corpus_probe()
+    assert excinfo.value.code not in (0, None)
+    assert "corpusz-SHA elteres" in str(excinfo.value)
+
+
+def test_corpus_probe_fail_closed_on_missing_corpus_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module(monkeypatch)
     synthetic = tmp_path / "missing-manifest.json"
     synthetic.write_text(
         json.dumps(
@@ -185,34 +323,42 @@ def test_reconciliation_fail_closed_on_missing_corpus_file(tmp_path: Path) -> No
         ),
         encoding="utf-8",
     )
-    result = _run_reconciliation(II_RECON_CORPUS_MANIFEST=str(synthetic))
-    assert result.returncode != 0
-    assert "vedett corpuszfajl hianyzik" in result.stderr
+    monkeypatch.setattr(module, "CORPUS_MANIFEST", synthetic)
+    with pytest.raises(SystemExit) as excinfo:
+        module._corpus_probe()
+    assert excinfo.value.code not in (0, None)
+    assert "vedett corpuszfajl hianyzik" in str(excinfo.value)
 
 
-def test_reconciliation_fail_closed_on_empty_files_list(tmp_path: Path) -> None:
+def test_corpus_probe_fail_closed_on_empty_files_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module(monkeypatch)
     synthetic = tmp_path / "empty-manifest.json"
-    synthetic.write_text(
-        json.dumps({"schemaVersion": "2.1", "files": []}), encoding="utf-8"
-    )
-    result = _run_reconciliation(II_RECON_CORPUS_MANIFEST=str(synthetic))
-    assert result.returncode != 0
-    assert "files" in result.stderr
+    synthetic.write_text(json.dumps({"schemaVersion": "2.1", "files": []}), encoding="utf-8")
+    monkeypatch.setattr(module, "CORPUS_MANIFEST", synthetic)
+    with pytest.raises(SystemExit) as excinfo:
+        module._corpus_probe()
+    assert excinfo.value.code not in (0, None)
+    assert "files" in str(excinfo.value)
 
 
 def test_reconciliation_fail_closed_on_missing_secret_baseline(
     tmp_path: Path,
 ) -> None:
-    result = _run_reconciliation(
-        II_RECON_SECRETS_BASELINE=str(tmp_path / "no-baseline.json")
-    )
+    result = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(tmp_path / "no-baseline.json"))
     assert result.returncode != 0
     assert "repository baseline is missing" in result.stderr
 
 
-def test_reconciliation_fail_closed_on_removed_baseline_entry(
-    tmp_path: Path, live_secret_fingerprints: set[tuple[str, str, str]]
+def test_secret_baseline_probe_fail_closed_on_removed_baseline_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    canonical_scan_document: dict,
+    live_secret_fingerprints: set[tuple[str, str, str]],
 ) -> None:
+    module = _load_module(monkeypatch)
+    _pin_canonical_scan(module, monkeypatch, canonical_scan_document)
     baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
     filename, index, _ = _find_live_baseline_entry(baseline, live_secret_fingerprints)
     baseline["results"][filename].pop(index)
@@ -220,31 +366,34 @@ def test_reconciliation_fail_closed_on_removed_baseline_entry(
         baseline["results"].pop(filename)
     synthetic = tmp_path / "removed-entry-baseline.json"
     synthetic.write_text(json.dumps(baseline), encoding="utf-8")
-    result = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(synthetic))
-    assert result.returncode != 0
-    assert "new candidate(s)" in result.stderr
-    assert "minden lokalis" not in result.stdout
-    _assert_no_secret_material(baseline, result.stdout)
-    _assert_no_secret_material(baseline, result.stderr)
+    monkeypatch.setattr(module, "SECRETS_BASELINE", synthetic)
+    with pytest.raises(SystemExit) as excinfo:
+        module._secret_baseline_probe()
+    assert excinfo.value.code not in (0, None)
+    assert "unclassified candidate(s)" in str(excinfo.value)
+    _assert_no_secret_material(baseline, str(excinfo.value))
 
 
-def test_reconciliation_fail_closed_on_changed_baseline_entry(
-    tmp_path: Path, live_secret_fingerprints: set[tuple[str, str, str]]
+def test_secret_baseline_probe_fail_closed_on_changed_baseline_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    canonical_scan_document: dict,
+    live_secret_fingerprints: set[tuple[str, str, str]],
 ) -> None:
+    module = _load_module(monkeypatch)
+    _pin_canonical_scan(module, monkeypatch, canonical_scan_document)
     baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
-    filename, index, finding = _find_live_baseline_entry(
-        baseline, live_secret_fingerprints
-    )
+    filename, index, finding = _find_live_baseline_entry(baseline, live_secret_fingerprints)
     finding["hashed_secret"] = "0" * 40
     baseline["results"][filename][index] = finding
     synthetic = tmp_path / "changed-entry-baseline.json"
     synthetic.write_text(json.dumps(baseline), encoding="utf-8")
-    result = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(synthetic))
-    assert result.returncode != 0
-    assert "new candidate(s)" in result.stderr
-    assert "minden lokalis" not in result.stdout
-    _assert_no_secret_material(baseline, result.stdout)
-    _assert_no_secret_material(baseline, result.stderr)
+    monkeypatch.setattr(module, "SECRETS_BASELINE", synthetic)
+    with pytest.raises(SystemExit) as excinfo:
+        module._secret_baseline_probe()
+    assert excinfo.value.code not in (0, None)
+    assert "unclassified candidate(s)" in str(excinfo.value)
+    _assert_no_secret_material(baseline, str(excinfo.value))
 
 
 def test_secret_baseline_probe_maps_status_zero_to_pass(
@@ -254,7 +403,10 @@ def test_secret_baseline_probe_maps_status_zero_to_pass(
     monkeypatch.setattr(
         module.check_secret_baseline,
         "reconcile_tracked_secrets",
-        lambda baseline_path: (0, "7 tracked candidate(s) match the audited baseline."),
+        lambda baseline_path, **kwargs: (
+            0,
+            "7 tracked candidate(s) match the audited baseline.",
+        ),
     )
     module._secret_baseline_probe()
 
@@ -266,9 +418,9 @@ def test_secret_baseline_probe_maps_nonzero_to_fail_closed(
     monkeypatch.setattr(
         module.check_secret_baseline,
         "reconcile_tracked_secrets",
-        lambda baseline_path: (
+        lambda baseline_path, **kwargs: (
             1,
-            "3 new candidate(s) in 1 tracked file(s).\n- svc/synthetic.py",
+            "3 unclassified candidate(s) in 1 tracked file(s).\n- svc/synthetic.py",
         ),
     )
     with pytest.raises(SystemExit) as excinfo:
@@ -277,9 +429,10 @@ def test_secret_baseline_probe_maps_nonzero_to_fail_closed(
     assert "reconciliation FAIL" in str(excinfo.value)
 
 
-def test_reconciliation_fail_closed_on_source_lock_head_tamper(
-    tmp_path: Path,
+def test_source_lock_probe_fail_closed_on_head_tamper(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    module = _load_module(monkeypatch)
     synthetic = tmp_path / "lock.json"
     synthetic.write_text(
         json.dumps(
@@ -294,66 +447,12 @@ def test_reconciliation_fail_closed_on_source_lock_head_tamper(
         ),
         encoding="utf-8",
     )
-    result = _run_reconciliation(II_RECON_SOURCE_LOCK=str(synthetic))
-    assert result.returncode != 0
-    assert "alembic_head" in result.stderr
-    assert "elter a migracios graf fejetol" in result.stderr
-
-
-def test_reconciliation_fail_closed_on_source_lock_version_missing(
-    tmp_path: Path,
-) -> None:
-    synthetic = tmp_path / "lock.json"
-    synthetic.write_text(
-        json.dumps({"alembic_head": "20260816_0072"}), encoding="utf-8"
-    )
-    result = _run_reconciliation(II_RECON_SOURCE_LOCK=str(synthetic))
-    assert result.returncode != 0
-    assert "SOURCE_LOCK platform_version ervenytelen" in result.stderr
-
-
-def test_reconciliation_fail_closed_on_source_lock_malformed_version(
-    tmp_path: Path,
-) -> None:
-    synthetic = tmp_path / "lock.json"
-    synthetic.write_text(
-        json.dumps(
-            {
-                "alembic_head": "20260816_0072",
-                "platform_version": "5.0.0",
-                "application_version": "release-candidate",
-                "partner_field_version": "1.0.0",
-                "commercial_integration_version": "1.0.0",
-                "release_date": "2026-07-19",
-            }
-        ),
-        encoding="utf-8",
-    )
-    result = _run_reconciliation(II_RECON_SOURCE_LOCK=str(synthetic))
-    assert result.returncode != 0
-    assert "application_version ervenytelen" in result.stderr
-
-
-def test_reconciliation_fail_closed_on_source_lock_malformed_date(
-    tmp_path: Path,
-) -> None:
-    synthetic = tmp_path / "lock.json"
-    synthetic.write_text(
-        json.dumps(
-            {
-                "alembic_head": "20260816_0072",
-                "platform_version": "5.0.0",
-                "application_version": "1.5.0",
-                "partner_field_version": "1.0.0",
-                "commercial_integration_version": "1.0.0",
-                "release_date": "2026.07.19",
-            }
-        ),
-        encoding="utf-8",
-    )
-    result = _run_reconciliation(II_RECON_SOURCE_LOCK=str(synthetic))
-    assert result.returncode != 0
-    assert "release_date ervenytelen" in result.stderr
+    monkeypatch.setattr(module, "SOURCE_LOCK", synthetic)
+    with pytest.raises(SystemExit) as excinfo:
+        module._source_lock_probe()
+    assert excinfo.value.code not in (0, None)
+    assert "alembic_head" in str(excinfo.value)
+    assert "elter a migracios graf fejetol" in str(excinfo.value)
 
 
 def test_source_lock_probe_passes_on_canonical_lock(
@@ -436,9 +535,7 @@ def test_source_lock_probe_fail_closed_on_wrong_type_version_field(
 
 
 @pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
-@pytest.mark.parametrize(
-    "malformed", ["1.0", "v1.0.0", "1.0.0-beta", " 1.0.0", "1.0.0 "]
-)
+@pytest.mark.parametrize("malformed", ["1.0", "v1.0.0", "1.0.0-beta", " 1.0.0", "1.0.0 "])
 def test_source_lock_probe_fail_closed_on_malformed_version_field(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -469,71 +566,15 @@ def test_source_lock_probe_fail_closed_on_unexpected_version_field(
     assert f"SOURCE_LOCK {field} elter a pinelt vart ertektol" in str(excinfo.value)
 
 
-def test_reconciliation_passes_on_synthetic_valid_lock(tmp_path: Path) -> None:
-    result = _run_reconciliation(
-        II_RECON_SOURCE_LOCK=str(_write_lock(tmp_path, _canonical_lock()))
-    )
-    assert result.returncode == 0, result.stderr
-    assert "minden lokalis" in result.stdout
-
-
-def test_reconciliation_passes_with_conflicting_ambient_expected_env(
+def test_migration_probe_fail_closed_on_wrong_alembic_head(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Teljes parancs-szintu regresszio: konfliktusos ambient
-    # II_RECON_EXPECTED_* ertekek mellett a helper kitakaritja oket a
-    # subprocess kornyezetebol, a kanonikus egyeztetes igy is exit 0.
-    monkeypatch.setenv("II_RECON_EXPECTED_ALEMBIC_HEAD", "99999999_9999")
-    for field in REQUIRED_LOCK_VERSION_FIELDS:
-        monkeypatch.setenv(f"II_RECON_EXPECTED_{field.upper()}", "9.9.9")
-    result = _run_reconciliation()
-    assert result.returncode == 0, result.stderr
-    assert "minden lokalis" in result.stdout
-
-
-def test_reconciliation_fail_closed_on_partner_field_version_mutation(
-    tmp_path: Path,
-) -> None:
-    lock = _canonical_lock()
-    lock["partner_field_version"] = "9.9.9"
-    result = _run_reconciliation(
-        II_RECON_SOURCE_LOCK=str(_write_lock(tmp_path, lock))
-    )
-    assert result.returncode != 0
-    assert "partner_field_version elter a pinelt vart ertektol" in result.stderr
-    assert "minden lokalis" not in result.stdout
-    baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
-    _assert_no_secret_material(baseline, result.stdout)
-    _assert_no_secret_material(baseline, result.stderr)
-
-
-def test_reconciliation_fail_closed_on_wrong_alembic_head() -> None:
-    result = _run_reconciliation(II_RECON_EXPECTED_ALEMBIC_HEAD="99999999_9999")
-    assert result.returncode != 0
-    assert "alembic head" in result.stderr
-
-
-def test_reconciliation_ignores_external_database_url_sentinels(
-    tmp_path: Path,
-) -> None:
-    # Valós-külsejű, elérhetetlen file-URL: ha a script az app engine-t
-    # használná, a drop_all/create_all kapcsolódási kísérletnél elbukna;
-    # a privát in-memory motor mellett a parancs érintetlenül lefut.
-    unreachable = _run_reconciliation(
-        DATABASE_URL="sqlite:///Z:/ii-recon-no-such-drive/sentinel.db"
-    )
-    assert unreachable.returncode == 0, unreachable.stderr
-    assert "minden lokalis" in unreachable.stdout
-
-    # Valós-külsejű írható file-URL: ha bármely művelet a konfigurált URL-re
-    # irányulna, a sentinel adatbázisfájl létrejönne; így soha.
-    sentinel = tmp_path / "sentinel-production.db"
-    file_url = _run_reconciliation(
-        DATABASE_URL=f"sqlite:///{sentinel.as_posix()}"
-    )
-    assert file_url.returncode == 0, file_url.stderr
-    assert "minden lokalis" in file_url.stdout
-    assert not sentinel.exists()
+    module = _load_module(monkeypatch)
+    monkeypatch.setattr(module, "EXPECTED_HEAD", "99999999_9999")
+    with pytest.raises(SystemExit) as excinfo:
+        module._migration_probe()
+    assert excinfo.value.code not in (0, None)
+    assert "alembic head" in str(excinfo.value)
 
 
 def test_registry_probe_uses_private_engine_and_ignores_database_url(

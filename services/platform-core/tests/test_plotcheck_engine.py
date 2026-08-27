@@ -21,6 +21,7 @@ from app.services.plotcheck import (
     verify_evidence,
     verify_rule_set,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def user(email: str, role: str = "technical-prep") -> SimpleNamespace:
@@ -243,7 +244,7 @@ def test_plotcheck_workspace_is_protected_and_legacy_generic_api_is_closed(clien
     assert client.get("/plotcheck", follow_redirects=False).status_code == 303
     login = client.post(
         "/login",
-        data={"email": "platform-admin@imperial.local", "password": "Imperial2026!"},
+        data={"email": "platform-admin@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

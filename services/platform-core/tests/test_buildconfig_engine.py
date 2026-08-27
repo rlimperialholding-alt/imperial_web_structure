@@ -24,6 +24,7 @@ from app.services.buildconfig import (
     review_gate,
     submit_case,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _user(role: str, email: str | None = None):
@@ -224,7 +225,7 @@ def test_buildconfig_workspace_is_visible_but_legacy_mutation_is_locked(client, 
     _houseplan(db, "PRJ-BC-UAT-UI")
     login = client.post(
         "/login",
-        data={"email": "platform-admin@imperial.local", "password": "Imperial2026!"},
+        data={"email": "platform-admin@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -252,7 +253,7 @@ def test_buildconfig_compare_screen_and_version_scope(client, db):
     )
     login = client.post(
         "/login",
-        data={"email": "platform-admin@imperial.local", "password": "Imperial2026!"},
+        data={"email": "platform-admin@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

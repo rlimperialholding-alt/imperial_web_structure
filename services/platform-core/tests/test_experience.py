@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.seed import DEMO_PASSWORD
+
 
 def test_public_new_build_calculator_uses_approved_source_and_hides_internal(client):
     response = client.post(
@@ -22,7 +24,7 @@ def test_public_new_build_calculator_uses_approved_source_and_hides_internal(cli
 
     login = client.post(
         "/login",
-        data={"email": "platform-admin@imperial.local", "password": "Imperial2026!"},
+        data={"email": "platform-admin@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

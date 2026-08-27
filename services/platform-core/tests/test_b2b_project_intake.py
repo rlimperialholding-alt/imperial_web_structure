@@ -34,6 +34,7 @@ from app.services.b2b_project_intake import (
     record_technical_review,
     resolve_duplicate,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _document(db, suffix: str) -> WorkspaceDocument:
@@ -138,8 +139,8 @@ def test_incomplete_intake_and_failed_crm_delivery_fail_closed(db):
 def test_b2b_role_page_access(client):
     for role in ("owner", "managing-director", "marketing", "sales", "finance", "project-manager", "platform-admin"):
         client.post("/logout")
-        assert client.post("/login", data={"email": f"{role}@imperial.local", "password": "Imperial2026!"}, follow_redirects=False).status_code == 303
+        assert client.post("/login", data={"email": f"{role}@imperial.local", "password": DEMO_PASSWORD}, follow_redirects=False).status_code == 303
         assert client.get("/b2b-project-intake").status_code == 200
     client.post("/logout")
-    assert client.post("/login", data={"email": "customer@imperial.local", "password": "Imperial2026!"}, follow_redirects=False).status_code == 303
+    assert client.post("/login", data={"email": "customer@imperial.local", "password": DEMO_PASSWORD}, follow_redirects=False).status_code == 303
     assert client.get("/b2b-project-intake").status_code == 403

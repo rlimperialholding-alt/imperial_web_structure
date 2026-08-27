@@ -22,6 +22,7 @@ from app.models import (
     SiteIssue,
     TaskRecord,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def seed_operations(db):
@@ -198,7 +199,7 @@ def test_project_manager_scope_and_subcontractor_denial(client, db):
             "/login",
             data={
                 "email": "project-manager@imperial.local",
-                "password": "Imperial2026!",
+                "password": DEMO_PASSWORD,
             },
             follow_redirects=False,
         ).status_code
@@ -227,7 +228,7 @@ def test_project_manager_scope_and_subcontractor_denial(client, db):
             "/login",
             data={
                 "email": "subcontractor@imperial.local",
-                "password": "Imperial2026!",
+                "password": DEMO_PASSWORD,
             },
             follow_redirects=False,
         ).status_code

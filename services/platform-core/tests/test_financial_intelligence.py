@@ -5,6 +5,7 @@ import pytest
 
 from app.models import EnterpriseCanonicalRecord, ProjectRegistry
 from app.services.financial_intelligence import finance_intelligence_dashboard
+from app.seed import DEMO_PASSWORD
 
 
 def _record(record_id: str, entity_type: str, data: dict, project_id: str | None = None):
@@ -174,7 +175,7 @@ def test_project_manager_finance_dashboard_is_deny_first_project_scoped(client, 
         "/login",
         data={
             "email": "project-manager@imperial.local",
-            "password": "Imperial2026!",
+            "password": DEMO_PASSWORD,
         },
         follow_redirects=False,
     )

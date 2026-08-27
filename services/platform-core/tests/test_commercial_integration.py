@@ -18,6 +18,7 @@ from app.services.commercial_integration import (
     contract_form_values,
     validate_contract_payload,
 )
+from app.seed import DEMO_PASSWORD
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "integrations" / "contract_generator_v0_4" / "examples" / "customer_construction_valid.json"
@@ -177,7 +178,7 @@ def test_contract_download_is_role_scoped_and_hash_verified(
     logged_in_client.post("/logout")
     login = logged_in_client.post(
         "/login",
-        data={"email": "finance@imperial.local", "password": "Imperial2026!"},
+        data={"email": "finance@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -186,7 +187,7 @@ def test_contract_download_is_role_scoped_and_hash_verified(
     logged_in_client.post("/logout")
     logged_in_client.post(
         "/login",
-        data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+        data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert logged_in_client.get(f"/commercial/files/{package.document_id}").status_code == 403

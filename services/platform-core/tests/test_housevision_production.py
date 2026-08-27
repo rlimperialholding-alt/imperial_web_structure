@@ -21,6 +21,7 @@ from app.roles import can_access_role
 from app.services import housevision as housevision_service
 from app.services import housevision_render_bridge
 from app.services.housevision_source_ingest import IngestedAsset
+from app.seed import DEMO_PASSWORD
 
 SOURCE_URL = "https://8.8.8.8/lawful-house/source-page"
 
@@ -311,7 +312,7 @@ def test_housevision_workbench_and_role_access(logged_in_client, client):
     client.post("/logout")
     login = client.post(
         "/login",
-        data={"email": "subcontractor@imperial.local", "password": "Imperial2026!"},
+        data={"email": "subcontractor@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -378,7 +379,7 @@ def test_housevision_ui_action_permissions_are_fail_closed(logged_in_client, cli
     logged_in_client.post("/logout")
     login = logged_in_client.post(
         "/login",
-        data={"email": "legal@imperial.local", "password": "Imperial2026!"},
+        data={"email": "legal@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

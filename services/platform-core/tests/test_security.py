@@ -1,4 +1,5 @@
 from app.config import Settings
+from app.seed import DEMO_PASSWORD
 
 
 def test_production_validation_blocks_unsafe_defaults(monkeypatch):
@@ -149,7 +150,7 @@ def test_anonymous_ui_redirects(client):
 def test_session_authenticated_writes_require_same_origin(client):
     login = client.post(
         "/login",
-        data={"email": "platform-admin@imperial.local", "password": "Imperial2026!"},
+        data={"email": "platform-admin@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

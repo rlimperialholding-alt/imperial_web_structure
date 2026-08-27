@@ -17,6 +17,7 @@ from app.services.housebuild import (
     select_variant,
     submit_case,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _user(role: str, email: str | None = None):
@@ -226,7 +227,7 @@ def test_housebuild_duplicate_geometry_is_a_stop_gate(db):
 def test_housebuild_ui_and_legacy_mutation_are_scoped(client):
     login = client.post(
         "/login",
-        data={"email": "technical-prep@imperial.local", "password": "Imperial2026!"},
+        data={"email": "technical-prep@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -246,7 +247,7 @@ def test_housebuild_ui_and_legacy_mutation_are_scoped(client):
     client.post("/logout")
     client.post(
         "/login",
-        data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+        data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert client.get("/housebuild").status_code == 403

@@ -23,6 +23,7 @@ from app.services.partner_control import (
     set_external_score,
     verify_certificate,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _user(role: str, email: str) -> SimpleNamespace:
@@ -380,7 +381,7 @@ def test_restrictive_decision_requires_finance_legal_review(db):
 def test_partner_control_screen_and_role_boundary(client, db):
     response = client.post(
         "/login",
-        data={"email": "project-manager@imperial.local", "password": "Imperial2026!"},
+        data={"email": "project-manager@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -405,7 +406,7 @@ def test_partner_control_screen_and_role_boundary(client, db):
     assert (
         client.post(
             "/login",
-            data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+            data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
             follow_redirects=False,
         ).status_code
         == 303
@@ -415,7 +416,7 @@ def test_partner_control_screen_and_role_boundary(client, db):
     assert (
         client.post(
             "/login",
-            data={"email": "subcontractor@imperial.local", "password": "Imperial2026!"},
+            data={"email": "subcontractor@imperial.local", "password": DEMO_PASSWORD},
             follow_redirects=False,
         ).status_code
         == 303

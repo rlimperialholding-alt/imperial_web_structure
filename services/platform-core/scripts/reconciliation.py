@@ -5,8 +5,11 @@ vagy production írás nem történik. A script determinisztikusan összeveti:
 
 1. a védett acceptance corpuszt az ADAS protected-corpus manifesttel (SHA-256);
 2. a tracked-secret baseline integritását a kanonikus
-   check_secret_baseline logikával (élő scan vs. auditált baseline;
-   stale-only eltérés dokumentált warning, minden más eltérés FAIL);
+   check_secret_baseline logikával (élő scan vs. a védett .secrets.baseline;
+   a baseline-en kívüli jelölt kizárólag strukturális, a munkafából
+   újraszármaztatott és fingerprinttel igazolt osztályozással tisztázható,
+   commitolt allowlist/delta nélkül; stale-only eltérés dokumentált
+   warning, minden osztályozatlan találat FAIL);
 3. a SOURCE_LOCK kibocsátási rögzítést (alembic head = a migrációs gráf
    tényleges egyetlen feje; a teljes, kötelező top-level verziómező-készlet
    -- platform_version, application_version, partner_field_version,
@@ -18,14 +21,22 @@ vagy production írás nem történik. A script determinisztikusan összeveti:
    script nem olvassa és nem írja);
 5. az Alembic migrációs gráf egyetlen fejét.
 
-Bármelyik eltérés nemnulla kilépési kóddal (fail-closed) zárul.
+Bármelyik eltérés nemnulla kilépési kóddal (fail-closed) zárul. Mindegyik
+probe lefut akkor is, ha egy korábbi elbukott: egyetlen hiba sem takarhatja el
+a többiek állítását (a titok-scan determinisztikus delta esetén a
+SOURCE_LOCK/alembic/regiszter/migráció állítások akkor is kiértékelődnek és
+jelentést kapnak). Az összesített kilépési kód csak akkor 0, ha mindegyik
+probe átment.
 
 Teszt-seam: a vizsgált artefaktumok útvonala, az elvárt alembic head és a
 pinelt várt verzióértékek környezeti változóval felülírhatók (kizárólag
 szintetikus fail-closed bizonyítékhoz); a pipeline mindig az alapértelmezett
 repo-útvonalakat és várt értékeket használja, mert ezeket a változókat nem
-állítja be. A lock verzióértékei és a scriptben pinelt várt értékek csak
-együtt, egy auditált commitban mozoghatnak.
+állítja be. A titok-scanre NINCS snapshot vagy környezeti seam: a kanonikus
+check_secret_baseline mindig az élő scannel egyeztet, a tesztek kizárólag
+közvetlen pytest monkeypatch segítségével gyorsítják. A lock verzióértékei és
+a scriptben pinelt várt értékek csak együtt, egy auditált commitban
+mozoghatnak.
 """
 
 from __future__ import annotations
@@ -50,21 +61,18 @@ os.environ.setdefault(
     str(Path(tempfile.gettempdir()) / f"iip_reconciliation_{os.getpid()}"),
 )
 
+import check_secret_baseline  # noqa: E402
 from alembic.config import Config  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
 from sqlalchemy import create_engine, select  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-import check_secret_baseline  # noqa: E402
-
 from app.database import Base  # noqa: E402
 from app.models import ModuleRegistry  # noqa: E402
 from app.seed import MODULES, seed_database  # noqa: E402
 
-EXPECTED_HEAD = os.environ.get(
-    "II_RECON_EXPECTED_ALEMBIC_HEAD", "20260816_0072"
-)
+EXPECTED_HEAD = os.environ.get("II_RECON_EXPECTED_ALEMBIC_HEAD", "20260816_0072")
 CORPUS_MANIFEST = Path(
     os.environ.get(
         "II_RECON_CORPUS_MANIFEST",
@@ -72,15 +80,9 @@ CORPUS_MANIFEST = Path(
     )
 )
 SECRETS_BASELINE = Path(
-    os.environ.get(
-        "II_RECON_SECRETS_BASELINE", str(_REPO_ROOT / ".secrets.baseline")
-    )
+    os.environ.get("II_RECON_SECRETS_BASELINE", str(_REPO_ROOT / ".secrets.baseline"))
 )
-SOURCE_LOCK = Path(
-    os.environ.get(
-        "II_RECON_SOURCE_LOCK", str(_APP_ROOT / "SOURCE_LOCK.json")
-    )
-)
+SOURCE_LOCK = Path(os.environ.get("II_RECON_SOURCE_LOCK", str(_APP_ROOT / "SOURCE_LOCK.json")))
 
 _SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -96,15 +98,9 @@ REQUIRED_LOCK_VERSION_FIELDS = (
     "commercial_integration_version",
 )
 EXPECTED_LOCK_VERSIONS = {
-    "platform_version": os.environ.get(
-        "II_RECON_EXPECTED_PLATFORM_VERSION", "5.0.0"
-    ),
-    "application_version": os.environ.get(
-        "II_RECON_EXPECTED_APPLICATION_VERSION", "1.5.0"
-    ),
-    "partner_field_version": os.environ.get(
-        "II_RECON_EXPECTED_PARTNER_FIELD_VERSION", "1.0.0"
-    ),
+    "platform_version": os.environ.get("II_RECON_EXPECTED_PLATFORM_VERSION", "5.0.0"),
+    "application_version": os.environ.get("II_RECON_EXPECTED_APPLICATION_VERSION", "1.5.0"),
+    "partner_field_version": os.environ.get("II_RECON_EXPECTED_PARTNER_FIELD_VERSION", "1.0.0"),
     "commercial_integration_version": os.environ.get(
         "II_RECON_EXPECTED_COMMERCIAL_INTEGRATION_VERSION", "1.0.0"
     ),
@@ -116,51 +112,39 @@ def _sha256(path: Path) -> str:
 
 
 def _alembic_heads() -> list[str]:
-    return ScriptDirectory.from_config(
-        Config(str(_APP_ROOT / "alembic.ini"))
-    ).get_heads()
+    return ScriptDirectory.from_config(Config(str(_APP_ROOT / "alembic.ini"))).get_heads()
 
 
 def _corpus_probe() -> None:
     if not CORPUS_MANIFEST.is_file():
         raise SystemExit(
-            "reconciliation FAIL: protected-corpus manifest hianyzik: "
-            f"{CORPUS_MANIFEST}"
+            f"reconciliation FAIL: protected-corpus manifest hianyzik: {CORPUS_MANIFEST}"
         )
     manifest = json.loads(CORPUS_MANIFEST.read_text(encoding="utf-8"))
     entries = manifest.get("files")
     if not isinstance(entries, list) or not entries:
-        raise SystemExit(
-            "reconciliation FAIL: a manifest 'files' listaja ures vagy ervenytelen."
-        )
+        raise SystemExit("reconciliation FAIL: a manifest 'files' listaja ures vagy ervenytelen.")
     for entry in entries:
         path = entry.get("path")
         expected = entry.get("sha256")
         if not path or not expected:
-            raise SystemExit(
-                "reconciliation FAIL: manifest-bejegyzes path/sha256 nelkul."
-            )
+            raise SystemExit("reconciliation FAIL: manifest-bejegyzes path/sha256 nelkul.")
         target = _REPO_ROOT / path
         if not target.is_file():
-            raise SystemExit(
-                f"reconciliation FAIL: vedett corpuszfajl hianyzik: {path}"
-            )
+            raise SystemExit(f"reconciliation FAIL: vedett corpuszfajl hianyzik: {path}")
         observed = _sha256(target)
         if observed != expected:
             raise SystemExit(
                 f"reconciliation FAIL: corpusz-SHA elteres: {path} "
                 f"{observed[:12]}... != {expected[:12]}..."
             )
-    print(
-        f"reconciliation PASS: vedett acceptance corpusz ({len(entries)} fajl) "
-        "hash-egyezesben."
-    )
+    print(f"reconciliation PASS: vedett acceptance corpusz ({len(entries)} fajl) hash-egyezesben.")
 
 
 def _secret_baseline_probe() -> None:
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
-        SECRETS_BASELINE
-    )
+    # Nincs snapshot/környezeti seam: a kanonikus egyeztetés mindig az élő
+    # scannel fut; a tesztek csak közvetlen monkeypatch-csel gyorsítanak.
+    status, message = check_secret_baseline.reconcile_tracked_secrets(SECRETS_BASELINE)
     if status != 0:
         raise SystemExit(f"reconciliation FAIL: {message}")
     print(f"reconciliation PASS: tracked-secret baseline: {message}")
@@ -168,9 +152,7 @@ def _secret_baseline_probe() -> None:
 
 def _source_lock_probe() -> None:
     if not SOURCE_LOCK.is_file():
-        raise SystemExit(
-            f"reconciliation FAIL: SOURCE_LOCK hianyzik: {SOURCE_LOCK}"
-        )
+        raise SystemExit(f"reconciliation FAIL: SOURCE_LOCK hianyzik: {SOURCE_LOCK}")
     try:
         lock = json.loads(SOURCE_LOCK.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -188,16 +170,13 @@ def _source_lock_probe() -> None:
         expected = EXPECTED_LOCK_VERSIONS[key]
         if not isinstance(expected, str) or not _SEMVER.fullmatch(expected):
             raise SystemExit(
-                "reconciliation FAIL: pinelt vart ertek "
-                f"{key} ervenytelen: {expected!r}."
+                f"reconciliation FAIL: pinelt vart ertek {key} ervenytelen: {expected!r}."
             )
     for key in REQUIRED_LOCK_VERSION_FIELDS:
         value = lock.get(key)
         expected = EXPECTED_LOCK_VERSIONS[key]
         if not isinstance(value, str) or not _SEMVER.fullmatch(value):
-            raise SystemExit(
-                f"reconciliation FAIL: SOURCE_LOCK {key} ervenytelen: {value!r}."
-            )
+            raise SystemExit(f"reconciliation FAIL: SOURCE_LOCK {key} ervenytelen: {value!r}.")
         if value != expected:
             raise SystemExit(
                 f"reconciliation FAIL: SOURCE_LOCK {key} elter a pinelt "
@@ -206,8 +185,7 @@ def _source_lock_probe() -> None:
     release_date = lock.get("release_date")
     if not isinstance(release_date, str) or not _ISO_DATE.fullmatch(release_date):
         raise SystemExit(
-            "reconciliation FAIL: SOURCE_LOCK release_date ervenytelen: "
-            f"{release_date!r}."
+            f"reconciliation FAIL: SOURCE_LOCK release_date ervenytelen: {release_date!r}."
         )
     print(
         "reconciliation PASS: SOURCE_LOCK verziok rogzitve "
@@ -243,27 +221,48 @@ def _registry_probe() -> None:
     missing = sorted(expected - keys)
     extra = sorted(keys - expected)
     if missing or extra:
-        raise SystemExit(
-            f"reconciliation FAIL: regiszter-elteres missing={missing} extra={extra}."
-        )
+        raise SystemExit(f"reconciliation FAIL: regiszter-elteres missing={missing} extra={extra}.")
     print(f"reconciliation PASS: modulregiszter ({len(keys)} modul) a seeddel egyezik.")
 
 
 def _migration_probe() -> None:
     heads = _alembic_heads()
     if heads != [EXPECTED_HEAD]:
-        raise SystemExit(
-            f"reconciliation FAIL: alembic head {heads!r}, vart: {EXPECTED_HEAD}."
-        )
+        raise SystemExit(f"reconciliation FAIL: alembic head {heads!r}, vart: {EXPECTED_HEAD}.")
     print(f"reconciliation PASS: pontosan egy alembic head ({EXPECTED_HEAD}).")
 
 
 def main() -> int:
-    _corpus_probe()
-    _secret_baseline_probe()
-    _source_lock_probe()
-    _registry_probe()
-    _migration_probe()
+    # Aggregált kiértékelés: minden probe lefut, az elbukottak üzenete a
+    # stderr-re kerül; az összesített kód csak akkor 0, ha mindegyik átment.
+    probes = (
+        _corpus_probe,
+        _secret_baseline_probe,
+        _source_lock_probe,
+        _registry_probe,
+        _migration_probe,
+    )
+    failures = 0
+    for probe in probes:
+        try:
+            probe()
+        except SystemExit as exc:
+            print(str(exc), file=sys.stderr)
+            failures += 1
+        except Exception as exc:  # noqa: BLE001 - fail-closed, nem maszkolhat
+            # Váratlan hiba (pl. malformált manifest JSON) sem takarhatja el a
+            # többi probe állítását: megnevezve, fail-closed módon számoljuk.
+            print(
+                f"reconciliation FAIL: {probe.__name__} varatlan hiba: {exc.__class__.__name__}.",
+                file=sys.stderr,
+            )
+            failures += 1
+    if failures:
+        print(
+            f"reconciliation FAIL: {failures} probe(s) sikertelen (fail-closed).",
+            file=sys.stderr,
+        )
+        return 1
     print("reconciliation PASS: minden lokalis, szintetikus egyeztetes sikeres.")
     return 0
 

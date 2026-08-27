@@ -15,9 +15,10 @@ from app.models import (
     ProjectRegistry,
     TaskRecord,
 )
+from app.seed import DEMO_PASSWORD
 
 CUSTOMER = "customer@imperial.local"
-PASSWORD = "Imperial2026!"
+PASSWORD = DEMO_PASSWORD
 
 
 def _grant_customer_project(db, project_id: str = "CARE-UAT-001") -> ProjectRegistry:

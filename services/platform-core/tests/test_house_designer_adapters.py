@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 
 import app.services.house_designer_readiness as readiness_service
+from app.seed import DEMO_PASSWORD
 from app.models import (
     AuditLog,
     HouseDesignerAdapterJob,
@@ -573,7 +574,7 @@ def test_entitlement_review_ui_rejects_stale_form_before_transition(client, db):
     db.commit()
     login = client.post(
         "/login",
-        data={"email": "owner@imperial.local", "password": "Imperial2026!"},
+        data={"email": "owner@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -640,7 +641,7 @@ def test_adapter_admin_and_production_job_screens_are_rendered(client, db):
     )
     login = client.post(
         "/login",
-        data={"email": "technical-prep@imperial.local", "password": "Imperial2026!"},
+        data={"email": "technical-prep@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

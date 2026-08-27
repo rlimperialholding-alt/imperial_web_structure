@@ -6,6 +6,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.models import AuditLog, EventRecord, ModuleBusinessRecord, OutboxMessage
+from app.seed import DEMO_PASSWORD
 from app.services.module_business import (
     BUSINESS_PROFILES,
     MODULE_WORKFLOW_FAMILY,
@@ -184,7 +185,7 @@ def test_module_business_api_round_trip(client):
 def test_sales_role_cannot_open_finance_workbench(client):
     login = client.post(
         "/login",
-        data={"email": "sales@imperial.local", "password": "Imperial2026!"},
+        data={"email": "sales@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

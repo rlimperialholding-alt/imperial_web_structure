@@ -24,6 +24,7 @@ from app.services.house_plan_execution import (
     create_source_revision,
     revoke_source,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _csrf(client) -> str:
@@ -189,7 +190,7 @@ def test_execute_is_persistent_idempotent_and_requires_four_eyes(logged_in_clien
         "/login",
         data={
             "email": "technical-prep@imperial.local",
-            "password": "Imperial2026!",
+            "password": DEMO_PASSWORD,
         },
         follow_redirects=False,
     )
@@ -296,7 +297,7 @@ def test_plan_approval_rechecks_source_expiry_and_persists_rights_hold(logged_in
 
     logged_in_client.post(
         "/login",
-        data={"email": "technical-prep@imperial.local", "password": "Imperial2026!"},
+        data={"email": "technical-prep@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     csrf = _csrf(logged_in_client)

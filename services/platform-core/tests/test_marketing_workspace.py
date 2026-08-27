@@ -20,7 +20,7 @@ from app.models import (
     PublicationBundleRecord,
     User,
 )
-from app.seed import retire_seeded_content_quality_sources, seed_database
+from app.seed import retire_seeded_content_quality_sources, seed_database, DEMO_PASSWORD
 from app.services.content_quality import (
     create_content_asset,
     create_copy_brief,
@@ -29,7 +29,7 @@ from app.services.content_quality import (
 )
 
 
-PASSWORD = "Imperial2026!"
+PASSWORD = DEMO_PASSWORD
 
 
 def login(client, role: str):
@@ -173,10 +173,15 @@ def test_production_retirement_fails_closed_for_synthetic_sources(db):
 def test_demo_disabled_deactivates_seed_accounts(monkeypatch, db):
     import app.seed as seed_module
 
+    # A seed demo-kapuja a settings.is_production mezőt is olvassa (a production
+    # tiltás a felhasználás pontján is érvényes), ezért a test double-nek is
+    # teljesnek kell lennie.
     monkeypatch.setattr(
         seed_module,
         "settings",
-        SimpleNamespace(demo_runtime_enabled=False, environment="staging"),
+        SimpleNamespace(
+            demo_runtime_enabled=False, environment="staging", is_production=False
+        ),
     )
     seed_database(db)
     owner = db.scalar(select(User).where(User.email == "owner@imperial.local"))

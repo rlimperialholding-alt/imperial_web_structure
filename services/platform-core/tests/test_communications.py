@@ -8,9 +8,10 @@ from app.models import (
     TaskRecord,
     User,
 )
+from app.seed import DEMO_PASSWORD
 
 
-PASSWORD = "Imperial2026!"
+PASSWORD = DEMO_PASSWORD
 
 
 def login(client, role: str):

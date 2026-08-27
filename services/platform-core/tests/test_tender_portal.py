@@ -21,9 +21,10 @@ from app.models import (
     TenderPackage,
     TenderPurchaseOrderPreparation,
 )
+from app.seed import DEMO_PASSWORD
 from app.services.tender_portal import _package_query, bid_comparison
 
-PASSWORD = "Imperial2026!"
+PASSWORD = DEMO_PASSWORD
 TENDER_ID = "TND-UAT-2026-001"
 PROJECT_ID = "TENDER-UAT-001"
 

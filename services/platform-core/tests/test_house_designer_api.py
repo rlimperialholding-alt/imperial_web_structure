@@ -12,12 +12,13 @@ from app.models import (
 )
 from app.services.house_designer import ActorScope, create_session
 from app.services.house_designer_submission import HOUSE_DESIGN_NOTICE_VERSION
+from app.seed import DEMO_PASSWORD
 
 
 def _login_and_csrf(client, email: str = "platform-admin@imperial.local") -> str:
     login = client.post(
         "/login",
-        data={"email": email, "password": "Imperial2026!"},
+        data={"email": email, "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

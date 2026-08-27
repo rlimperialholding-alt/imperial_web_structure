@@ -31,6 +31,7 @@ from app.services.sales_pipeline import (
     submit_proposal,
     transition_opportunity,
 )
+from app.seed import DEMO_PASSWORD
 
 LEAD_ID = "LEAD-SALES-UAT-001"
 
@@ -338,7 +339,7 @@ def test_sales_proposal_margin_hash_and_roles_fail_closed(db):
 def test_sales_pipeline_page_is_role_protected_and_renders_native_controls(client):
     response = client.post(
         "/login",
-        data={"email": "sales@imperial.local", "password": "Imperial2026!"},
+        data={"email": "sales@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -353,7 +354,7 @@ def test_sales_pipeline_page_is_role_protected_and_renders_native_controls(clien
             "/login",
             data={
                 "email": f"{reviewer}@imperial.local",
-                "password": "Imperial2026!",
+                "password": DEMO_PASSWORD,
             },
             follow_redirects=False,
         )
@@ -363,7 +364,7 @@ def test_sales_pipeline_page_is_role_protected_and_renders_native_controls(clien
     client.post("/logout")
     client.post(
         "/login",
-        data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+        data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert client.get("/sales-commercial").status_code == 403

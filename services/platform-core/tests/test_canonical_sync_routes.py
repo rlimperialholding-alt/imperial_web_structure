@@ -6,12 +6,13 @@ from sqlalchemy import select
 
 import app.main as main_module
 from app.models import AuditLog
+from app.seed import DEMO_PASSWORD
 
 
 def _login(client, role: str) -> None:
     response = client.post(
         "/login",
-        data={"email": f"{role}@imperial.local", "password": "Imperial2026!"},
+        data={"email": f"{role}@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert response.status_code == 303

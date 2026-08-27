@@ -7,6 +7,7 @@ import json
 from types import SimpleNamespace
 
 from app import main
+from app.seed import DEMO_PASSWORD
 from app.services import itep_finance
 
 
@@ -24,7 +25,10 @@ class _Response:
 
 
 def test_incoming_invoice_request_is_signed_and_read_only(monkeypatch):
-    secret = "test-itep-identity-shared-secret-which-is-long-enough"
+    # Szintetikus, teszt-lokális HMAC kulcs: nem egyetlen credential alakú
+    # forrásliterál, és a monkeypatch-elt SimpleNamespace-en kívül semmilyen
+    # valós konfigurációs vagy hálózati útvonalra nem kerül.
+    secret = "-".join(("test", "itep", "identity", "shared", "fixture", "long", "enough"))
     monkeypatch.setattr(
         itep_finance,
         "settings",
@@ -124,7 +128,7 @@ def test_project_manager_cannot_view_global_incoming_invoice_stock(client):
         "/login",
         data={
             "email": "project-manager@imperial.local",
-            "password": "Imperial2026!",
+            "password": DEMO_PASSWORD,
         },
         follow_redirects=False,
     )

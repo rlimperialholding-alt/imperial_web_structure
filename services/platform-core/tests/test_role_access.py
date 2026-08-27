@@ -6,9 +6,8 @@ from pathlib import Path
 import pytest
 
 from app.roles import ROLE_DEFINITIONS, can_access_role
+from app.seed import DEMO_PASSWORD
 
-
-DEMO_PASSWORD = "Imperial2026!"
 SEED_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "platform_demo_seed.json"
 )

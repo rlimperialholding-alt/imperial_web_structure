@@ -32,6 +32,7 @@ from app.services.change_control import (
 )
 from app.services.my_imperial import respond_to_decision
 from scripts.seed_change_control_uat import _ensure_project as ensure_server_uat_project
+from app.seed import DEMO_PASSWORD
 
 PROJECT_ID = "CHANGE-UAT-001"
 CUSTOMER = "customer@imperial.local"
@@ -127,7 +128,7 @@ def test_full_change_control_flow_reaches_myimperial_calendar_finance_and_comple
     ]
     client.post(
         "/login",
-        data={"email": "project-manager@imperial.local", "password": "Imperial2026!"},
+        data={"email": "project-manager@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     internal_download = client.get(internal_document.source_url)
@@ -208,7 +209,7 @@ def test_full_change_control_flow_reaches_myimperial_calendar_finance_and_comple
     client.post("/logout")
     client.post(
         "/login",
-        data={"email": CUSTOMER, "password": "Imperial2026!"},
+        data={"email": CUSTOMER, "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     portal = client.get(f"/my-imperial/{PROJECT_ID}")
@@ -361,14 +362,14 @@ def test_margin_advance_and_version_reset_are_fail_closed(db):
 def test_change_control_http_is_internal_only(client):
     client.post(
         "/login",
-        data={"email": "project-manager@imperial.local", "password": "Imperial2026!"},
+        data={"email": "project-manager@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert client.get("/change-control").status_code == 200
     client.post("/logout")
     client.post(
         "/login",
-        data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+        data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert client.get("/change-control").status_code == 403

@@ -21,6 +21,7 @@ from app.services.contract_workflow import (
     review_contract,
     submit_contract_review,
 )
+from app.seed import DEMO_PASSWORD
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "integrations" / "contract_generator_v0_4" / "examples"
@@ -138,7 +139,7 @@ def test_project_manager_contract_detail_is_project_scoped(client, db):
         "/login",
         data={
             "email": "project-manager@imperial.local",
-            "password": "Imperial2026!",
+            "password": DEMO_PASSWORD,
         },
         follow_redirects=False,
     )
@@ -303,7 +304,7 @@ def test_workflow_screen_and_direct_signed_api_are_fail_closed(client, db):
     row = _generated(db)
     client.post(
         "/login",
-        data={"email": "finance@imperial.local", "password": "Imperial2026!"},
+        data={"email": "finance@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     page = client.get(f"/commercial/contracts/{row.contract_id}")

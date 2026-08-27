@@ -95,7 +95,7 @@ os.environ.setdefault("HOUSE_DESIGNER_CALLBACK_BASE_URL", "https://intelligence.
 import pytest  # noqa: E402
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
-from app.seed import seed_database  # noqa: E402
+from app.seed import DEMO_PASSWORD, seed_database  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
@@ -124,7 +124,7 @@ def client():
 def logged_in_client(client):
     response = client.post(
         "/login",
-        data={"email": "platform-admin@imperial.local", "password": "Imperial2026!"},
+        data={"email": "platform-admin@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert response.status_code == 303

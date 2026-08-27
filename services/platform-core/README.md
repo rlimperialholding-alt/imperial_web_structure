@@ -55,7 +55,10 @@ uvicorn app.main:app --reload
 Fejlesztői belépés:
 
 - `owner@imperial.local`
-- `Imperial2026!`
+- a belépési értéket a login oldal írja ki nem-production módban; a
+  `CONTROL_CENTER_DEMO_LOGIN` környezeti változóval rögzíthető, enélkül
+  futásonként egyedi, biztonságosan generált érték érvényes (a forrásban
+  nincs fix demo jelszó).
 
 Élesítés előtt a demo-felhasználót és minden titkot cserélni kell.
 

@@ -38,6 +38,7 @@ from app.services.engineering_workspace import (
     review_revision,
     submit_revision,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _user(role: str, email: str | None = None):
@@ -290,7 +291,7 @@ def test_engineering_workspace_http_role_scope(client):
         client.post("/logout")
         response = client.post(
             "/login",
-            data={"email": f"{role}@imperial.local", "password": "Imperial2026!"},
+            data={"email": f"{role}@imperial.local", "password": DEMO_PASSWORD},
             follow_redirects=False,
         )
         assert response.status_code == 303
@@ -302,7 +303,7 @@ def test_engineering_workspace_http_role_scope(client):
     client.post("/logout")
     client.post(
         "/login",
-        data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+        data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert client.get("/engineering-workspace").status_code == 403

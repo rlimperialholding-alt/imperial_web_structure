@@ -22,6 +22,7 @@ from app.services.house_designer_guest import (
     create_guest_design,
     resolve_guest_actor,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _enable_sandbox(db) -> None:
@@ -296,7 +297,7 @@ def test_public_standalone_design_is_claimed_on_login(client, db):
         "/login",
         data={
             "email": "customer@imperial.local",
-            "password": "Imperial2026!",
+            "password": DEMO_PASSWORD,
             "return_to": "/house-designer",
         },
         follow_redirects=False,

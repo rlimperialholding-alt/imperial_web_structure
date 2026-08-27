@@ -43,6 +43,7 @@ from app.services.project_control import (
     submit_weekly_report,
     verify_recovery_action,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _user(role: str, email: str | None = None):
@@ -117,7 +118,7 @@ def test_project_control_http_role_scope(client):
         client.post("/logout")
         response = client.post(
             "/login",
-            data={"email": f"{role}@imperial.local", "password": "Imperial2026!"},
+            data={"email": f"{role}@imperial.local", "password": DEMO_PASSWORD},
             follow_redirects=False,
         )
         assert response.status_code == 303
@@ -129,7 +130,7 @@ def test_project_control_http_role_scope(client):
     client.post("/logout")
     client.post(
         "/login",
-        data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+        data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert client.get("/project-control").status_code == 403

@@ -36,6 +36,7 @@ from app.services.marketing_automation import (
     submit_campaign,
     withdraw_marketing_consent_by_token,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _user(role: str):
@@ -426,7 +427,7 @@ def test_privacy_gate_low_score_override_and_role_ui(client, db):
 
     login = client.post(
         "/login",
-        data={"email": "marketing@imperial.local", "password": "Imperial2026!"},
+        data={"email": "marketing@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -434,7 +435,7 @@ def test_privacy_gate_low_score_override_and_role_ui(client, db):
     client.post("/logout")
     client.post(
         "/login",
-        data={"email": "sales@imperial.local", "password": "Imperial2026!"},
+        data={"email": "sales@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     page = client.get("/marketing/automation")
@@ -443,7 +444,7 @@ def test_privacy_gate_low_score_override_and_role_ui(client, db):
     client.post("/logout")
     client.post(
         "/login",
-        data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+        data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert client.get("/marketing/automation").status_code == 403

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.seed import DEMO_PASSWORD
 from app.services.housematch import housematch_repository
 from app.services.technical_products import (
     create_case,
@@ -158,7 +159,7 @@ def test_technical_screen_is_session_protected_and_available_to_authorized_user(
     assert client.get("/technical", follow_redirects=False).status_code == 303
     login = client.post(
         "/login",
-        data={"email": "platform-admin@imperial.local", "password": "Imperial2026!"},
+        data={"email": "platform-admin@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -171,7 +172,7 @@ def test_technical_screen_is_session_protected_and_available_to_authorized_user(
 def test_customer_cannot_open_internal_technical_workspace(client):
     login = client.post(
         "/login",
-        data={"email": "customer@imperial.local", "password": "Imperial2026!"},
+        data={"email": "customer@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -198,7 +199,7 @@ def test_finance_cannot_mutate_legacy_buildconfig_workflow(client, db):
     submit_case(db, row["case_id"], "technical-prep@imperial.local")
     login = client.post(
         "/login",
-        data={"email": "finance@imperial.local", "password": "Imperial2026!"},
+        data={"email": "finance@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

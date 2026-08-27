@@ -23,6 +23,7 @@ from app.services.project_finance import (
     reject_finance_plan,
     submit_finance_plan,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _user(role: str):
@@ -415,7 +416,7 @@ def test_finance_plan_ui_and_role_gate(logged_in_client, client, db):
     client.post("/logout")
     login = client.post(
         "/login",
-        data={"email": "project-manager@imperial.local", "password": "Imperial2026!"},
+        data={"email": "project-manager@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303
@@ -424,7 +425,7 @@ def test_finance_plan_ui_and_role_gate(logged_in_client, client, db):
     client.post("/logout")
     login = client.post(
         "/login",
-        data={"email": "sales@imperial.local", "password": "Imperial2026!"},
+        data={"email": "sales@imperial.local", "password": DEMO_PASSWORD},
         follow_redirects=False,
     )
     assert login.status_code == 303

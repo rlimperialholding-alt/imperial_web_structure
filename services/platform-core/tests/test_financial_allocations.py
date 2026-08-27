@@ -13,6 +13,7 @@ from app.services.financial_allocations import (
     allocation_workspace,
 )
 from app.services.financial_intelligence import finance_intelligence_dashboard
+from app.seed import DEMO_PASSWORD
 
 
 def _finance_record(db, *, record_id: str = "FIN-ALLOC-1") -> EnterpriseCanonicalRecord:
@@ -150,7 +151,7 @@ def test_project_manager_cannot_view_or_change_global_financial_allocation(clien
         "/login",
         data={
             "email": "project-manager@imperial.local",
-            "password": "Imperial2026!",
+            "password": DEMO_PASSWORD,
         },
         follow_redirects=False,
     )

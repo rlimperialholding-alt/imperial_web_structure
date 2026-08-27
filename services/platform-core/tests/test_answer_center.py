@@ -25,6 +25,7 @@ from app.services.answer_center import (
     revoke_source,
     submit_for_review,
 )
+from app.seed import DEMO_PASSWORD
 
 
 def _source(db, suffix: str = "INTERNAL", *, visibility: str = "internal", project_id: str | None = None, domain: str = "finance"):
@@ -188,9 +189,9 @@ def test_source_snapshot_tamper_blocks_review_and_revocation_retracts_live_answe
 def test_answer_center_role_page_access(client):
     for email in ("owner@imperial.local", "finance@imperial.local", "project-manager@imperial.local", "sales@imperial.local", "marketing@imperial.local"):
         client.post("/logout")
-        login = client.post("/login", data={"email": email, "password": "Imperial2026!"}, follow_redirects=False)
+        login = client.post("/login", data={"email": email, "password": DEMO_PASSWORD}, follow_redirects=False)
         if login.status_code == 303:
             assert client.get("/answer-center").status_code == 200
     client.post("/logout")
-    assert client.post("/login", data={"email": "customer@imperial.local", "password": "Imperial2026!"}, follow_redirects=False).status_code == 303
+    assert client.post("/login", data={"email": "customer@imperial.local", "password": DEMO_PASSWORD}, follow_redirects=False).status_code == 303
     assert client.get("/answer-center").status_code == 403

@@ -1,9 +1,10 @@
 from sqlalchemy import select
 
 from app.models import User
+from app.seed import DEMO_PASSWORD
 
 
-PASSWORD = "Imperial2026!"
+PASSWORD = DEMO_PASSWORD
 
 
 def login(client, email: str, password: str = PASSWORD):

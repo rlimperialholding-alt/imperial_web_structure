@@ -14,8 +14,8 @@ from app.models import (
     ProjectRegistry,
     TaskRecord,
 )
+from app.seed import DEMO_PASSWORD
 
-DEMO_PASSWORD = "Imperial2026!"
 PROJECT_ID = "IMP-GOD-014"
 
 

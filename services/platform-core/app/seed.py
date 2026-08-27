@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import secrets
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -44,7 +46,47 @@ from .security import hash_password
 from .roles import ROLE_DEFINITIONS
 from .services.development_governance import seed_canonical_discoveries
 
-DEMO_PASSWORD = "Imperial2026!"
+DEMO_LOGIN_ENV = "CONTROL_CENTER_DEMO_LOGIN"
+# A szintetikus demo-belépés értéke nem szerepel a forrásban semmilyen
+# rekonstruálható formában: fix literál vagy abból összerakható rész NINCS.
+# Nem-production módban az érték vagy a CONTROL_CENTER_DEMO_LOGIN környezeti
+# változóból érkezik (nincs default), vagy futásonként/telepítésenként
+# biztonságosan generált, egyedi véletlen érték (secrets.token_urlsafe).
+# A biztonságot nem is ez a konstrukció adja -- az érték szándékosan ismert,
+# a login oldal ki is írja nem-production módban --, hanem a
+# demo_accounts_allowed() production kapu: production adatbázisba szintetikus
+# demo fiók egyetlen belépési ponton sem kerülhet.
+
+
+def demo_login_value(environ: Mapping[str, str] | None = None) -> str:
+    """A demo fiókok szintetikus belépési értéke.
+
+    Sorrend: (1) a ``CONTROL_CENTER_DEMO_LOGIN`` környezeti változó, ha nem
+    üres; (2) egyébként futásonként biztonságosan generált, egyedi véletlen
+    érték. Fix, forrásból rekonstruálható default nincs.
+    """
+    values = os.environ if environ is None else environ
+    override = values.get(DEMO_LOGIN_ENV, "").strip()
+    if override:
+        return override
+    return secrets.token_urlsafe(18)
+
+
+def demo_accounts_allowed() -> bool:
+    """Fail-closed kapu: production adatbázisba demo fiók nem kerülhet.
+
+    ``settings.demo_runtime_enabled`` a ``DEMO_FEATURES_ENABLED`` flaggel
+    production alatt is igazra kényszeríthető, és a worker belépési pontja
+    (``worker.initialize``) nem futtat ``settings.validate()`` ellenőrzést.
+    Ezért a tiltás itt, a felhasználás pontján is érvényesül: production
+    környezetben a válasz a flag értékétől függetlenül hamis.
+    """
+    if settings.is_production:
+        return False
+    return settings.demo_runtime_enabled
+
+
+DEMO_PASSWORD = demo_login_value(os.environ)
 # Synthetic accounts share one process-local hash so test database resets do
 # not repeat the intentionally expensive PBKDF2 operation twelve times.
 DEMO_PASSWORD_HASH = hash_password(DEMO_PASSWORD)
@@ -492,7 +534,7 @@ def seed_database(db: Session) -> None:
         )
         for role in ROLE_DEFINITIONS
     }
-    if not settings.demo_runtime_enabled:
+    if not demo_accounts_allowed():
         for user_to_disable in db.scalars(
             select(User).where(User.email.in_(tuple(demo_emails.values())))
         ).all():
@@ -516,6 +558,11 @@ def seed_database(db: Session) -> None:
                 demo_user.role = role.id
                 demo_user.active = True
                 demo_user.itep_subject_id = f"ITEP-DEMO-{role.id.upper()}"
+                # A futásonkénti érték változhat (env override vagy friss
+                # generálás), ezért a meglévő fiók hash-e is mindig a
+                # folyamat aktuális értékét követi: a login oldal által
+                # kiírt érték újraindítás után is működik.
+                demo_user.password_hash = DEMO_PASSWORD_HASH
     canonical_module_ids = {module[0] for module in MODULES}
     existing_modules = db.scalars(select(ModuleRegistry)).all()
     existing_by_key = {module.module_key: module for module in existing_modules}
