@@ -815,11 +815,16 @@ def _classify_additions(
     remaining = set(additions)
     classified: dict[str, int] = {}
     for path in sorted({filename for filename, _, _, _ in additions}):
-        entries = by_path.get(path, [])
-        if not entries:
-            continue
+        # Minden addition-pathra újraolvassuk a fájlt: egy olvashatatlan
+        # jelölt fail-closed ScanFailure marad, soha nem „üres bejegyzésként"
+        # csendben átugrott. A read hibája a hívóban fail-closed.
         lines = _read_text_for_classification(repo_root / path)
         document = "\n".join(lines)
+        entries = by_path.get(path, [])
+        if not entries:
+            # A dokumentum inkonzisztens (addition élő finding nélkül): az
+            # identitások osztályozatlanok maradnak -- fail-closed a hívóban.
+            continue
         for finding in entries:
             finding_type = str(finding.get("type", ""))
             hashed = str(finding.get("hashed_secret", ""))
