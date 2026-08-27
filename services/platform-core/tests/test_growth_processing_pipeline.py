@@ -863,7 +863,11 @@ def test_content_factory_quarantines_all_nineteen_brands(db, monkeypatch):
     assert all(row.release_token_hash is None for row in rows)
     plans = [json.loads(row.evidence_json)["delivery_plan"] for row in rows]
     assert sum(plan["facebook"]["mode"] == "LIVE_IMAGE_REQUIRED" for plan in plans) == 12
-    assert sum(plan["cms"]["mode"] == "LIVE_IMAGE_REQUIRED" for plan in plans) == 6
+    assert sum(plan["cms"]["mode"] == "LIVE_IMAGE_REQUIRED" for plan in plans) == 5
+    casa_plan = json.loads(
+        next(row for row in rows if row.brand_id == "Casa Moderna").evidence_json
+    )["delivery_plan"]
+    assert casa_plan["cms"]["mode"] == "DISABLED"
 
 
 def test_internal_handoff_is_fixed_recipient_and_idempotent(db, monkeypatch):

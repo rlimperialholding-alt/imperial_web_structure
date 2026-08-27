@@ -104,7 +104,6 @@ FACEBOOK_TEXT_ONLY_TARGETS = {
 CMS_LIVE_TARGETS = {
     "Bautica": "bautica",
     "Prefab": "prefab",
-    "Casa Moderna": "casa-moderna",
     "BauFreund": "baufreund",
     "Danish Fabrik": "danish-fabrik",
     "TimberHaus": "timberhaus",
@@ -352,8 +351,8 @@ def assert_policy_integrity() -> None:
     ]
     if len(page_targets) != 12 or len(set(page_targets)) != 12:
         raise RuntimeError("Facebook delivery scope must contain exactly 12 unique pages")
-    if len(CMS_LIVE_TARGETS) != 6:
-        raise RuntimeError("CMS delivery scope must contain exactly six sites")
+    if len(CMS_LIVE_TARGETS) != 5:
+        raise RuntimeError("CMS delivery scope must contain exactly five verified sites")
     if set(BRAND_CONTENT_FOCUS) != set(ACTIVE_CONTENT_BRANDS):
         raise RuntimeError("Every active content brand must have an explicit topic focus")
     if set(BRAND_PUBLICATION_CONTRACTS) != set(ACTIVE_CONTENT_BRANDS):
