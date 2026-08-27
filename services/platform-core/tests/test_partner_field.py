@@ -20,6 +20,7 @@ from app.models import (
     TaskRecord,
 )
 from app.security import hash_password
+from app.seed import DEMO_PARTNER_CODE
 from app.services.partner_field import ensure_project_evidence_quota
 
 
@@ -31,7 +32,7 @@ def seed_partner_scope(db):
     if not package:
         db.add(PMWorkPackage(work_package_id='WP-GOD-WALL', project_id='IMP-GOD-014', name='Falszerkezet és áthidalók', trade='Kőműves', assignee='Minta Falazó Kft.', status='in_progress', progress_pct=61))
     if not db.scalar(select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == 'PFA-GOD-DEMO')):
-        db.add(PartnerFieldAccess(access_id='PFA-GOD-DEMO', company_name='Minta Falazó Kft.', contact_name='Nagy László', project_id='IMP-GOD-014', work_package_id='WP-GOD-WALL', access_code_hash=hash_password('654321'), active=True, attendance_required=True, can_report_changes=True))
+        db.add(PartnerFieldAccess(access_id='PFA-GOD-DEMO', company_name='Minta Falazó Kft.', contact_name='Nagy László', project_id='IMP-GOD-014', work_package_id='WP-GOD-WALL', access_code_hash=hash_password(DEMO_PARTNER_CODE), active=True, attendance_required=True, can_report_changes=True))
         db.add_all([
             PartnerWorker(worker_id='PWR-GOD-001', access_id='PFA-GOD-DEMO', name='Nagy László', role='Brigádvezető', active=True),
             PartnerWorker(worker_id='PWR-GOD-002', access_id='PFA-GOD-DEMO', name='Kiss József', role='Kőműves', active=True),
@@ -40,7 +41,7 @@ def seed_partner_scope(db):
 
 
 def partner_login(client):
-    response = client.post('/partner-field/login', data={'access_code': '654321'}, follow_redirects=False)
+    response = client.post('/partner-field/login', data={'access_code': DEMO_PARTNER_CODE}, follow_redirects=False)
     assert response.status_code == 303
     return response
 

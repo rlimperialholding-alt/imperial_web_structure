@@ -72,6 +72,35 @@ def demo_login_value(environ: Mapping[str, str] | None = None) -> str:
     return secrets.token_urlsafe(18)
 
 
+DEMO_PARTNER_CODE_ENV = "CONTROL_CENTER_PARTNER_DEMO_CODE"
+# A szintetikus partneri terepi (field-PWA) belépőkód is ugyanazt a szerződést
+# követi, mint a demo-belépés: fix, forrásból rekonstruálható érték NINCS. Az
+# érték vagy a CONTROL_CENTER_PARTNER_DEMO_CODE környezeti változóból érkezik
+# (nincs default), vagy futásonként biztonságosan generált egyedi érték. A
+# szándékosan rövid, hatjegyű numerikus alak a belépő oldal beviteli
+# szerződését (numerikus billentyűzet, min. 6 jegy) őrzi meg; a biztonságot
+# nem az érték entrópiája adja -- a login oldal nem-production módban ki is
+# írja --, hanem a production kapu: production adatbázisba a szintetikus
+# hozzáférés egyetlen seed-útvonalon sem kerülhet.
+
+
+def demo_partner_code(environ: Mapping[str, str] | None = None) -> str:
+    """A szintetikus partneri terepi belépőkód.
+
+    Sorrend: (1) a ``CONTROL_CENTER_PARTNER_DEMO_CODE`` környezeti változó, ha
+    nem üres; (2) egyébként futásonként biztonságosan generált, egyedi
+    hatjegyű numerikus érték. Fix, forrásból rekonstruálható default nincs.
+    """
+    values = os.environ if environ is None else environ
+    override = values.get(DEMO_PARTNER_CODE_ENV, "").strip()
+    if override:
+        return override
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+DEMO_PARTNER_CODE = demo_partner_code(os.environ)
+
+
 def demo_accounts_allowed() -> bool:
     """Fail-closed kapu: production adatbázisba demo fiók nem kerülhet.
 
@@ -338,7 +367,7 @@ def seed_operations_demo(db: Session) -> None:
     db.add_all(orders)
     db.add(DeliveryNoteProjection(delivery_note_id="DN-GOD-101", order_id="ORD-GOD-101", project_id="IMP-GOD-014", note_number="SZL-2026-0719-01", source_url="https://drive.google.com/", received_at=now-timedelta(days=1), receiver="Projektvezető", item_summary="Falazóanyag", ordered_quantity=Decimal("36"), received_quantity=Decimal("34"), unit="raklap", actual_specification="Jóváhagyott típus", quality_status="accepted", damage_or_shortage="2 raklap hiány", plan_match="variance", document_status="incomplete", performance_declaration_status="pending", elog_evidence_status="pending"))
     db.add(MaterialLot(lot_id="LOT-GOD-101", project_id="IMP-GOD-014", delivery_note_id="DN-GOD-101", material="Falazóanyag", received_quantity=Decimal("34"), current_quantity=Decimal("21"), unit="raklap", storage_location="Északi depó", planned_use_location="Falszerkezet", actual_use_location="Falszerkezet", custodian="Falazó brigád", weather_protection="adequate", evidence_url="https://drive.google.com/", status="in_stock"))
-    partner_access = PartnerFieldAccess(access_id="PFA-GOD-DEMO", company_name="Minta Falazó Kft.", company_tax_number="12345678-2-41", contact_name="Nagy László brigádvezető", contact_phone="+36 30 000 0000", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", access_code_hash=hash_password("654321"), active=True, valid_from=now-timedelta(days=2), valid_until=now+timedelta(days=60), attendance_required=True, can_report_changes=True)
+    partner_access = PartnerFieldAccess(access_id="PFA-GOD-DEMO", company_name="Minta Falazó Kft.", company_tax_number="12345678-2-41", contact_name="Nagy László brigádvezető", contact_phone="+36 30 000 0000", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", access_code_hash=hash_password(DEMO_PARTNER_CODE), active=True, valid_from=now-timedelta(days=2), valid_until=now+timedelta(days=60), attendance_required=True, can_report_changes=True)
     db.add(partner_access)
     db.add_all([
         PartnerWorker(worker_id="PWR-GOD-001", access_id="PFA-GOD-DEMO", name="Nagy László", role="Brigádvezető", active=True),

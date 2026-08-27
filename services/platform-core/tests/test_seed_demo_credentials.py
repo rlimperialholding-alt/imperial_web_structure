@@ -23,10 +23,13 @@ from app import seed
 from app.models import User
 from app.seed import (
     DEMO_LOGIN_ENV,
+    DEMO_PARTNER_CODE,
+    DEMO_PARTNER_CODE_ENV,
     DEMO_PASSWORD,
     DEMO_PASSWORD_HASH,
     demo_accounts_allowed,
     demo_login_value,
+    demo_partner_code,
     seed_database,
 )
 
@@ -89,6 +92,56 @@ class TestSeedSourceHasNoCredentialLiteral:
     ) -> None:
         monkeypatch.setenv(DEMO_LOGIN_ENV, "ambient-value")
         assert demo_login_value({DEMO_LOGIN_ENV: "mapped-value"}) == "mapped-value"
+
+
+class TestPartnerDemoCodeSourceHasNoFixedLiteral:
+    """A korábbi fix partneri demókód forrásoldali megszűnésének bizonyítéka."""
+
+    def test_no_quoted_partner_code_literal_in_seed_source(self) -> None:
+        # A futásidejű érték idézőjelek közötti literálként sehol sem lehet a
+        # forrásban (a korábbi fix kód hash_password("...") alakban állt ott).
+        assert f'"{DEMO_PARTNER_CODE}"' not in SEED_SOURCE
+
+    def test_previous_fixed_partner_code_is_absent_from_seed_source(self) -> None:
+        # A korábbi, ismert fix demókód semmilyen formában nem maradhat.
+        assert "654321" not in SEED_SOURCE
+
+    def test_partner_code_is_generated_per_process_and_matches_the_ui_contract(self) -> None:
+        # A futásonkénti érték hatjegyű numerikus: a belépő oldal numerikus
+        # beviteli szerződését (inputmode=numeric, minlength=6) őrzi meg.
+        assert re.fullmatch(r"[0-9]{6}", DEMO_PARTNER_CODE)
+
+    def test_generated_partner_code_is_unique_per_run(self) -> None:
+        first = demo_partner_code({})
+        second = demo_partner_code({})
+        assert first != second
+        assert re.fullmatch(r"[0-9]{6}", first)
+        assert re.fullmatch(r"[0-9]{6}", second)
+
+    def test_partner_code_environment_override_replaces_the_generated_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(DEMO_PARTNER_CODE_ENV, "operator-supplied-partner-code")
+        assert demo_partner_code() == "operator-supplied-partner-code"
+
+    def test_blank_partner_code_override_falls_back_to_a_generated_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(DEMO_PARTNER_CODE_ENV, "  ")
+        value = demo_partner_code()
+        assert value != "operator-supplied-partner-code"
+        assert re.fullmatch(r"[0-9]{6}", value)
+
+    def test_partner_login_template_has_no_fixed_demo_code_literal(self, client) -> None:
+        """A belépő oldal nem írhat ki forrásból rekonstruálható fix kódot.
+
+        Nem-production módban a futásidejű érték jelenik meg; a korábbi fix
+        literál semmilyen formában nem szerepelhet a kimenetben.
+        """
+        response = client.get("/partner-field/login")
+        assert response.status_code == 200
+        assert DEMO_PARTNER_CODE in response.text
+        assert "654321" not in response.text
 
 
 class TestDemoSeedKeepsStoredHashesInSync:

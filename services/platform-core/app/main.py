@@ -256,7 +256,7 @@ from .security import (
     require_session_user,
     verify_password,
 )
-from .seed import DEMO_PASSWORD, seed_database
+from .seed import DEMO_PARTNER_CODE, DEMO_PASSWORD, seed_database
 from .session_write_guard import SessionWriteOriginMiddleware
 from .services.answer_center import (
     add_citation as add_answer_citation,
@@ -1236,6 +1236,9 @@ templates.env.filters["calendar_local"] = lambda v: (
 _WEEKDAYS_HU = ("hétfő", "kedd", "szerda", "csütörtök", "péntek", "szombat", "vasárnap")
 templates.env.filters["weekday_hu"] = lambda v: _WEEKDAYS_HU[v.weekday()] if v else "—"
 templates.env.globals["demo_password"] = None if settings.is_production else DEMO_PASSWORD
+templates.env.globals["partner_demo_code"] = (
+    None if settings.is_production else DEMO_PARTNER_CODE
+)
 templates.env.globals["can_access"] = can_access
 templates.env.globals["asset_version"] = __version__
 app.include_router(build_house_studio_router(templates))
