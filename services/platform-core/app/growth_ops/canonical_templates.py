@@ -646,13 +646,16 @@ class CanonicalFirstContactRegistry:
             )
 
         unresolved = (
-            "XY",
-            "CC",
-            "ZZ",
             "[Név]",
             "[egyedi leiratkozási link]",
             "[konkrét üzlet/hálózat/termékkör]",
         )
+        if recipient_type == "architect_office":
+            unresolved += (
+                "Tisztelt XY!",
+                "(XY, CC, ZZ)",
+                "Cégünk, az XY 1989",
+            )
         if any(marker in body for marker in unresolved):
             raise GrowthRegistryError("Canonical first-contact render has unresolved markers")
         subject = template.get("subject")
