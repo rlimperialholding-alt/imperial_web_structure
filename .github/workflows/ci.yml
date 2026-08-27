@@ -31,6 +31,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Generate ephemeral platform database secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p secrets
+          openssl rand -hex 32 > secrets/platform_db_password.txt
+          chmod 0400 secrets/platform_db_password.txt
+          sudo chown 10001:10001 secrets/platform_db_password.txt
+
       - name: Validate repository structure
         run: sh scripts/validate-structure.sh
 
@@ -38,16 +47,33 @@ jobs:
         run: docker compose config --quiet
 
       - name: Start staging stack
-        run: docker compose up --detach --wait --wait-timeout 60
+        run: docker compose up --detach --wait --wait-timeout 180
 
       - name: Smoke test portal and sites
         shell: bash
         run: |
           set -euo pipefail
 
-          curl --fail --silent --show-error \
+          portal_html="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/ >/dev/null
+            http://127.0.0.1:8080/)"
+
+          grep --quiet 'id="brand-select"' <<<"$portal_html"
+          grep --quiet 'id="page-select"' <<<"$portal_html"
+          grep --quiet 'id="review-panel"' <<<"$portal_html"
+          grep --quiet 'data-device="desktop"' <<<"$portal_html"
+          grep --quiet 'data-device="tablet"' <<<"$portal_html"
+          grep --quiet 'data-device="mobile"' <<<"$portal_html"
+
+          brands_json="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/data/brands.json)"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert len(data["brands"]) == 12' <<<"$brands_json"
+
+          artifacts_json="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/data/artifacts.json)"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False; assert sum(len(x["pages"]) for x in data["brands"].values()) == 50' <<<"$artifacts_json"
 
           sites=(
             imperial
@@ -65,15 +91,46 @@ jobs:
           )
 
           for site in "${sites[@]}"; do
-            curl --fail --silent --show-error \
+            site_html="$(curl --fail --silent --show-error \
               --header "Host: ${site}.localhost" \
-              http://127.0.0.1:8080/ \
-              | grep --quiet "Staging környezet"
+              http://127.0.0.1:8080/)"
+            grep --quiet 'name="robots" content="noindex,nofollow"' <<<"$site_html"
           done
 
-          curl --fail --silent --show-error \
-            http://127.0.0.1:8080/healthz \
-            | grep --quiet "^ok$"
+          imperial_html="$(curl --fail --silent --show-error \
+            --header "Host: imperial.localhost" \
+            http://127.0.0.1:8080/)"
+          for section_id in hero trust portfolio capabilities projects sustainability news contact; do
+            grep --quiet "id=\"${section_id}\"" <<<"$imperial_html"
+          done
+
+          preview_html="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            'http://127.0.0.1:8080/site-preview/imperial/?review=1')"
+          grep --quiet 'id="hero"' <<<"$preview_html"
+
+          drive_previews=(
+            "site-preview/imperial/drive/venture/venture-studio.html?review=1"
+            "site-preview/bautica/drive/b2b-belsoepiteszet-kivitelezes.html?review=1"
+            "site-preview/prefab/drive/knowledge/osszes-tudasoldal.html?review=1"
+            "site-preview/budapesti-magasepito-vallalat/drive/index.html?review=1"
+          )
+
+          for preview in "${drive_previews[@]}"; do
+            drive_preview_html="$(curl --fail --silent --show-error \
+              --header "Host: localhost" \
+              "http://127.0.0.1:8080/${preview}")"
+            grep --quiet '/assets/review-bridge.js' <<<"$drive_preview_html"
+          done
+
+          imperial_data_json="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/assets/data/imperial-home.json)"
+          python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False' <<<"$imperial_data_json"
+
+          health_response="$(curl --fail --silent --show-error \
+            http://127.0.0.1:8080/healthz)"
+          grep --quiet "^ok$" <<<"$health_response"
 
       - name: Show container logs on failure
         if: failure()

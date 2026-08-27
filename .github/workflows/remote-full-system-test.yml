@@ -1,0 +1,65 @@
+name: Remote full-system test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: imperial-remote-test
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-test:
+    runs-on: [self-hosted, linux, x64, imperial-test]
+    environment: imperial-test
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate host prerequisites
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker version
+          docker compose version
+          test -r /opt/imperial-intelligence/secrets/remote-test.env
+
+      - name: Build and start complete test environment
+        shell: bash
+        run: bash deploy/remote-test/start.sh
+
+      - name: Run full health gate
+        shell: bash
+        run: bash deploy/remote-test/healthcheck.sh
+
+      - name: Test all modules and integrated flows
+        shell: bash
+        run: bash deploy/remote-test/functional-test.sh
+
+      - name: Scan runtime images
+        shell: bash
+        run: bash deploy/remote-test/security-scan.sh
+
+      - name: Create verified database backup
+        shell: bash
+        run: bash deploy/remote-test/backup.sh
+
+      - name: Collect diagnostics after failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          env_file=/opt/imperial-intelligence/secrets/remote-test.env
+          docker compose --env-file "$env_file" --profile digital-pm ps
+          docker compose --env-file "$env_file" --profile digital-pm \
+            logs --no-color --tail=200
+          docker compose \
+            --project-name imperial-intelligence-test \
+            --env-file "$env_file" \
+            -f docker-compose.github-test.yml ps
+          docker compose \
+            --project-name imperial-intelligence-test \
+            --env-file "$env_file" \
+            -f docker-compose.github-test.yml logs --no-color --tail=200

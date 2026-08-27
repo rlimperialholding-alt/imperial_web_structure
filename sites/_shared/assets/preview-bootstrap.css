@@ -1,0 +1,387 @@
+/*
+ * Small, local compatibility layer for the Drive prototypes that were authored
+ * with Bootstrap utility class names. It intentionally contains only the layout
+ * primitives used by the imported previews, so no CDN is needed at runtime.
+ */
+
+:root {
+  --preview-gutter: 1.5rem;
+}
+
+.container {
+  width: min(calc(100% - 2rem), 1140px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-right: calc(var(--preview-gutter) * -0.5);
+  margin-left: calc(var(--preview-gutter) * -0.5);
+}
+
+.row > * {
+  width: 100%;
+  max-width: 100%;
+  padding-right: calc(var(--preview-gutter) * 0.5);
+  padding-left: calc(var(--preview-gutter) * 0.5);
+}
+
+.g-3 {
+  --preview-gutter: 1rem;
+  row-gap: 1rem;
+}
+
+.g-4 {
+  --preview-gutter: 1.5rem;
+  row-gap: 1.5rem;
+}
+
+.g-5 {
+  --preview-gutter: 3rem;
+  row-gap: 3rem;
+}
+
+.col-6 {
+  flex: 0 0 auto;
+  width: 50%;
+}
+
+.col-12 {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.d-flex {
+  display: flex !important;
+}
+
+.d-grid {
+  display: grid !important;
+}
+
+.flex-wrap {
+  flex-wrap: wrap !important;
+}
+
+.flex-column {
+  flex-direction: column !important;
+}
+
+.align-items-center {
+  align-items: center !important;
+}
+
+.align-items-end {
+  align-items: flex-end !important;
+}
+
+.justify-content-between {
+  justify-content: space-between !important;
+}
+
+.text-center {
+  text-align: center !important;
+}
+
+.text-white {
+  color: #fff !important;
+}
+
+.text-white-50 {
+  color: rgb(255 255 255 / 58%) !important;
+}
+
+.text-dark {
+  color: #17202a !important;
+}
+
+.text-secondary {
+  color: #63707a !important;
+}
+
+.small {
+  font-size: 0.875em;
+}
+
+.opacity-75 {
+  opacity: 0.75 !important;
+}
+
+.bg-white {
+  background: #fff !important;
+}
+
+.border-bottom {
+  border-bottom: 1px solid rgb(15 28 42 / 12%) !important;
+}
+
+.sticky-top {
+  position: sticky;
+  z-index: 1020;
+  top: 0;
+}
+
+.ms-auto {
+  margin-left: auto !important;
+}
+
+.mt-auto {
+  margin-top: auto !important;
+}
+
+.mt-2 {
+  margin-top: 0.5rem !important;
+}
+
+.mt-3 {
+  margin-top: 1rem !important;
+}
+
+.mt-4 {
+  margin-top: 1.5rem !important;
+}
+
+.mb-2 {
+  margin-bottom: 0.5rem !important;
+}
+
+.mb-0 {
+  margin-bottom: 0 !important;
+}
+
+.mb-3 {
+  margin-bottom: 1rem !important;
+}
+
+.mb-4 {
+  margin-bottom: 1.5rem !important;
+}
+
+.mb-5 {
+  margin-bottom: 3rem !important;
+}
+
+.p-4 {
+  padding: 1.5rem !important;
+}
+
+.p-5 {
+  padding: 3rem !important;
+}
+
+.py-5 {
+  padding-top: 3rem !important;
+  padding-bottom: 3rem !important;
+}
+
+.gap-3 {
+  gap: 1rem !important;
+}
+
+.gap-2 {
+  gap: 0.5rem !important;
+}
+
+.fw-bold {
+  font-weight: 700 !important;
+}
+
+.display-3,
+.display-6 {
+  margin-top: 0;
+  line-height: 1.12;
+}
+
+.display-3 {
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+}
+
+.display-6 {
+  font-size: clamp(2rem, 4vw, 3.2rem);
+}
+
+.lead {
+  font-size: 1.2rem;
+  font-weight: 400;
+  line-height: 1.65;
+}
+
+.card {
+  border-radius: 0.6rem;
+  background: #fff;
+}
+
+.btn {
+  min-height: 2.5rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn-lg {
+  min-height: 3rem;
+  padding: 0.8rem 1.25rem;
+  font-size: 1.05rem;
+}
+
+.btn-dark {
+  color: #fff;
+  background: #17202a;
+}
+
+.btn-outline-light {
+  border-color: rgb(255 255 255 / 72%);
+  color: #fff;
+}
+
+.form-control,
+.form-select {
+  width: 100%;
+  border: 1px solid #d7dce1;
+  border-radius: 0.45rem;
+  color: #17202a;
+  background: #fff;
+  font: inherit;
+}
+
+.form-control-lg {
+  min-height: 3rem;
+  font-size: 1rem;
+}
+
+.badge {
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.text-bg-warning {
+  color: #392b04;
+  background: #f0c55b;
+}
+
+textarea.form-control {
+  resize: vertical;
+}
+
+.navbar {
+  min-height: 4.5rem;
+}
+
+.navbar > .container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.navbar-brand {
+  color: inherit;
+  text-decoration: none;
+}
+
+.navbar-dark .navbar-brand {
+  color: #fff;
+}
+
+.navbar-nav {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  list-style: none;
+}
+
+.nav-link {
+  padding: 0.55rem 0.75rem;
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.navbar-toggler {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .col-md-4 {
+    flex: 0 0 auto;
+    width: 33.333333%;
+  }
+
+  .col-md-6 {
+    flex: 0 0 auto;
+    width: 50%;
+  }
+}
+
+@media (min-width: 992px) {
+  .col-lg-4 {
+    flex: 0 0 auto;
+    width: 33.333333%;
+  }
+
+  .col-lg-5 {
+    flex: 0 0 auto;
+    width: 41.666667%;
+  }
+
+  .col-lg-6 {
+    flex: 0 0 auto;
+    width: 50%;
+  }
+
+  .col-lg-7 {
+    flex: 0 0 auto;
+    width: 58.333333%;
+  }
+
+  .col-lg-8 {
+    flex: 0 0 auto;
+    width: 66.666667%;
+  }
+
+  .flex-lg-row {
+    flex-direction: row !important;
+  }
+
+  .text-lg-end {
+    text-align: right !important;
+  }
+
+  .ms-lg-3 {
+    margin-left: 1rem !important;
+  }
+
+  .mb-lg-0 {
+    margin-bottom: 0 !important;
+  }
+}
+
+@media (max-width: 991px) {
+  .navbar > .container {
+    flex-wrap: wrap;
+  }
+
+  .navbar-collapse {
+    width: 100%;
+  }
+
+  .navbar-nav {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

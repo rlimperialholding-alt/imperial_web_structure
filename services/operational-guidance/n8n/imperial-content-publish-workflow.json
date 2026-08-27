@@ -1,0 +1,60 @@
+{
+  "name": "Imperial Content Approval to Publish",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "imperial-content-approved",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook",
+      "name": "Approved Content Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.IMPERIAL_HUB_URL + '/api/v1/publications'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.IMPERIAL_HUB_SERVICE_TOKEN}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($json.body)}}"
+      },
+      "id": "publish",
+      "name": "Create Publication Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({accepted: true, publication: $json})}}"
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [780, 300]
+    }
+  ],
+  "connections": {
+    "Approved Content Webhook": {
+      "main": [[{"node": "Create Publication Job", "type": "main", "index": 0}]]
+    },
+    "Create Publication Job": {
+      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "35c8c973-e45f-4dde-b990-0b2c8fb85d31"
+}

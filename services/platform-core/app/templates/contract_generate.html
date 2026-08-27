@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Szerződéscsomag | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">CONTRACT GENERATOR v0.4 ADAPTER</span><h1>Szerződéscsomag generálása</h1><p>A generálást a változatlan, hash-ellenőrzött kanonikus Contract Generator végzi.</p></div><a class="button" href="/commercial">Vissza</a></div>
+{% if error %}<div class="alert critical"><b>Generálás blokkolva</b><div>{{ error }}</div></div>{% endif %}
+{% if result %}<div class="alert success"><b>A csomag elkészült</b><div>{{ result.contract_number }} · SHA-256: <span class="mono">{{ result.zip_sha256 }}</span></div></div>{% endif %}
+<section class="panel">
+<form method="post" action="/commercial/contracts/generate" class="stack-form">
+<label>Szerződés bemeneti JSON<textarea name="payload_json" rows="30" spellcheck="false" class="code-input">{{ payload_json }}</textarea></label>
+<div class="form-actions"><button class="button primary" type="submit">Ellenőrzés és generálás</button><span class="form-note">Már létező szerződésszám nem írható felül. Új verziót a forrásmodulban kell létrehozni.</span></div>
+</form>
+</section>
+{% endblock %}

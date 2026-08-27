@@ -1,0 +1,143 @@
+{
+  "pilotId": "CQ-PILOT-IMPERIAL-V1",
+  "brandId": "imperial",
+  "containsProductionClaims": false,
+  "requiresOwnerApprovalBeforePublication": true,
+  "assets": [
+    {
+      "id": "homepage-hero-sections",
+      "assetType": "homepage",
+      "channel": "web",
+      "blocks": 4,
+      "layout": "editorial-hero-proof-journey-ledger",
+      "title": "Négy döntési pont, amely már a szerződés előtt láthatóvá teszi az építkezést",
+      "angle": "A főoldal a bizonytalanság helyett a döntési sorrendet, a szerződéses keretet, a dokumentált ellenőrzést és a következő mérnöki egyeztetést mutatja meg."
+    },
+    {
+      "id": "house-plan-product",
+      "assetType": "house_product",
+      "channel": "web",
+      "blocks": 3,
+      "layout": "plan-data-scope-comparison",
+      "title": "A 126 m²-es ház nem egy látványkép: ellenőrizhető döntési csomag",
+      "angle": "A termékoldal a bruttó alapterületet, a tételes műszaki tartalmat és a döntés előtt tisztázandó feltételeket rendezi egymás mellé."
+    },
+    {
+      "id": "campaign-landing",
+      "assetType": "landing",
+      "channel": "web",
+      "blocks": 3,
+      "layout": "question-bridge-evidence-cta",
+      "title": "Mennyibe kerül, meddig tart, és pontosan mi kerül a szerződésbe?",
+      "angle": "A landing egyetlen konzultációs döntésre vezeti az érdeklődőt, miközben a költség-, idő- és scope-kérdést bizonyítékkal válaszolja meg."
+    },
+    {
+      "id": "meta-01-cost-control",
+      "assetType": "meta_ad",
+      "channel": "meta",
+      "blocks": 2,
+      "layout": "ledger-visual-short-proof",
+      "title": "Az építkezési költség nem a végén kezd érdekes lenni",
+      "angle": "A kreatív a költségváltozás kockázatát a szerződés előtti tételes scope-pal és ellenőrizhető ajánlati verzióval oldja."
+    },
+    {
+      "id": "meta-02-deadline",
+      "assetType": "meta_ad",
+      "channel": "meta",
+      "blocks": 2,
+      "layout": "calendar-contrast-milestone",
+      "title": "A határidő akkor ér valamit, ha a feltételei is láthatók",
+      "angle": "A kreatív nem ígér automatikus dátumot; megmutatja, hogyan kapcsolódik az ütemezés az aktív feltételekhez és mérföldkövekhez."
+    },
+    {
+      "id": "meta-03-scope",
+      "assetType": "meta_ad",
+      "channel": "meta",
+      "blocks": 2,
+      "layout": "scope-map-inclusion-exclusion",
+      "title": "Mit tartalmaz az ajánlat, és mi az, amit külön kell eldönteni?",
+      "angle": "A kreatív a homályos csomagnevek helyett a benne foglalt és kizárt tételek tisztázására építi a következő lépést."
+    },
+    {
+      "id": "meta-04-proof",
+      "assetType": "meta_ad",
+      "channel": "meta",
+      "blocks": 2,
+      "layout": "document-closeup-claim-proof",
+      "title": "Egy állítás csak addig erős, amíg mögötte van a bizonyíték",
+      "angle": "A kreatív a szerződéses bizonyítékot teszi főszereplővé, és nem használ forrás nélküli felsőfokot vagy garanciát."
+    },
+    {
+      "id": "meta-05-decision",
+      "assetType": "meta_ad",
+      "channel": "meta",
+      "blocks": 2,
+      "layout": "decision-tree-single-path",
+      "title": "Előbb tisztázza a kereteket, utána válasszon házat",
+      "angle": "A kreatív a döntési sorrendet fordítja meg: előbb keret, feltétel és műszaki tartalom, csak utána végleges konfiguráció."
+    },
+    {
+      "id": "meta-06-family",
+      "assetType": "meta_ad",
+      "channel": "meta",
+      "blocks": 2,
+      "layout": "family-scene-contract-overlay",
+      "title": "A nyugodt költözés a jó kérdésekkel kezdődik",
+      "angle": "A kreatív a családi élethelyzetet a szerződés előtt tisztázott költség-, idő- és tartalmi kérdésekhez köti, érzelmi túlzás nélkül."
+    },
+    {
+      "id": "meta-07-engineering",
+      "assetType": "meta_ad",
+      "channel": "meta",
+      "blocks": 2,
+      "layout": "engineer-plan-annotated-callout",
+      "title": "A mérnöki konzultáció célja nem a rábeszélés, hanem a tisztázás",
+      "angle": "A kreatív pontosan elmondja, milyen adatokat néznek át, milyen kérdésekre ad választ a beszélgetés, és mi nem minősül ajánlatnak."
+    },
+    {
+      "id": "google-rsa",
+      "assetType": "google_rsa",
+      "channel": "google_ads",
+      "blocks": 2,
+      "layout": "intent-headlines-proof-description",
+      "title": "Fix keretekkel tervezhető házépítés – kérjen tételes mérnöki áttekintést",
+      "angle": "Az RSA a keresési szándékot a scope, az aktív feltételek és a konzultáció konkrét eredménye felől fogja meg, ismétlődő címsorok nélkül."
+    },
+    {
+      "id": "email-01-context",
+      "assetType": "followup_email",
+      "channel": "email",
+      "blocks": 2,
+      "layout": "personal-context-open-question",
+      "title": "Az első egyeztetés előtt ezt a három adatot érdemes előkészítenie",
+      "angle": "Az első e-mail az élethelyzetet, a telek státuszát és a kívánt döntési időpontot kéri be, hogy a konzultáció ne általános bemutatkozás legyen."
+    },
+    {
+      "id": "email-02-evidence",
+      "assetType": "followup_email",
+      "channel": "email",
+      "blocks": 2,
+      "layout": "evidence-note-scope-checklist",
+      "title": "Miből derül ki, hogy két ajánlat valóban összehasonlítható?",
+      "angle": "A második e-mail egy rövid ellenőrzőlistával különíti el az árat, a készültséget, a feltételt és a műszaki tartalmat."
+    },
+    {
+      "id": "email-03-next-step",
+      "assetType": "followup_email",
+      "channel": "email",
+      "blocks": 2,
+      "layout": "decision-summary-calendar-cta",
+      "title": "Ha készen áll a következő döntésre, ezt fogjuk áttekinteni",
+      "angle": "A harmadik e-mail összefoglalja a mérnöki konzultáció napirendjét, az eredményét és azt, hogy a beszélgetés önmagában nem jelent kötelezettségvállalást."
+    },
+    {
+      "id": "chatbot-objections",
+      "assetType": "chatbot",
+      "channel": "chatbot",
+      "blocks": 3,
+      "layout": "guided-question-objection-branch",
+      "title": "Melyik bizonytalanságot tisztázzuk először: ár, idő vagy műszaki tartalom?",
+      "angle": "A chatbot nyitó kérdései nem próbálnak ajánlatot lezárni; az aktív forrásokra mutatnak, jelzik a bizonytalanságot, és indokolt esetben emberhez eszkalálnak."
+    }
+  ]
+}

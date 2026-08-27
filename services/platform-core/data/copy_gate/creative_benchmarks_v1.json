@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "benchmarks": [
+    {
+      "benchmark_id": "prefab-facebook-etalon-v1",
+      "brand_id": "prefab",
+      "asset_type": "facebook_ad_square",
+      "status": "approved_quality_reference",
+      "principles": [
+        "A kép, a színvilág és a szöveg egyetlen világos értékígéretet szolgál.",
+        "A vizuál márkaspecifikus, modern és azonnal felismerhető.",
+        "A szöveg professzionális direct-response minőségű, természetes magyar nyelvű.",
+        "A forrásanyag ténykorlát, nem kötelező szó szerinti szövegsablon.",
+        "A benchmark vizuális elrendezése nem másolható más márkákra."
+      ],
+      "copy_modes": [
+        "verbatim_source",
+        "source_adaptation",
+        "original_concept"
+      ],
+      "minimum_professional_copy_quality_score": 8.5,
+      "maximum_verbatim_share_per_creative_set": 0.5,
+      "new_factual_claim_policy": "human_fact_review_required"
+    }
+  ]
+}

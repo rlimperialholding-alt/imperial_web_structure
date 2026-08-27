@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "check_count": 4,
+  "failed_count": 0,
+  "checks": [
+    {
+      "name": "configuration",
+      "ok": true,
+      "detail": "Configuration is valid",
+      "environment": "development"
+    },
+    {
+      "name": "operational_catalog",
+      "ok": true,
+      "detail": "99/99 Process Card and checklist mapping is consistent",
+      "path": "/mnt/data/imperial-intelligence-integration-hub-v0.6.0/config/operational-process-catalog-v1.0.json",
+      "processes": 99,
+      "templates": 99,
+      "roles": [
+        "Marketinges",
+        "Projektmenedzser",
+        "Pénzügyes",
+        "Értékesítő",
+        "Ügyvezető"
+      ]
+    },
+    {
+      "name": "runtime_storage",
+      "ok": true,
+      "detail": "Runtime storage is writable",
+      "paths": [
+        "/mnt/data/imperial-intelligence-integration-hub-v0.6.0/runtime/process_cards",
+        "/mnt/data/imperial-intelligence-integration-hub-v0.6.0/runtime/published_process_cards",
+        "/mnt/data/imperial-intelligence-integration-hub-v0.6.0/runtime/checklists"
+      ]
+    },
+    {
+      "name": "google_service_account",
+      "ok": true,
+      "detail": "Google publication features are disabled"
+    }
+  ]
+}

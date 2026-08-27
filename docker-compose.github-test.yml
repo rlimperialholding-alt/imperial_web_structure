@@ -1,0 +1,296 @@
+name: imperial-intelligence-test
+
+services:
+  crm-state-init:
+    image: ${CRM_TEST_IMAGE:-imperial-complete-test-crm:local}
+    pull_policy: never
+    command: ["chown", "-R", "1000:1000", "/app/.wrangler/state"]
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - ${CRM_TEST_STATE_PATH:-crm-local-state}:/app/.wrangler/state
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+
+  crm:
+    image: ${CRM_TEST_IMAGE:-imperial-complete-test-crm:local}
+    build:
+      context: ./services/imperial-sales-crm
+      dockerfile: Dockerfile.github-test
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+        NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+      secrets: [build_ca]
+    environment:
+      NODE_ENV: test
+      # Local corporate-proxy escape hatch. Keep empty in normal environments.
+      NODE_TLS_REJECT_UNAUTHORIZED: ${CRM_NODE_TLS_REJECT_UNAUTHORIZED:-}
+      CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-test}
+      CRM_ADMIN_EMAIL: ${CRM_ADMIN_EMAIL:-developer@terminal.local}
+      CRM_MIGRATION_TOKEN: ${CRM_MIGRATION_TOKEN:?required}
+      CRM_PROJECT_DOCUMENT_QUOTA_BYTES: ${CRM_PROJECT_DOCUMENT_QUOTA_BYTES:-5368709120}
+      ITEP_CRM_READ_TOKEN: ${ITEP_CRM_READ_TOKEN:?required}
+      ITEP_BASE_URL: http://itep-api:3000
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CRM_TEST_PORT:-8787}:8787"
+    volumes:
+      # Set CRM_TEST_STATE_PATH to an existing Miniflare state directory to
+      # exercise the stack against an approved local dataset without copying it.
+      - ${CRM_TEST_STATE_PATH:-crm-local-state}:/app/.wrangler/state
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      crm-state-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+  hub-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: imperial
+      POSTGRES_PASSWORD: ${HUB_POSTGRES_PASSWORD:-imperial-test-password}
+      POSTGRES_DB: imperial
+    volumes:
+      - hub-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imperial -d imperial"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  hub-migrate:
+    image: ${HUB_TEST_IMAGE:-imperial-complete-test-hub:local}
+    build:
+      context: ./services/operational-guidance
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    command: alembic upgrade head
+    environment: &hub-env
+      APP_ENV: test
+      APP_VERSION: 0.9.0-test
+      DATABASE_URL: postgresql+psycopg://imperial:${HUB_POSTGRES_PASSWORD:-imperial-test-password}@hub-postgres:5432/imperial
+      REDIS_URL: redis://redis:6379/0
+      API_ADMIN_TOKEN: ${HUB_API_ADMIN_TOKEN:-test-admin-token-not-for-production}
+      AUTO_CREATE_DB_SCHEMA: "false"
+      STARTUP_VALIDATE_CONFIG: "true"
+      OPERATIONAL_GUIDANCE_ENABLED: "false"
+      READINESS_CHECK_REDIS: "true"
+      ITEP_ENABLED: "true"
+      ITEP_BASE_URL: http://itep-api:3000
+      ITEP_IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
+      ITEP_CRM_CONNECTOR_ID: crm-live
+    depends_on:
+      hub-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  hub-api:
+    image: ${HUB_TEST_IMAGE:-imperial-complete-test-hub:local}
+    build:
+      context: ./services/operational-guidance
+      args:
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+      secrets: [build_ca]
+    environment: *hub-env
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /app/runtime:size=64m,uid=10001,gid=10001,mode=0700
+      - /tmp:size=32m,uid=10001,gid=10001,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:${HUB_TEST_PORT:-8000}:8000"
+    depends_on:
+      hub-migrate:
+        condition: service_completed_successfully
+      itep-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  itep-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: itep
+      POSTGRES_PASSWORD: ${ITEP_POSTGRES_PASSWORD:-itep-test-password}
+      POSTGRES_DB: itep
+    volumes:
+      - itep-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itep -d itep"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  mock-external:
+    image: ${MOCK_TEST_IMAGE:-imperial-complete-test-mock-external:local}
+    build: ./services/operational-guidance/test-env/mock-services
+    ports:
+      - "127.0.0.1:${MOCK_TEST_PORT:-9010}:9010"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9010/health', timeout=3)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  itep-migrate:
+    image: ${ITEP_BUILD_TEST_IMAGE:-imperial-complete-test-itep-build:local}
+    build:
+      context: ./services/itep-core
+      target: build
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+        NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+      secrets: [build_ca]
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             node prisma/seed.mjs"
+    environment: &itep-env
+      NODE_ENV: test
+      DATABASE_URL: postgresql://itep:${ITEP_POSTGRES_PASSWORD:-itep-test-password}@itep-postgres:5432/itep?schema=public
+      DEFAULT_ORGANIZATION_ID: imperial-holding
+      DEFAULT_ASSIGNEE_ID: human-anne
+      DEFAULT_ESCALATION_PERSON_ID: director
+      DEFAULT_CONTACT_EMAIL: test@imperial.local
+      IDENTITY_SHARED_SECRET: ${ITEP_IDENTITY_SHARED_SECRET:?required}
+      AUTH_TOKEN_PEPPER: ${AUTH_TOKEN_PEPPER:-test-auth-token-pepper-not-for-production-0001}
+      AUTH_DATA_ENCRYPTION_KEY: ${AUTH_DATA_ENCRYPTION_KEY:-test-auth-encryption-key-not-for-production-0001}
+      AUTH_BOOTSTRAP_TOKEN: ${AUTH_BOOTSTRAP_TOKEN:-test-bootstrap-token-not-for-production-0001}
+      AUTH_COOKIE_SECURE: "false"
+      BILLINGO_API_BASE_URL: http://mock-external:9010
+      META_GRAPH_API_BASE_URL: http://mock-external:9010
+      META_GRAPH_API_VERSION: v25.0
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-test-whatsapp-app-secret-not-for-production-0001}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-test-whatsapp-verify-token}
+      WHATSAPP_GRAPH_API_BASE_URL: http://mock-external:9010
+      WHATSAPP_GRAPH_API_VERSION: v25.0
+      WHATSAPP_DATA_ENCRYPTION_KEY: ${WHATSAPP_DATA_ENCRYPTION_KEY:-test-whatsapp-data-key-not-for-production-0001}
+      WHATSAPP_CONNECTOR_ID: whatsapp-live
+      WHATSAPP_PHONE_NUMBER_ID: "100000000001"
+      GOOGLE_ADS_API_BASE_URL: http://mock-external:9010
+      GOOGLE_ADS_API_VERSION: v25
+      GOOGLE_OAUTH_TOKEN_URL: http://mock-external:9010/oauth2/token
+      BANK_API_BASE_URL: http://mock-external:9010
+      CRM_API_BASE_URL: http://crm:8787
+      CRM_ACTIVITIES_PATH: /api/integrations/itep/activities
+      CRM_AUTH_HEADER: X-ITEP-Token
+      CRM_AUTH_SCHEME: ""
+      CRM_WORKSPACE_QUERY_PARAMETER: workspace
+      CRM_WORKSPACE_ID: ${CRM_WORKSPACE_ID:-imperial-test}
+      ITEP_CRM_CONNECTOR_ID: crm-live
+      BUSINESS_CONNECTORS_MODE: read-only
+      BILLINGO_CONNECTOR_ID: billingo-live
+      BILLINGO_EXTERNAL_ACCOUNT_ID: all
+      META_ADS_CONNECTOR_ID: meta-ads-live
+      META_ADS_AD_ACCOUNT_ID: act_mock
+      GOOGLE_ADS_CONNECTOR_ID: google-ads-live
+      GOOGLE_ADS_CUSTOMER_ID: "1234567890"
+      CONNECTOR_ACCESS_TOKENS_JSON: '{"crm-live":"${ITEP_CRM_READ_TOKEN:?required}"}'
+      CONNECTOR_ACCESS_TOKEN_BILLINGO_LIVE: synthetic-billingo-read-token
+      CONNECTOR_ACCESS_TOKEN_META_ADS_LIVE: synthetic-meta-read-token
+      CONNECTOR_ACCESS_TOKEN_GOOGLE_ADS_LIVE: '{"developerToken":"synthetic-developer-token","accessToken":"synthetic-google-oauth-token"}'
+      CONNECTOR_ACCESS_TOKEN_WHATSAPP_LIVE: synthetic-whatsapp-system-user-token
+      CONNECTOR_SYNC_INTERVAL_MS: "3600000"
+      INTEGRATION_RETRY_INTERVAL_MS: "30000"
+    depends_on:
+      itep-postgres:
+        condition: service_healthy
+      mock-external:
+        condition: service_healthy
+      crm:
+        condition: service_healthy
+
+  itep-api:
+    image: ${ITEP_RUNTIME_TEST_IMAGE:-imperial-complete-test-itep-runtime:local}
+    build:
+      context: ./services/itep-core
+      target: runtime
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+        NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+      secrets: [build_ca]
+    command: ["node", "dist/src/api/main.js"]
+    user: node
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,uid=1000,gid=1000,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment: *itep-env
+    ports:
+      - "127.0.0.1:${ITEP_TEST_PORT:-3000}:3000"
+    depends_on:
+      itep-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  itep-worker:
+    image: ${ITEP_RUNTIME_TEST_IMAGE:-imperial-complete-test-itep-runtime:local}
+    build:
+      context: ./services/itep-core
+      target: runtime
+      args:
+        NPM_STRICT_SSL: ${NPM_STRICT_SSL:-true}
+        NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-}
+      secrets: [build_ca]
+    command: ["node", "dist/src/workers/main.js"]
+    user: node
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,uid=1000,gid=1000,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment: *itep-env
+    depends_on:
+      itep-migrate:
+        condition: service_completed_successfully
+
+volumes:
+  crm-local-state:
+  hub-postgres-data:
+  itep-postgres-data:
+
+secrets:
+  build_ca:
+    file: ${BUILD_CA_CERT_FILE:-./docker/no-extra-ca.pem}

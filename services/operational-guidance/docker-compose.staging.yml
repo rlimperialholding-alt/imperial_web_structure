@@ -1,0 +1,68 @@
+services:
+  postgres:
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-imperial}
+
+  redis:
+    restart: unless-stopped
+
+  migrate:
+    environment:
+      APP_ENV: staging
+      AUTO_CREATE_DB_SCHEMA: "false"
+
+  api:
+    restart: unless-stopped
+    environment:
+      APP_ENV: staging
+      AUTO_CREATE_DB_SCHEMA: "false"
+      STARTUP_VALIDATE_CONFIG: "true"
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  worker:
+    restart: unless-stopped
+    environment:
+      APP_ENV: staging
+      AUTO_CREATE_DB_SCHEMA: "false"
+      STARTUP_VALIDATE_CONFIG: "true"
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  beat:
+    restart: unless-stopped
+    environment:
+      APP_ENV: staging
+      AUTO_CREATE_DB_SCHEMA: "false"
+      STARTUP_VALIDATE_CONFIG: "true"
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  minio:
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+
+  directus:
+    restart: unless-stopped
+    environment:
+      KEY: ${DIRECTUS_KEY:?DIRECTUS_KEY is required}
+      SECRET: ${DIRECTUS_SECRET:?DIRECTUS_SECRET is required}
+      ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:?DIRECTUS_ADMIN_EMAIL is required}
+      ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:?DIRECTUS_ADMIN_PASSWORD is required}
+      DB_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+
+  n8n:
+    restart: unless-stopped
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY is required}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}

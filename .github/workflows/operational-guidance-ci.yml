@@ -1,0 +1,83 @@
+name: Operational Guidance CI
+
+on:
+  pull_request:
+    branches: [staging]
+    paths:
+      - "services/operational-guidance/**"
+      - "docs/integrations/operational-guidance-v0.8.1.md"
+      - ".github/workflows/operational-guidance-ci.yml"
+  push:
+    branches:
+      - "agent/operational-guidance-v0.8.1"
+    paths:
+      - "services/operational-guidance/**"
+      - "docs/integrations/operational-guidance-v0.8.1.md"
+      - ".github/workflows/operational-guidance-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operational-guidance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifest-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify committed integration manifest
+        run: >-
+          python services/operational-guidance/tools/verify_integration_manifest.py
+          --source head
+
+  ownership-boundary:
+    # This guard protects the isolated Operational Guidance handoff branch.
+    # Cross-service integration branches intentionally own a wider PR scope.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'agent/operational-guidance-v0.8.1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject cross-workstream edits
+        run: >-
+          python services/operational-guidance/tools/check_changed_paths.py
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head "${{ github.event.pull_request.head.sha }}"
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/operational-guidance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/operational-guidance/pyproject.toml
+      - name: Install
+        run: python -m pip install -e '.[dev]'
+      - name: Unit and integration tests
+        run: pytest -q tests -k 'not wordpress_fleet'
+      - name: Static analysis
+        run: ruff check app scripts tests tools
+      - name: Validate exactly five human roles
+        run: python tools/validate_human_roles.py
+
+  compose-config:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/operational-guidance
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare non-secret validation environment
+        run: cp .env.example .env
+      - name: Validate isolated Compose model
+        run: docker compose -p imperial-oge config --quiet

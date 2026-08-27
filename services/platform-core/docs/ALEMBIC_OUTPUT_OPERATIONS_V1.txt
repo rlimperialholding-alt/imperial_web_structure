@@ -1,0 +1,47 @@
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 20260719_0001, Control Center v1.0 initial consolidated schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_0001 -> 20260719_0002, Enterprise Import Center and web experience additive schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_0002 -> 20260719_0003, Imperial Intelligence Workspace v1 additive schema.
+INFO  [alembic.runtime.migration] Running upgrade 20260719_0003 -> 20260719_0004, Operations Workspace additive schema.
+table_count= 39
+alembic_version= 20260719_0004
+alembic_version
+cc_artifacts
+cc_audit_logs
+cc_consistency_issues
+cc_deployments
+cc_environments
+cc_events
+cc_modules
+cc_outbox
+cc_pilot_runs
+cc_project_facts
+cc_project_object_states
+cc_projects
+cc_releases
+cc_tasks
+cc_users
+ic_calculation_sources
+ic_canonical_records
+ic_commit_batches
+ic_data_sources
+ic_items
+ic_jobs
+ic_staged_records
+ops_delivery_notes
+ops_material_lots
+ops_material_movements
+ops_material_usage_controls
+ops_pm_gate_checks
+ops_pm_phases
+ops_pm_work_packages
+ops_procurement_orders
+ops_site_daily_reports
+ops_site_issues
+tm_campaigns
+tm_delivery_events
+tm_recipients
+tm_sending_domains
+tm_suppressions
+ws_documents

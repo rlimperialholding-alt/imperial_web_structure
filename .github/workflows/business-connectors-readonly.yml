@@ -1,0 +1,57 @@
+name: Business connectors read-only contract
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Read-only provider contract to run
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - billingo
+          - meta
+          - google-ads
+          - google-ads-discovery
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    environment: imperial-test
+    defaults:
+      run:
+        working-directory: services/itep-core
+    env:
+      READ_ONLY_MODE: "true"
+      PROVIDER: ${{ inputs.provider }}
+      BILLINGO_API_KEY: ${{ secrets.BILLINGO_API_KEY }}
+      BILLINGO_EXTERNAL_ACCOUNT_ID: ${{ vars.BILLINGO_EXTERNAL_ACCOUNT_ID }}
+      META_ADS_ACCESS_TOKEN: ${{ secrets.META_ADS_ACCESS_TOKEN }}
+      META_ADS_AD_ACCOUNT_ID: ${{ vars.META_ADS_AD_ACCOUNT_ID }}
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_ADS_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+      GOOGLE_ADS_CUSTOMER_ID: ${{ vars.GOOGLE_ADS_CUSTOMER_ID }}
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ vars.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: services/itep-core/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run prisma:generate
+      - run: npm run build
+      - name: Run provider read-only contract
+        if: inputs.provider != 'google-ads-discovery'
+        run: node scripts/business-connectors-contract.mjs
+      - name: Discover accessible Google Ads accounts
+        if: inputs.provider == 'google-ads-discovery'
+        run: node scripts/google-ads-discovery.mjs

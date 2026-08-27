@@ -1,0 +1,62 @@
+{
+  "customer_type_house_design_build": {
+    "file_name": "customer_type_house_design_build.docx",
+    "drive_file_id": "1ududByaogoPZVsd84h42IqQzgw3KlpmA",
+    "sha256": "7712c39018bb4f65630d262476e2054384657bb788c9b34022b472e6f4dc026e",
+    "immutable": true,
+    "owner_approved_policy": {
+      "version": "ICG-PAY-2026-07-18",
+      "approval_basis": "tulajdonosi döntés",
+      "effective_date": "2026-07-18"
+    }
+  },
+  "customer_construction": {
+    "file_name": "customer_construction.docx",
+    "drive_file_id": "1pa4ZN3whsGIaHkWSQ69oKxE0f4ROp_dv",
+    "sha256": "1ce03391f4e2a39c1ba4c204d8ae1948b222464e2d4d708416b0d7370fdddf4b",
+    "immutable": true,
+    "owner_approved_policy": {
+      "version": "ICG-PAY-2026-07-18",
+      "approval_basis": "tulajdonosi döntés",
+      "effective_date": "2026-07-18"
+    }
+  },
+  "customer_design_execution_plans": {
+    "file_name": "customer_design_execution_plans.docx",
+    "drive_file_id": "1g7CSfHbb0V94OLBmo2xMw9HP4k-Nj3XN",
+    "sha256": "2f885955ab3b4bae7d9731cf8a87312d86912c5a0d01677f496b3742113cbc8b",
+    "immutable": true,
+    "owner_approved_policy": {
+      "version": "ICG-PAY-2026-07-18",
+      "approval_basis": "tulajdonosi döntés",
+      "effective_date": "2026-07-18"
+    }
+  },
+  "subcontractor_design": {
+    "file_name": "subcontractor_design.docx",
+    "drive_file_id": "1B502E2YvluFmDfO-FUdhqYRCMfiYCoz5",
+    "sha256": "d5a65882afb051d210f250b625b271346a9b87614932bea845cd2e81c50ab823",
+    "immutable": true,
+    "source_drive_file_id": "1B502E2YvluFmDfO-FUdhqYRCMfiYCoz5",
+    "owner_approved_policy": {
+      "version": "ICG-PAY-2026-07-18",
+      "payment_term_days": 8,
+      "approval_basis": "tulajdonosi döntés",
+      "effective_date": "2026-07-18"
+    },
+    "template_revision_note": "v0.4 approved master: designer payment term 8 calendar days; no legal approval gate."
+  },
+  "subcontractor_execution": {
+    "file_name": "subcontractor_execution.docx",
+    "drive_file_id": "1jQc2zhhK_iF2BZ-wpe_s2KGrDUp9OYuM",
+    "sha256": "4ece06d17224f06e338effb0f70b7cb9252fce43411222e1c4722698034f45b8",
+    "immutable": true,
+    "owner_approved_policy": {
+      "version": "ICG-PAY-2026-07-18",
+      "payment_term_days": 30,
+      "approval_basis": "tulajdonosi döntés",
+      "effective_date": "2026-07-18"
+    },
+    "template_revision_note": "v0.4 approved master: execution subcontractor payment term 30 calendar days; no legal approval gate."
+  }
+}
