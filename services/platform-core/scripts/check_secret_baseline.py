@@ -72,6 +72,14 @@ Audited-set contract:
   suppression list next to it, and **no artifact this script writes is ever
   read back as input**. The audit output below is a report, never a filter:
   deleting it, corrupting it or hand-editing it cannot make a finding pass;
+* the audited identity is occurrence-aware: the comparison unit is
+  ``(normalized path, detector type, SHA-1 fingerprint, line number)``.
+  A value already baselined on one classified line can never suppress a new
+  occurrence of the same digest on any other line: the new line is an
+  addition and must be proven harmless by a structural classifier on that
+  exact line, or the run fails closed. A baseline entry without a usable
+  line number can never match a live finding, and a live finding without a
+  usable line number can never be classified -- both fail closed;
 * a live candidate outside the baseline is cleared only by a *structural
   classifier* (see ``_STRUCTURAL_CLASSIFIERS``). A classifier does not trust a
   path, a filename or a remembered fingerprint: it re-reads the reported line
@@ -93,10 +101,11 @@ Audited-set contract:
   two documented Drive index files, which must additionally be corroborated by
   a Drive/Docs URL or an explicit ``drive`` provenance marker in the same
   file);
-* findings are classified per line, never per digest: the same value reported
-  on several lines is cleared only when *every* line occurrence is proven
-  non-secret on that exact line; one unprovable line keeps the whole finding
-  unclassified and fails closed;
+* findings are classified per line, never per digest: every new line
+  occurrence of a value is cleared only when proven non-secret on that exact
+  line; one unprovable line keeps its own per-line identity unclassified and
+  fails closed, even when the same digest is baselined or classified on
+  another line;
 * every candidate that neither the baseline nor a structural classifier
   clears is **unclassified**, and unclassified means fail closed with status 1
   -- new detector types, new files and new value shapes all land here by
@@ -618,8 +627,35 @@ def _live_scan(files: list[str], repo_root: Path) -> dict[str, Any]:
     return {"results": merged}
 
 
-def _fingerprints(document: dict[str, Any]) -> set[tuple[str, str, str]]:
-    fingerprints: set[tuple[str, str, str]] = set()
+def _normalized_line_number(finding: dict[str, Any]) -> int | None:
+    """The 1-based line number of a finding; ``None`` when absent or malformed.
+
+    The audited identity is occurrence-aware: the line number is part of the
+    comparison unit, so a value baselined on one classified line can never
+    suppress a new occurrence of the same digest on a different unclassified
+    line. ``None`` is deliberately distinct from every real line number: a
+    baseline entry without a usable line can never match a live finding, so
+    both sides fail closed through the classifier instead of being silently
+    reconciled.
+    """
+    raw = finding.get("line_number")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fingerprints(document: dict[str, Any]) -> set[tuple[str, str, str, int | None]]:
+    """Occurrence-aware identities: ``(path, type, fingerprint, line number)``.
+
+    Both the audited set (from the protected baseline) and the observed set
+    (from the live scan) are reduced through this single function, so the two
+    sides always compare on the same identity. Because the line number is
+    part of the identity, the same digest on a different line is a different
+    occurrence: it lands in the addition set and must be proven harmless by
+    the structural classifier exactly as a brand-new digest would.
+    """
+    fingerprints: set[tuple[str, str, str, int | None]] = set()
     for filename, findings in document.get("results", {}).items():
         for finding in findings:
             fingerprints.add(
@@ -627,6 +663,7 @@ def _fingerprints(document: dict[str, Any]) -> set[tuple[str, str, str]]:
                     _normalize(str(filename)),
                     str(finding.get("type", "")),
                     str(finding.get("hashed_secret", "")),
+                    _normalized_line_number(finding),
                 )
             )
     return fingerprints
@@ -753,120 +790,122 @@ _STRUCTURAL_CLASSIFIERS: dict[str, tuple[str, Any]] = {
 
 def _classify_additions(
     current: dict[str, Any],
-    additions: set[tuple[str, str, str]],
+    additions: set[tuple[str, str, str, int | None]],
     repo_root: Path,
-) -> tuple[dict[str, int], set[tuple[str, str, str]]]:
-    """Split live-but-unbaselined findings into classified and unclassified.
+) -> tuple[dict[str, int], set[tuple[str, str, str, int | None]]]:
+    """Split live-but-unbaselined per-line findings into classified/unclassified.
 
     Returns ``(classified counts by classification name, unclassified set)``.
     Every finding that no structural classifier proves is returned as
     unclassified, so the caller fails closed on it.
 
-    Classification is per line, never per digest: the pinned driver preserves
-    one finding entry per reported line, and a ``(path, type, hash)`` triple
-    is cleared only when *every* one of its line entries is proven non-secret
-    on that exact line. The same value reported once as a bound content digest
-    and once as an unbound token on another line therefore stays unclassified
-    -- a genuine secret can never ride along on a classified line's digest.
+    Classification is per line, never per digest: the addition identity is
+    ``(path, detector type, fingerprint, line number)``, so a value already
+    baselined on a classified line still puts every *new* line occurrence
+    through the structural classifier on that exact line. Only the exact new
+    lines are evaluated -- a baselined line never needs re-proving, and a new
+    line that cannot be proven non-secret there keeps its own identity
+    unclassified, even when the same digest is proven harmless elsewhere.
+    A finding whose line number is absent, malformed or out of range can
+    never be classified and stays unclassified.
     """
     by_path: dict[str, list[dict[str, Any]]] = {}
     for filename, findings in current.get("results", {}).items():
         by_path.setdefault(_normalize(str(filename)), []).extend(findings)
     remaining = set(additions)
     classified: dict[str, int] = {}
-    for path in sorted({filename for filename, _, _ in additions}):
-        wanted = {
-            (finding_type, hashed)
-            for filename, finding_type, hashed in remaining
-            if filename == path
-        }
-        if not wanted:
+    for path in sorted({filename for filename, _, _, _ in additions}):
+        entries = by_path.get(path, [])
+        if not entries:
             continue
         lines = _read_text_for_classification(repo_root / path)
         document = "\n".join(lines)
-        by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
-        for finding in by_path.get(path, []):
-            by_key.setdefault(
-                (
-                    str(finding.get("type", "")),
-                    str(finding.get("hashed_secret", "")),
-                ),
-                [],
-            ).append(finding)
-        for (finding_type, hashed), entries in by_key.items():
-            if (finding_type, hashed) not in wanted:
+        for finding in entries:
+            finding_type = str(finding.get("type", ""))
+            hashed = str(finding.get("hashed_secret", ""))
+            try:
+                line_number = int(finding.get("line_number", 0))
+            except (TypeError, ValueError):
+                line_number = 0
+            if (path, finding_type, hashed, line_number) not in remaining:
                 continue
             rule = _STRUCTURAL_CLASSIFIERS.get(finding_type)
             if rule is None:
                 continue
             name, predicate = rule
-            all_lines_classified = True
-            for finding in entries:
-                try:
-                    line_number = int(finding.get("line_number", 0))
-                except (TypeError, ValueError):
-                    line_number = 0
-                # 1-based and in range, or this line stays unclassified. A
-                # zero or negative number must never wrap around to another
-                # line.
-                if not 1 <= line_number <= len(lines):
-                    all_lines_classified = False
-                    continue
-                if not predicate(lines[line_number - 1], hashed, document, path):
-                    all_lines_classified = False
-            if not all_lines_classified:
+            # 1-based and in range, or this line stays unclassified. A
+            # zero or negative number must never wrap around to another
+            # line.
+            if not 1 <= line_number <= len(lines):
+                continue
+            if not predicate(lines[line_number - 1], hashed, document, path):
                 continue
             classified[name] = classified.get(name, 0) + 1
-            # The same fingerprint may be reported on several lines: it is
-            # counted exactly once, and only after every line occurrence was
-            # proven non-secret.
-            remaining.discard((path, finding_type, hashed))
+            # Each new line occurrence of a digest is evaluated and counted
+            # on its own line, and only when that exact line was proven
+            # non-secret.
+            remaining.discard((path, finding_type, hashed, line_number))
     return classified, remaining
 
 
-def _emit_unmatched_audit(additions: set[tuple[str, str, str]], repo_root: Path) -> Path:
-    """Write the bounded hash/path-only audit for unmatched candidates.
+def _emit_unmatched_audit(
+    additions: set[tuple[str, str, str, int | None]], repo_root: Path
+) -> Path:
+    """Write the bounded hash/path/line-only audit for unmatched candidates.
 
-    Rows carry the normalized path, the detector type and the SHA-1
-    fingerprints only -- never plaintext secret material -- and are marked
-    unclassified. The artifact is written to the git-ignored runtime
-    directory, so only a failing (fail-closed) run writes anything.
+    Rows carry the normalized path, the detector type, the SHA-1
+    fingerprints and the finding line numbers only -- never plaintext secret
+    material -- and are marked unclassified. The artifact is written to the
+    git-ignored runtime directory, so only a failing (fail-closed) run
+    writes anything.
 
     The report is deliberately bounded: at most ``_AUDIT_MAX_ROWS`` rows and
-    ``_AUDIT_MAX_HASHES_PER_ROW`` fingerprints per row. Truncation is never
-    silent -- the omitted counts are stated explicitly and the totals always
-    describe the full finding set -- so the artifact stays short enough to read
-    in a review without ever understating what failed closed.
+    ``_AUDIT_MAX_HASHES_PER_ROW`` per-line entries per row. Truncation is
+    never silent -- the omitted counts are stated explicitly and the totals
+    always describe the full finding set -- so the artifact stays short
+    enough to read in a review without ever understating what failed closed.
 
-    This file is write-only evidence. Nothing in this module reads it back, so
-    it can never act as an allowlist, baseline or suppression input.
+    This file is write-only evidence. Nothing in this module reads it back,
+    so it can never act as an allowlist, baseline or suppression input.
     """
-    by_path: dict[str, dict[str, list[str]]] = {}
-    for filename, finding_type, hashed in additions:
-        by_path.setdefault(filename, {}).setdefault(finding_type, []).append(hashed)
-    every_row: list[tuple[str, str, list[str]]] = [
-        (filename, finding_type, sorted(by_path[filename][finding_type]))
+    by_path: dict[str, dict[str, list[tuple[str, int | None]]]] = {}
+    for filename, finding_type, hashed, line_number in additions:
+        by_path.setdefault(filename, {}).setdefault(finding_type, []).append(
+            (hashed, line_number)
+        )
+
+    def _sorted_entries(
+        entries: list[tuple[str, int | None]],
+    ) -> list[tuple[str, int | None]]:
+        # Sort by fingerprint, then by line number; a ``None`` line sorts
+        # last without ever comparing against an int (which would raise).
+        return sorted(set(entries), key=lambda pair: (pair[0], pair[1] is None, pair[1] or -1))
+
+    every_row: list[tuple[str, str, list[tuple[str, int | None]]]] = [
+        (filename, finding_type, _sorted_entries(by_path[filename][finding_type]))
         for filename in sorted(by_path)
         for finding_type in sorted(by_path[filename])
     ]
     rows: list[dict[str, Any]] = []
-    for filename, finding_type, hashes in every_row[:_AUDIT_MAX_ROWS]:
+    for filename, finding_type, entries in every_row[:_AUDIT_MAX_ROWS]:
+        bounded = entries[:_AUDIT_MAX_HASHES_PER_ROW]
         row: dict[str, Any] = {
             "path": filename,
             "type": finding_type,
             "classification": "unclassified",
-            "findingCount": len(hashes),
-            "hashes": hashes[:_AUDIT_MAX_HASHES_PER_ROW],
+            "findingCount": len(entries),
+            "hashes": [hashed for hashed, _ in bounded],
+            "lineNumbers": [line_number for _, line_number in bounded],
         }
-        if len(hashes) > _AUDIT_MAX_HASHES_PER_ROW:
-            row["hashesOmitted"] = len(hashes) - _AUDIT_MAX_HASHES_PER_ROW
+        if len(entries) > _AUDIT_MAX_HASHES_PER_ROW:
+            row["hashesOmitted"] = len(entries) - _AUDIT_MAX_HASHES_PER_ROW
         rows.append(row)
     document: dict[str, Any] = {
-        "schemaVersion": "3.0",
+        "schemaVersion": "3.1",
         "kind": "tracked-secret-delta-audit",
         "scope": (
-            "normalized paths, detector types and SHA-1 fingerprints only; "
-            "no plaintext secret material"
+            "normalized paths, detector types, SHA-1 fingerprints and finding "
+            "line numbers only; no plaintext secret material"
         ),
         "usage": (
             "untracked runtime report only; never read back as allowlist, "
@@ -896,12 +935,14 @@ def reconcile_tracked_secrets(
     the protected baseline or proven non-secret by a structural classifier
     (stale-only entries, scanner-exempt files and the per-class classified
     counts are reported as documented warnings). Status 1: at least one live
-    candidate is unclassified -- a bounded hash/path-only audit report is
-    written to the git-ignored runtime directory. Status 2: missing or
+    candidate is unclassified -- a bounded hash/path/line-only audit report
+    is written to the git-ignored runtime directory. Status 2: missing or
     malformed baseline, any scanner/git failure or canonical-set condition.
     The live scan always runs; there is no snapshot or environment bypass.
     Messages never contain secret material, only file paths/counts and
-    fingerprints.
+    fingerprints. Comparison is occurrence-aware (see ``_fingerprints``): a
+    value baselined on one line never suppresses a new occurrence of the
+    same digest on another line.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     if not baseline_path.is_file():
@@ -931,7 +972,7 @@ def reconcile_tracked_secrets(
     except ScanFailure as exc:
         return 2, str(exc)
     if unclassified:
-        locations = sorted({filename for filename, _, _ in unclassified})
+        locations = sorted({filename for filename, _, _, _ in unclassified})
         message = (
             f"{len(unclassified)} unclassified candidate(s) in "
             f"{len(locations)} tracked file(s).\n"

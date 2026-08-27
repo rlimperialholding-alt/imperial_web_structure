@@ -39,6 +39,11 @@ Proves the tracked-file contract of ``check_secret_baseline.py``:
   of ``app/seed.py`` stay unclassified, and the pinned driver preserves one
   finding entry per line so the same digest reported on a classified line and
   on an unclassifiable line fails closed;
+* the audited identity is occurrence-aware: the comparison unit includes the
+  finding line number, so a value baselined on a classified line can never
+  suppress a new occurrence of the same digest on a different unclassified
+  line -- the new line must be proven harmless by the structural classifier
+  on that exact line or the reconciliation fails closed;
 * an ``OSError`` while spawning the pinned driver becomes a secret-free
   ``ScanFailure``, never a raw traceback;
 * the runtime audit directory is git-ignored, its artifact never appears in
@@ -287,7 +292,7 @@ def test_malformed_index_record_fails_closed(
 
 
 def test_fingerprint_normalization_matches_windows_and_posix_separators() -> None:
-    finding = {"type": "Secret Keyword", "hashed_secret": "0" * 40}
+    finding = {"type": "Secret Keyword", "hashed_secret": "0" * 40, "line_number": 7}
     windows = check_secret_baseline._fingerprints(
         {"results": {"services\\platform-core\\tests\\x.py": [finding]}}
     )
@@ -295,7 +300,15 @@ def test_fingerprint_normalization_matches_windows_and_posix_separators() -> Non
         {"results": {"services/platform-core/tests/x.py": [finding]}}
     )
     assert windows == posix
-    assert windows == {("services/platform-core/tests/x.py", "Secret Keyword", "0" * 40)}
+    # Az identitás occurrence-aware: a sorszám a kulcs része.
+    assert windows == {("services/platform-core/tests/x.py", "Secret Keyword", "0" * 40, 7)}
+    # Sorszám nélküli találat ``None``-ra normalizálódik: soha nem egyezhet
+    # meg egy valódi sorszámú élő találattal, így fail-closed marad.
+    without_line = dict(finding)
+    without_line.pop("line_number")
+    assert check_secret_baseline._fingerprints(
+        {"results": {"services/platform-core/tests/x.py": [without_line]}}
+    ) == {("services/platform-core/tests/x.py", "Secret Keyword", "0" * 40, None)}
 
 
 def test_untracked_build_cache_and_runtime_files_cannot_influence_reconciliation(
@@ -343,12 +356,24 @@ def test_untracked_build_cache_and_runtime_files_cannot_influence_reconciliation
     }
     fingerprint = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
     assert all(row["hashes"] == [fingerprint] for row in rows)
-    # A sorok kizárólag path/type/classification/count/hash mezőket hordozhatnak:
-    # bármely további kulcs plaintext szivárgás kockázata lenne.
+    # A sorszám az occurrence-aware identitás része, ezért az audit sorai is
+    # hordozzák; a sorok kizárólag path/type/classification/count/hash/line
+    # mezőket hordozhatnak: bármely további kulcs plaintext szivárgás
+    # kockázata lenne.
     assert all(
-        set(row) <= {"path", "type", "classification", "findingCount", "hashes", "hashesOmitted"}
+        set(row)
+        <= {
+            "path",
+            "type",
+            "classification",
+            "findingCount",
+            "hashes",
+            "lineNumbers",
+            "hashesOmitted",
+        }
         for row in rows
     )
+    assert all(row["lineNumbers"] == [1] for row in rows)
     assert all(row["findingCount"] == 1 for row in rows)
     assert _SYNTHETIC_VALUE not in audit.read_text(encoding="utf-8")
 
@@ -1072,6 +1097,7 @@ def test_emitted_audit_report_is_bounded_and_states_its_truncation(tmp_path: Pat
             f"path/file-{index}.json",
             "Hex High Entropy String",
             hashlib.sha1(f"synthetic-{index}-{offset}".encode("utf-8")).hexdigest(),
+            offset + 1,
         )
         for index in range(rows + 4)
         for offset in range(per_row + 3)
@@ -1085,20 +1111,27 @@ def test_emitted_audit_report_is_bounded_and_states_its_truncation(tmp_path: Pat
     assert document["rowTotal"] == rows + 4
     for row in document["rows"]:
         assert len(row["hashes"]) <= per_row
+        assert len(row["lineNumbers"]) == len(row["hashes"])
+        # A sorszámok az azonos sorban álló hash-ekhez tartoznak, 1-től a
+        # szintetikus offset-tartományig.
+        assert set(row["lineNumbers"]) <= set(range(1, per_row + 4))
         assert row["findingCount"] == per_row + 3
         assert row["hashesOmitted"] == 3
         assert row["classification"] == "unclassified"
     assert len(json.dumps(document)) < 12_000, "the audit report must stay reviewable"
 
 
-@pytest.mark.parametrize("line_number", [0, -1, 9_999])
+@pytest.mark.parametrize("line_number", [0, -1, 9_999, None])
 def test_out_of_range_line_number_never_wraps_to_another_line(
-    tmp_path: Path, line_number: int
+    tmp_path: Path, line_number: int | None
 ) -> None:
     """A finding whose line number is absent or bogus stays unclassified.
 
     ``lines[0 - 1]`` would silently classify against the *last* line of the
     file, so an out-of-range number must fail closed instead of wrapping.
+    A ``None`` (absent) line number normalizes to ``None`` in the audited
+    identity, while the classifier computes 0 for it -- the mismatch is
+    deliberate: a line-less finding can never be classified.
     """
     digest_line, _ = _digest_line("reference_sha256", b"synthetic-content-digest")
     _write_tracked(tmp_path, _DIGEST_MANIFEST_PATH, '{\n  "x": 1,\n' + digest_line + "}\n")
@@ -1116,7 +1149,7 @@ def test_out_of_range_line_number_never_wraps_to_another_line(
             ]
         }
     }
-    additions = {(_DIGEST_MANIFEST_PATH, "Hex High Entropy String", hashed)}
+    additions = {(_DIGEST_MANIFEST_PATH, "Hex High Entropy String", hashed, line_number)}
 
     classified, unclassified = check_secret_baseline._classify_additions(
         document, additions, tmp_path
@@ -1125,8 +1158,11 @@ def test_out_of_range_line_number_never_wraps_to_another_line(
     assert unclassified == additions
 
 
-def test_same_fingerprint_on_several_lines_is_counted_once(tmp_path: Path) -> None:
-    """Repeating a digest must not inflate the classified count."""
+def test_same_fingerprint_on_several_classified_lines_is_counted_per_line(
+    tmp_path: Path,
+) -> None:
+    """Az azonos digest minden új sor-előfordulása saját identitás, soronként
+    értékelve és számolva: két kötött digest-sor két classified bejegyzés."""
     digest_line, hashed = _digest_line("reference_sha256", b"synthetic-content-digest")
     _write_tracked(
         tmp_path,
@@ -1141,12 +1177,15 @@ def test_same_fingerprint_on_several_lines_is_counted_once(tmp_path: Path) -> No
             ]
         }
     }
-    additions = {(_DIGEST_MANIFEST_PATH, "Hex High Entropy String", hashed)}
+    additions = {
+        (_DIGEST_MANIFEST_PATH, "Hex High Entropy String", hashed, 2),
+        (_DIGEST_MANIFEST_PATH, "Hex High Entropy String", hashed, 3),
+    }
 
     classified, unclassified = check_secret_baseline._classify_additions(
         document, additions, tmp_path
     )
-    assert classified == {"content-digest": 1}
+    assert classified == {"content-digest": 2}
     assert unclassified == set()
 
 
@@ -1210,6 +1249,151 @@ def test_identical_digest_on_classified_and_unclassified_lines_fails_closed(
     assert document["classification"] == "unclassified"
 
 
+def test_baselined_digest_on_a_new_unclassified_line_fails_closed(tmp_path: Path) -> None:
+    """A classified soron baselined érték nem fedhet el új, osztályozatlan sort.
+
+    A Task36 review HIGH közvetlen regressziója: az azonos 64-hex digest a 2.
+    soron a ``reference_sha256`` kulcshoz kötve áll -- ez a sor a védett
+    baseline-ban szerepel, tehát pontosan egyezik --, a 3. soron viszont
+    kötetlen pozícióban ismétlődik. A 3. sor új előfordulás: az
+    occurrence-aware identitás miatt az addition-halmazba kerül, a strukturális
+    osztályozó azon a soron nem tudja bizonyítani ártalmatlanságát, így a
+    reconciliation fail-closed marad. A baseline-létezés önmagában sosem
+    tisztázhatja az új sor-előfordulást.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    digest_line, hashed = _digest_line("reference_sha256", b"synthetic-baselined-line")
+    digest = hashlib.sha256(b"synthetic-baselined-line").hexdigest()
+    _write_tracked(
+        repo,
+        _DIGEST_MANIFEST_PATH,
+        '{\n' + digest_line + '  "unbound": "' + digest + '",\n}\n',
+    )
+    # A baseline pontosan a classified (2.) sort tartalmazza -- a 3. sor
+    # előfordulását nem.
+    baseline = repo / "synthetic-baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "results": {
+                    _DIGEST_MANIFEST_PATH: [
+                        {
+                            "type": "Hex High Entropy String",
+                            "hashed_secret": hashed,
+                            "line_number": 2,
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
+    _commit(repo)
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1, message
+    # Pontosan egy identitás maradt osztályozatlan: a 3. sor új előfordulása.
+    # A 2. sor baseline-találatát a pozitív kontroll
+    # (``test_baselined_classified_line_still_matches_the_audited_set_exactly``)
+    # bizonyítja; a status-1 üzenet csak az osztályozatlanakat sorolja.
+    assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
+    assert _DIGEST_MANIFEST_PATH in message
+    # A classified sort pontosan egyezett a baseline-nal, de az új sort nem
+    # tisztázhatta -- ezért semmilyen classifier-engedmény nem jelent meg.
+    assert "content-digest" not in message
+    audit = repo / "services" / "platform-core" / "runtime" / "tracked-secret-delta-audit.json"
+    assert audit.is_file()
+    document = json.loads(audit.read_text(encoding="utf-8"))
+    assert document["classification"] == "unclassified"
+    row = document["rows"][0]
+    assert row["path"] == _DIGEST_MANIFEST_PATH
+    assert row["hashes"] == [hashed]
+    assert row["lineNumbers"] == [3]
+
+
+def test_baselined_digest_on_a_new_classified_line_is_proven_per_line(
+    tmp_path: Path,
+) -> None:
+    """Az új sor-előfordulást a classifiernek kell bizonyítania -- és tudja is.
+
+    Ugyanaz a digest a 2. (baselined, classified) és a 3. (új) soron, mindkettő
+    ``reference_sha256``-hez kötve. Az új 3. sor bekerül az addition-halmazba,
+    és a strukturális osztályozó azon a soron bizonyítja ártalmatlanságát --
+    a reconciliation így PASS, és a classified számláló pontosan az új sort
+    mutatja.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    digest_line, hashed = _digest_line("reference_sha256", b"synthetic-new-classified-line")
+    _write_tracked(
+        repo,
+        _DIGEST_MANIFEST_PATH,
+        "{\n" + digest_line + digest_line + '  "x": 1\n}\n',
+    )
+    baseline = repo / "synthetic-baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "results": {
+                    _DIGEST_MANIFEST_PATH: [
+                        {
+                            "type": "Hex High Entropy String",
+                            "hashed_secret": hashed,
+                            "line_number": 2,
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
+    _commit(repo)
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 0, message
+    assert "1 tracked candidate(s) match the audited baseline" in message
+    assert "content-digest: 1" in message
+
+
+def test_baselined_classified_line_still_matches_the_audited_set_exactly(
+    tmp_path: Path,
+) -> None:
+    """Az occurrence-aware identitás nem törte meg a baselined sor egyezését.
+
+    Kontroll: a baseline pontosan a classified 2. sort tartalmazza, az élő
+    scan is pontosan azt a sort jelenti -- az azonos (path, type, hash, line)
+    identitás egyezik, nincs addition, nincs classifier-engedmény.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    digest_line, hashed = _digest_line("reference_sha256", b"synthetic-exact-line-match")
+    _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + '  "x": 1\n}\n')
+    baseline = repo / "synthetic-baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "results": {
+                    _DIGEST_MANIFEST_PATH: [
+                        {
+                            "type": "Hex High Entropy String",
+                            "hashed_secret": hashed,
+                            "line_number": 2,
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
+    _commit(repo)
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 0, message
+    assert "1 tracked candidate(s) match the audited baseline" in message
+    assert "structural classifier" not in message
+
+
 def test_classifier_allowlist_has_no_executable_source_or_generic_keys() -> None:
     """A strukturális osztályozó engedménye sehol sem érinthet futtatható
     forrást, és nem ismerhet általános mezőneveket."""
@@ -1256,7 +1440,9 @@ def test_real_seed_source_digest_values_stay_unclassified() -> None:
             ]
         }
     }
-    additions = {("services/platform-core/app/seed.py", "Hex High Entropy String", hashed)}
+    additions = {
+        ("services/platform-core/app/seed.py", "Hex High Entropy String", hashed, line_number)
+    }
     classified, unclassified = check_secret_baseline._classify_additions(
         document, additions, REPO_ROOT
     )
@@ -1318,7 +1504,7 @@ def test_runtime_audit_directory_is_git_ignored_and_absent_from_git_status() -> 
 
 def test_unreadable_candidate_fails_closed_during_classification(tmp_path: Path) -> None:
     """A candidate that cannot be re-read is never silently cleared."""
-    additions = {("missing.json", "Hex High Entropy String", "a" * 40)}
+    additions = {("missing.json", "Hex High Entropy String", "a" * 40, 1)}
     with pytest.raises(check_secret_baseline.ScanFailure):
         check_secret_baseline._classify_additions(
             {"results": {"missing.json": []}}, additions, tmp_path

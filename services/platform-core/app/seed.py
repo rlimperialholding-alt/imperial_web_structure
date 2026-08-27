@@ -6,6 +6,7 @@ import os
 import re
 import secrets
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -122,11 +123,36 @@ def demo_accounts_allowed() -> bool:
 # ugyanazt az értéket használja -- több worker és újraindítás után is. Az
 # érték egyetlen közös, atomosan cserélt állapotfájlban él, amely a git-ignored
 # ``services/platform-core/runtime/`` könyvtárban van, tehát semmilyen
-# plaintext demo érték nem jelenhet meg a tracked munkafában. A tesztek a
-# ``DEMO_CREDENTIALS_STATE_PATH`` környezeti változóval a pytest temp-gyökerébe
-# irányítják át, hogy a suite soha ne írja a repository runtime könyvtárát.
+# plaintext demo érték nem jelenhet meg a tracked munkafában.
+#
+# Az *első létrehozás* és a felülírás atomi exclusive-create lock
+# (``O_CREAT | O_EXCL``, Windows alatt is atomi) mögött történik: pontosan egy
+# folyamat generál és persistál, minden párhuzamos folyamat a persistált
+# állapothoz konvergál -- korábban két egyidejű folyamat is üres állapotot
+# olvashatott, különböző értékeket generálhatott és mindkettő írhatott
+# (a Task36 review HIGH-ja). A lock-várakozás korlátos; a korlát kimerülése,
+# nem biztonságos (szimlink/nem reguláris) állapot vagy lock, illetve a
+# sikeres írás utáni ellenőrizhetetlen visszaolvasás fail-closed
+# ``DemoCredentialsStateError`` -- sosem egy ellenőrizetlen vagy divergens
+# érték visszaadása. A lock és az állapotfájl egyaránt a git-ignored runtime
+# könyvtárban él. A tesztek a ``DEMO_CREDENTIALS_STATE_PATH`` környezeti
+# változóval a pytest temp-gyökerébe irányítják át mindkettőt, hogy a suite
+# soha ne írja a repository runtime könyvtárát.
 
 DEMO_CREDENTIALS_STATE_ENV = "DEMO_CREDENTIALS_STATE_PATH"
+# A creation-lock megszerzésére szánt, dokumentált, korlátos várakozási ablak.
+# A holder kritikus szakasza néhány milliszekundum (olvas + esetleges generálás
+# + atomi írás + visszaolvasás), így a késleltetések összege bőven elég a
+# valódi versenyre; a korlát kimerülése explicit fail-closed hiba. A várakozó
+# folyamat közben folyamatosan újraolvassa az állapotfájlt, így a holder
+# sikeres írása után azonnal konvergál -- a teljes ablakra csak akkor van
+# szükség, ha a holder egyáltalán nem tud publikálni.
+_DEMO_STATE_LOCK_RETRY_DELAYS = (0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 0.8, 0.8, 0.8, 0.8)
+# Az írás utáni visszaolvasás korlátos újrapróbálkozása: Windows alatt egy
+# átmeneti AV/indexer megnyitás rövid időre blokkolhatja a frissen cserélt
+# fájl olvasását; a korlát kimerülése fail-closed hiba, nem fallback érték.
+_STATE_READBACK_ATTEMPTS = 5
+_STATE_READBACK_DELAY = 0.05
 
 
 def _demo_credentials_state_path() -> Path:
@@ -135,7 +161,8 @@ def _demo_credentials_state_path() -> Path:
     Alapértelmezés: ``services/platform-core/runtime/demo-credentials-state.json``.
     Az egész ``runtime`` könyvtár git-ignored, így a plaintext demo értékek
     (a login oldal nem-production módban egyébként is kiírja őket) soha nem
-    kerülhetnek tracked fájlba.
+    kerülhetnek tracked fájlba. A creation-lock sibling fájl (``.lock``
+    utótaggal) ugyanabban a könyvtárban él, tehát szintén git-ignored.
     """
     override = os.environ.get(DEMO_CREDENTIALS_STATE_ENV, "").strip()
     if override:
@@ -143,13 +170,86 @@ def _demo_credentials_state_path() -> Path:
     return Path(__file__).resolve().parents[1] / "runtime" / "demo-credentials-state.json"
 
 
+class DemoCredentialsStateError(RuntimeError):
+    """Fail-closed közös demo-hitelesítő állapothiba.
+
+    Az üzenetek sosem hordozzák magukat a hitelesítő értékeket -- csak az
+    állapotot írják le, hogy a hiba logolható legyen plaintext szivárgás
+    nélkül.
+    """
+
+
+def _demo_credentials_lock_path(state_path: Path) -> Path:
+    """A creation-lock sibling fájl útvonala (szintén a git-ignored runtime-ban)."""
+    return state_path.with_name(state_path.name + ".lock")
+
+
+def _assert_safe_runtime_target(path: Path, role: str) -> None:
+    """Fail-closed nem biztonságos runtime célpontra (szimlink/nem reguláris).
+
+    A state vagy lock útvonalra ültetett szimlink átirányíthatná az
+    olvasást/írást, egy könyvtár pedig csendben lenyelné az atomi cserét.
+    Mindkettő ``DemoCredentialsStateError``: ilyen bemenetet a rendszer soha
+    nem szolgál ki és nem ír felül csendben.
+    """
+    if path.is_symlink():
+        raise DemoCredentialsStateError(f"demo credential {role} path is a symlink: {path.name}")
+    if path.exists() and not path.is_file():
+        raise DemoCredentialsStateError(
+            f"demo credential {role} path is not a regular file: {path.name}"
+        )
+
+
+def _try_create_demo_state_lock(lock_path: Path) -> bool:
+    """Atomi exclusive-create a sibling lock fájlra; ``False``, ha már létezik.
+
+    ``O_CREAT | O_EXCL`` Windows alatt is atomi (CreateFile ``CREATE_NEW``);
+    ez a protokoll egyetlen kizárólagossági primitívje: pontosan egy folyamat
+    lehet egyszerre a generáló/persistáló holder. A lock tartalma a holder
+    PID-je, kizárólag diagnosztikai célra.
+    """
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return False
+    try:
+        os.write(fd, (str(os.getpid()) + "\n").encode("utf-8"))
+    finally:
+        os.close(fd)
+    return True
+
+
+def _release_demo_state_lock(lock_path: Path) -> None:
+    """Felszabadítja a creation-lockot; Windows-átmeneti hibákra korlátosan retry-z.
+
+    A holder csak a sikeres, atomi állapotírás után engedi el a lockot, így a
+    várakozó folyamat sosem lát „üres lock” állapotot. Az unlink tartós
+    kudarca (átmeneti AV/indexer zárolás) fail-closed hibává válik: egy
+    csendben otthagyott lock minden későbbi folyamatot tartósan blokkolna,
+    ami rosszabb, mint a hangos bukás.
+    """
+    for attempt in range(1, _STATE_READBACK_ATTEMPTS + 1):
+        try:
+            lock_path.unlink(missing_ok=True)
+            return
+        except OSError as error:
+            if attempt >= _STATE_READBACK_ATTEMPTS:
+                raise DemoCredentialsStateError(
+                    "demo credential creation lock could not be released."
+                ) from error
+            time.sleep(_STATE_READBACK_DELAY)
+
+
 def _read_demo_credentials_state(state_path: Path) -> tuple[str, str] | None:
     """Beolvassa a megosztott állapotot; hiányzó/sérült fájl esetén ``None``.
 
     A ``None`` eredmény nem fail-closed hiba, hanem öngyógyító állapot: az
-    érték ilyenkor újragenerálódik, a sérült állapot pedig a következő
-    atomi írással felülíródik.
+    érték ilyenkor a lock-protokollon keresztül újragenerálódik, a sérült
+    állapot pedig a következő atomi írással felülíródik. Nem biztonságos
+    állapot -- szimlink vagy nem reguláris fájl a state útvonalon -- viszont
+    fail-closed ``DemoCredentialsStateError``.
     """
+    _assert_safe_runtime_target(state_path, "state")
     try:
         document = json.loads(state_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -189,6 +289,55 @@ def _write_demo_credentials_state(state_path: Path, login: str, partner: str) ->
         temporary_path.unlink(missing_ok=True)
 
 
+def _matches_overrides(
+    converged: tuple[str, str], override_login: str, override_partner: str
+) -> bool:
+    """Igaz, ha a persistált állapot már teljesíti a hívó override-jait."""
+    if override_login and converged[0] != override_login:
+        return False
+    if override_partner and converged[1] != override_partner:
+        return False
+    return True
+
+
+def _resolve_demo_state_under_lock(
+    state_path: Path,
+    override_login: str,
+    override_partner: str,
+    environ: Mapping[str, str],
+) -> tuple[str, str]:
+    """A lock birtokában: beolvas vagy generál, atomosan persistál, visszaolvas.
+
+    A holder pontosan egyszer ír: ha a számított (login, partner) pár már
+    megegyezik a persistált állapottal, nincs újraírás. Az írás után a
+    visszaolvasás korlátos retry-val történik (Windows-átmeneti megosztási
+    ablak), és a visszaolvasott értéknek pontosan a kiírt párnak kell lennie
+    -- eltérés vagy olvashatatlanság fail-closed hiba, sosem egy
+    ellenőrizetlen érték visszaadása.
+    """
+    persisted = _read_demo_credentials_state(state_path)
+    stored_login, stored_partner = persisted if persisted is not None else ("", "")
+    login = override_login or stored_login or demo_login_value(environ)
+    partner = override_partner or stored_partner or demo_partner_code(environ)
+    if (login, partner) != persisted:
+        _write_demo_credentials_state(state_path, login, partner)
+    converged: tuple[str, str] | None = None
+    for _attempt in range(_STATE_READBACK_ATTEMPTS):
+        converged = _read_demo_credentials_state(state_path)
+        if converged is not None:
+            break
+        time.sleep(_STATE_READBACK_DELAY)
+    if converged is None:
+        raise DemoCredentialsStateError(
+            "demo credential state could not be read back after a successful write."
+        )
+    if converged != (login, partner):
+        raise DemoCredentialsStateError(
+            "demo credential state changed while the creation lock was held."
+        )
+    return converged
+
+
 def demo_runtime_credentials(
     environ: Mapping[str, str] | None = None,
     state_path: Path | None = None,
@@ -197,9 +346,16 @@ def demo_runtime_credentials(
 
     Sorrend: (1) explicit környezeti override; (2) a közös, nem követett
     futásidejű állapotfájl; (3) biztonságosan generált érték, amely azonnal a
-    közös állapotba íródik. Minden írás után az állapot visszaolvasásra kerül,
-    így párhuzamos írók is a fájl tartalmához konvergálnak: a seedelő és a
-    login oldalt renderelő folyamat garantáltan ugyanazt az értéket látja.
+    közös állapotba íródik.
+
+    Az első létrehozás és a felülírás atomi exclusive-create lock mögött
+    történik: pontosan egy folyamat generál és persistál, minden párhuzamos
+    folyamat a persistált állapothoz konvergál (a várakozó folyamat közben
+    folyamatosan újraolvassa az állapotfájlt, így a holder sikeres írása után
+    azonnal konvergál). A lock-várakozás korlátos; a korlát kimerülése, nem
+    biztonságos (szimlink/nem reguláris) állapot vagy lock, illetve a sikeres
+    írás utáni ellenőrizhetetlen visszaolvasás fail-closed
+    ``DemoCredentialsStateError``.
 
     A production kaput a hívó alkalmazza: production módban ezt a függvényt
     nem szabad meghívni, mert a plaintext demo értékek kizárólag
@@ -211,16 +367,30 @@ def demo_runtime_credentials(
     override_login = values.get(DEMO_LOGIN_ENV, "").strip()
     override_partner = values.get(DEMO_PARTNER_CODE_ENV, "").strip()
     persisted = _read_demo_credentials_state(path)
-    if not override_login and not override_partner and persisted is not None:
+    if persisted is not None and _matches_overrides(persisted, override_login, override_partner):
         return persisted
-    stored_login, stored_partner = persisted if persisted is not None else ("", "")
-    login = override_login or stored_login or demo_login_value(values)
-    partner = override_partner or stored_partner or demo_partner_code(values)
-    _write_demo_credentials_state(path, login, partner)
-    converged = _read_demo_credentials_state(path)
-    if converged is not None:
-        return converged
-    return login, partner
+    lock_path = _demo_credentials_lock_path(path)
+    _assert_safe_runtime_target(lock_path, "lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    for delay in _DEMO_STATE_LOCK_RETRY_DELAYS:
+        if _try_create_demo_state_lock(lock_path):
+            try:
+                return _resolve_demo_state_under_lock(
+                    path, override_login, override_partner, values
+                )
+            finally:
+                _release_demo_state_lock(lock_path)
+        # Egy másik folyamat éppen dolgozik: ha az állapot már elérhető és
+        # teljesíti a hívó override-jait, lock nélkül konvergálunk rá.
+        converged = _read_demo_credentials_state(path)
+        if converged is not None and _matches_overrides(
+            converged, override_login, override_partner
+        ):
+            return converged
+        time.sleep(delay)
+    raise DemoCredentialsStateError(
+        "demo credential creation lock could not be acquired within the bounded retry window."
+    )
 
 
 def _process_demo_credentials() -> tuple[str, str]:

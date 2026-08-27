@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -279,6 +281,176 @@ class TestDemoCredentialsRuntimeState:
         assert not state_path.exists()
         assert len(login) == 24
         assert re.fullmatch(r"[0-9]{6}", partner)
+
+
+class TestDemoCredentialsConcurrentCreation:
+    """Valódi többfolyamatos verseny az első állapotlétrehozásra.
+
+    A Task36 review HIGH közvetlen regressziója: korábban két egyidejű
+    folyamat is üres állapotot olvashatott, különböző értékeket
+    generálhatott és mindkettő írhatott -- az exclusive-create
+    lock-protokollal pontosan egy folyamat generál és persistál, a többi a
+    persistált állapothoz konvergál, újraindítás után is. Minden alfolyamat
+    valódi OS-folyamat, amely a tényleges ``app.seed`` modult importálja (az
+    import maga futtatja a megosztott állapot létrehozását), nem szál- vagy
+    folyamat-szimuláció. A worker kód nem tartalmaz semmilyen credential
+    alakú literált, a plaintext demo érték kizárólag a tmp_path alatti
+    állapotfájlban és a folyamatok stdoutján (memóriában) jelenik meg --
+    tracked forrásba, logba vagy proofba soha.
+    """
+
+    @staticmethod
+    def _worker_code() -> str:
+        return (
+            "import sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from app import seed\n"
+            "print(seed.DEMO_PASSWORD)\n"
+            "print(seed.DEMO_PARTNER_CODE)\n"
+        )
+
+    @staticmethod
+    def _spawn_workers(state_path: Path, count: int) -> list[subprocess.Popen[str]]:
+        platform_core = Path(seed.__file__).resolve().parents[1]
+        env = {**os.environ, DEMO_CREDENTIALS_STATE_ENV: str(state_path)}
+        return [
+            subprocess.Popen(
+                [sys.executable, "-c", TestDemoCredentialsConcurrentCreation._worker_code(),
+                 str(platform_core)],
+                cwd=str(platform_core),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            for _ in range(count)
+        ]
+
+    @staticmethod
+    def _collect(processes: list[subprocess.Popen[str]]) -> list[tuple[str, str]]:
+        results: list[tuple[str, str]] = []
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=300)
+            assert process.returncode == 0, stderr
+            lines = stdout.splitlines()
+            assert len(lines) == 2, stdout
+            results.append((lines[0], lines[1]))
+        return results
+
+    def test_concurrent_first_creation_converges_and_restarts_stably(
+        self, tmp_path: Path
+    ) -> None:
+        """Négy egyidejű folyamat, egyetlen konvergens állapot, restart-stabilitás."""
+        state_path = tmp_path / "demo-credentials-state.json"
+        lock_path = tmp_path / "demo-credentials-state.json.lock"
+        results = self._collect(self._spawn_workers(state_path, count=4))
+        # Mind a négy folyamat ugyanazt a párt látta:
+        assert len(set(results)) == 1, results
+        login, partner = results[0]
+        assert len(login) == 24
+        assert _URLSAFE.fullmatch(login)
+        assert re.fullmatch(r"[0-9]{6}", partner)
+        # A persistált állapot pontosan a konvergens érték:
+        document = json.loads(state_path.read_text(encoding="utf-8"))
+        assert (document["demoLogin"], document["demoPartnerCode"]) == (login, partner)
+        assert document["kind"] == "demo-credentials-runtime-state"
+        # A creation-lock minden folyamat után felszabadult:
+        assert not lock_path.exists()
+        # Újraindítás-stabilitás: egy későbbi, egyedüli folyamat ugyanazt kapja.
+        restart = self._collect(self._spawn_workers(state_path, count=1))
+        assert restart == [(login, partner)]
+        # A valódi repository munkafa nem piszkolódott: a plaintext demo érték
+        # kizárólag a tmp_path alatti, nem követett állapotfájlban él.
+        repo_root = Path(seed.__file__).resolve().parents[3]
+        status_output = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=str(repo_root),
+            text=True,
+            encoding="utf-8",
+        )
+        assert "demo-credentials-state" not in status_output
+        assert login not in status_output
+
+    def test_fresh_creation_after_state_removal_converges_again(self, tmp_path: Path) -> None:
+        """Az állapot törlése után egy új verseny ismét egyetlen értékre konvergál."""
+        state_path = tmp_path / "demo-credentials-state.json"
+        first = self._collect(self._spawn_workers(state_path, count=1))[0]
+        state_path.unlink()
+        results = self._collect(self._spawn_workers(state_path, count=4))
+        assert len(set(results)) == 1, results
+        login, partner = results[0]
+        assert (login, partner) != first, "az új verseny friss értéket generált"
+        document = json.loads(state_path.read_text(encoding="utf-8"))
+        assert (document["demoLogin"], document["demoPartnerCode"]) == (login, partner)
+
+    def test_corrupt_state_self_heals_under_concurrent_creation(self, tmp_path: Path) -> None:
+        """Sérült állapot mellett is egyetlen folyamat gyógyít, mindenki konvergál."""
+        state_path = tmp_path / "demo-credentials-state.json"
+        state_path.write_text("{not valid json", encoding="utf-8")
+        results = self._collect(self._spawn_workers(state_path, count=3))
+        assert len(set(results)) == 1, results
+        login, partner = results[0]
+        document = json.loads(state_path.read_text(encoding="utf-8"))
+        assert (document["demoLogin"], document["demoPartnerCode"]) == (login, partner)
+        assert document["kind"] == "demo-credentials-runtime-state"
+
+    def test_creation_lock_is_exclusive_and_reentrant_after_release(
+        self, tmp_path: Path
+    ) -> None:
+        """Az exclusive-create lock pontosan egy folyamatnak jár egyszerre."""
+        lock_path = tmp_path / "demo-credentials-state.json.lock"
+        assert seed._try_create_demo_state_lock(lock_path) is True
+        assert seed._try_create_demo_state_lock(lock_path) is False
+        assert lock_path.read_text(encoding="utf-8").strip() == str(os.getpid())
+        seed._release_demo_state_lock(lock_path)
+        assert not lock_path.exists()
+        assert seed._try_create_demo_state_lock(lock_path) is True
+        seed._release_demo_state_lock(lock_path)
+
+    def test_held_lock_fails_closed_within_the_bounded_window(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Tartósan fogott lock: korlátos várakozás után fail-closed hiba."""
+        state_path = tmp_path / "demo-credentials-state.json"
+        lock_path = tmp_path / "demo-credentials-state.json.lock"
+        assert seed._try_create_demo_state_lock(lock_path) is True
+        monkeypatch.setattr(seed, "_DEMO_STATE_LOCK_RETRY_DELAYS", (0.01, 0.01, 0.01))
+        try:
+            with pytest.raises(seed.DemoCredentialsStateError):
+                demo_runtime_credentials({}, state_path=state_path)
+            # A várakozás alatt nem jött létre divergens állapot:
+            assert not state_path.exists()
+        finally:
+            seed._release_demo_state_lock(lock_path)
+        # A lock felszabadulása után a generálás rendben lefut:
+        resolved = demo_runtime_credentials({}, state_path=state_path)
+        assert len(resolved[0]) == 24
+        assert re.fullmatch(r"[0-9]{6}", resolved[1])
+
+    def test_unsafe_state_target_fails_closed(self, tmp_path: Path) -> None:
+        """Könyvtár a state vagy lock útvonalon: fail-closed, nem öngyógyítás."""
+        state_path = tmp_path / "demo-credentials-state.json"
+        state_path.mkdir()
+        with pytest.raises(seed.DemoCredentialsStateError):
+            demo_runtime_credentials({}, state_path=state_path)
+        state_path.rmdir()
+        lock_path = tmp_path / "demo-credentials-state.json.lock"
+        lock_path.mkdir()
+        with pytest.raises(seed.DemoCredentialsStateError):
+            demo_runtime_credentials({}, state_path=state_path)
+
+    def test_symlinked_state_target_fails_closed(self, tmp_path: Path) -> None:
+        """Szimlink a state útvonalon: fail-closed átirányítás-védelem."""
+        state_path = tmp_path / "demo-credentials-state.json"
+        target = tmp_path / "elsewhere.json"
+        try:
+            state_path.symlink_to(target)
+        except OSError:
+            pytest.skip("symlink creation is unavailable on this host")
+        with pytest.raises(seed.DemoCredentialsStateError):
+            demo_runtime_credentials({}, state_path=state_path)
 
 
 class TestPartnerDemoAccessGate:
