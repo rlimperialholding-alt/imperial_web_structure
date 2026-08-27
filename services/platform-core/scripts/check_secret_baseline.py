@@ -98,19 +98,24 @@ Audited-set contract:
   reconciled root fails closed (status 2), and a file that did not exist at
   the audited commit has no audited state at all -- every finding in it
   fails closed unless structurally classified;
-* reconciliation is occurrence-aware against that audited set: a live
-  identity that exactly matches a baseline entry reconciles; otherwise the
-  live occurrence count of its ``(path, type, fingerprint)`` value is
-  compared with the audited occurrence count of the same value. Not
-  exceeding means the live occurrences are existing occurrences (line drift
-  or repeated occurrences of an audited value) and they reconcile; exceeding
-  means at least one occurrence was introduced after the audited state, and
-  every live line of that value that is not exactly audited must then be
-  proven harmless by a structural classifier on its exact line -- one
-  unprovable line fails closed, even when the same digest is audited or
-  classified on another line. A live finding without a usable line number
-  never reconciles through the audited state: it stays unclassified and
-  fails closed;
+* reconciliation is occurrence-aware against that audited set, and strictly
+  per line: a live identity reconciles only when it exactly matches a
+  baseline entry, exactly matches an audited occurrence on the same line, or
+  is *proven* to be one specific audited occurrence that an unrelated edit
+  shifted. That proof is immutable line-content evidence -- the live line
+  text must be byte-identical (compared as SHA-256 content fingerprints) to
+  the audited line's text read from git history at the anchor commit -- and
+  it is injective: every audited occurrence backs at most one live
+  occurrence, and a live occurrence already sitting on its audited line
+  claims that audited occurrence first. Aggregate occurrence counts are
+  never a reconciliation input: a value's total count matching the audited
+  total proves nothing about *which* occurrence is live, so an audited
+  digest deleted from its classified line and reintroduced on a different,
+  unclassified line stays an addition and must be proven harmless by a
+  structural classifier on its exact line -- one unprovable line fails
+  closed, even when the same digest is audited or classified on another
+  line. A live finding without a usable line number never reconciles through
+  the audited state: it stays unclassified and fails closed;
 * a live candidate outside the baseline is cleared only by a *structural
   classifier* (see ``_STRUCTURAL_CLASSIFIERS``). A classifier does not trust a
   path, a filename or a remembered fingerprint: it re-reads the reported line
@@ -175,7 +180,6 @@ import re
 import subprocess
 import sys
 import time
-from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from importlib import metadata
@@ -865,6 +869,68 @@ def _audited_occurrence_identities(
     return identities
 
 
+def _line_content_digests(lines: list[str]) -> dict[int, str]:
+    """Map each 1-based line number to the SHA-256 of that exact line text.
+
+    Only the digest is retained, never the line itself, so the per-line
+    equivalence evidence used by ``_split_additions`` can be compared, counted
+    and reasoned about without any secret plaintext ever entering a data
+    structure, a message or a report.
+    """
+    return {
+        index: hashlib.sha256(line.encode("utf-8")).hexdigest()
+        for index, line in enumerate(lines, start=1)
+    }
+
+
+def _audited_line_content_digests(
+    repo_root: Path,
+    anchor: str,
+    addition_paths: list[str],
+) -> dict[str, dict[int, str]]:
+    """Per-line content fingerprints of the addition files at the audited commit.
+
+    This is the immutable evidence that lets ``_split_additions`` prove a
+    *specific* audited occurrence still exists after an unrelated edit shifted
+    its line: the audited line text is read straight from git history at the
+    anchor commit, so nothing in the working tree can influence it.
+
+    A path that did not exist at the audited commit, or whose audited content
+    is not valid UTF-8 (the driver forces UTF-8, so such a version was never
+    line-addressable either), contributes no evidence at all -- every live
+    occurrence in it then stays an addition and fails closed unless a
+    structural classifier proves it. Any other git failure raises
+    ``ScanFailure`` through ``_audited_file_bytes``.
+    """
+    evidence: dict[str, dict[int, str]] = {}
+    for path in sorted(addition_paths):
+        content = _audited_file_bytes(repo_root, anchor, path)
+        if content is None:
+            continue
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        evidence[path] = _line_content_digests(text.splitlines())
+    return evidence
+
+
+def _live_line_content_digests(
+    repo_root: Path,
+    addition_paths: list[str],
+) -> dict[str, dict[int, str]]:
+    """Per-line content fingerprints of the addition files in the working tree.
+
+    Read through the same strict UTF-8 reader the structural classifiers use,
+    so the equivalence proof and the classification see byte-identical line
+    text. An unreadable candidate raises ``ScanFailure`` and fails closed.
+    """
+    return {
+        path: _line_content_digests(_read_text_for_classification(repo_root / path))
+        for path in sorted(addition_paths)
+    }
+
+
 def _normalized_line_number(finding: dict[str, Any]) -> int | None:
     """The 1-based line number of a finding; ``None`` when absent or malformed.
 
@@ -1185,10 +1251,12 @@ def reconcile_tracked_secrets(
     failure or canonical-set condition. The live scan always runs; there is
     no snapshot or environment bypass. Messages never contain secret
     material, only file paths/counts and fingerprints. Comparison is
-    occurrence-aware against the audited state: a value audited on one line
-    reconciles when its live occurrence count does not exceed the audited
-    count, and a newly introduced occurrence must still be proven harmless by
-    a structural classifier on its exact line (see the module docstring).
+    occurrence-aware and strictly per line against the audited state: an
+    audited occurrence reconciles on its own line, or on a shifted line only
+    when immutable line-content evidence proves it is that same occurrence
+    (never an aggregate count), and every other occurrence must still be
+    proven harmless by a structural classifier on its exact line (see the
+    module docstring).
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     if not baseline_path.is_file():
@@ -1216,15 +1284,22 @@ def reconcile_tracked_secrets(
     additions = observed - audited
     audited_anchor = ""
     audited_state: set[tuple[str, str, str, int]] = set()
+    audited_line_digests: dict[str, dict[int, str]] = {}
+    live_line_digests: dict[str, dict[int, str]] = {}
     try:
         if additions:
+            addition_paths = sorted({filename for filename, _, _, _ in additions})
             audited_anchor = _baseline_anchor_commit(root, baseline_path)
-            audited_state = _audited_occurrence_identities(
-                root,
-                audited_anchor,
-                sorted({filename for filename, _, _, _ in additions}),
+            audited_state = _audited_occurrence_identities(root, audited_anchor, addition_paths)
+            # Sor-szintű, megváltoztathatatlan tartalmi bizonyíték a konkrét
+            # előfordulás azonosságához -- aggregált darabszám helyett.
+            audited_line_digests = _audited_line_content_digests(
+                root, audited_anchor, addition_paths
             )
-        resolved, remaining = _split_additions(additions, observed, audited_state)
+            live_line_digests = _live_line_content_digests(root, addition_paths)
+        resolved, remaining = _split_additions(
+            additions, observed, audited_state, audited_line_digests, live_line_digests
+        )
         classified, unclassified = _classify_additions(current, remaining, root)
     except ScanFailure as exc:
         return 2, str(exc)
@@ -1270,52 +1345,167 @@ def reconcile_tracked_secrets(
     return 0, "; ".join(parts) + "."
 
 
+def _match_occurrences(
+    audited_lines: list[int],
+    live_lines: list[int],
+    audited_digests: dict[int, str],
+    live_digests: dict[int, str],
+) -> dict[int, int]:
+    """Maximum one-to-one seating of live occurrences on audited occurrences.
+
+    Returns ``{audited line: live line}``: the audited occurrences that are
+    proven still live, and which live occurrence each one accounts for. Every
+    live occurrence left unseated is a new occurrence and stays an addition.
+
+    Byte-identical line content is an *equivalence* relation, so the
+    content-proof graph is a disjoint union of complete bipartite blocks --
+    one per content fingerprint. Maximum matching therefore needs no search:
+    inside a block, ``min(live, audited)`` occurrences seat, and an
+    occurrence that is unchanged in place (its live line is also an audited
+    line of the same content) seats first, so a stronger claim is never
+    displaced by a weaker one. A file whose block drifted wholesale still
+    seats perfectly, because every occurrence in it carries its own content
+    proof.
+
+    Only after that does bare line-number identity apply, for the exact
+    per-line audited identity ``(path, type, fingerprint, line)`` that the
+    audited set records directly. Such an edge joins one live line to the one
+    audited line with the same number, so seating it can never block another
+    occurrence.
+
+    A line with no content fingerprint on either side (out of range, or a
+    file with no audited content evidence) never forms a content edge. All
+    iteration is over sorted inputs, so the result is deterministic.
+    """
+    audited_by_content: dict[str, list[int]] = {}
+    for audited_line in audited_lines:
+        content = audited_digests.get(audited_line)
+        if content is not None:
+            audited_by_content.setdefault(content, []).append(audited_line)
+    live_by_content: dict[str, list[int]] = {}
+    for live_line in live_lines:
+        content = live_digests.get(live_line)
+        if content is not None:
+            live_by_content.setdefault(content, []).append(live_line)
+
+    assignment: dict[int, int] = {}
+    seated_live: set[int] = set()
+    for content, block_audited in sorted(audited_by_content.items()):
+        block_live = live_by_content.get(content, [])
+        block_audited_set = set(block_audited)
+        # Előbb a helyükön változatlan előfordulások ülnek le, csak utána a
+        # bizonyítottan elcsúszottak -- így egy változatlan előfordulást
+        # sosem szoríthat ki egy elcsúszott másolat.
+        for line in block_live:
+            if line in block_audited_set:
+                assignment[line] = line
+                seated_live.add(line)
+        free_audited = [line for line in block_audited if line not in assignment]
+        drifted = [line for line in block_live if line not in seated_live]
+        for audited_line, live_line in zip(free_audited, drifted, strict=False):
+            assignment[audited_line] = live_line
+            seated_live.add(live_line)
+
+    audited_set = set(audited_lines)
+    for live_line in live_lines:
+        if live_line in seated_live or live_line in assignment:
+            continue
+        if live_line in audited_set:
+            assignment[live_line] = live_line
+            seated_live.add(live_line)
+    return assignment
+
+
 def _split_additions(
     additions: set[tuple[str, str, str, int | None]],
     observed: set[tuple[str, str, str, int | None]],
     audited_state: set[tuple[str, str, str, int]],
+    audited_line_digests: dict[str, dict[int, str]],
+    live_line_digests: dict[str, dict[int, str]],
 ) -> tuple[
     set[tuple[str, str, str, int | None]],
     set[tuple[str, str, str, int | None]],
 ]:
     """Split live-but-unbaselined identities into reconciled and remaining.
 
-    An identity that the audited state contains on the exact same line
-    reconciles directly (the audited occurrence still lives on its audited
-    line). Every other identity reconciles only when its value's live
-    occurrence count does not exceed the audited occurrence count of the same
-    ``(path, type, fingerprint)`` value -- the occurrences are then existing
-    occurrences whose lines drifted after an unrelated edit, or repeated
-    occurrences of an audited value that the deduplicating baseline generator
-    recorded once. A value whose live count exceeds the audited count has at
-    least one occurrence introduced after the audited state: those identities
-    stay in the remaining set and must each be proven harmless by a
-    structural classifier on their exact line. An identity without a usable
-    line number never reconciles through the audited state and always stays
-    remaining (fail closed).
+    Strict per-line identity, with no aggregate-count substitution anywhere.
+    Per ``(path, type, fingerprint)`` value, the live occurrences are matched
+    one-to-one against the audited occurrences of that same value. Only a
+    live occurrence that is *individually* matched to an audited occurrence
+    counts as pre-existing; every unmatched one stays an addition and must be
+    proven harmless by a structural classifier on its exact line.
+
+    A live occurrence may be seated on an audited occurrence only on
+    immutable evidence, in strictly decreasing strength (see
+    ``_match_occurrences``):
+
+    1. same line number *and* byte-identical line content -- the audited
+       occurrence demonstrably still sits untouched where it was audited;
+    2. byte-identical line content -- the audited occurrence is proven to be
+       this very occurrence, shifted by an unrelated edit above it. Both
+       sides are compared as SHA-256 content fingerprints, one taken from git
+       history at the anchor commit, one from the working tree;
+    3. same line number -- the exact per-line audited identity
+       ``(path, type, fingerprint, line)``, which the audited set records
+       directly.
+
+    The strongest available evidence is committed first, so an occurrence
+    that is unchanged in place can never be displaced by a weaker claim, and
+    a value audited once that now appears twice can never have both copies
+    cleared.
+
+    Equivalence is therefore proven per occurrence, never inferred from how
+    many occurrences a value happens to have: an audited digest deleted from
+    its classified line and reintroduced on a different, unclassified line
+    has no edge at all and fails closed, even though the total count is
+    unchanged. Because the structural classifiers decide on exactly that line
+    text (plus the unchanged path), byte-identical content cannot smuggle a
+    classified key, context or position into an unclassified one -- any
+    change to the line breaks the proof.
+
+    An identity without a usable line number, one in a file with no audited
+    content evidence (new at the audited commit, or not UTF-8 decodable
+    there), and one whose live line is out of range never reconcile through
+    the audited state: they always stay remaining (fail closed). Ordering is
+    fully sorted, so the split is deterministic.
     """
-    audited_counts: Counter[tuple[str, str, str]] = Counter(
-        identity[:3] for identity in audited_state
-    )
-    live_counts: Counter[tuple[str, str, str]] = Counter(
-        identity[:3] for identity in observed if identity[3] is not None
-    )
+    audited_by_value: dict[tuple[str, str, str], set[int]] = {}
+    for path, finding_type, hashed, line_number in audited_state:
+        audited_by_value.setdefault((path, finding_type, hashed), set()).add(line_number)
+    live_by_value: dict[tuple[str, str, str], set[int]] = {}
+    for path, finding_type, hashed, line_number in observed:
+        if line_number is None:
+            continue
+        live_by_value.setdefault((path, finding_type, hashed), set()).add(line_number)
+
+    matched: set[tuple[str, str, str, int]] = set()
+    for value_key, audited_lines in sorted(audited_by_value.items()):
+        path = value_key[0]
+        assignment = _match_occurrences(
+            sorted(audited_lines),
+            sorted(live_by_value.get(value_key, frozenset())),
+            audited_line_digests.get(path, {}),
+            live_line_digests.get(path, {}),
+        )
+        matched.update((*value_key, live_line) for live_line in assignment.values())
+
     resolved: set[tuple[str, str, str, int | None]] = set()
     remaining: set[tuple[str, str, str, int | None]] = set()
-    for identity in additions:
+    for identity in sorted(additions, key=_addition_sort_key):
         path, finding_type, hashed, line_number = identity
-        if line_number is None:
+        if line_number is not None and (path, finding_type, hashed, line_number) in matched:
+            resolved.add(identity)
+        else:
             remaining.add(identity)
-            continue
-        if (path, finding_type, hashed, line_number) in audited_state:
-            resolved.add(identity)
-            continue
-        value_key = (path, finding_type, hashed)
-        if live_counts[value_key] <= audited_counts[value_key]:
-            resolved.add(identity)
-            continue
-        remaining.add(identity)
     return resolved, remaining
+
+
+def _addition_sort_key(
+    identity: tuple[str, str, str, int | None],
+) -> tuple[str, str, str, bool, int]:
+    """Total order over addition identities, tolerating a missing line number."""
+    path, finding_type, hashed, line_number = identity
+    return (path, finding_type, hashed, line_number is None, line_number or 0)
 
 
 def main() -> int:

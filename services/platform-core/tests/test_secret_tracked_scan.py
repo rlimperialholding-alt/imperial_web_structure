@@ -1568,6 +1568,199 @@ def test_duplicated_audited_value_blocks_without_structural_proof(tmp_path: Path
     assert row["lineNumbers"] == [3]
 
 
+def test_audited_digest_moved_to_an_unclassified_line_fails_closed(tmp_path: Path) -> None:
+    """A Task38 review HIGH közvetlen regressziója: sor-helyettesítés fail-closed.
+
+    Az auditált digest ELTŰNIK az eredeti, classified (``reference_sha256``)
+    soráról, és egy ÚJ, osztályozatlan (``unbound``) soron jelenik meg. Az
+    érték összes előfordulásszáma változatlan (auditáltan 1, élőben 1), tehát
+    a korábbi aggregált darabszám-szabály (``live <= audited``) ezt a
+    találatot "létezőként" tisztázta volna -- ez volt a bypass. A szigorú,
+    soronkénti tartalmi egyenértékűség mellett a két sor szövege eltér, így
+    nincs bizonyíték, a találat addition marad, a classifier az ``unbound``
+    soron nem bizonyít, és a reconciliation fail-closed.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    digest_line, hashed = _digest_line("reference_sha256", b"synthetic-line-substitution")
+    digest = hashlib.sha256(b"synthetic-line-substitution").hexdigest()
+    target = _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + '  "x": 1\n}\n')
+    baseline = repo / "synthetic-baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "results": {
+                    _DIGEST_MANIFEST_PATH: [
+                        {
+                            "type": "Hex High Entropy String",
+                            "hashed_secret": hashed,
+                            "line_number": 2,
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
+    _commit(repo)
+    # A classified 2. sor törölve; ugyanaz a digest a 3. soron, kötetlen
+    # kulcshoz rendelve. Az előfordulásszám marad 1.
+    target.write_text(
+        '{\n  "x": 1,\n  "unbound": "' + digest + '",\n  "y": 2\n}\n',
+        encoding="utf-8",
+    )
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1, message
+    assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
+    assert _DIGEST_MANIFEST_PATH in message
+    # Semmilyen classifier-engedmény és semmilyen audited-state egyeztetés nem
+    # tisztázhatta a helyettesített sort.
+    assert "content-digest" not in message
+    assert "reconcile with the audited repository state" not in message
+    assert digest not in message
+    audit = repo / "services" / "platform-core" / "runtime" / "tracked-secret-delta-audit.json"
+    document = json.loads(audit.read_text(encoding="utf-8"))
+    row = document["rows"][0]
+    assert row["path"] == _DIGEST_MANIFEST_PATH
+    assert row["hashes"] == [hashed]
+    assert row["lineNumbers"] == [3]
+    # A premissza rögzítése: pontosan EGY auditált előfordulás állt a 2. soron,
+    # és pontosan EGY élő előfordulás van -- az összesített darabszám tehát
+    # valóban változatlan, a fail-closed kizárólag a soronkénti tartalmi
+    # egyenértékűség hiányából ered.
+    anchor = check_secret_baseline._baseline_anchor_commit(repo, baseline)
+    audited_state = check_secret_baseline._audited_occurrence_identities(
+        repo, anchor, [_DIGEST_MANIFEST_PATH]
+    )
+    assert {line for _, _, _, line in audited_state} == {2}
+    assert row["findingCount"] == 1
+
+
+def test_equal_occurrence_counts_never_substitute_across_line_content() -> None:
+    """``_split_additions``: azonos darabszám önmagában sosem tisztáz.
+
+    Közvetlen egység-bizonyíték az eltávolított bypassra: az auditált érték
+    egyetlen előfordulása a 2. soron állt, az élő egyetlen előfordulás a 7.
+    soron áll, más tartalommal. A darabszámok egyenlők, mégis nincs
+    egyenértékűségi bizonyíték -- az identitás remaining marad.
+    """
+    path = _DIGEST_MANIFEST_PATH
+    value = (path, "Hex High Entropy String", "f" * 40)
+    additions = {(*value, 7)}
+    observed = {(*value, 7)}
+    audited_state = {(*value, 2)}
+    audited_digests = {path: {2: "a" * 64}}
+    live_digests = {path: {7: "b" * 64}}
+
+    resolved, remaining = check_secret_baseline._split_additions(
+        additions, observed, audited_state, audited_digests, live_digests
+    )
+    assert resolved == set()
+    assert remaining == additions
+    # Ellenpróba: azonos sortartalom mellett ugyanez az eltolódott előfordulás
+    # bizonyítottan ugyanaz -- ilyenkor és csak ilyenkor egyeztet.
+    resolved, remaining = check_secret_baseline._split_additions(
+        additions, observed, audited_state, audited_digests, {path: {7: "a" * 64}}
+    )
+    assert resolved == additions
+    assert remaining == set()
+
+
+def test_one_audited_occurrence_backs_at_most_one_live_occurrence() -> None:
+    """Az egyenértékűségi egyeztetés injektív: egy auditált előfordulás egy élőt fed.
+
+    Két élő előfordulás azonos, az auditálttal egyező sortartalommal, de csak
+    egyetlen auditált előfordulás létezik. Pontosan az egyik tisztázható; a
+    másik addition marad és a strukturális osztályozóra vár.
+    """
+    path = _DIGEST_MANIFEST_PATH
+    value = (path, "Hex High Entropy String", "e" * 40)
+    additions = {(*value, 7), (*value, 9)}
+    observed = set(additions)
+    audited_state = {(*value, 2)}
+    audited_digests = {path: {2: "a" * 64}}
+    live_digests = {path: {7: "a" * 64, 9: "a" * 64}}
+
+    resolved, remaining = check_secret_baseline._split_additions(
+        additions, observed, audited_state, audited_digests, live_digests
+    )
+    assert len(resolved) == 1
+    assert len(remaining) == 1
+    assert resolved | remaining == additions
+    # Determinisztikus: a rendezett sorrend első jelöltje foglalja le.
+    assert resolved == {(*value, 7)}
+
+
+def test_audited_line_still_occupied_cannot_also_back_a_drifted_copy() -> None:
+    """Egy változatlan és egy új másolat sosem tisztázható ugyanazzal az auditálttal.
+
+    Az auditált előfordulás a 2. soron áll, és élőben is ott áll (tehát
+    lefoglalt). Ugyanaz az érték azonos sortartalommal megjelenik a 9. soron
+    is: ez új előfordulás, amelyet az auditált 2. sor nem fedhet le.
+    """
+    path = _DIGEST_MANIFEST_PATH
+    value = (path, "Hex High Entropy String", "d" * 40)
+    observed = {(*value, 2), (*value, 9)}
+    additions = {(*value, 9)}
+    audited_state = {(*value, 2)}
+    audited_digests = {path: {2: "a" * 64}}
+    live_digests = {path: {2: "a" * 64, 9: "a" * 64}}
+
+    resolved, remaining = check_secret_baseline._split_additions(
+        additions, observed, audited_state, audited_digests, live_digests
+    )
+    assert resolved == set()
+    assert remaining == additions
+
+
+def test_drifted_block_of_distinct_occurrences_seats_completely() -> None:
+    """Egy sorral lecsúszott blokk minden előfordulása egyeztet.
+
+    Két auditált előfordulás a 41. és 42. soron, más-más sortartalommal; élőben
+    ugyanaz a két sortartalom a 42. és 43. soron. A 42. élő sor száma
+    véletlenül egybeesik egy auditált sorral, de MÁS tartalommal -- a
+    tartalmi bizonyíték szerinti párosítás ezt helyesen oldja fel, és
+    mindkét előfordulás egyeztet (valós regresszió a
+    ``tests/test_user_administration.py`` fájlból).
+    """
+    path = "services/platform-core/tests/test_user_administration.py"
+    value = (path, "Secret Keyword", "0" * 40)
+    additions = {(*value, 43)}
+    observed = {(*value, 42), (*value, 43)}
+    audited_state = {(*value, 41), (*value, 42)}
+    audited_digests = {path: {41: "a" * 64, 42: "b" * 64}}
+    live_digests = {path: {42: "a" * 64, 43: "b" * 64}}
+
+    resolved, remaining = check_secret_baseline._split_additions(
+        additions, observed, audited_state, audited_digests, live_digests
+    )
+    assert resolved == additions
+    assert remaining == set()
+
+
+def test_missing_line_content_evidence_never_reconciles() -> None:
+    """Bizonyíték nélkül (hiányzó auditált vagy élő sortartalom) fail-closed."""
+    path = "late.json"
+    value = (path, "Hex High Entropy String", "c" * 40)
+    additions = {(*value, 4), (*value, None)}
+    observed = set(additions)
+    audited_state = {(*value, 2)}
+
+    # Nincs auditált tartalmi bizonyíték (a fájl nem létezett az anchoron).
+    resolved, remaining = check_secret_baseline._split_additions(
+        additions, observed, audited_state, {}, {path: {4: "a" * 64}}
+    )
+    assert resolved == set()
+    assert remaining == additions
+    # Nincs élő tartalmi bizonyíték (tartományon kívüli sor).
+    resolved, remaining = check_secret_baseline._split_additions(
+        additions, observed, audited_state, {path: {2: "a" * 64}}, {path: {}}
+    )
+    assert resolved == set()
+    assert remaining == additions
+
+
 def test_new_tracked_file_after_the_audited_state_fails_closed(tmp_path: Path) -> None:
     """Az audited commit után létrejött fájlnak nincs auditált állapota.
 
