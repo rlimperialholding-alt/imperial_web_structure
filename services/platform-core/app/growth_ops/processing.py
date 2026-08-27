@@ -205,6 +205,12 @@ def _sanitize_unbound_claims(package: dict[str, Any]) -> dict[str, Any]:
         "leggyakoribb": "gyakori",
         "a legjobb": "megfelelő",
         "legjobb": "megfelelő",
+        "a legfontosabb": "fontos",
+        "legfontosabb": "fontos",
+        "a legbiztosabb": "körültekintő",
+        "legbiztosabb": "körültekintő",
+        "a legmegfelelőbb": "megfelelő",
+        "legmegfelelőbb": "megfelelő",
         "garantáltan": "",
         "biztosan": "",
     }
@@ -291,11 +297,12 @@ def _deterministic_publication_errors(
     # claims remain fail-closed even when a related URL is attached.
     enforce_unbound_claim_rules = True
     if enforce_unbound_claim_rules:
-        claim_text = re.sub(
-            re.escape(str(package.get("brand_id") or "")),
-            "",
-            raw,
-            flags=re.IGNORECASE,
+        brand_tokens = re.findall(
+            r"[^\W\d_]+|\d+", str(package.get("brand_id") or ""), flags=re.UNICODE
+        )
+        brand_pattern = r"[\s_-]*".join(re.escape(token) for token in brand_tokens)
+        claim_text = (
+            re.sub(brand_pattern, "", raw, flags=re.IGNORECASE) if brand_pattern else raw
         )
         if re.search(r"\d", claim_text):
             errors.append("unverified_numeric_claim")
@@ -1504,7 +1511,15 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     if not repair_errors:
                         package = repaired
                         break
-                    package = repaired
+                    structural_errors = {
+                        "title_missing",
+                        "body_too_short",
+                        "facebook_too_short",
+                        "facebook_hashtag_count_invalid",
+                        "cta_missing",
+                    }
+                    if not structural_errors.intersection(repair_errors):
+                        package = repaired
                     deterministic_errors = repair_errors
                 else:
                     raise ValueError(
