@@ -17,14 +17,22 @@ export class HumanAnnePublisherAdapter implements HumanAnneIncidentPublisher {
     severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
     title: string; description: string; sourceIncidentId: string;
   }) {
-    await this.service.open({
-      category: "INTEGRATION_CONTROL_ROOM",
-      severity: input.severity,
-      title: input.title,
-      description: input.description,
-      recommendedAction: "Ellenőrizd az Integration Control Roomot; szükség esetén indíts retry-t vagy OAuth újrahitelesítést.",
-      source: `integration-control-room:${input.sourceIncidentId}:${input.connectorId ?? "platform"}`,
-    });
+    // The Integration Control Room has already persisted this incident without
+    // a human assignee. Do not mirror technical faults into Human Anne's queue.
+    void this.service;
+    void input;
+  }
+}
+
+export class UnassignedTechnicalIncidentWriter {
+  async open(_input: {
+    category: string; severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+    title: string; description: string; recommendedAction: string;
+    source: string; createdAt: Date;
+  }) {
+    // The orchestrator observer writes the canonical unassigned Control Room
+    // incident. This compatibility sink deliberately creates no human task.
+    return { routedTo: "integration-control-room", assignedTo: null };
   }
 }
 

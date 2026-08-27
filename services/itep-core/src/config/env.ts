@@ -6,7 +6,7 @@ const envSchema = z.object({
   HOST: z.string().min(1).default("0.0.0.0"),
   DATABASE_URL: z.string().min(1),
   DEFAULT_ORGANIZATION_ID: z.string().min(1).default("imperial-holding"),
-  DEFAULT_ASSIGNEE_ID: z.string().min(1).default("human-anne"),
+  DEFAULT_ASSIGNEE_ID: z.string().min(1).default("system-business-review"),
   DEFAULT_ESCALATION_PERSON_ID: z.string().min(1).default("director"),
   DEFAULT_CONTACT_EMAIL: z.string().email(),
   IDENTITY_SHARED_SECRET: z.string().min(32),

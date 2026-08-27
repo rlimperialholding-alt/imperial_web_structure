@@ -69,7 +69,10 @@ def test_hash_bound_quality_gate_blocks_every_public_route_without_image(db, mon
         "brand_id": "Bautica",
         "title": "Felújítási útmutató",
         "body": "A jól előkészített felújítás átláthatóbb döntéseket tesz lehetővé. " * 12,
-        "facebook_post": "A felújítás jó előkészítéssel átláthatóbb és nyugodtabb folyamat. #felujitas #otthon #szakma",
+        "facebook_post": (
+            "A felújítás jó előkészítéssel átláthatóbb és nyugodtabb folyamat. "
+            "#felujitas #otthon #szakma"
+        ),
         "cta": {"label": "Kapcsolat"},
         "source_urls": [],
         "publication_state": "RELEASE_APPROVED",
@@ -265,7 +268,7 @@ def test_source_extraction_accepts_only_literal_evidence(db, monkeypatch):
     source_permalink = "https://source.test/project/liget-projekt-123"
     text = (
         "A Minta Építő Kft. bejelentette a Liget projekt előkészítését. "
-        f"Mikor indulhat el a kivitelezés? {source_permalink}"
+        f"Mikor indulhat el a kivitelezés? {source_permalink} ma Nyitott 0 válasz"
     )
     response = {
         "leads": [
@@ -293,6 +296,11 @@ def test_source_extraction_accepts_only_literal_evidence(db, monkeypatch):
                 "question_kind": "literal",
                 "evidence_excerpt": "Mikor indulhat el a kivitelezés?",
                 "source_permalink": source_permalink,
+                "published_at_raw": "ma",
+                "active_status": "active",
+                "active_status_raw": "Nyitott",
+                "existing_answer_count": 0,
+                "answer_count_raw": "0 válasz",
             },
             {
                 "question": "Mennyi lesz az ára?",
@@ -327,16 +335,22 @@ def test_source_extraction_accepts_only_literal_evidence(db, monkeypatch):
 
 
 def test_question_permalink_is_preserved_only_for_exact_forum_candidate(db, monkeypatch):
-    text = "Milyen falazatot érdemes választani egy családi házhoz?"
+    question = "Milyen falazatot érdemes választani egy családi házhoz?"
+    text = f"{question} ma Nyitott 0 válasz"
     permalink = "https://forum.source.test/kerdesek/12345-milyen-falazat"
     response = {
         "leads": [],
         "questions": [
             {
-                "question": text,
+                "question": question,
                 "question_kind": "literal",
-                "evidence_excerpt": text,
+                "evidence_excerpt": question,
                 "source_permalink": permalink,
+                "published_at_raw": "ma",
+                "active_status": "active",
+                "active_status_raw": "Nyitott",
+                "existing_answer_count": 0,
+                "answer_count_raw": "0 válasz",
             }
         ],
     }
@@ -344,7 +358,9 @@ def test_question_permalink_is_preserved_only_for_exact_forum_candidate(db, monk
     monkeypatch.setattr(
         processing,
         "complete_json",
-        lambda *args, **kwargs: SimpleNamespace(request_id="DS-FORUM", content=json.dumps(response)),
+        lambda *args, **kwargs: SimpleNamespace(
+            request_id="DS-FORUM", content=json.dumps(response)
+        ),
     )
     route = _route()
     route.source_type = "fórum"
@@ -394,6 +410,11 @@ def test_qjob_card_label_is_evidence_and_creates_one_brand_reply(db, monkeypatch
                 "question_kind": "literal",
                 "evidence_excerpt": question,
                 "source_permalink": permalink,
+                "published_at_raw": "ma",
+                "active_status": "active",
+                "active_status_raw": "Nyitott",
+                "existing_answer_count": 0,
+                "answer_count_raw": "0 válasz",
             }
         ],
     }
@@ -416,8 +437,8 @@ def test_qjob_card_label_is_evidence_and_creates_one_brand_reply(db, monkeypatch
         db,
         route=route,
         attempt=attempt,
-        text="Építési és felújítási feladatok Budapesten.",
-        link_candidates=[{"url": permalink, "label": question}],
+        text="Építési és felújítási feladatok Budapesten. ma Nyitott 0 válasz",
+        link_candidates=[{"url": permalink, "label": f"{question} ma Nyitott 0 válasz"}],
     )
     db.commit()
 
@@ -485,14 +506,22 @@ def test_question_answer_generator_quarantines_exact_artifact(db, monkeypatch):
         source_url="https://forum.source.test/kerdesek/12345-milyen-falazat",
         classification="observed_literal",
         dedupe_hash="d" * 64,
+        published_at=datetime(2026, 8, 21, tzinfo=UTC),
+        age_days=0,
+        active_status="active",
+        existing_answer_count=0,
+        freshness_decision="preferred_0_30_days",
+        eligibility_status="eligible",
     )
     db.add(topic)
     db.commit()
     monkeypatch.setattr(processing, "settings", lambda: _settings())
     disclosure = "A Bautica csapatának nevében válaszolok."
     answer = disclosure + " " + (
-        "A falazatot a statikai terv, a hőtechnikai cél, a kivitelezési rendszer és a teljes rétegrend alapján érdemes kiválasztani. "
-        "Előbb rögzítsék a követelményeket, majd azonos feltételekkel hasonlítsák össze a szóba jövő szerkezeteket. "
+        "A falazatot a statikai terv, a hőtechnikai cél, a kivitelezési rendszer "
+        "és a teljes rétegrend alapján érdemes kiválasztani. Előbb rögzítsék a "
+        "követelményeket, majd azonos feltételekkel hasonlítsák össze a szóba "
+        "jövő szerkezeteket. "
     ) * 3
     monkeypatch.setattr(
         processing,
@@ -541,6 +570,12 @@ def test_construction_marketplace_accepts_specific_building_question() -> None:
         source_url="https://joszaki.hu/szakivalaszol/laposteto-hoszigeteles",
         classification="observed_literal",
         dedupe_hash="2" * 64,
+        published_at=datetime(2026, 8, 21, tzinfo=UTC),
+        age_days=0,
+        active_status="active",
+        existing_answer_count=0,
+        freshness_decision="preferred_0_30_days",
+        eligibility_status="eligible",
     )
 
     assert processing._reply_eligibility(topic)["eligible"] is True
@@ -918,17 +953,16 @@ def test_internal_handoff_is_fixed_recipient_and_idempotent(db, monkeypatch):
     second = processing.send_internal_handoff(db, now=now)
 
     row = db.scalar(select(CanonicalInternalHandoff))
-    assert first["status"] == second["status"] == "sent"
+    assert first["status"] == second["status"] == "blocked"
     assert second["idempotent"] is True
-    assert len(sent) == 1
-    assert sent[0]["to_email"] == IORA_EXECUTIVE_EMAIL
-    assert sent[0]["delivery_scope"] == "internal"
+    assert sent == []
     assert row.recipient_email == IORA_EXECUTIVE_EMAIL
     assert "IORA" in row.body_text
     assert "nem indult közvetlen megkeresés" in row.body_text
     assert "Minta Építő Kft." in row.body_text
     assert "https://source.test/lead-handoff" in row.body_text
     assert "Konkrét kivitelezési projekt" in row.body_text
+    assert row.last_error == "automatic_executive_delivery_prohibited"
 
 
 def test_source_extraction_retries_one_transient_model_failure(db, monkeypatch):

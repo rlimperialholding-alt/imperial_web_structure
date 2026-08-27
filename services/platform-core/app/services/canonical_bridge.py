@@ -481,7 +481,7 @@ def push_platform_events_to_itep(
             "externalEventId": event.event_id,
             "eventType": event.event_type,
             "projectId": event.project_id,
-            "ownerId": event.responsible or "human-anne",
+            "ownerId": event.responsible or "system-business-review",
             "occurredAt": _datetime(event.occurred_at),
             "title": event.next_action or event.event_type.replace("_", " ").title(),
             "payload": {

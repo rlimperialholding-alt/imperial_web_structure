@@ -47,6 +47,7 @@ SOCIAL_CHANNELS = ("facebook", "instagram")
 ATTRIBUTION_CHANNELS = ("analytics", "crm")
 QUALITY_GATE_VERSION = "canonical-auto-quality-v2"
 QUALITY_RELEASE_SECRET_FILE = Path("/run/secrets/platform_release_hmac_key")
+TECHNICAL_INCIDENT_QUEUE = "SYSTEM-TECHNICAL-INCIDENTS"
 
 EVENT_TYPES = {
     "PUBLICATION_JOB_QUEUED",
@@ -268,7 +269,7 @@ def create_exception(
         publication_proof_id=proof_id,
         rollback_status=rollback_status,
         recommended_action=recommended_action,
-        owner="Molnár Andrea",
+        owner=TECHNICAL_INCIDENT_QUEUE,
         due_at=due_at,
     )
     db.add(row)
@@ -286,11 +287,15 @@ def create_exception(
             project_id="IMPERIAL-PUBLISHING",
             source_event_id=event.event_id,
             title=f"Publishing exception: {error_type}",
-            description=f"{exception_id} / {job.job_id}. {recommended_action}",
-            assignee="Molnár Andrea",
+            description=(
+                f"{exception_id} / {job.job_id}. {recommended_action} "
+                "[Automatikus technikai incidens; személyhez rendelés csak kézi triage után.]"
+            ),
+            assignee=None,
             due_at=due_at,
             priority="critical" if severity in {"BLOCKER", "CRITICAL"} else "high",
             executive_relevance=severity in {"BLOCKER", "CRITICAL"},
+            status="blocked",
         )
     )
     return row

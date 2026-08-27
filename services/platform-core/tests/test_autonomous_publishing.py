@@ -308,9 +308,13 @@ def test_partial_failure_after_final_attempt_routes_terminal_exception(db, fake_
     assert result["status"] == "ROLLED_BACK"
     assert FakeAdapter.rollbacks == ["facebook", "wordpress"]
     exception = db.scalar(select(PublishingExceptionRecord))
-    assert exception and exception.owner == "Molnár Andrea" and exception.due_at is not None
-    task = db.scalar(select(TaskRecord).where(TaskRecord.assignee == "Molnár Andrea"))
-    assert task and task.priority == "high"
+    assert (
+        exception
+        and exception.owner == "SYSTEM-TECHNICAL-INCIDENTS"
+        and exception.due_at is not None
+    )
+    task = db.scalar(select(TaskRecord).where(TaskRecord.source_event_id.is_not(None)))
+    assert task and task.assignee is None and task.status == "blocked" and task.priority == "high"
 
 
 def test_gate_block_creates_exception_but_pass_job_does_not(db, fake_runtime):

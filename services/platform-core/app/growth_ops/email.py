@@ -337,7 +337,10 @@ def _verify_gmail_readback(
     except GrowthRegistryError as exc:
         raise _GmailReadbackError(str(exc)) from exc
 
-    for header in ("Subject", "Message-ID", "X-Imperial-Idempotency-Key"):
+    # Gmail may replace the client supplied RFC Message-ID. It is evidence to
+    # record, not a safe equality key. The delivery identity and content hash
+    # remain deterministic and must survive the provider round trip.
+    for header in ("Subject", "X-Imperial-Idempotency-Key", "X-Imperial-Content-SHA256"):
         if _single_header(returned, header) != _single_header(expected, header):
             raise _GmailReadbackError(f"gmail_readback_{header.lower()}_mismatch")
     expected_reply_to = expected.get_all("Reply-To", [])
@@ -469,6 +472,7 @@ class SMTPEmailAdapter:
         to_email: str,
         message: EmailMessage,
         message_id: str,
+        reconcile_only: bool = False,
     ) -> EmailReceipt:
         token_body = urllib.parse.urlencode(
             {
@@ -514,10 +518,13 @@ class SMTPEmailAdapter:
         existing_provider_id: str | None = None
         try:
             candidate_ids: list[str] = []
-            for query in (
+            strong_candidate_ids: list[str] = []
+            escaped_subject = str(message["Subject"]).replace('"', "")
+            for query_index, query in enumerate((
                 f"in:sent rfc822msgid:{message_id}",
                 f'in:sent "{idempotency_key}"',
-            ):
+                f'in:sent to:{to_email} subject:"{escaped_subject}"',
+            )):
                 search_url = (
                     "https://gmail.googleapis.com/gmail/v1/users/me/messages?"
                     + urllib.parse.urlencode({"q": query, "maxResults": 10})
@@ -532,24 +539,24 @@ class SMTPEmailAdapter:
                 candidates = search_result.get("messages", [])
                 if not isinstance(candidates, list):
                     raise _GmailReadbackError("gmail_pre_send_search_result_invalid")
-                candidate_ids = [
+                query_candidate_ids = [
                     str(candidate.get("id") or "")
                     for candidate in candidates
                     if isinstance(candidate, dict)
                 ]
-                if any(not candidate_id for candidate_id in candidate_ids):
+                if any(not candidate_id for candidate_id in query_candidate_ids):
                     raise _GmailReadbackError("gmail_pre_send_candidate_id_missing")
-                candidate_ids = list(dict.fromkeys(candidate_ids))
-                if candidate_ids:
-                    break
-            if len(candidate_ids) > 1:
-                existing_provider_id = candidate_ids[0]
-                raise _GmailReadbackError("gmail_pre_send_multiple_candidates")
-            if candidate_ids:
-                existing_provider_id = candidate_ids[0]
+                candidate_ids = list(dict.fromkeys([*candidate_ids, *query_candidate_ids]))
+                if query_index < 2:
+                    strong_candidate_ids = list(
+                        dict.fromkeys([*strong_candidate_ids, *query_candidate_ids])
+                    )
+            verified_candidates: list[tuple[str, dict[str, Any]]] = []
+            for candidate_id in candidate_ids:
+                existing_provider_id = candidate_id
                 existing_url = (
                     "https://gmail.googleapis.com/gmail/v1/users/me/messages/"
-                    f"{urllib.parse.quote(existing_provider_id, safe='')}?format=raw"
+                    f"{urllib.parse.quote(candidate_id, safe='')}?format=raw"
                 )
                 with urllib.request.urlopen(
                     urllib.request.Request(existing_url, headers=authorization),
@@ -558,10 +565,19 @@ class SMTPEmailAdapter:
                     existing_resource = json.loads(response.read(10_000_000))
                 if not isinstance(existing_resource, dict):
                     raise _GmailReadbackError("gmail_readback_resource_invalid")
-                existing_detail = _verified_gmail_resource(
-                    resource=existing_resource,
-                    expected=message,
-                )
+                try:
+                    existing_detail = _verified_gmail_resource(
+                        resource=existing_resource,
+                        expected=message,
+                    )
+                except _GmailReadbackError:
+                    continue
+                verified_candidates.append((candidate_id, existing_detail))
+            if len(verified_candidates) > 1:
+                existing_provider_id = verified_candidates[0][0]
+                raise _GmailReadbackError("gmail_pre_send_multiple_exact_candidates")
+            if verified_candidates:
+                existing_provider_id, existing_detail = verified_candidates[0]
                 existing_detail.update(
                     {
                         "accepted": True,
@@ -577,6 +593,19 @@ class SMTPEmailAdapter:
                     provider="gmail_api",
                     response_sha256=str(existing_detail["readback_mime_sha256"]),
                     detail=existing_detail,
+                )
+            if strong_candidate_ids:
+                existing_provider_id = strong_candidate_ids[0]
+                raise _GmailReadbackError(
+                    "gmail_existing_delivery_identity_payload_mismatch"
+                )
+            existing_provider_id = None
+            if reconcile_only:
+                raise EmailDeliveryError(
+                    "accepted_but_unverified",
+                    retry_safe=False,
+                    accepted_but_unverified=True,
+                    detail={"reason": "gmail_reconcile_no_exact_message_no_send"},
                 )
         except urllib.error.HTTPError as exc:
             if existing_provider_id is None:
@@ -739,6 +768,7 @@ class SMTPEmailAdapter:
         body_text: str,
         idempotency_key: str,
         delivery_scope: str,
+        reconcile_only: bool = False,
         body_html: str | None = None,
         reply_to: str | None = None,
         attachments: list[tuple[str, bytes, str]] | None = None,
@@ -776,6 +806,9 @@ class SMTPEmailAdapter:
         message["Date"] = formatdate(localtime=False)
         message["Message-ID"] = message_id
         message["X-Imperial-Idempotency-Key"] = idempotency_key
+        message["X-Imperial-Content-SHA256"] = hashlib.sha256(
+            (subject + "\0" + body_text + "\0" + (body_html or "")).encode("utf-8")
+        ).hexdigest()
         if reply_to:
             message["Reply-To"] = reply_to
         message.set_content(body_text)
@@ -789,6 +822,13 @@ class SMTPEmailAdapter:
                 to_email=to_email,
                 message=message,
                 message_id=message_id,
+                reconcile_only=reconcile_only,
+            )
+        if reconcile_only:
+            raise EmailDeliveryError(
+                "smtp_reconcile_not_supported_no_send",
+                retry_safe=False,
+                accepted_but_unverified=True,
             )
         host = str(self.secret["host"])
         port = int(self.secret["port"])

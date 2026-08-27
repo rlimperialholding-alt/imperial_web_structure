@@ -24,7 +24,7 @@ import { ConnectorSyncOrchestrator } from "../connectors/sync-orchestrator.js";
 import { ConnectorSyncWorker } from "./connector-sync-worker.js";
 import { HumanAnneIncidentService } from "../human-anne/incident-service.js";
 import { IntegrationControlRoomService } from "../integration-control-room/service.js";
-import { HumanAnnePublisherAdapter, OrchestratorOperationExecutor } from "../integration-control-room/adapters.js";
+import { HumanAnnePublisherAdapter, OrchestratorOperationExecutor, UnassignedTechnicalIncidentWriter } from "../integration-control-room/adapters.js";
 import { IntegrationRetryWorker } from "./integration-retry-worker.js";
 
 const config = loadConfig();
@@ -79,7 +79,7 @@ const orchestrator = new ConnectorSyncOrchestrator(
     crmAuthHeader: config.CRM_AUTH_HEADER,
     crmAuthScheme: config.CRM_AUTH_SCHEME,
     crmWorkspaceQueryParameter: config.CRM_WORKSPACE_QUERY_PARAMETER,
-  }), humanAnne, { now: () => new Date() }, { next: () => randomUUID() }, syncObserver,
+  }), new UnassignedTechnicalIncidentWriter(), { now: () => new Date() }, { next: () => randomUUID() }, syncObserver,
 );
 controlRoom = new IntegrationControlRoomService(
   new PrismaIntegrationControlRoomRepository(prisma),

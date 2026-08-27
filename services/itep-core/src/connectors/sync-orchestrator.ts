@@ -98,8 +98,8 @@ export class ConnectorSyncOrchestrator {
         title: `${account.kind} kapcsolat hibája`,
         description: message,
         recommendedAction: reauth
-          ? "A Human Anne indítsa újra az OAuth-hitelesítést."
-          : "A Human Anne ellenőrizze a connector naplóját és a szolgáltatás állapotát.",
+          ? "A technikai incidenskezelőben indíts kézi OAuth-újrahitelesítést."
+          : "A technikai incidenskezelőben ellenőrizd a connector naplóját és állapotát.",
         source: `connector:${account.id}`,
         createdAt: now,
       });
