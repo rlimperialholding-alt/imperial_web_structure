@@ -16,7 +16,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -78,6 +78,52 @@ def _matches_brand_focus(value: object, focus: tuple[str, ...]) -> bool:
 
 def _sha(value: Any) -> str:
     return hashlib.sha256(_json(value).encode()).hexdigest()
+
+
+PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
+PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
+PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
+
+
+def _normalized_email(value: str) -> str:
+    return value.strip().casefold()
+
+
+def _publication_digest_idempotency_key(
+    *, message_type: str, recipient: str, local_report_date: date
+) -> str:
+    material = f"{message_type}{_normalized_email(recipient)}{local_report_date.isoformat()}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _publication_digest_kill_switch_active(config: object) -> bool:
+    path = Path(
+        str(
+            getattr(
+                config,
+                "canonical_publication_digest_kill_switch_file",
+                "/run/secrets/publishing/kill-switch",
+            )
+        )
+    )
+    return path.is_file()
+
+
+def _lock_publication_digest_claims(db: Session) -> None:
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    lock_key = int.from_bytes(
+        hashlib.sha256(b"imperial:daily-publication-digest:delivery-claims").digest()[:8],
+        byteorder="big",
+        signed=True,
+    )
+    db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+
+
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _complete_json_payload(db: Session, **kwargs: Any) -> tuple[Any, dict[str, Any]]:
@@ -2045,23 +2091,119 @@ def enqueue_daily_publications(db: Session, *, now: datetime | None = None) -> d
     }
 
 
-def send_publication_digest(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
+def send_publication_digest(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    caller_idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    # A caller-provided key is intentionally ignored for this message type. The
+    # delivery identity is owned by the server and is stable across worker cycles.
+    del caller_idempotency_key
     current = now or datetime.now(UTC)
-    local_now = current.astimezone(ZoneInfo(settings().timezone))
-    hour, minute = (int(part) for part in settings().canonical_publication_digest_at.split(":"))
+    config = settings()
+    local_now = current.astimezone(ZoneInfo(config.timezone))
+    hour, minute = (int(part) for part in config.canonical_publication_digest_at.split(":"))
     if (local_now.hour, local_now.minute) < (hour, minute):
         return {"status": "not_due"}
     local_day = local_now.date()
+    recipient = _normalized_email(config.canonical_publication_digest_recipient)
+    idempotency_key = _publication_digest_idempotency_key(
+        message_type=PUBLICATION_DIGEST_MESSAGE_TYPE,
+        recipient=recipient,
+        local_report_date=local_day,
+    )
+    if _publication_digest_kill_switch_active(config):
+        return {"status": "blocked", "reason": "publication_kill_switch_active"}
+    if not config.canonical_publication_digest_enabled:
+        return {"status": "blocked", "reason": "publication_digest_disabled"}
+
+    _lock_publication_digest_claims(db)
     existing = db.scalar(
         select(CanonicalInternalHandoff).where(
             CanonicalInternalHandoff.local_date == local_day,
-            CanonicalInternalHandoff.handoff_type == "daily_publication_digest",
+            CanonicalInternalHandoff.handoff_type == PUBLICATION_DIGEST_MESSAGE_TYPE,
+            CanonicalInternalHandoff.recipient_email == recipient,
         )
+        .with_for_update()
     )
-    if existing and existing.status == "sent":
-        return {"status": "sent", "idempotent": True, "handoff_id": existing.handoff_id}
+    if existing:
+        if existing.idempotency_key is None:
+            existing.idempotency_key = idempotency_key
+        if existing.status == "claimed":
+            claimed_at = _aware_utc(existing.claimed_at or existing.updated_at)
+            if claimed_at <= current - PUBLICATION_DIGEST_STALE_CLAIM_AFTER:
+                existing.status = "dead_letter"
+                existing.last_error = "stale_claim_ambiguous_delivery_manual_review"
+                db.commit()
+            else:
+                db.commit()
+        elif existing.status in {"failed", "pending"} or (
+            existing.status == "blocked" and existing.attempt_count > 0
+        ):
+            existing.status = "dead_letter"
+            existing.last_error = "pre_hotfix_attempt_quarantined_no_automatic_retry"
+            db.commit()
+        else:
+            db.commit()
+        return {
+            "status": existing.status,
+            "idempotent": True,
+            "handoff_id": existing.handoff_id,
+            "idempotency_key": idempotency_key,
+        }
+
+    claimed_since_minute = current - timedelta(minutes=1)
+    claimed_since_day = current - PUBLICATION_DIGEST_RECIPIENT_INTERVAL
+    minute_attempts = int(
+        db.scalar(
+            select(func.count())
+            .select_from(CanonicalInternalHandoff)
+            .where(
+                CanonicalInternalHandoff.handoff_type
+                == PUBLICATION_DIGEST_MESSAGE_TYPE,
+                CanonicalInternalHandoff.claimed_at >= claimed_since_minute,
+            )
+        )
+        or 0
+    )
+    rolling_attempts = int(
+        db.scalar(
+            select(func.count())
+            .select_from(CanonicalInternalHandoff)
+            .where(
+                CanonicalInternalHandoff.handoff_type
+                == PUBLICATION_DIGEST_MESSAGE_TYPE,
+                CanonicalInternalHandoff.claimed_at >= claimed_since_day,
+            )
+        )
+        or 0
+    )
+    recipient_attempts = int(
+        db.scalar(
+            select(func.count())
+            .select_from(CanonicalInternalHandoff)
+            .where(
+                CanonicalInternalHandoff.handoff_type
+                == PUBLICATION_DIGEST_MESSAGE_TYPE,
+                CanonicalInternalHandoff.recipient_email == recipient,
+                CanonicalInternalHandoff.claimed_at >= claimed_since_day,
+            )
+        )
+        or 0
+    )
+    if recipient_attempts >= 1:
+        db.commit()
+        return {"status": "blocked", "reason": "recipient_rolling_24h_hard_gate"}
+    if minute_attempts >= config.canonical_publication_digest_per_minute_limit:
+        db.commit()
+        return {"status": "blocked", "reason": "minute_circuit_breaker_open"}
+    if rolling_attempts >= config.canonical_publication_digest_rolling_24h_limit:
+        db.commit()
+        return {"status": "blocked", "reason": "rolling_24h_circuit_breaker_open"}
+
     local_start = datetime.combine(
-        local_day, datetime.min.time(), ZoneInfo(settings().timezone)
+        local_day, datetime.min.time(), ZoneInfo(config.timezone)
     ).astimezone(UTC)
     jobs = db.scalars(
         select(PublishingJobRecord)
@@ -2159,19 +2301,20 @@ def send_publication_digest(db: Session, *, now: datetime | None = None) -> dict
     )
     payload_hash = _sha(
         {
-            "to": settings().canonical_publication_digest_recipient,
+            "to": recipient,
             "subject": subject,
             "body": body_text,
         }
     )
-    row = existing or CanonicalInternalHandoff(
+    row = CanonicalInternalHandoff(
         handoff_id=f"CPD-{uuid4().hex[:20].upper()}",
         local_date=local_day,
-        handoff_type="daily_publication_digest",
-        recipient_email=settings().canonical_publication_digest_recipient,
+        handoff_type=PUBLICATION_DIGEST_MESSAGE_TYPE,
+        recipient_email=recipient,
         subject=subject,
         body_text=body_text,
         payload_sha256=payload_hash,
+        idempotency_key=idempotency_key,
         counts_json=_json(
             {
                 "published": len(lines),
@@ -2186,36 +2329,69 @@ def send_publication_digest(db: Session, *, now: datetime | None = None) -> dict
                 ),
             }
         ),
+        status="claimed",
+        attempt_count=1,
+        claimed_at=current,
     )
-    if not existing:
-        db.add(row)
-        db.flush()
-    if not settings().canonical_publication_digest_enabled:
-        row.status = "blocked"
-        row.last_error = "publication_digest_disabled"
+    db.add(row)
+    try:
         db.commit()
-        return {"status": "blocked", "handoff_id": row.handoff_id}
+    except IntegrityError:
+        db.rollback()
+        duplicate = db.scalar(
+            select(CanonicalInternalHandoff).where(
+                CanonicalInternalHandoff.idempotency_key == idempotency_key
+            )
+        )
+        if duplicate is None:
+            raise
+        return {
+            "status": duplicate.status,
+            "idempotent": True,
+            "handoff_id": duplicate.handoff_id,
+            "idempotency_key": idempotency_key,
+        }
+
+    if _publication_digest_kill_switch_active(config):
+        row.status = "dead_letter"
+        row.last_error = "kill_switch_activated_after_claim_no_send"
+        db.commit()
+        return {
+            "status": "dead_letter",
+            "handoff_id": row.handoff_id,
+            "idempotency_key": idempotency_key,
+        }
     try:
         receipt = SMTPEmailAdapter(_smtp_binding()).send(
-            to_email=settings().canonical_publication_digest_recipient,
+            to_email=recipient,
             subject=subject,
             body_text=body_text,
-            idempotency_key=payload_hash,
+            idempotency_key=idempotency_key,
             delivery_scope="internal",
         )
-    except (GrowthRegistryError, EmailDeliveryError) as exc:
-        row.attempt_count += 1
-        row.status = "failed"
-        row.last_error = type(exc).__name__
+    except Exception as exc:
+        row.status = "dead_letter"
+        error_type = getattr(exc, "error_type", type(exc).__name__)
+        row.last_error = f"{type(exc).__name__}:{error_type}:manual_review_required"
+        row.provider_message_id = getattr(exc, "provider_message_id", None)
         db.commit()
-        return {"status": "failed", "handoff_id": row.handoff_id, "error_type": type(exc).__name__}
-    row.attempt_count += 1
+        return {
+            "status": "dead_letter",
+            "handoff_id": row.handoff_id,
+            "error_type": str(error_type),
+            "idempotency_key": idempotency_key,
+        }
     row.status = "sent"
     row.provider_message_id = receipt.provider_message_id
     row.sent_at = current
     row.last_error = None
     db.commit()
-    return {"status": "sent", "idempotent": False, "handoff_id": row.handoff_id}
+    return {
+        "status": "sent",
+        "idempotent": False,
+        "handoff_id": row.handoff_id,
+        "idempotency_key": idempotency_key,
+    }
 
 
 def _smtp_binding() -> BrandBinding:

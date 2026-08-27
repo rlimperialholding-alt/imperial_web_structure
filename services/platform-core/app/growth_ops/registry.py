@@ -43,6 +43,9 @@ class GrowthSettings:
     canonical_publication_digest_enabled: bool
     canonical_publication_digest_at: str
     canonical_publication_digest_recipient: str
+    canonical_publication_digest_kill_switch_file: str
+    canonical_publication_digest_per_minute_limit: int
+    canonical_publication_digest_rolling_24h_limit: int
     deepseek_api_key_file: str
     deepseek_base_url: str
     deepseek_routine_model: str
@@ -126,6 +129,24 @@ def settings() -> GrowthSettings:
         ),
         canonical_publication_digest_recipient=os.getenv(
             "CANONICAL_PUBLICATION_DIGEST_RECIPIENT", "molnar.andrea@imperialholding.hu"
+        ),
+        canonical_publication_digest_kill_switch_file=os.getenv(
+            "CANONICAL_PUBLICATION_DIGEST_KILL_SWITCH_FILE",
+            "/run/secrets/publishing/kill-switch",
+        ),
+        canonical_publication_digest_per_minute_limit=max(
+            1,
+            min(
+                10,
+                int(os.getenv("CANONICAL_PUBLICATION_DIGEST_PER_MINUTE_LIMIT", "1")),
+            ),
+        ),
+        canonical_publication_digest_rolling_24h_limit=max(
+            1,
+            min(
+                100,
+                int(os.getenv("CANONICAL_PUBLICATION_DIGEST_ROLLING_24H_LIMIT", "20")),
+            ),
         ),
         deepseek_api_key_file=os.getenv(
             "DEEPSEEK_API_KEY_FILE", "/run/secrets/growth/deepseek-api-key"

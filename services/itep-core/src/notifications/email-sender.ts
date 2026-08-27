@@ -5,6 +5,10 @@ export interface EmailMessage {
   text: string;
   html?: string;
   headers?: Record<string, string>;
+  deliveryIdentity?: {
+    messageType: string;
+    localReportDate: string;
+  };
 }
 
 export interface EmailSender {
