@@ -140,6 +140,34 @@ def _normalize_content_lengths(package: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _content_repair_errors(
+    package: dict[str, Any], contract: dict[str, Any]
+) -> list[str]:
+    errors: list[str] = []
+    if not str(package.get("title") or "").strip():
+        errors.append("title_missing")
+    body = str(package.get("body") or "").strip()
+    if len(body) < 600:
+        errors.append("body_too_short")
+    if len(body) > 2600:
+        errors.append("body_too_long")
+    facebook_copy = str(package.get("facebook_post") or "").strip()
+    if len(facebook_copy) < 150:
+        errors.append("facebook_too_short")
+    hashtag_count = len(re.findall(r"(?<!\w)#\w+", facebook_copy, flags=re.UNICODE))
+    if not 3 <= hashtag_count <= 8:
+        errors.append("facebook_hashtag_count_invalid")
+    if (
+        not isinstance(package.get("cta"), dict)
+        or not str((package.get("cta") or {}).get("label") or "").strip()
+    ):
+        errors.append("cta_missing")
+    if contains_no_monitoring_entity(_json(package)):
+        errors.append("hard_gate_entity_detected")
+    errors.extend(_deterministic_publication_errors(package, contract))
+    return sorted(set(errors))
+
+
 QUALITY_GATE_VERSION = "canonical-auto-quality-v2"
 QUALITY_RELEASE_SECRET_FILE = Path("/run/secrets/platform_release_hmac_key")
 
@@ -1429,73 +1457,59 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         repair_result = None
         if deterministic_errors:
             try:
-                repair_result, repaired_payload = _complete_json_payload(
-                    db,
-                    system_prompt=(
-                        "Magyar senior szerkesztő vagy. A determinisztikus kiadási kapu által "
-                        "blokkolt szöveget javítsd ki, ne magyarázd. A hibakódok minden okát "
-                        "távolítsd el; ne helyettesítsd másik nem igazolt állítással. Tartsd meg "
-                        "a márka pozícióját, a természetes magyar hangot, az egyetlen CTA-t és "
-                        "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. Forrás nélküli "
-                        "anyagban kizárólag óvatos döntési "
-                        "útmutató maradhat. A teljes javított package objektumot add vissza."
-                    ),
-                    user_prompt=_json(
-                        {
-                            "brand_id": row.brand_id,
-                            "publication_contract": publication_contract,
-                            "gate_errors": deterministic_errors,
-                            "source_urls_allowed": sorted(brand_allowed_urls),
-                            "blocked_package": package,
-                            "schema": {"package": _quality_artifact(package)},
-                        }
-                    ),
-                    purpose=f"canonical_daily_content_deterministic_repair:{row.brand_id}",
-                    run_id=None,
-                    high_stakes=False,
-                    max_tokens=3500,
-                )
-                repaired = _single_content_package(repaired_payload)
-                repaired["brand_id"] = row.brand_id
-                repaired_urls = repaired.get("source_urls")
-                repaired["source_urls"] = (
-                    [
-                        url
-                        for url in repaired_urls
-                        if isinstance(url, str) and url in brand_allowed_urls
-                    ]
-                    if isinstance(repaired_urls, list)
-                    else []
-                )
-                repaired = _normalize_content_lengths(_sanitize_unbound_claims(repaired))
-                repair_errors: list[str] = []
-                if not str(repaired.get("title") or "").strip():
-                    repair_errors.append("title_missing")
-                if len(str(repaired.get("body") or "").strip()) < 600:
-                    repair_errors.append("body_too_short")
-                if len(str(repaired.get("body") or "").strip()) > 2600:
-                    repair_errors.append("body_too_long")
-                facebook_copy = str(repaired.get("facebook_post") or "").strip()
-                if len(facebook_copy) < 150:
-                    repair_errors.append("facebook_too_short")
-                hashtag_count = len(re.findall(r"(?<!\w)#\w+", facebook_copy, flags=re.UNICODE))
-                if not 3 <= hashtag_count <= 8:
-                    repair_errors.append("facebook_hashtag_count_invalid")
-                if (
-                    not isinstance(repaired.get("cta"), dict)
-                    or not str((repaired.get("cta") or {}).get("label") or "").strip()
-                ):
-                    repair_errors.append("cta_missing")
-                if contains_no_monitoring_entity(_json(repaired)):
-                    repair_errors.append("hard_gate_entity_detected")
-                repair_errors.extend(
-                    _deterministic_publication_errors(repaired, publication_contract)
-                )
-                if repair_errors:
-                    raise ValueError(
-                        "deterministic_repair_failed:" + ",".join(sorted(set(repair_errors)))
+                for repair_number in range(2):
+                    repair_result, repaired_payload = _complete_json_payload(
+                        db,
+                        system_prompt=(
+                            "Magyar senior szerkesztő vagy. A determinisztikus kiadási kapu által "
+                            "blokkolt szöveget javítsd ki, ne magyarázd. A hibakódok minden okát "
+                            "távolítsd el; ne helyettesítsd másik nem igazolt állítással. Tartsd meg "
+                            "a márka pozícióját, a természetes magyar hangot, az egyetlen CTA-t és "
+                            "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. Forrás nélküli "
+                            "anyagban kizárólag óvatos döntési útmutató maradhat. A teljes javított "
+                            "package objektumot add vissza."
+                        ),
+                        user_prompt=_json(
+                            {
+                                "brand_id": row.brand_id,
+                                "publication_contract": publication_contract,
+                                "gate_errors": deterministic_errors,
+                                "repair_round": repair_number + 1,
+                                "source_urls_allowed": sorted(brand_allowed_urls),
+                                "blocked_package": package,
+                                "schema": {"package": _quality_artifact(package)},
+                            }
+                        ),
+                        purpose=(
+                            f"canonical_daily_content_deterministic_repair:{row.brand_id}"
+                        ),
+                        run_id=None,
+                        high_stakes=False,
+                        max_tokens=3500,
                     )
-                package = repaired
+                    repaired = _single_content_package(repaired_payload)
+                    repaired["brand_id"] = row.brand_id
+                    repaired_urls = repaired.get("source_urls")
+                    repaired["source_urls"] = (
+                        [
+                            url
+                            for url in repaired_urls
+                            if isinstance(url, str) and url in brand_allowed_urls
+                        ]
+                        if isinstance(repaired_urls, list)
+                        else []
+                    )
+                    repaired = _normalize_content_lengths(_sanitize_unbound_claims(repaired))
+                    repair_errors = _content_repair_errors(repaired, publication_contract)
+                    if not repair_errors:
+                        package = repaired
+                        break
+                    package = repaired
+                    deterministic_errors = repair_errors
+                else:
+                    raise ValueError(
+                        "deterministic_repair_failed:" + ",".join(deterministic_errors)
+                    )
             except (GrowthRegistryError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 row.status = "failed"
                 row.evidence_json = _json(
