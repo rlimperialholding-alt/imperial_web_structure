@@ -18,6 +18,11 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..config import settings as platform_settings
+from ..global_email_guard import (
+    claim_global_recipient_delivery,
+    fail_global_recipient_delivery,
+    finalize_global_recipient_delivery,
+)
 from ..models import MailSendingDomain, MailSuppression
 from .canonical_policy import (
     LAND_AGENT_HARD_GATE_REASONS,
@@ -167,9 +172,7 @@ def _incoming_hard_gate_reason(
         "\n".join(str(value or "") for value in _canonical_screening_values(data))
     ):
         return "no_monitoring_hard_gate_blocked"
-    canonical_gate = canonical_registry.hard_gate_match(
-        _canonical_screening_values(data)
-    )
+    canonical_gate = canonical_registry.hard_gate_match(_canonical_screening_values(data))
     return f"canonical_hard_gate_blocked:{canonical_gate}" if canonical_gate else None
 
 
@@ -204,10 +207,12 @@ def _block_existing_signal_for_new_hard_gate(
     existing.rejection_reasons_json = canonical_json([reason])
     unsent_rows = list(
         db.scalars(
-            select(OutreachMessage).where(
+            select(OutreachMessage)
+            .where(
                 OutreachMessage.signal_id == existing.signal_id,
                 OutreachMessage.status.in_(("queued", "claimed")),
-            ).with_for_update()
+            )
+            .with_for_update()
         )
     )
     for row in unsent_rows:
@@ -512,9 +517,7 @@ def ingest_signal(
             .with_for_update()
         )
         if existing:
-            _block_existing_signal_for_new_hard_gate(
-                db, existing, data, pre_registry_hard_gate
-            )
+            _block_existing_signal_for_new_hard_gate(db, existing, data, pre_registry_hard_gate)
         raise GrowthRegistryError(pre_registry_hard_gate)
     canonical_registry = CanonicalFirstContactRegistry.load()
     hard_gate_reason = _incoming_hard_gate_reason(data, canonical_registry)
@@ -528,9 +531,7 @@ def ingest_signal(
             .with_for_update()
         )
         if existing:
-            _block_existing_signal_for_new_hard_gate(
-                db, existing, data, hard_gate_reason
-            )
+            _block_existing_signal_for_new_hard_gate(db, existing, data, hard_gate_reason)
         raise GrowthRegistryError(hard_gate_reason)
     registry = GrowthRegistry.load()
     registry.validate_signal_source(
@@ -541,7 +542,8 @@ def ingest_signal(
     brand_id = registry.brand_for(data.signal_type, data.brand_id)
     dedupe_hash = _signal_dedupe(data, brand_id)
     existing = db.scalar(
-        select(GrowthSignal).where(
+        select(GrowthSignal)
+        .where(
             or_(
                 and_(
                     GrowthSignal.source_id == data.source_id,
@@ -549,7 +551,8 @@ def ingest_signal(
                 ),
                 GrowthSignal.dedupe_hash == dedupe_hash,
             )
-        ).with_for_update()
+        )
+        .with_for_update()
     )
     if existing:
         existing.last_seen_at = utcnow()
@@ -603,7 +606,9 @@ def ingest_signal(
         status=(
             "template-variable-missing"
             if "template-variable-missing" in reasons
-            else "rejected" if reasons else "accepted"
+            else "rejected"
+            if reasons
+            else "accepted"
         ),
         rejection_reasons_json=canonical_json(reasons),
     )
@@ -893,9 +898,7 @@ def _outreach_payload_sha256(
             "body_html": body_html,
             "idempotency_key": idempotency_key,
             "unsubscribe_token_hash": unsubscribe_token_hash,
-            "canonical_metadata_sha256": _canonical_metadata_sha256(
-                canonical_metadata
-            ),
+            "canonical_metadata_sha256": _canonical_metadata_sha256(canonical_metadata),
         }
     )
 
@@ -992,9 +995,7 @@ def _assert_canonical_payload(row: OutreachMessage) -> tuple[dict[str, Any], str
     expected_token_hash = hashlib.sha256(token_match.group(1).encode()).hexdigest()
     if not hmac.compare_digest(row.unsubscribe_token_hash, expected_token_hash):
         raise GrowthRegistryError("canonical_unsubscribe_token_binding_mismatch")
-    expected_unsubscribe_url = (
-        f"{settings().base_url}/growth/unsubscribe/{token_match.group(1)}"
-    )
+    expected_unsubscribe_url = f"{settings().base_url}/growth/unsubscribe/{token_match.group(1)}"
     if not hmac.compare_digest(unsubscribe_url, expected_unsubscribe_url):
         raise GrowthRegistryError("canonical_unsubscribe_origin_binding_mismatch")
     body_html = CanonicalFirstContactRegistry.load().assert_current_render(
@@ -1017,22 +1018,16 @@ def _release_digest(row: OutreachMessage, approved_by: str) -> str:
             "payload_sha256": row.payload_sha256,
             "idempotency_key": row.idempotency_key,
             "unsubscribe_token_hash": row.unsubscribe_token_hash,
-            "canonical_metadata_sha256": _canonical_metadata_sha256(
-                _canonical_metadata(row)
-            ),
+            "canonical_metadata_sha256": _canonical_metadata_sha256(_canonical_metadata(row)),
             "approved_by": approved_by,
         }
     )
     return hmac.new(key.encode(), value.encode(), hashlib.sha256).hexdigest()
 
 
-def release_outreach(
-    db: Session, outreach_id: str, data: OutreachReleaseIn
-) -> OutreachMessage:
+def release_outreach(db: Session, outreach_id: str, data: OutreachReleaseIn) -> OutreachMessage:
     row = db.scalar(
-        select(OutreachMessage)
-        .where(OutreachMessage.outreach_id == outreach_id)
-        .with_for_update()
+        select(OutreachMessage).where(OutreachMessage.outreach_id == outreach_id).with_for_update()
     )
     if not row:
         raise KeyError(outreach_id)
@@ -1097,18 +1092,14 @@ def _delivery_verification_pending(row: OutreachMessage) -> bool:
     except (TypeError, json.JSONDecodeError):
         return False
     verification = receipt.get("delivery_verification")
-    return isinstance(verification, dict) and verification.get("status") == (
-        "pending_verification"
-    )
+    return isinstance(verification, dict) and verification.get("status") == ("pending_verification")
 
 
 def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
     if _delivery_verification_pending(row):
         return row
     signal = db.scalar(
-        select(GrowthSignal)
-        .where(GrowthSignal.signal_id == row.signal_id)
-        .with_for_update()
+        select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id).with_for_update()
     )
     hard_gate_reason = _land_agent_gate_reason(signal) if signal else None
     if hard_gate_reason:
@@ -1130,6 +1121,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         db.commit()
         return row
     registry = GrowthRegistry.load()
+    global_guard = None
     try:
         if not signal:
             raise GrowthRegistryError("Signal record is missing")
@@ -1158,6 +1150,16 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         _verified_sender(db, binding)
         if binding.sender_email != row.sender_email:
             raise GrowthRegistryError("brand_sender_changed_after_queue")
+        global_guard = claim_global_recipient_delivery(
+            db,
+            recipients=[row.recipient_email],
+            identity_sha256=row.idempotency_key,
+            message_type="growth_outreach",
+            tenant_scope="imperial-holding",
+            now=utcnow(),
+        )
+        if not global_guard.may_send or not global_guard.claim_token:
+            raise GrowthRegistryError(f"global_recipient_guard_no_send:{global_guard.decision}")
         receipt = SMTPEmailAdapter(binding).send(
             to_email=row.recipient_email,
             subject=row.subject,
@@ -1183,6 +1185,23 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                     "provider": receipt.provider,
                 },
             )
+        try:
+            finalize_global_recipient_delivery(
+                db,
+                recipients=[row.recipient_email],
+                identity_sha256=row.idempotency_key,
+                claim_token=global_guard.claim_token,
+                provider_message_id=receipt.provider_message_id,
+                now=utcnow(),
+            )
+        except RuntimeError as exc:
+            raise EmailDeliveryError(
+                "global_recipient_guard_finalize_failed",
+                retry_safe=False,
+                accepted_but_unverified=True,
+                provider_message_id=receipt.provider_message_id,
+                detail={"reason": str(exc)},
+            ) from exc
         row.status = "sent"
         row.provider_message_id = receipt.provider_message_id
         row.receipt_json = canonical_json(
@@ -1215,6 +1234,21 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             },
         )
     except (GrowthRegistryError, EmailDeliveryError) as exc:
+        if global_guard and global_guard.may_send and global_guard.claim_token:
+            fail_global_recipient_delivery(
+                db,
+                recipients=[row.recipient_email],
+                identity_sha256=row.idempotency_key,
+                claim_token=global_guard.claim_token,
+                error=(exc.error_type if isinstance(exc, EmailDeliveryError) else str(exc)),
+                accepted_unverified=(
+                    isinstance(exc, EmailDeliveryError) and exc.accepted_but_unverified
+                ),
+                provider_message_id=(
+                    exc.provider_message_id if isinstance(exc, EmailDeliveryError) else None
+                ),
+                now=utcnow(),
+            )
         if isinstance(exc, EmailDeliveryError) and exc.accepted_but_unverified:
             try:
                 pending_receipt = json.loads(row.receipt_json or "{}")
@@ -1274,9 +1308,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             )
         else:
             retry_safe = not isinstance(exc, EmailDeliveryError) or exc.retry_safe
-        if not recipient_hard_gate and (
-            row.attempt_count >= row.max_attempts or not retry_safe
-        ):
+        if not recipient_hard_gate and (row.attempt_count >= row.max_attempts or not retry_safe):
             row.status = "dead_letter"
         elif not recipient_hard_gate:
             row.status = "queued"
@@ -1453,6 +1485,7 @@ def run_once(db: Session) -> dict[str, Any]:
     }
     heartbeat(db, status=result["status"], detail=result)
     return result
+
 
 def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
     try:
