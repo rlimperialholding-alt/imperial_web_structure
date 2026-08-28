@@ -71,6 +71,10 @@ class GrowthSignal(Base):
             name="ck_growth_signal_status",
         ),
         CheckConstraint("score >= 0 AND score <= 100", name="ck_growth_signal_score"),
+        CheckConstraint(
+            "plot_size_sqm IS NULL OR (plot_size_sqm > 0 AND plot_size_sqm <= 10000000)",
+            name="ck_growth_signal_plot_size_sqm",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -94,6 +98,7 @@ class GrowthSignal(Base):
     consent_evidence_id: Mapped[str | None] = mapped_column(String(200))
     public_contact_url: Mapped[str | None] = mapped_column(String(1500))
     location: Mapped[str | None] = mapped_column(String(500), index=True)
+    plot_size_sqm: Mapped[int | None] = mapped_column(Integer)
     summary: Mapped[str] = mapped_column(Text)
     evidence_url: Mapped[str] = mapped_column(String(1500))
     brand_id: Mapped[str] = mapped_column(String(100), index=True)

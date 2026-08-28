@@ -812,7 +812,7 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
                 "ready": _adapter_ready(db, portal),
             }
             for portal in loaded_registry.portals.values()
-            if portal.publish_enabled
+            if portal.discovery_enabled or portal.publish_enabled
         }
         registry_state: dict[str, Any] = {
             "status": "ok",
@@ -824,11 +824,21 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
     adapters_ready = all(
         bool(value.get("ready")) for value in registry_state.get("adapters", {}).values()
     )
-    ready = database == "ok" and registry_state.get("status") == "ok" and adapters_ready
+    live_discovery = bool(registry_state.get("discovery_enabled"))
+    ready = (
+        database == "ok"
+        and registry_state.get("status") == "ok"
+        and adapters_ready
+        and live_discovery
+    )
     return ready, {
         "database": database,
         "registry": registry_state,
         "live_external_writes": bool(registry_state.get("publishing_enabled")),
+        "live_discovery": live_discovery,
+        "blocking_reasons": (
+            [] if live_discovery else ["no_licensed_land_discovery_adapter_enabled"]
+        ),
         "safety": {
             "generic_portal_scraping": "blocked",
             "natural_person_email_without_consent": "blocked_by_growth_ops",

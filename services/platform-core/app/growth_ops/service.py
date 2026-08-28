@@ -42,6 +42,9 @@ LAND_RECIPIENT_TYPES_BY_ROLE = {
     "listing_agent": "real_estate_agent",
     "property_owner": "land_owner",
 }
+LAND_OWNER_PRIOR_CONSENT_HARD_GATE = (
+    "land_owner_natural_person_prior_consent_required"
+)
 
 
 def utcnow() -> datetime:
@@ -154,6 +157,7 @@ def _is_recipient_hard_gate_error(exc: Exception) -> bool:
         or reason.startswith("canonical_hard_gate_blocked:")
         or reason.startswith("outbound_recipient_hard_gate_no_send:")
         or reason.startswith("cross_brand_customer_facing_content_no_send:")
+        or reason == LAND_OWNER_PRIOR_CONSENT_HARD_GATE
     )
 
 
@@ -194,6 +198,7 @@ def _block_existing_signal_for_new_hard_gate(
         "summary",
         "evidence_url",
         "public_contact_url",
+        "plot_size_sqm",
         "source_payload_hash",
     ):
         incoming = getattr(data, field)
@@ -236,6 +241,12 @@ def _block_existing_signal_for_new_hard_gate(
 def _land_agent_gate_reason(signal: GrowthSignalIn | GrowthSignal) -> str | None:
     if signal.signal_type != "residential_building_plot":
         return None
+    if (
+        signal.recipient_role == "property_owner"
+        and signal.subject_type == "natural_person"
+        and signal.contact_basis not in {"explicit_request", "documented_consent"}
+    ):
+        return LAND_OWNER_PRIOR_CONSENT_HARD_GATE
     return land_agent_hard_gate_reason(
         recipient_role=signal.recipient_role,
         contact_name=signal.company_name,
@@ -278,6 +289,9 @@ def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
         reasons.append("named_or_unknown_mailbox_requires_consent_or_request")
     if data.contact_basis == "public_property_listing" and not public_land_contact:
         reasons.append("invalid_public_property_listing_contact")
+    if data.signal_type == "residential_building_plot" and data.recipient_role == "property_owner":
+        if not data.location or data.plot_size_sqm is None:
+            reasons.append("template-variable-missing")
     if data.recipient_type == "unknown":
         reasons.append("recipient_type_unclassified_no_send")
     if not data.recipient_classification_verified:
@@ -347,6 +361,9 @@ def _render_message(
         business_context=data.business_context,
         business_context_verified=data.business_context_verified,
         business_context_evidence_url=data.business_context_evidence_url,
+        listing_location=data.location,
+        listing_size=(f"{data.plot_size_sqm} m²" if data.plot_size_sqm else None),
+        listing_url=data.public_contact_url or data.evidence_url,
         unsubscribe_url=unsubscribe_url,
         recipient_classification_verified=data.recipient_classification_verified,
         exclusion_screening_verified=data.exclusion_screening_verified,
@@ -465,11 +482,19 @@ def _queue_message(
     if (
         step == 0
         and signal.signal_type == "residential_building_plot"
-        and signal.contact_basis == "public_property_listing"
-        and signal.recipient_role in {"listing_agent", "property_owner"}
+        and (
+            (
+                signal.recipient_role == "listing_agent"
+                and signal.contact_basis == "public_property_listing"
+            )
+            or (
+                signal.recipient_role == "property_owner"
+                and signal.contact_basis in {"explicit_request", "documented_consent"}
+            )
+        )
     ):
         assert_outreach_copy(row.body_text)
-        row.release_approved_by = "owner-policy:land-public-listing-v1:2026-08-25"
+        row.release_approved_by = "owner-policy:land-public-listing-v2:2026-08-26"
         row.release_approved_at = utcnow()
         row.release_token_hash = _release_digest(row, row.release_approved_by)
         policy_release_audit = {
@@ -592,6 +617,7 @@ def ingest_signal(
         consent_evidence_id=data.consent_evidence_id,
         public_contact_url=data.public_contact_url,
         location=data.location,
+        plot_size_sqm=data.plot_size_sqm,
         summary=data.summary,
         evidence_url=data.evidence_url,
         brand_id=brand_id,
@@ -1380,7 +1406,13 @@ def heartbeat(
 
 
 def run_once(db: Session) -> dict[str, Any]:
-    from ..land_acquisition.service import scan_authority_expiry, sync_growth_plot_signals
+    from ..land_acquisition.service import (
+        readiness as land_readiness,
+    )
+    from ..land_acquisition.service import (
+        scan_authority_expiry,
+        sync_growth_plot_signals,
+    )
     from .catalog import scan_due_routes
     from .processing import (
         enqueue_daily_publications,
@@ -1402,6 +1434,7 @@ def run_once(db: Session) -> dict[str, Any]:
     internal_handoff = send_internal_handoff(db)
     land_sync = sync_growth_plot_signals(db)
     land_takedown = scan_authority_expiry(db)
+    land_ready, land_readiness_detail = land_readiness(db)
     publication_digest = send_publication_digest(db)
     if not settings().enabled:
         heartbeat(db, status="disabled")
@@ -1416,6 +1449,7 @@ def run_once(db: Session) -> dict[str, Any]:
             "internal_handoff": internal_handoff,
             "land_sync": land_sync,
             "land_takedown": land_takedown,
+            "land_readiness": land_readiness_detail,
             "publication_digest": publication_digest,
             "followups": 0,
             "sent": 0,
@@ -1426,7 +1460,7 @@ def run_once(db: Session) -> dict[str, Any]:
     sent = dispatch_batch(db) if writes_unlocked() else 0
     content_ok = content_factory.get("status") == "complete"
     result = {
-        "status": "healthy" if content_ok else "degraded",
+        "status": "healthy" if content_ok and land_ready else "degraded",
         "runs": len(runs),
         "wide_run": wide_run.run_id if wide_run else None,
         "route_scan": route_scan,
@@ -1436,14 +1470,20 @@ def run_once(db: Session) -> dict[str, Any]:
         "internal_handoff": internal_handoff,
         "land_sync": land_sync,
         "land_takedown": land_takedown,
+        "land_readiness": land_readiness_detail,
         "publication_digest": publication_digest,
         "followups": followups,
         "sent": sent,
         "blocking_errors": (
             []
-            if content_ok
+            if content_ok and land_ready
             else [
-                "daily_content_not_complete",
+                *([] if content_ok else ["daily_content_not_complete"]),
+                *(
+                    []
+                    if land_ready
+                    else land_readiness_detail.get("blocking_reasons", [])
+                ),
                 *[
                     f"unresolved_brand:{brand}"
                     for brand in content_factory.get("unresolved_brands", [])

@@ -48,23 +48,25 @@ API-credential, portálspecifikus adapter-receipt vagy staging contract-test.
 
 ## E-mail forrás- és címzetti kapu
 
-- A 2026-08-25-i tulajdonosi jóváhagyás alapján a nyilvános építésitelek-hirdetésben
-  közzétett kapcsolattartó egyszeri, a konkrét hirdetésre hivatkozó megkeresése
-  engedélyezett `public_property_listing` forrásalappal. Ez ingatlanközvetítőre és
-  magánhirdetőre is vonatkozik.
+- Nyilvános építésitelek-hirdetés alapján automatikus első kapcsolatfelvétel kizárólag
+  ellenőrzött `listing_agent` címzettnek engedélyezett. Természetes személy
+  `property_owner` csak `explicit_request` vagy visszakereshető `documented_consent`
+  alapján kaphat levelet; a nyilvános hirdetés önmagában nem hozzájárulás.
 - A forráshirdetés HTTPS URL-je, a címzett szerepköre és a hirdetésből származó
   kapcsolat visszakereshető rögzítése kötelező. Más célú természetes személyes
   megkeresésre ez a kivétel nem használható.
 - A változtathatatlan, tulajdonos által jóváhagyott sablon első levele a
-  `land-public-listing-v1` policy alapján automatikusan release-tokenes jóváhagyást kap.
+  `land-public-listing-v2` policy alapján automatikusan release-tokenes jóváhagyást kap,
+  de tulajdonosnál csak az előző pont szerinti hozzájárulás vagy kifejezett kérés után.
   Ez kizárólag az első levélre érvényes; automatikus utánkövető levél nem készül.
 - `listing_agent` esetén a 2026-08-25-én jóváhagyott rövid levél 2,5%-os jutalékot,
   telekre illő típusházzal elkészített hirdetést, látványtervet, alaprajzot és műszaki
   leírást ajánl. A fő jutalékmondat multipart HTML levélben félkövér, a plain-text
   változatban változatlan szöveggel szerepel.
-- `property_owner` esetén a 2026-08-25-én jóváhagyott rövid levél díjmentes,
-  jutalékmentes és kötelezettség nélküli kínálatba vételt ajánl, valamint a nyilvános
-  telekkínálatra mutat: `https://imperialholding.hu/termek/telek-kereso`.
+- `property_owner` esetén a 2026-08-28-án jóváhagyott levél ingyenes, jutalékmentes és
+  kötelezettség nélküli telek + típusház hirdetést ajánl. A levél tárgya és törzse a
+  konkrét települést, telekméretet és forráshirdetés-linket tartalmazza; hiányzó változó
+  esetén a rendszer fail-closed módon nem állítja sorba.
 - Nyilvános üzleti role mailbox továbbra is a Growth Ops meglévő
   `public_business_contact` szabályával használható.
 - Bounce, complaint, unsubscribe vagy suppression esetén minden további üzenet tiltott.

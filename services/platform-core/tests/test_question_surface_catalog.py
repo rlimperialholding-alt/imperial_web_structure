@@ -78,7 +78,12 @@ def test_qjob_div_task_cards_become_specific_link_candidates() -> None:
 
 def test_fetch_analyzes_content_after_old_200k_cutoff(monkeypatch) -> None:
     tail = '<a href="/szakivalaszol/tetofelujitas">Hogyan újítsam fel a tetőt?</a>'
-    body = ("<html><title>Kérdések</title><body>" + ("x" * 210_000) + tail + "</body></html>").encode()
+    body = (
+        "<html><title>Kérdések</title><body>"
+        + ("x" * 210_000)
+        + tail
+        + "</body></html>"
+    ).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=body, headers={"content-type": "text/html"})
@@ -89,6 +94,13 @@ def test_fetch_analyzes_content_after_old_200k_cutoff(monkeypatch) -> None:
         kwargs["transport"] = httpx.MockTransport(handler)
         return real_client(*args, **kwargs)
 
+    monkeypatch.setattr(
+        catalog.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (catalog.socket.AF_INET, catalog.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
     monkeypatch.setattr(catalog.httpx, "Client", client_factory)
     result = catalog._fetch(_route("https://joszaki.hu/szakivalaszol"))
 

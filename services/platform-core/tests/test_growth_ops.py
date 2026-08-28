@@ -542,20 +542,15 @@ def test_natural_person_without_request_is_rejected(db, growth_runtime):
     assert not db.scalars(select(OutreachMessage)).all()
 
 
-@pytest.mark.parametrize("recipient_role", ["listing_agent", "property_owner"])
-def test_public_building_plot_listing_allows_named_recipient(recipient_role):
-    recipient_type = {
-        "listing_agent": "real_estate_agent",
-        "property_owner": "land_owner",
-    }[recipient_role]
+def test_public_building_plot_listing_allows_verified_listing_agent():
     signal = _signal(
-        external_key=f"LAND-{recipient_role}",
+        external_key="LAND-listing_agent",
         signal_type="residential_building_plot",
         company_name="Nyilvános hirdető",
         company_registration_id=None,
         subject_type="natural_person",
-        recipient_role=recipient_role,
-        recipient_type=recipient_type,
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
         recipient_name="Nyilvános hirdető",
         sender_company_name=None,
         reference_names=[],
@@ -570,6 +565,36 @@ def test_public_building_plot_listing_allows_named_recipient(recipient_role):
     )
 
     assert service._eligibility(signal, score=90) == []
+
+
+def test_public_building_plot_listing_does_not_replace_owner_consent():
+    signal = _signal(
+        external_key="LAND-property_owner",
+        signal_type="residential_building_plot",
+        company_name="Nyilvános hirdető",
+        company_registration_id=None,
+        subject_type="natural_person",
+        recipient_role="property_owner",
+        recipient_type="land_owner",
+        recipient_name="Nyilvános hirdető",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email="hirdeto@example.test",
+        recipient_email_type="named",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property-listing.example.test/LAND-001",
+        location="Sülysáp",
+        plot_size_sqm=605,
+        evidence_url="https://property-listing.example.test/LAND-001",
+    )
+
+    assert (
+        service._land_agent_gate_reason(signal)
+        == service.LAND_OWNER_PRIOR_CONSENT_HARD_GATE
+    )
 
 
 def test_public_building_plot_owner_vs_agent_mismatch_fails_closed():

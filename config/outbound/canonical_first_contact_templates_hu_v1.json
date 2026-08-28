@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "registry_id": "IMPERIAL_CANONICAL_FIRST_CONTACT_TEMPLATES_HU",
-  "registry_version": 3,
+  "registry_version": 4,
   "locale": "hu-HU",
   "status": [
     "OWNER_APPROVED",
@@ -284,14 +284,17 @@
       "origin": "HUMAN_AUTHORED_LOCKED",
       "ai_modification_allowed": false,
       "sender_brand_id": "imperial",
-      "subject": "szeretnék érdeklődni a telek iránt",
+      "subject": "Ingyen elkészítjük a [település], [méret]-es telek + típusház hirdetését",
       "subject_status": "OWNER_APPROVED",
-      "subject_sha256_utf8": "792451ca4fd342fdf19cf530caa910030e8a5e06f96eec39f3b02700ea4159e5",
-      "owner_approved_body_text": "Tisztelt [Név]!\nCégünk, az Imperial Holding, előregyártott készházak és típusházak építésével foglalkozik, és úgy gondoljuk, hogy az Ön telkében van lehetőség.\nSzívesen felvennénk a kínálatunkba DÍJMENTESEN, mert sokan keresnek nálunk a típusházakhoz eladó telkeket.\nItt meg tudja nézni a weboldalunkon, milyen telkekkel dolgozunk jelenleg: https://imperialholding.hu/termek/telek-kereso\nNem kérünk Öntől pénzt semmilyen formában, jutalékot sem: a lehetőség mindkettőnknek előnyös, mi a típusházat adjuk el, Ön pedig a telket. Nem kérünk semmilyen kötelezettséget, csak szeretnénk együttműködni Önnel.\nÉrdekli?\nÜdvözlettel:\nImperial Holding\ninfo@imperialholding.hu\nLeiratkozás: [egyedi leiratkozási link]",
-      "owner_approved_body_text_sha256_utf8": "aa1894dfc0a53401d3fdd5c737cbdf737acea3d325d44eb38f70b36474703500",
-      "owner_approved_body_text_utf8_bytes": 763,
+      "subject_sha256_utf8": "2380ca20f93d5a60371512c85f631fad045b430ce4f8f365ff61eee23b291c01",
+      "owner_approved_body_text": "Tisztelt [Név]!\n\nAz Ön által hirdetett [település], [méret]-es építési telek miatt keresem.\n\nAz Imperial Holding típustervek kulcsrakész építésével foglalkozik.\n\nIngyen, jutalék nélkül meghirdetjük az ingatlanát a telekhez illő típusházunkkal. Önnek ezért nem kell fizetnie, és semmilyen kötelezettséget nem vállal.\n\nCsak az írásos engedélyét kérjük ahhoz, hogy a telket a telek + típusház ajánlat részeként meghirdethessük. A hirdetési anyagot mi készítjük el.\n\nA hirdetés engedélyezéséhez válaszoljon emailben: „Engedélyezem a telek hirdetését.”\n\nHirdetés: [hirdetés linkje]\n\nÜdvözlettel:\nImperial Holding\ninfo@imperialholding.hu\n\nLeiratkozás: [egyedi leiratkozási link]",
+      "owner_approved_body_text_sha256_utf8": "5f5c907b4504e667d0199aa021aeebdb27d9e6dc6b1c19ef89114809054fc910",
+      "owner_approved_body_text_utf8_bytes": 735,
       "allowed_replacements": [
         "recipient_name",
+        "listing_location",
+        "listing_size",
+        "listing_url",
         "unsubscribe_url"
       ],
       "html_formatting": {

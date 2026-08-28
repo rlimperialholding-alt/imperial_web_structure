@@ -37,7 +37,8 @@
     "@fastify/swagger-ui": "^5.2.2"
   },
   "overrides": {
-    "@fastify/static": "10.1.2"
+    "@fastify/static": "10.1.2",
+    "deepmerge-ts": "8.0.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

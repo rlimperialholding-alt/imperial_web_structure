@@ -59,7 +59,11 @@ class Portal:
 
     def permits(self, action: str) -> bool:
         if action == "discover":
-            return self.discovery_enabled and self.discovery_mode in {"licensed_api", "feed"}
+            return (
+                self.discovery_enabled
+                and self.discovery_mode in {"licensed_api", "feed"}
+                and bool(self.adapter_module)
+            )
         if action in {"publish", "withdraw"}:
             return (
                 self.publish_enabled
@@ -101,6 +105,8 @@ class PortalRegistry:
             )
             if portal.discovery_enabled and portal.discovery_mode not in {"licensed_api", "feed"}:
                 raise LandRegistryError(f"Unsafe discovery mode enabled: {key}")
+            if portal.discovery_enabled and not portal.adapter_module:
+                raise LandRegistryError(f"Discovery adapter is missing: {key}")
             if portal.publish_enabled and (
                 portal.publish_mode != "licensed_api" or not portal.adapter_module
             ):

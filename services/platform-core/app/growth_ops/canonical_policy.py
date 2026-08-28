@@ -31,9 +31,12 @@ PARTNER_OUTREACH_ANCHOR_SHA256 = "7004cccbda5c2e45109edf92474791a4b2fd268d8ffe2d
 # anchors prevent a runtime template or later refactor from changing the
 # product, commission, or property-owner offer without an explicit policy
 # update.
-LAND_OWNER_SUBJECT = "szeretnék érdeklődni a telek iránt"
+LAND_OWNER_SUBJECT = (
+    "Ingyen elkészítjük a {listing_location}, {listing_size}-es telek + típusház "
+    "hirdetését"
+)
 LAND_OWNER_SUBJECT_SHA256 = (
-    "792451ca4fd342fdf19cf530caa910030e8a5e06f96eec39f3b02700ea4159e5"
+    "56f96d8def49c6b2c819ab8f1186056b2199b44bc2e40d1d0b0de8ef55af64a6"
 )
 LAND_AGENT_SUBJECT = "ház eladásában kérnék segítséget"
 LAND_AGENT_SUBJECT_SHA256 = (
@@ -54,11 +57,31 @@ LAND_AGENT_COMMISSION_ANCHOR_SHA256 = (
     "ae48724a42c7de14cb30a6715ce488f314320c12b566ac4255ba8bf6ac1bb393"
 )
 LAND_OWNER_FREE_AD_ANCHOR = (
-    "Szívesen felvennénk a kínálatunkba DÍJMENTESEN, mert sokan keresnek nálunk a "
-    "típusházakhoz eladó telkeket."
+    "Ingyen, jutalék nélkül meghirdetjük az ingatlanát a telekhez illő "
+    "típusházunkkal."
 )
 LAND_OWNER_FREE_AD_ANCHOR_SHA256 = (
-    "d232996df9487fa74c70c2d517939cd209e8b8422d880a36f953c7ea5f25ac60"
+    "09bff47f226817749a551e2cb8d7d44a9481e02d57829a6e47f09b191b1f380c"
+)
+LAND_OWNER_SERVICE_ANCHOR = (
+    "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik."
+)
+LAND_OWNER_SERVICE_ANCHOR_SHA256 = (
+    "0220cfa5398c899f068acdf1530b7002ca00fcc422a2f6895c52883bbe02ee26"
+)
+LAND_OWNER_PERMISSION_ANCHOR = (
+    "Csak az írásos engedélyét kérjük ahhoz, hogy a telket a telek + típusház "
+    "ajánlat részeként meghirdethessük. A hirdetési anyagot mi készítjük el."
+)
+LAND_OWNER_PERMISSION_ANCHOR_SHA256 = (
+    "ac08b4c0b92375caecef5ff1d60ccbab18f6a1cadde9ec52a70d578e54147e2f"
+)
+LAND_OWNER_REPLY_ANCHOR = (
+    "A hirdetés engedélyezéséhez válaszoljon emailben: „Engedélyezem a telek "
+    "hirdetését.”"
+)
+LAND_OWNER_REPLY_ANCHOR_SHA256 = (
+    "f7094b5d09403e660687a7d7d9abbb771966affde32ca696d4b2f7ca265e452c"
 )
 
 ACTIVE_CONTENT_BRANDS = (
@@ -330,6 +353,9 @@ def assert_policy_integrity() -> None:
         (LAND_OUTREACH_SERVICE_ANCHOR, LAND_OUTREACH_SERVICE_ANCHOR_SHA256),
         (LAND_AGENT_COMMISSION_ANCHOR, LAND_AGENT_COMMISSION_ANCHOR_SHA256),
         (LAND_OWNER_FREE_AD_ANCHOR, LAND_OWNER_FREE_AD_ANCHOR_SHA256),
+        (LAND_OWNER_SERVICE_ANCHOR, LAND_OWNER_SERVICE_ANCHOR_SHA256),
+        (LAND_OWNER_PERMISSION_ANCHOR, LAND_OWNER_PERMISSION_ANCHOR_SHA256),
+        (LAND_OWNER_REPLY_ANCHOR, LAND_OWNER_REPLY_ANCHOR_SHA256),
     )
     if any(
         hashlib.sha256(value.encode("utf-8")).hexdigest() != expected
@@ -363,8 +389,19 @@ def assert_outreach_copy(body: str) -> None:
     assert_policy_integrity()
     if LAND_OUTREACH_SERVICE_ANCHOR in body:
         has_agent_offer = LAND_AGENT_COMMISSION_ANCHOR in body
-        has_owner_offer = LAND_OWNER_FREE_AD_ANCHOR in body
-        if has_agent_offer == has_owner_offer:
+        if not has_agent_offer or LAND_OWNER_FREE_AD_ANCHOR in body:
+            raise ValueError("owner_locked_land_outreach_offer_missing_or_mixed")
+        return
+    if LAND_OWNER_SERVICE_ANCHOR in body:
+        required = (
+            LAND_OWNER_FREE_AD_ANCHOR,
+            LAND_OWNER_PERMISSION_ANCHOR,
+            LAND_OWNER_REPLY_ANCHOR,
+        )
+        if (
+            not all(anchor in body for anchor in required)
+            or LAND_AGENT_COMMISSION_ANCHOR in body
+        ):
             raise ValueError("owner_locked_land_outreach_offer_missing_or_mixed")
         return
     if PARTNER_OUTREACH_ANCHOR not in body:

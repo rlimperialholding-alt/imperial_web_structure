@@ -46,6 +46,9 @@ from app.land_acquisition.service import (
     sync_growth_plot_signals,
     verify_source,
 )
+from app.land_acquisition.service import (
+    readiness as land_readiness,
+)
 from app.models import (
     BuildConfigCase,
     BuildConfigGate,
@@ -147,7 +150,8 @@ def _public_land_outreach_input(
         recipient_email_type="named",
         contact_basis="public_property_listing",
         public_contact_url=f"https://example.test/listing/{external_key}",
-        location="sülysápi, 605 m²-es",
+        location="Sülysáp",
+        plot_size_sqm=605,
         summary="Eladó belterületi építési telek Sülysápon.",
         evidence_url=f"https://example.test/listing/{external_key}",
         brand_id="imperial",
@@ -401,6 +405,16 @@ def test_named_portal_is_never_read_by_generic_scanner(monkeypatch):
     }
 
 
+def test_land_readiness_fails_closed_without_a_live_discovery_adapter(db):
+    ready, detail = land_readiness(db)
+
+    assert ready is False
+    assert detail["live_discovery"] is False
+    assert detail["blocking_reasons"] == [
+        "no_licensed_land_discovery_adapter_enabled"
+    ]
+
+
 def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
     monkeypatch.setenv(
         "CANONICAL_FIRST_CONTACT_REGISTRY_FILE", str(CANONICAL_REGISTRY_PATH)
@@ -501,16 +515,16 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
         data=owner_data,
     )
     assert metadata["template_id"] == "LAND_OWNER_FIRST_CONTACT_HU"
-    assert subject == "szeretnék érdeklődni a telek iránt"
-    assert (
-        "Cégünk, az Imperial Holding, előregyártott készházak és típusházak "
-        "építésével foglalkozik"
-    ) in body
-    assert "Szívesen felvennénk a kínálatunkba DÍJMENTESEN" in body
-    assert "https://imperialholding.hu/termek/telek-kereso" in body
-    assert "Nem kérünk Öntől pénzt semmilyen formában, jutalékot sem" in body
-    assert "Nem kérünk semmilyen kötelezettséget" in body
-    assert "Érdekli?" in body
+    assert subject == (
+        "Ingyen elkészítjük a Sülysáp, 605 m²-es telek + típusház hirdetését"
+    )
+    assert "Az Ön által hirdetett Sülysáp, 605 m²-es építési telek miatt keresem." in body
+    assert "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik." in body
+    assert "Ingyen, jutalék nélkül meghirdetjük az ingatlanát" in body
+    assert "semmilyen kötelezettséget nem vállal" in body
+    assert "Csak az írásos engedélyét kérjük" in body
+    assert "„Engedélyezem a telek hirdetését.”" in body
+    assert "Hirdetés: https://example.test/listing/COPY-002" in body
     assert "2,5%" not in body
     assert (
         "Leiratkozás: https://growth.imperialholding.test/growth/unsubscribe/UAT-OWNER-TOKEN"
@@ -518,7 +532,7 @@ def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
 
 
 @pytest.mark.parametrize("recipient_role", ["listing_agent", "property_owner"])
-def test_owner_approved_public_land_initial_email_is_policy_released(
+def test_owner_approved_land_initial_email_is_policy_released(
     db, monkeypatch, recipient_role
 ):
     monkeypatch.setenv(
@@ -544,9 +558,19 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
         recipient_role=recipient_role,
         recipient_email=f"{recipient_role}@example.test",
         recipient_email_type="named",
-        contact_basis="public_property_listing",
+        contact_basis=(
+            "documented_consent"
+            if recipient_role == "property_owner"
+            else "public_property_listing"
+        ),
+        consent_evidence_id=(
+            "CONSENT-LAND-OWNER-RELEASE"
+            if recipient_role == "property_owner"
+            else None
+        ),
         public_contact_url="https://example.test/listing/RELEASE-001",
-        location="sülysápi, 605 m²-es",
+        location="Sülysáp",
+        plot_size_sqm=605,
         summary="Eladó belterületi építési telek Sülysápon.",
         evidence_url="https://example.test/listing/RELEASE-001",
         brand_id="imperial",
@@ -583,6 +607,9 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
             "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
         ),
     )
+    if recipient_role == "property_owner":
+        data.contact_basis = "documented_consent"
+        data.consent_evidence_id = "CONSENT-LAND-OWNER-RELEASE"
 
     initial = _queue_message(
         db,
@@ -606,7 +633,7 @@ def test_owner_approved_public_land_initial_email_is_policy_released(
             data=data,
         )
 
-    assert initial.release_approved_by == "owner-policy:land-public-listing-v1:2026-08-25"
+    assert initial.release_approved_by == "owner-policy:land-public-listing-v2:2026-08-26"
     assert initial.release_approved_at is not None
     assert initial.release_token_hash and _release_matches(initial)
     canonical_metadata = json.loads(initial.receipt_json)["canonical_template"]
@@ -682,6 +709,64 @@ def test_dispatch_blocks_legacy_queued_gdn_agent_before_registry_or_smtp(db):
     assert result.last_error == LAND_AGENT_HARD_GATE_GDN
     assert signal.status == "blocked"
     assert signal.rejection_reasons_json == f'["{LAND_AGENT_HARD_GATE_GDN}"]'
+
+
+def test_dispatch_blocks_private_owner_without_prior_consent(db):
+    reason = "land_owner_natural_person_prior_consent_required"
+    signal = GrowthSignal(
+        signal_id="SIG-LAND-PRIVATE-LEGACY",
+        motor_key="construction",
+        source_id="licensed-feed:legacy",
+        source_bucket="property_development",
+        external_key="LISTING-PRIVATE-LEGACY",
+        signal_type="residential_building_plot",
+        detected_at=datetime.now(UTC),
+        company_name="Magánhirdető",
+        subject_type="natural_person",
+        recipient_role="property_owner",
+        recipient_email="seller@example.test",
+        recipient_email_type="named",
+        contact_basis="public_property_listing",
+        public_contact_url="https://example.test/listing/PRIVATE-LEGACY",
+        location="Sülysáp",
+        plot_size_sqm=605,
+        summary="Korábban sorba állított magánhirdetés.",
+        evidence_url="https://example.test/listing/PRIVATE-LEGACY",
+        brand_id="Imperial",
+        score=90,
+        urgency=50,
+        confidence=90,
+        dedupe_hash="7" * 64,
+        source_payload_hash="8" * 64,
+        status="queued",
+    )
+    message = OutreachMessage(
+        outreach_id="OUT-LAND-PRIVATE-LEGACY",
+        signal_id=signal.signal_id,
+        motor_key="construction",
+        brand_id="Imperial",
+        sender_email="info@imperialholding.hu",
+        recipient_email=signal.recipient_email,
+        sequence_step=0,
+        subject="legacy queued message",
+        body_text="Legacy queued outreach that must never be dispatched.",
+        unsubscribe_token_hash="9" * 64,
+        idempotency_key="a" * 64,
+        payload_sha256="b" * 64,
+        status="claimed",
+        claimed_by="legacy-worker",
+        claimed_at=datetime.now(UTC),
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    db.add_all([signal, message])
+    db.commit()
+
+    result = dispatch_outreach(db, message)
+
+    assert result.status == "blocked"
+    assert result.last_error == reason
+    assert signal.status == "blocked"
+    assert signal.rejection_reasons_json == f'["{reason}"]'
 
 
 def test_generic_scanner_rejects_private_and_cgnat_targets(monkeypatch):
