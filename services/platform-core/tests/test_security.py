@@ -1,5 +1,15 @@
+import dataclasses
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from app import main as main_module
+from app import seed as seed_module
 from app.config import Settings
-from app.seed import DEMO_PASSWORD
+from app.seed import DEMO_PARTNER_CODE, DEMO_PASSWORD, demo_accounts_allowed
 
 
 def test_production_validation_blocks_unsafe_defaults(monkeypatch):
@@ -172,3 +182,104 @@ def test_session_authenticated_writes_require_same_origin(client):
         follow_redirects=False,
     )
     assert same_origin.status_code == 303
+
+
+class TestDemoTemplateCredentialsGate:
+    """A login oldalak demo-hitelesítőit ugyanaz a kapu dönti el, mint a seed.
+
+    A Task40 review MEDIUM regressziója: a templátum-globals csak a
+    ``settings.is_production``-t nézte, ezért non-production, kikapcsolt demo
+    runtime mellett is kiírta a demo hitelesítőket, miközben a seed ilyenkor
+    sem demo fiókot, sem szintetikus partneri hozzáférést nem hoz létre.
+    """
+
+    def test_demo_disabled_non_production_exposes_no_template_credentials(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            seed_module,
+            "settings",
+            dataclasses.replace(
+                seed_module.settings,
+                environment="staging",
+                demo_features_enabled=False,
+            ),
+        )
+        assert demo_accounts_allowed() is False
+        assert main_module._demo_template_credentials() == (None, None)
+
+    def test_demo_enabled_non_production_keeps_template_credentials(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            seed_module,
+            "settings",
+            dataclasses.replace(
+                seed_module.settings,
+                environment="staging",
+                demo_features_enabled=True,
+            ),
+        )
+        assert main_module._demo_template_credentials() == (DEMO_PASSWORD, DEMO_PARTNER_CODE)
+
+    def test_production_never_exposes_template_credentials_even_with_forced_flag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            seed_module,
+            "settings",
+            dataclasses.replace(
+                seed_module.settings,
+                environment="production",
+                demo_features_enabled=True,
+            ),
+        )
+        assert demo_accounts_allowed() is False
+        assert main_module._demo_template_credentials() == (None, None)
+
+    def test_template_globals_are_wired_through_the_shared_gate(self) -> None:
+        expected_password, expected_code = main_module._demo_template_credentials()
+        assert main_module.templates.env.globals["demo_password"] == expected_password
+        assert main_module.templates.env.globals["partner_demo_code"] == expected_code
+
+    def test_demo_disabled_non_production_hides_credentials_end_to_end(
+        self, tmp_path: Path
+    ) -> None:
+        """Friss folyamat, staging + DEMO_FEATURES_ENABLED=false: a valódi
+        import-időben rögzített globals és a renderelt login oldalak sem demo
+        jelszót, sem partneri demókódot nem mutatnak."""
+        platform_core = Path(seed_module.__file__).resolve().parents[1]
+        code = (
+            "import sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from app import main as app_main\n"
+            "from app import seed\n"
+            "from fastapi.testclient import TestClient\n"
+            "assert not seed.settings.is_production\n"
+            "assert seed.demo_accounts_allowed() is False\n"
+            "print(app_main.templates.env.globals['demo_password'])\n"
+            "print(app_main.templates.env.globals['partner_demo_code'])\n"
+            "client = TestClient(app_main.app)\n"
+            "login_page = client.get('/login').text\n"
+            "partner_page = client.get('/partner-field/login').text\n"
+            "print(seed.DEMO_PASSWORD in login_page or seed.DEMO_PASSWORD in partner_page)\n"
+            "print(seed.DEMO_PARTNER_CODE in login_page or seed.DEMO_PARTNER_CODE in partner_page)\n"
+        )
+        env = {
+            **os.environ,
+            "ENVIRONMENT": "staging",
+            "DEMO_FEATURES_ENABLED": "false",
+            "DEMO_CREDENTIALS_STATE_PATH": str(tmp_path / "demo-credentials-state.json"),
+        }
+        completed = subprocess.run(
+            [sys.executable, "-c", code, str(platform_core)],
+            cwd=str(platform_core),
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.splitlines() == ["None", "None", "False", "False"]
