@@ -180,34 +180,30 @@ def test_dispatch_batch_does_not_claim_outside_sending_window(
     assert service.dispatch_batch(db) == 0
 
 
-def test_outreach_send_capacity_enforces_hourly_and_daily_limits(growth_runtime):
-    class ScalarSequence:
-        def __init__(self, values):
-            self.values = iter(values)
-
-        def scalar(self, _query):
-            return next(self.values)
-
+def test_outreach_send_capacity_enforces_hourly_and_daily_limits(
+    db, growth_runtime, monkeypatch
+):
     local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: (2, 47, 0, {}),
+    )
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 3
 
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([2, 47]), local_now.astimezone(UTC)
-        )
-        == 3
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: (5, 12, 0, {}),
     )
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([5, 12]), local_now.astimezone(UTC)
-        )
-        == 0
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
+
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: (1, 50, 0, {}),
     )
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([1, 50]), local_now.astimezone(UTC)
-        )
-        == 0
-    )
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 
 
 def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
@@ -474,7 +470,9 @@ def test_release_rejects_current_signal_screening_drift(db, growth_runtime):
         )
 
 
-def test_dispatch_blocks_current_signal_leier_affiliation(db, growth_runtime):
+def test_dispatch_blocks_current_signal_leier_affiliation(
+    db, growth_runtime, monkeypatch
+):
     result = service.ingest_signal(
         db, _signal(external_key="ETDR-CURRENT-LEIER-DISPATCH")
     )
@@ -498,6 +496,7 @@ def test_dispatch_blocks_current_signal_leier_affiliation(db, growth_runtime):
     message.status = "claimed"
     message.attempt_count = 1
     db.commit()
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
 
     dispatched = service.dispatch_outreach(db, message)
 
@@ -563,6 +562,7 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
 
     monkeypatch.setattr(service, "SMTPEmailAdapter", AcceptedUnverifiedAdapter)
     monkeypatch.setattr(service, "_trip_runtime_kill_switch", fake_trip)
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
 
     first = service.dispatch_outreach(db, message)
     second = service.dispatch_outreach(db, message)

@@ -29,6 +29,7 @@ class GrowthSettings:
     outreach_send_end_local: str
     outreach_max_per_hour: int
     outreach_max_per_day: int
+    outreach_max_per_recipient_root_domain_per_day: int
     canonical_wide_enabled: bool
     canonical_daily_at: str
     canonical_manifest_file: str
@@ -83,6 +84,18 @@ def settings() -> GrowthSettings:
         ),
         outreach_max_per_day=max(
             1, min(1_000, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "50")))
+        ),
+        outreach_max_per_recipient_root_domain_per_day=max(
+            1,
+            min(
+                10,
+                int(
+                    os.getenv(
+                        "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
+                        "10",
+                    )
+                ),
+            ),
         ),
         canonical_wide_enabled=os.getenv("CANONICAL_GROWTH_ENABLED", "false").lower()
         == "true",
