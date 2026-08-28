@@ -1254,9 +1254,6 @@ def _demo_template_credentials() -> tuple[str | None, str | None]:
     return None, None
 
 
-# A demo-hitelesítők kijelzése ugyanazt a kaput használja, mint a seed és a
-# tisztítás: demo_accounts_allowed(). A settings.is_production önmagában nem
-# elég: non-production, kikapcsolt demo runtime mellett sem szabad kiírni.
 _demo_password_for_templates, _partner_demo_code_for_templates = _demo_template_credentials()
 templates.env.globals["demo_password"] = _demo_password_for_templates
 templates.env.globals["partner_demo_code"] = _partner_demo_code_for_templates

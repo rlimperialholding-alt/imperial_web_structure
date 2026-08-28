@@ -51,19 +51,14 @@ from .services.development_governance import seed_canonical_discoveries
 
 DEMO_LOGIN_ENV = "CONTROL_CENTER_DEMO_LOGIN"
 # A szintetikus demo-belépési érték fix, forrásból rekonstruálható formában
-# NINCS a forrásban: vagy a CONTROL_CENTER_DEMO_LOGIN környezeti változóból
-# érkezik (nincs default), vagy futásonként biztonságosan generált, egyedi
-# véletlen érték. A biztonságot nem az érték adja -- a login oldal
-# nem-production módban ki is írja --, hanem a demo_accounts_allowed()
-# production kapu.
+# NINCS: környezeti változóból érkezik vagy futásonként generált; a
+# biztonságot a demo_accounts_allowed() production kapu adja.
 
 
 def demo_login_value(environ: Mapping[str, str] | None = None) -> str:
-    """A demo fiókok szintetikus belépési értéke.
-
-    (1) a ``CONTROL_CENTER_DEMO_LOGIN`` környezeti változó, ha nem üres;
-    (2) egyébként futásonként generált egyedi véletlen érték. Fix default
-    nincs.
+    """A demo fiókok szintetikus belépési értéke: (1) a
+    ``CONTROL_CENTER_DEMO_LOGIN`` változó, ha nem üres; (2) egyébként
+    futásonként generált egyedi véletlen érték. Fix default nincs.
     """
     values = os.environ if environ is None else environ
     override = values.get(DEMO_LOGIN_ENV, "").strip()
@@ -73,18 +68,15 @@ def demo_login_value(environ: Mapping[str, str] | None = None) -> str:
 
 
 DEMO_PARTNER_CODE_ENV = "CONTROL_CENTER_PARTNER_DEMO_CODE"
-# A szintetikus partneri terepi belépőkód ugyanazt a szerződést követi: fix,
-# rekonstruálható érték NINCS. A hatjegyű numerikus alak a belépő oldal
-# beviteli szerződését (numerikus billentyűzet, min. 6 jegy) őrzi meg; a
-# biztonságot itt is a production kapu adja.
+# A partneri demókód ugyanezt a szerződést követi: fix érték NINCS, a
+# hatjegyű numerikus alak a belépő oldal beviteli szerződését őrzi, a
+# biztonságot a production kapu adja.
 
 
 def demo_partner_code(environ: Mapping[str, str] | None = None) -> str:
-    """A szintetikus partneri terepi belépőkód.
-
-    (1) a ``CONTROL_CENTER_PARTNER_DEMO_CODE`` környezeti változó, ha nem
-    üres; (2) egyébként futásonként generált egyedi hatjegyű numerikus
-    érték. Fix default nincs.
+    """A szintetikus partneri terepi belépőkód: (1) a
+    ``CONTROL_CENTER_PARTNER_DEMO_CODE`` változó, ha nem üres; (2) egyébként
+    futásonként generált egyedi hatjegyű numerikus érték. Fix default nincs.
     """
     values = os.environ if environ is None else environ
     override = values.get(DEMO_PARTNER_CODE_ENV, "").strip()
@@ -109,33 +101,21 @@ def demo_accounts_allowed() -> bool:
 
 # --- A demo-belépés közös, nem követett futásidejű állapota ------------------
 #
-# A generált demo-belépési érték és partner-kód egyetlen közös, atomosan
-# cserélt állapotfájlban él a git-ignored ``services/platform-core/runtime/``
-# könyvtárban, így a seedelő és a login oldalt renderelő folyamat -- több
-# worker és újraindítás után is -- ugyanazt az értéket használja, és semmilyen
-# plaintext demo érték nem jelenhet meg a tracked munkafában.
-#
-# Az első létrehozás és a felülírás atomi exclusive-create lock (``O_CREAT |
-# O_EXCL``, Windows alatt is atomi) mögött történik: pontosan egy folyamat
-# generál és persistál, minden párhuzamos folyamat a persistált állapothoz
-# konvergál (a Task36 review HIGH-ja: korábban két egyidejű folyamat is
-# divergens értéket írhatott). A vegyes override/no-override versenyre
-# ugyanez a koordináció érvényes (Task37 review HIGH regressziója): az
-# override nélküli hívó csak lock alatt olvasott értéket adhat vissza. A
-# lock-várakozás korlátos; a korlát kimerülése, nem biztonságos
-# (szimlink/nem reguláris) állapot vagy lock, illetve az ellenőrizhetetlen
-# visszaolvasás fail-closed ``DemoCredentialsStateError``. A tesztek a
-# ``DEMO_CREDENTIALS_STATE_PATH`` környezeti változóval a pytest
-# temp-gyökerébe irányítják át az állapotfájlt.
+# A demo-belépési érték és partner-kód egy git-ignored, atomosan cserélt
+# állapotfájlban él (``services/platform-core/runtime/``): a seedelő és a
+# login-renderelő folyamat egyetlen persistált értékhez konvergál, tracked
+# munkafába plaintext demo érték nem kerül. A létrehozás/felülírás atomi
+# exclusive-create lock mögött fut, a vegyes override/no-override versenyre
+# ugyanez a koordináció érvényes (Task36/Task37 review HIGH regresszió); a
+# korlát kimerülése vagy nem biztonságos állapot fail-closed
+# ``DemoCredentialsStateError``. A tesztek a ``DEMO_CREDENTIALS_STATE_PATH``
+# környezeti változóval a pytest temp-gyökerébe irányítják az állapotfájlt.
 
 DEMO_CREDENTIALS_STATE_ENV = "DEMO_CREDENTIALS_STATE_PATH"
-# A creation-lock korlátos várakozási ablaka: a holder kritikus szakasza
-# néhány milliszekundum, a várakozó folyamat közben folyamatosan újraolvassa
-# az állapotfájlt; a korlát kimerülése explicit fail-closed hiba.
+# Korlátos lock-várakozási ablak; kimerülése explicit fail-closed hiba.
 _DEMO_STATE_LOCK_RETRY_DELAYS = (0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 0.8, 0.8, 0.8, 0.8)
-# Az írás utáni visszaolvasás korlátos újrapróbálkozása (Windows alatt egy
-# átmeneti AV/indexer megnyitás blokkolhatja a frissen cserélt fájlt); a
-# korlát kimerülése fail-closed hiba, nem fallback érték.
+# Az írás utáni visszaolvasás korlátos újrapróbálása (Windows AV/indexer
+# blokkolhatja a frissen cserélt fájlt); kimerülése fail-closed hiba.
 _STATE_READBACK_ATTEMPTS = 5
 _STATE_READBACK_DELAY = 0.05
 
@@ -561,7 +541,7 @@ CALCULATION_SOURCES = [
 
 
 def seed_workspace_demo(db: Session) -> None:
-    if settings.environment.lower() != "development":
+    if settings.environment.lower() != "development" or not demo_accounts_allowed():
         return
     if db.scalar(select(ProjectRegistry).limit(1)):
         return
@@ -602,7 +582,7 @@ def seed_workspace_demo(db: Session) -> None:
 
 
 def seed_operations_demo(db: Session) -> None:
-    if settings.environment.lower() != "development":
+    if settings.environment.lower() != "development" or not demo_accounts_allowed():
         return
     if db.scalar(select(PMPhase).limit(1)):
         return
@@ -1031,7 +1011,7 @@ def seed_database(db: Session) -> None:
         ))
     seed_canonical_discoveries(db, MODULES)
     seed_commercial_integration(db)
-    if settings.demo_runtime_enabled:
+    if demo_accounts_allowed():
         seed_content_quality_sources(db)
     else:
         retire_seeded_content_quality_sources(db)

@@ -370,9 +370,7 @@ def _git_tracked_candidates(repo_root: Path, baseline_path: Path) -> list[str]:
     try:
         excluded.add(_normalize(str(baseline_path.relative_to(repo_root))))
     except ValueError:
-        # The baseline lives outside the reconciled root; it can never be a
-        # candidate of this root anyway.
-        pass
+        pass  # outside the reconciled root, so never a candidate anyway
     return [path for path in candidates if path not in excluded]
 
 

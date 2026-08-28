@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import select
 
 from app import seed
-from app.models import PartnerFieldAccess, PartnerWorker, User
+from app.models import PMPhase, PartnerFieldAccess, PartnerWorker, ProjectRegistry, SiteDailyReport, TaskRecord, User
 from app.security import verify_password
 from app.seed import (
     DEMO_CREDENTIALS_STATE_ENV,
@@ -51,6 +51,10 @@ NON_DEMO_WORKER_ID = "PWR-SYNTHETIC-NON-DEMO-01"
 
 def _production_settings(**overrides):
     return dataclasses.replace(seed.settings, environment="production", **overrides)
+
+
+def _development_settings(**overrides):
+    return dataclasses.replace(seed.settings, environment="development", **overrides)
 
 
 def _synthetic_partner_state(db) -> dict:
@@ -153,9 +157,7 @@ class TestDemoSeedKeepsStoredHashesInSync:
     def test_reseed_refreshes_existing_demo_user_hash_to_process_value(
         self, db, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(
-            seed, "settings", dataclasses.replace(seed.settings, environment="development")
-        )
+        monkeypatch.setattr(seed, "settings", _development_settings())
         owner = db.scalar(select(User).where(User.email == "owner@imperial.local"))
         assert owner is not None, "a fixture-nek demo fiókot kell létrehoznia"
         owner.password_hash = STALE_HASH
@@ -273,12 +275,9 @@ class TestDemoCredentialsRuntimeState:
 def _spawn_seed_process(
     code: str, *args: str, env: dict[str, str]
 ) -> subprocess.Popen[str]:
-    """Egy valódi OS-alfolyamat, amely a tényleges app.seed modult importálja.
-
-    ``sys.argv[1]`` mindig a platform-core gyökér, utána a hívó argumentumai
-    következnek; a plaintext szintetikus értékek csak a folyamat stdoutján és
-    a tmp_path alatti állapotfájlban jelennek meg.
-    """
+    """Valódi OS-alfolyamat az app.seed importjával; ``sys.argv[1]`` a
+    platform-core gyökér, a plaintext szintetikus értékek csak a folyamat
+    stdoutján és a tmp_path alatti állapotfájlban jelennek meg."""
     platform_core = Path(seed.__file__).resolve().parents[1]
     return subprocess.Popen(
         [sys.executable, "-c", code, str(platform_core), *args],
@@ -535,9 +534,7 @@ class TestPartnerDemoAccessGate:
     def test_seed_creates_partner_access_with_current_demo_code_hash(
         self, db, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(
-            seed, "settings", dataclasses.replace(seed.settings, environment="development")
-        )
+        monkeypatch.setattr(seed, "settings", _development_settings())
         access = db.scalar(
             select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == "PFA-GOD-DEMO")
         )
@@ -550,9 +547,7 @@ class TestPartnerDemoAccessGate:
         """Közvetlen restart/reseed regresszió: az új folyamat új kódot hoz,
         a már létező PartnerFieldAccess hash-e a login oldal által kiírt
         aktuális kódhoz frissül."""
-        monkeypatch.setattr(
-            seed, "settings", dataclasses.replace(seed.settings, environment="development")
-        )
+        monkeypatch.setattr(seed, "settings", _development_settings())
         access = db.scalar(
             select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == "PFA-GOD-DEMO")
         )
@@ -598,13 +593,7 @@ class TestPartnerDemoAccessGate:
             db.delete(access)
         db.flush()
 
-        monkeypatch.setattr(
-            seed,
-            "settings",
-            dataclasses.replace(
-                seed.settings, environment="development", demo_features_enabled=False
-            ),
-        )
+        monkeypatch.setattr(seed, "settings", _development_settings(demo_features_enabled=False))
         assert demo_accounts_allowed() is False
         seed_database(db)
         db.flush()
@@ -728,9 +717,7 @@ class TestPartnerDemoAccessGate:
         retired = _synthetic_partner_state(db)
         assert retired["access"] is not None and retired["access"][0] is False
 
-        monkeypatch.setattr(
-            seed, "settings", dataclasses.replace(seed.settings, environment="development")
-        )
+        monkeypatch.setattr(seed, "settings", _development_settings())
         monkeypatch.setattr(seed, "DEMO_PARTNER_CODE", "445566")
         assert demo_accounts_allowed() is True
         seed_database(db)
@@ -742,6 +729,20 @@ class TestPartnerDemoAccessGate:
         assert restored["workers"] and all(active for _, active in restored["workers"])
         assert verify_password("445566", restored["access"][1])
         assert authenticate_access(db, "445566") is not None
+
+
+class TestDemoBusinessRecordsGate:
+    """Demo workspace/operations rekord kizárólag a demo_accounts_allowed() kapun belül (Review-1 MEDIUM)."""
+
+    def test_demo_disabled_development_seed_creates_no_business_records(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(seed, "settings", _development_settings(demo_features_enabled=False))
+        assert demo_accounts_allowed() is False
+        seed_database(db)
+        db.flush()
+        for model in (ProjectRegistry, TaskRecord, PMPhase, SiteDailyReport):
+            assert db.scalars(select(model)).all() == []
 
 
 class TestProductionDemoAccountGate:
@@ -760,9 +761,7 @@ class TestProductionDemoAccountGate:
     def test_non_production_keeps_demo_accounts_available(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(
-            seed, "settings", dataclasses.replace(seed.settings, environment="development")
-        )
+        monkeypatch.setattr(seed, "settings", _development_settings())
         assert demo_accounts_allowed() is True
 
     def test_production_seed_run_creates_no_demo_user(
