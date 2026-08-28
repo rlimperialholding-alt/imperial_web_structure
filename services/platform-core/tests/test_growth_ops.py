@@ -210,6 +210,26 @@ def test_outreach_send_capacity_enforces_hourly_and_daily_limits(growth_runtime)
     )
 
 
+def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
+    db, growth_runtime, monkeypatch
+):
+    from app.growth_ops import wide_service
+
+    events = []
+    monkeypatch.setattr(service, "dispatch_batch", lambda _db: events.append("mail") or 0)
+
+    def fail_wide_pipeline(_db):
+        events.append("wide")
+        raise RuntimeError("unrelated pipeline failure")
+
+    monkeypatch.setattr(wide_service, "run_due", fail_wide_pipeline)
+
+    with pytest.raises(RuntimeError, match="unrelated pipeline failure"):
+        service.run_once(db)
+
+    assert events == ["mail", "wide"]
+
+
 def test_verified_business_role_signal_queues_once(db, growth_runtime):
     first = service.ingest_signal(db, _signal())
     second = service.ingest_signal(db, _signal())

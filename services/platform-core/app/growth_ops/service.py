@@ -1536,6 +1536,12 @@ def run_once(db: Session) -> dict[str, Any]:
     )
     from .wide_service import run_due as run_due_wide
 
+    # Process already approved outreach before the slower discovery and content
+    # pipelines. An unrelated source, content, or publishing failure must not
+    # prevent the mail worker from serving its independently guarded queue.
+    early_sent = (
+        dispatch_batch(db) if settings().enabled and writes_unlocked() else 0
+    )
     wide_run = run_due_wide(db)
     route_scan = scan_due_routes(db)
     question_answers = generate_question_radar_answers(db)
@@ -1570,7 +1576,7 @@ def run_once(db: Session) -> dict[str, Any]:
 
     runs = run_due_motors(db)
     followups = schedule_followups(db) if writes_unlocked() else 0
-    sent = dispatch_batch(db) if writes_unlocked() else 0
+    sent = early_sent + (dispatch_batch(db) if writes_unlocked() else 0)
     content_ok = content_factory.get("status") == "complete"
     result = {
         "status": "healthy" if content_ok and land_ready else "degraded",
