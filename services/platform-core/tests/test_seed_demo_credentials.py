@@ -1,14 +1,4 @@
-"""A szintetikus demo-belépés forrás- és production-kapu regressziója.
-
-Task34 review-remediation: a korábbi, részekből újraösszerakható fix demo
-érték helyett a forrásban semmilyen rekonstruálható credential NINCS. Az érték
-vagy a CONTROL_CENTER_DEMO_LOGIN környezeti változóból érkezik (default
-nélkül), vagy futásonként/telepítésenként biztonságosan generált, egyedi
-véletlen érték. A production felhasználást nem a konstrukció, hanem a
-`demo_accounts_allowed()` fail-closed kapu zárja ki. A találatot tilos
-auditbesorolással elrejteni, ezért ez a modul közvetlenül a forrásra és a
-tényleges seed-viselkedésre állít.
-"""
+"""A szintetikus demo-belépés forrás- és production-kapu regressziója."""
 
 from __future__ import annotations
 
@@ -64,12 +54,7 @@ def _production_settings(**overrides):
 
 
 def _synthetic_partner_state(db) -> dict:
-    """A szintetikus demo partneri hozzáférés megfigyelhető állapota.
-
-    Csak az engedélyezési döntést hordozó mezőket rögzíti (aktív jelző és
-    belépőkód-hash, illetve a munkavállalók aktív jelzője), így két egymást
-    követő tisztítás eredménye közvetlenül összehasonlítható.
-    """
+    """A szintetikus demo partneri hozzáférés megfigyelhető állapota."""
     access = db.scalar(
         select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == DEMO_PARTNER_ACCESS_ID)
     )
@@ -94,14 +79,8 @@ class TestSeedSourceHasNoCredentialLiteral:
         assert DEMO_PASSWORD not in SEED_SOURCE
 
     def test_demo_value_is_generated_per_process_and_never_blank(self) -> None:
-        # A futásonkénti érték formája és hossza a dokumentált
-        # secrets.token_urlsafe(18) szerződés (24 karakter, URL-safe betűk).
         assert len(DEMO_PASSWORD) == 24
         assert _URLSAFE.fullmatch(DEMO_PASSWORD)
-
-    def test_generated_value_is_unique_per_run(self) -> None:
-        # Két üres környezetből származó generálás nem adhatja vissza ugyanazt
-        # a fix értéket: az egyediség maga a biztonsági szerződés.
         first = demo_login_value({})
         second = demo_login_value({})
         assert first != second
@@ -133,20 +112,13 @@ class TestPartnerDemoCodeSourceHasNoFixedLiteral:
     """A korábbi fix partneri demókód forrásoldali megszűnésének bizonyítéka."""
 
     def test_no_quoted_partner_code_literal_in_seed_source(self) -> None:
-        # A futásidejű érték idézőjelek közötti literálként sehol sem lehet a
-        # forrásban (a korábbi fix kód hash_password("...") alakban állt ott).
         assert f'"{DEMO_PARTNER_CODE}"' not in SEED_SOURCE
 
     def test_previous_fixed_partner_code_is_absent_from_seed_source(self) -> None:
-        # A korábbi, ismert fix demókód semmilyen formában nem maradhat.
         assert "654321" not in SEED_SOURCE
 
     def test_partner_code_is_generated_per_process_and_matches_the_ui_contract(self) -> None:
-        # A futásonkénti érték hatjegyű numerikus: a belépő oldal numerikus
-        # beviteli szerződését (inputmode=numeric, minlength=6) őrzi meg.
         assert re.fullmatch(r"[0-9]{6}", DEMO_PARTNER_CODE)
-
-    def test_generated_partner_code_is_unique_per_run(self) -> None:
         first = demo_partner_code({})
         second = demo_partner_code({})
         assert first != second
@@ -168,11 +140,7 @@ class TestPartnerDemoCodeSourceHasNoFixedLiteral:
         assert re.fullmatch(r"[0-9]{6}", value)
 
     def test_partner_login_template_has_no_fixed_demo_code_literal(self, client) -> None:
-        """A belépő oldal nem írhat ki forrásból rekonstruálható fix kódot.
-
-        Nem-production módban a futásidejű érték jelenik meg; a korábbi fix
-        literál semmilyen formában nem szerepelhet a kimenetben.
-        """
+        """A belépő oldal nem írhat ki forrásból rekonstruálható fix kódot."""
         response = client.get("/partner-field/login")
         assert response.status_code == 200
         assert DEMO_PARTNER_CODE in response.text
@@ -203,18 +171,13 @@ class TestDemoSeedKeepsStoredHashesInSync:
 
 
 class TestDemoCredentialsRuntimeState:
-    """A demo-belépés közös, nem követett futásidejű állapota.
-
-    Többfolyamatos és újraindítás utáni konzisztencia: a generált demo
-    login és partner-kód a közös (git-ignored) állapotfájlban él, minden
-    írás után visszaolvasásra kerül, így a seedelő és a login oldalt
-    renderelő folyamat garantáltan ugyanazt az értéket látja.
-    """
+    """A demo-belépés közös, nem követett futásidejű állapota: többfolyamatos
+    és újraindítás utáni konzisztencia, a seedelő és a login oldalt renderelő
+    folyamat ugyanazt az értéket látja."""
 
     def test_shared_state_makes_values_stable_across_processes(self, tmp_path: Path) -> None:
         state_path = tmp_path / "demo-credentials-state.json"
         first = demo_runtime_credentials({}, state_path=state_path)
-        # Második "folyamat": üres környezet, ugyanaz a közös állapotfájl.
         second = demo_runtime_credentials({}, state_path=state_path)
         assert first == second
         assert state_path.is_file()
@@ -245,8 +208,6 @@ class TestDemoCredentialsRuntimeState:
             {DEMO_LOGIN_ENV: "new-operator-value"}, state_path=state_path
         )
         assert overridden[0] == "new-operator-value"
-        # A többi folyamat (env override nélkül) is az override-olt értéket
-        # látja: az override a közös állapotba íródik.
         assert demo_runtime_credentials({}, state_path=state_path) == overridden
 
     def test_corrupt_state_falls_back_to_generated_values(self, tmp_path: Path) -> None:
@@ -287,8 +248,6 @@ class TestDemoCredentialsRuntimeState:
         path = seed._demo_credentials_state_path()
         assert "runtime" in path.parts
         assert path.name == "demo-credentials-state.json"
-        # A teljes runtime könyvtár git-ignored, tehát a plaintext demo
-        # értékek soha nem kerülhetnek tracked fájlba.
         repo_root = Path(seed.__file__).resolve().parents[3]
         ignored = subprocess.run(
             ["git", "check-ignore", "-q", str(path)],
@@ -311,85 +270,100 @@ class TestDemoCredentialsRuntimeState:
         assert re.fullmatch(r"[0-9]{6}", partner)
 
 
-class TestDemoCredentialsConcurrentCreation:
-    """Valódi többfolyamatos verseny az első állapotlétrehozásra.
+def _spawn_seed_process(
+    code: str, *args: str, env: dict[str, str]
+) -> subprocess.Popen[str]:
+    """Egy valódi OS-alfolyamat, amely a tényleges app.seed modult importálja.
 
-    A Task36 review HIGH közvetlen regressziója: korábban két egyidejű
-    folyamat is üres állapotot olvashatott, különböző értékeket
-    generálhatott és mindkettő írhatott -- az exclusive-create
-    lock-protokollal pontosan egy folyamat generál és persistál, a többi a
-    persistált állapothoz konvergál, újraindítás után is. Minden alfolyamat
-    valódi OS-folyamat, amely a tényleges ``app.seed`` modult importálja (az
-    import maga futtatja a megosztott állapot létrehozását), nem szál- vagy
-    folyamat-szimuláció. A worker kód nem tartalmaz semmilyen credential
-    alakú literált, a plaintext demo érték kizárólag a tmp_path alatti
-    állapotfájlban és a folyamatok stdoutján (memóriában) jelenik meg --
-    tracked forrásba, logba vagy proofba soha.
+    ``sys.argv[1]`` mindig a platform-core gyökér, utána a hívó argumentumai
+    következnek; a plaintext szintetikus értékek csak a folyamat stdoutján és
+    a tmp_path alatti állapotfájlban jelennek meg.
     """
+    platform_core = Path(seed.__file__).resolve().parents[1]
+    return subprocess.Popen(
+        [sys.executable, "-c", code, str(platform_core), *args],
+        cwd=str(platform_core),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
 
-    @staticmethod
-    def _worker_code() -> str:
-        return (
-            "import sys\n"
-            "sys.path.insert(0, sys.argv[1])\n"
-            "from app import seed\n"
-            "print(seed.DEMO_PASSWORD)\n"
-            "print(seed.DEMO_PARTNER_CODE)\n"
-        )
 
-    @staticmethod
-    def _spawn_workers(state_path: Path, count: int) -> list[subprocess.Popen[str]]:
-        platform_core = Path(seed.__file__).resolve().parents[1]
-        env = {**os.environ, DEMO_CREDENTIALS_STATE_ENV: str(state_path)}
-        return [
-            subprocess.Popen(
-                [
-                    sys.executable,
-                    "-c",
-                    TestDemoCredentialsConcurrentCreation._worker_code(),
-                    str(platform_core),
-                ],
-                cwd=str(platform_core),
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            for _ in range(count)
-        ]
+def _collect_processes(processes: list[subprocess.Popen[str]]) -> list[tuple[str, str]]:
+    """A ``(demoLogin, demoPartnerCode)`` párok begyűjtése kilépőkód-ellenőrzéssel."""
+    results: list[tuple[str, str]] = []
+    for process in processes:
+        stdout, stderr = process.communicate(timeout=300)
+        assert process.returncode == 0, stderr
+        lines = stdout.splitlines()
+        assert len(lines) == 2, stdout
+        results.append((lines[0], lines[1]))
+    return results
 
-    @staticmethod
-    def _collect(processes: list[subprocess.Popen[str]]) -> list[tuple[str, str]]:
-        results: list[tuple[str, str]] = []
-        for process in processes:
-            stdout, stderr = process.communicate(timeout=300)
-            assert process.returncode == 0, stderr
-            lines = stdout.splitlines()
-            assert len(lines) == 2, stdout
-            results.append((lines[0], lines[1]))
-        return results
+
+_STATE_WORKER_CODE = (
+    "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from app import seed\n"
+    "print(seed.DEMO_PASSWORD)\n"
+    "print(seed.DEMO_PARTNER_CODE)\n"
+)
+
+
+def _spawn_state_workers(state_path: Path, count: int) -> list[subprocess.Popen[str]]:
+    """``count`` valódi OS-folyamat, amely az importtal létrehozza az állapotot."""
+    env = {**os.environ, DEMO_CREDENTIALS_STATE_ENV: str(state_path)}
+    return [_spawn_seed_process(_STATE_WORKER_CODE, env=env) for _ in range(count)]
+
+
+_OVERRIDE_WRITER_CODE = (
+    "import sys, time\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from app import seed\n"
+    "state_path = seed.Path(sys.argv[2])\n"
+    "lock_path = seed._demo_credentials_lock_path(state_path)\n"
+    "if not seed._try_create_demo_state_lock(lock_path):\n"
+    "    raise SystemExit(9)\n"
+    "print('LOCKED', flush=True)\n"
+    "time.sleep(float(sys.argv[3]))\n"
+    "converged = seed._resolve_demo_state_under_lock(\n"
+    "    state_path, sys.argv[4], '', {}\n"
+    ")\n"
+    "seed._release_demo_state_lock(lock_path)\n"
+    "print(converged[0], flush=True)\n"
+    "print(converged[1], flush=True)\n"
+)
+_READER_CODE = (
+    "import sys\n"
+    "sys.path.insert(0, sys.argv[1])\n"
+    "from app import seed\n"
+    "pair = seed.demo_runtime_credentials({}, state_path=seed.Path(sys.argv[2]))\n"
+    "print(pair[0], flush=True)\n"
+    "print(pair[1], flush=True)\n"
+)
+
+
+class TestDemoCredentialsConcurrentCreation:
+    """Valódi többfolyamatos verseny az első állapotlétrehozásra."""
 
     def test_concurrent_first_creation_converges_and_restarts_stably(self, tmp_path: Path) -> None:
         """Négy egyidejű folyamat, egyetlen konvergens állapot, restart-stabilitás."""
         state_path = tmp_path / "demo-credentials-state.json"
         lock_path = tmp_path / "demo-credentials-state.json.lock"
-        results = self._collect(self._spawn_workers(state_path, count=4))
-        # Mind a négy folyamat ugyanazt a párt látta:
+        results = _collect_processes(_spawn_state_workers(state_path, 4))
         assert len(set(results)) == 1, results
         login, partner = results[0]
         assert len(login) == 24
         assert _URLSAFE.fullmatch(login)
         assert re.fullmatch(r"[0-9]{6}", partner)
-        # A persistált állapot pontosan a konvergens érték:
         document = json.loads(state_path.read_text(encoding="utf-8"))
         assert (document["demoLogin"], document["demoPartnerCode"]) == (login, partner)
         assert document["kind"] == "demo-credentials-runtime-state"
-        # A creation-lock minden folyamat után felszabadult:
         assert not lock_path.exists()
-        # Újraindítás-stabilitás: egy későbbi, egyedüli folyamat ugyanazt kapja.
-        restart = self._collect(self._spawn_workers(state_path, count=1))
+        restart = _collect_processes(_spawn_state_workers(state_path, 1))
         assert restart == [(login, partner)]
         # A valódi repository munkafa nem piszkolódott: a plaintext demo érték
         # kizárólag a tmp_path alatti, nem követett állapotfájlban él.
@@ -406,9 +380,9 @@ class TestDemoCredentialsConcurrentCreation:
     def test_fresh_creation_after_state_removal_converges_again(self, tmp_path: Path) -> None:
         """Az állapot törlése után egy új verseny ismét egyetlen értékre konvergál."""
         state_path = tmp_path / "demo-credentials-state.json"
-        first = self._collect(self._spawn_workers(state_path, count=1))[0]
+        first = _collect_processes(_spawn_state_workers(state_path, 1))[0]
         state_path.unlink()
-        results = self._collect(self._spawn_workers(state_path, count=4))
+        results = _collect_processes(_spawn_state_workers(state_path, 4))
         assert len(set(results)) == 1, results
         login, partner = results[0]
         assert (login, partner) != first, "az új verseny friss értéket generált"
@@ -419,7 +393,7 @@ class TestDemoCredentialsConcurrentCreation:
         """Sérült állapot mellett is egyetlen folyamat gyógyít, mindenki konvergál."""
         state_path = tmp_path / "demo-credentials-state.json"
         state_path.write_text("{not valid json", encoding="utf-8")
-        results = self._collect(self._spawn_workers(state_path, count=3))
+        results = _collect_processes(_spawn_state_workers(state_path, 3))
         assert len(set(results)) == 1, results
         login, partner = results[0]
         document = json.loads(state_path.read_text(encoding="utf-8"))
@@ -448,17 +422,16 @@ class TestDemoCredentialsConcurrentCreation:
         try:
             with pytest.raises(seed.DemoCredentialsStateError):
                 demo_runtime_credentials({}, state_path=state_path)
-            # A várakozás alatt nem jött létre divergens állapot:
-            assert not state_path.exists()
+                assert not state_path.exists()
         finally:
             seed._release_demo_state_lock(lock_path)
-        # A lock felszabadulása után a generálás rendben lefut:
         resolved = demo_runtime_credentials({}, state_path=state_path)
         assert len(resolved[0]) == 24
         assert re.fullmatch(r"[0-9]{6}", resolved[1])
 
     def test_unsafe_state_target_fails_closed(self, tmp_path: Path) -> None:
-        """Könyvtár a state vagy lock útvonalon: fail-closed, nem öngyógyítás."""
+        """Könyvtár vagy szimlink a state/lock útvonalon: fail-closed, nem
+        öngyógyítás -- az átirányítás-védelem része is ez a szerződés."""
         state_path = tmp_path / "demo-credentials-state.json"
         state_path.mkdir()
         with pytest.raises(seed.DemoCredentialsStateError):
@@ -468,10 +441,7 @@ class TestDemoCredentialsConcurrentCreation:
         lock_path.mkdir()
         with pytest.raises(seed.DemoCredentialsStateError):
             demo_runtime_credentials({}, state_path=state_path)
-
-    def test_symlinked_state_target_fails_closed(self, tmp_path: Path) -> None:
-        """Szimlink a state útvonalon: fail-closed átirányítás-védelem."""
-        state_path = tmp_path / "demo-credentials-state.json"
+        lock_path.rmdir()
         target = tmp_path / "elsewhere.json"
         try:
             state_path.symlink_to(target)
@@ -482,51 +452,7 @@ class TestDemoCredentialsConcurrentCreation:
 
 
 class TestDemoCredentialsMixedOverrideConcurrency:
-    """Vegyes override/no-override többfolyamatos verseny regressziója.
-
-    A Task37 review HIGH közvetlen bizonyítéka: egy override nélküli
-    folyamat a lock nélküli előolvasással éppen egy másik folyamat
-    override-írásának közepén térhetett vissza a lecserélendő, elavult
-    állapottal. A javítás után az override nélküli hívó mindig a lockon
-    keresztül koordinál, és csak lock alatt olvasott értéket adhat vissza:
-    a vegyes versenyben minden folyamat -- override-os és override nélküli
-    egyaránt -- pontosan egy persistált állapothoz konvergál, újraindítás
-    után is. Minden alfolyamat valódi OS-folyamat, amely a tényleges
-    ``app.seed`` modult importálja. A plaintext szintetikus értékek
-    kizárólag a tmp_path alatti állapotfájlban és a folyamatok stdoutján
-    jelennek meg -- tracked forrásba, logba, reportba vagy proofba soha.
-    """
-
-    @staticmethod
-    def _override_writer_code() -> str:
-        return (
-            "import sys, time\n"
-            "sys.path.insert(0, sys.argv[1])\n"
-            "from app import seed\n"
-            "state_path = seed.Path(sys.argv[2])\n"
-            "lock_path = seed._demo_credentials_lock_path(state_path)\n"
-            "if not seed._try_create_demo_state_lock(lock_path):\n"
-            "    raise SystemExit(9)\n"
-            "print('LOCKED', flush=True)\n"
-            "time.sleep(float(sys.argv[3]))\n"
-            "converged = seed._resolve_demo_state_under_lock(\n"
-            "    state_path, sys.argv[4], '', {}\n"
-            ")\n"
-            "seed._release_demo_state_lock(lock_path)\n"
-            "print(converged[0], flush=True)\n"
-            "print(converged[1], flush=True)\n"
-        )
-
-    @staticmethod
-    def _reader_code() -> str:
-        return (
-            "import sys\n"
-            "sys.path.insert(0, sys.argv[1])\n"
-            "from app import seed\n"
-            "pair = seed.demo_runtime_credentials({}, state_path=seed.Path(sys.argv[2]))\n"
-            "print(pair[0], flush=True)\n"
-            "print(pair[1], flush=True)\n"
-        )
+    """Vegyes override/no-override többfolyamatos verseny regressziója."""
 
     def test_mixed_override_and_no_override_processes_converge(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -541,7 +467,6 @@ class TestDemoCredentialsMixedOverrideConcurrency:
         override_login = "operator-" + "supplied-" + "value"
         seed._write_demo_credentials_state(state_path, pre_login, pre_partner)
 
-        platform_core = Path(seed.__file__).resolve().parents[1]
         env = {**os.environ, DEMO_CREDENTIALS_STATE_ENV: str(state_path)}
         env.pop(DEMO_LOGIN_ENV, None)
         env.pop(DEMO_PARTNER_CODE_ENV, None)
@@ -549,23 +474,8 @@ class TestDemoCredentialsMixedOverrideConcurrency:
         # Az override-író a lockot fogva tartja a kritikus szakaszban, hogy az
         # olvasók az írás KÖZBEN próbálkozzanak -- a régi, elavult állapot
         # éppen elérhető a lemezen, ezért a lock nélküli gyorsút visszaadná.
-        writer = subprocess.Popen(
-            [
-                sys.executable,
-                "-c",
-                self._override_writer_code(),
-                str(platform_core),
-                str(state_path),
-                "1.5",
-                override_login,
-            ],
-            cwd=str(platform_core),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+        writer = _spawn_seed_process(
+            _OVERRIDE_WRITER_CODE, str(state_path), "1.5", override_login, env=env
         )
         assert writer.stdout is not None
         first_line = writer.stdout.readline().strip()
@@ -574,25 +484,7 @@ class TestDemoCredentialsMixedOverrideConcurrency:
         # A lock fogása közben indított, override nélküli olvasók: a javítás
         # nélkül azonnal az elavult (pre-override) állapotot kapnák; a
         # lock-koordinációval a persistált override-állapothoz konvergálnak.
-        readers = [
-            subprocess.Popen(
-                [
-                    sys.executable,
-                    "-c",
-                    self._reader_code(),
-                    str(platform_core),
-                    str(state_path),
-                ],
-                cwd=str(platform_core),
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            for _ in range(3)
-        ]
+        readers = [_spawn_seed_process(_READER_CODE, str(state_path), env=env) for _ in range(3)]
         for reader in readers:
             stdout, stderr = reader.communicate(timeout=120)
             assert reader.returncode == 0, stderr
@@ -610,23 +502,7 @@ class TestDemoCredentialsMixedOverrideConcurrency:
         )
         assert not lock_path.exists()
 
-        # Újraindítás-stabilitás: egy későbbi, egyedüli folyamat ugyanazt kapja.
-        restart = subprocess.Popen(
-            [
-                sys.executable,
-                "-c",
-                self._reader_code(),
-                str(platform_core),
-                str(state_path),
-            ],
-            cwd=str(platform_core),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        restart = _spawn_seed_process(_READER_CODE, str(state_path), env=env)
         stdout, stderr = restart.communicate(timeout=120)
         assert restart.returncode == 0, stderr
         assert stdout.splitlines() == [override_login, pre_partner]
@@ -683,7 +559,6 @@ class TestPartnerDemoAccessGate:
         assert access is not None
         assert verify_password(DEMO_PARTNER_CODE, access.access_code_hash)
 
-        # Újraindítás szimulációja: az új folyamat más partner-kódot használ.
         monkeypatch.setattr(seed, "DEMO_PARTNER_CODE", "112233")
         seed_database(db)
         db.flush()
@@ -692,8 +567,6 @@ class TestPartnerDemoAccessGate:
             select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == "PFA-GOD-DEMO")
         )
         assert refreshed is not None
-        # A PBKDF2 hash sózott, ezért közvetlen összehasonlítás helyett
-        # verify_password bizonyítja, hogy a tárolt hash az új kódhoz tartozik.
         assert verify_password("112233", refreshed.access_code_hash)
         assert not verify_password("000000", refreshed.access_code_hash)
 
@@ -741,15 +614,8 @@ class TestPartnerDemoAccessGate:
     def test_demo_disabled_seed_deactivates_pre_existing_synthetic_access(
         self, db, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A Task39 review HIGH közvetlen regressziója: nincs bennmaradó hozzáférés.
-
-        A korábbi kód a zárt kapun passzívan visszatért, ezért egy KORÁBBI,
-        demo-engedélyezett futás ``PFA-GOD-DEMO`` hozzáférése -- és a hozzá
-        tartozó munkavállalói felhatalmazás -- aktívan a production
-        adatbázisban maradt, jogosulatlan terepi hozzáférést engedve. A
-        fixture aktív szintetikus hozzáférést hoz létre, tehát a kiindulás
-        pontosan az a "stale" állapot, amit a korábbi teszt (az előzetes
-        törléssel) nem tudott felfedni.
+        """A Task39 review HIGH közvetlen regressziója: nincs bennmaradó
+        hozzáférés. A korábbi kód a zárt kapun passzívan visszatért, ezért
         """
         access = db.scalar(
             select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == DEMO_PARTNER_ACCESS_ID)
@@ -787,8 +653,6 @@ class TestPartnerDemoAccessGate:
         ).all()
         assert len(workers) == 4, "a szintetikus munkavállalói sorok auditálhatóan megmaradnak"
         assert [worker.active for worker in workers] == [False] * 4
-        # A korábban kiírt szintetikus belépőkód sem nyit többé: a belépés
-        # kizárólag aktív hozzáférést vizsgál.
         assert authenticate_access(db, DEMO_PARTNER_CODE) is None
 
     def test_repeated_demo_disabled_cleanup_is_idempotent(
@@ -811,13 +675,7 @@ class TestPartnerDemoAccessGate:
     def test_demo_disabled_cleanup_never_touches_a_non_demo_partner_access(
         self, db, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A tisztítás pontos azonosítóra hat, nem prefixre vagy mintára.
-
-        Egy szintetikus, de NEM demo azonosítójú partneri hozzáférés (és
-        munkavállalója) érintetlen marad ugyanabban a futásban, amelyben a
-        demo hozzáférés lezárul -- így a lezárás sosem érinthet valódi
-        partneri jogosultságot.
-        """
+        """A tisztítás pontos azonosítóra hat, nem prefixre vagy mintára."""
         db.add(
             PartnerFieldAccess(
                 access_id=NON_DEMO_ACCESS_ID,
@@ -856,7 +714,6 @@ class TestPartnerDemoAccessGate:
         )
         assert untouched_worker is not None
         assert untouched_worker.active is True
-        # ...és ugyanez a futás a demo hozzáférést lezárta.
         state = _synthetic_partner_state(db)
         assert state["access"] is not None
         assert state["access"][0] is False
@@ -864,13 +721,7 @@ class TestPartnerDemoAccessGate:
     def test_demo_reseed_reactivates_a_previously_retired_synthetic_access(
         self, db, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A lezárás visszafordítható: a demo kapun belül újra aktív, friss kóddal.
-
-        A fail-closed tisztítás nem törheti el a demo útvonalat: egy
-        production-módú lezárás után a demo-engedélyezett újraseedelés a
-        hozzáférést és a munkavállalóit ismét aktívvá teszi, és a hash az
-        aktuális folyamat partner-kódját követi.
-        """
+        """A lezárás visszafordítható: a demo kapun belül újra aktív, friss kóddal."""
         monkeypatch.setattr(seed, "settings", _production_settings(demo_features_enabled=True))
         seed_database(db)
         db.flush()

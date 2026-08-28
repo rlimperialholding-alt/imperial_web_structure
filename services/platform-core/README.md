@@ -59,14 +59,11 @@ Fejlesztői belépés:
   `CONTROL_CENTER_DEMO_LOGIN` környezeti változóval rögzíthető, enélkül
   futásonként egyedi, biztonságosan generált érték érvényes (a forrásban
   nincs fix demo jelszó);
-- a generált demo-belépési értéket és a partneri demókódot
-  (`CONTROL_CENTER_PARTNER_DEMO_CODE`) a folyamatok közös, nem követett
-  futásidejű állapotfájlja tartja konzisztensen
+- a demo-belépési értéket és a partneri demókódot a folyamatok közös, nem
+  követett futásidejű állapotfájlja tartja konzisztensen
   (`services/platform-core/runtime/demo-credentials-state.json`,
-  git-ignored): több worker-folyamat és újraindítás után is ugyanaz az érték
-  érvényes, amit a seed a demo fiókokba és a partneri terepi hozzáférésekbe
-  ír. Production adatbázisba a `demo_accounts_allowed()` kapu miatt
-  szintetikus demo fiók vagy partneri hozzáférés nem kerülhet.
+  git-ignored). Production adatbázisba a `demo_accounts_allowed()` kapu
+  miatt szintetikus demo fiók vagy partneri hozzáférés nem kerülhet.
 
 Élesítés előtt a demo-felhasználót és minden titkot cserélni kell.
 

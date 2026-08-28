@@ -22,11 +22,8 @@ vagy production írás nem történik. A script determinisztikusan összeveti:
 5. az Alembic migrációs gráf egyetlen fejét.
 
 Bármelyik eltérés nemnulla kilépési kóddal (fail-closed) zárul. Mindegyik
-probe lefut akkor is, ha egy korábbi elbukott: egyetlen hiba sem takarhatja el
-a többiek állítását (a titok-scan determinisztikus delta esetén a
-SOURCE_LOCK/alembic/regiszter/migráció állítások akkor is kiértékelődnek és
-jelentést kapnak). Az összesített kilépési kód csak akkor 0, ha mindegyik
-probe átment.
+probe lefut akkor is, ha egy korábbi elbukott (anti-masking), és az
+összesített kilépési kód csak akkor 0, ha mindegyik átment.
 
 Teszt-seam: a vizsgált artefaktumok útvonala, az elvárt alembic head és a
 pinelt várt verzióértékek környezeti változóval felülírhatók (kizárólag

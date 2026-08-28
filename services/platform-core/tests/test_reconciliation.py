@@ -2,40 +2,21 @@
 
 Proves the configured reconciliation command evaluates every probe, and exits
 nonzero (fail-closed) when a checked invariant is deliberately altered in a
-temporary, synthetic context. The repository carries no committed secret
-allowlist at all: candidates outside the protected ``.secrets.baseline`` are
-cleared only by the scanner's structural classifiers (re-derived from the
-working tree and proven against the scanner's own fingerprint), narrowed to
-dedicated, provably static content-registry files and precise, non-generic
-field names. The tracked-secret probe additionally reconciles the canonical
-baseline through the *audited repository state*: the occurrence set the
-audited anchor commit (the commit that last modified the baseline) actually
-contained is re-derived with the same pinned per-line scanner, so unchanged
-repeated occurrences, line-drifted existing values and the baseline
-generator's documented decode-skips all reconcile -- while a value
-introduced after the audited state (a new file, a new digest or a duplicate
-occurrence of an audited value) still fails closed unless a structural
-classifier proves it on its exact line. The command-level canonical run
-therefore reports the tracked-secret probe PASS on the protected baseline;
-the anti-masking and tamper tests pin the live canonical scan once per
-session and inject the *post-audited-state* tamper into the pinned document
-(a new digest, or a duplicate occurrence of an audited digest on a new
-line), which the probe must report by path (never plaintext) while every
-other probe still evaluates. There is NO snapshot or environment seam for
-the secret probe: a command-level test proves the ``II_RECON_SECRETS_SNAPSHOT``
-variable (the removed seam) has no effect, and non-command-level tests
-exercise the secret probe exclusively through direct pytest ``monkeypatch``
-seams (pytest-bound, process-local). All fixtures are temporary files; no
-network, no protected corpus mutation, no production write. The database
-isolation tests prove the command never connects to or mutates any database
-configured through ``DATABASE_URL``. The SOURCE_LOCK tests cover the complete
-required top-level version-field set (platform/application/partner_field/
-commercial_integration) with valid, missing, empty, wrong-type, malformed,
-and unexpected/tampered values. Direct in-process probe tests are isolated
-from ambient ``II_RECON_EXPECTED_*`` values: the module under test always
-loads with the canonical pinned defaults, and a focused regression proves
-canonical validation still passes when the parent environment holds
-conflicting values.
+temporary, synthetic context. The tracked-secret probe reconciles the
+canonical baseline through the *audited repository state*; the anti-masking
+and tamper tests pin the live canonical scan once per session and inject a
+*post-audited-state* tamper (a new digest, or a duplicate occurrence of an
+audited digest on a new line), which the probe must report by path, never
+plaintext. There is NO snapshot or environment seam for the secret probe:
+a command-level test proves the removed ``II_RECON_SECRETS_SNAPSHOT`` variable
+has no effect, and non-command-level tests exercise the secret probe
+exclusively through direct pytest ``monkeypatch`` seams. All fixtures are
+temporary files; no network, no protected corpus mutation, no production
+write. The database isolation tests prove the command never connects to or
+mutates any database configured through ``DATABASE_URL``. The SOURCE_LOCK
+tests cover the complete required top-level version-field set, and direct
+in-process probe tests are isolated from ambient ``II_RECON_EXPECTED_*``
+values.
 """
 
 from __future__ import annotations
@@ -65,18 +46,10 @@ REQUIRED_LOCK_VERSION_FIELDS = (
     "partner_field_version",
     "commercial_integration_version",
 )
-# A védett baseline occurrence-aware egyeztetése a Task37 remediation óta az
-# auditált repository-állapothoz horgonyzott: a változatlan ismétlődések, a
-# sor-eltolódott meglévő értékek és a baseline-generátor dokumentált
-# dekódolási hézagai mind egyeztetnek. A parancsszintű kanonikus futás ezért
-# a titok-probe PASS-ját jelenti; a tamper-tesztek az auditált állapot UTÁN
-# bevezetett titokjelöltet injektálnak a pinelt élő dokumentumba (új digest,
-# vagy auditált digest duplikált új sor-előfordulása), amit a probe-nek
-# plaintext nélkül, fail-closed módon kell jelentenie.
-# A reconciliation script altal olvasott kornyezeti feluliras-kulcsok. A
-# direct in-process probe tesztek ezeket mindig torlik, hogy ambient
-# fejlesztoi/CI ertekek soha ne valtoztathassak meg a kanonikus vart
-# ertekeket (test-isolation, Review 1 LOW).
+# A reconciliation script által olvasott környezeti felülírás-kulcsok. A
+# direct in-process probe tesztek ezeket mindig törlik, hogy ambient
+# fejlesztői/CI értékek soha ne változtathassák meg a kanonikus várt
+# értékeket (test-isolation, Review 1 LOW).
 _II_RECON_EXPECTED_ENV_KEYS = (
     "II_RECON_EXPECTED_ALEMBIC_HEAD",
     "II_RECON_EXPECTED_PLATFORM_VERSION",
@@ -142,9 +115,6 @@ def _run_reconciliation(
 
 
 def _load_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    # Izolacio: minden direct probe-betoltes elott toroljuk az osszes
-    # II_RECON_EXPECTED_* valtozot, igy a modul mindig a kanonikus pinelt
-    # defaultokat latja, fuggetlenul a szulo kornyezettol.
     for key in _II_RECON_EXPECTED_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     spec = importlib.util.spec_from_file_location("reconciliation_under_test", SCRIPT)
@@ -156,13 +126,7 @@ def _load_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
 @pytest.fixture(scope="session")
 def canonical_scan_document() -> dict:
-    """Exactly one canonical tracked-secret scan per session.
-
-    Both the tamper fingerprints and the direct monkeypatch seams derive from
-    this single scan, so the pinned scanner runs once instead of once per
-    consumer. The candidate set is derived and validated exactly as
-    production does.
-    """
+    """Exactly one canonical tracked-secret scan per session."""
     candidates = check_secret_baseline._validate_candidates(
         check_secret_baseline._git_tracked_candidates(REPO_ROOT, SECRETS_BASELINE_PATH),
         REPO_ROOT,
@@ -174,12 +138,7 @@ def canonical_scan_document() -> dict:
 def _pin_canonical_scan(
     module: ModuleType, monkeypatch: pytest.MonkeyPatch, document: dict
 ) -> None:
-    """Direct pytest-bound seam: the probe's live scan returns the pinned document.
-
-    This is the only way the tests avoid a live scan: a process-local
-    monkeypatch of the module-under-test's own reference, not an environment
-    variable and not a command-level flag.
-    """
+    """Direct pytest-bound seam: the probe's live scan returns the pinned document."""
     monkeypatch.setattr(
         module.check_secret_baseline,
         "_live_scan",
@@ -188,11 +147,6 @@ def _pin_canonical_scan(
 
 
 def _find_live_finding(document: dict) -> tuple[str, int, dict]:
-    # A tamper-tesztekhez olyan élő találatra van szükség, amely (a) tényleg
-    # szerepel a pinelt élő dokumentumban, használható sorszámmal, és (b)
-    # strukturálisan NEM osztályozható -- egy content-digest/drive-id találat
-    # duplikálása után a klasszifikátor tisztázná az új sort, és a probe
-    # tévesen PASS-t adna.
     for filename, findings in document.get("results", {}).items():
         for index, finding in enumerate(findings):
             if (
@@ -213,15 +167,9 @@ def _assert_no_secret_material(baseline: dict, output: str) -> None:
 
 
 def test_reconciliation_command_passes_on_the_canonical_secret_baseline() -> None:
-    # A Task37 remediation óta a valós repó titok-probe-ja a védett,
-    # változatlan baseline-nal is PASS-t jelent: az occurrence-aware
-    # egyeztetés az auditált repository-állapothoz horgonyzott, így a
-    # baseline-generátor dokumentált hézagai (deduplikált ismétlődések,
-    # sor-eltolódott értékek, dekódolási kihagyások) egyeztetnek -- a
-    # strukturális osztályozó továbbra sem ismer sem futtatható forrást
-    # (app/seed.py), sem általános mezőneveket (sha256/checksum). A parancs
-    # kilépési kódja nulla, a titok-probe a dokumentált PASS-üzenetet írja,
-    # és minden más probe is lefut (anti-masking).
+    # A védett, változatlan baseline-nal a titok-probe PASS: az occurrence-aware
+    # egyeztetés az auditált repository-állapothoz horgonyzott, és minden más
+    # probe is lefut (anti-masking).
     result = _run_reconciliation()
     assert result.returncode == 0, result.stderr
     assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
@@ -237,22 +185,14 @@ def test_reconciliation_command_passes_on_the_canonical_secret_baseline() -> Non
 def test_secret_probe_failure_cannot_mask_the_other_probe_assertions(
     tmp_path: Path,
 ) -> None:
-    """Anti-masking, synthetic and independent of the repository's delta.
-
-    Task 31 failed because a platform-dependent secret scan aborted the run
-    before the SOURCE_LOCK/alembic/registry/migration assertions were ever
-    evaluated. Here the secret probe is forced to fail through the real live
-    scan against an empty audited baseline; every other probe must still run
-    and report.
-    """
+    """Anti-masking: ha a titok-probe elbukik (repository-gyökéren kívüli
+    baseline), a másik négy probe akkor is lefut és PASS-t jelent (a Task31
+    hibája éppen a maszkolás volt)."""
     baseline = tmp_path / "empty-baseline.json"
     baseline.write_text(json.dumps({"results": {}}), encoding="utf-8")
     result = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(baseline))
     assert result.returncode != 0
-    # A titok-probe elbukik: a repository-gyökéren kívüli baseline nem
-    # horgonyozhat auditált állapotot -- fail-closed, plaintext nélkül...
     assert "baseline is outside the reconciled repository root" in result.stderr
-    # ...de a tobbi negy probe lefut es PASS-t jelent:
     assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
     assert "alembic_head 20260816_0072" in result.stdout
@@ -265,13 +205,8 @@ def test_secret_probe_failure_cannot_mask_the_other_probe_assertions(
 def test_command_level_snapshot_environment_variable_has_no_effect(
     tmp_path: Path,
 ) -> None:
-    """The removed snapshot seam cannot be re-enabled from the environment.
-
-    Setting ``II_RECON_SECRETS_SNAPSHOT`` -- even next to the pytest marker
-    -- must not change the command at all: the live scan still runs and the
-    result is byte-identical to the no-override run (which is the documented
-    PASS state on the canonical audited baseline).
-    """
+    """Az eltávolított snapshot seam környezeti változóval sem éleszthető újra:
+    az élő scan lefut, az eredmény byte-azonos a felülírás nélküli futással."""
     result = _run_reconciliation(
         II_RECON_SECRETS_SNAPSHOT=str(tmp_path / "no-such-snapshot.json"),
         PYTEST_CURRENT_TEST="test_command_level_snapshot_environment_variable_has_no_effect",
@@ -288,13 +223,8 @@ def test_command_level_snapshot_environment_variable_has_no_effect(
 def test_unexpected_probe_exception_cannot_mask_the_other_probes(
     tmp_path: Path,
 ) -> None:
-    """An unexpected exception is named, counted and never masks other probes.
-
-    A malformed corpus manifest raises ``JSONDecodeError`` rather than a
-    ``SystemExit``; the aggregate loop must still evaluate every remaining
-    probe and must report only the exception class, never its message (which
-    could echo file content).
-    """
+    """Egy váratlan kivétel is csak saját probe-ját buktatja: a többi probe
+    lefut, és a jelentés csak a kivételosztályt közli (sosem a tartalmát)."""
     broken = tmp_path / "broken-manifest.json"
     broken.write_text("{ this is not valid json", encoding="utf-8")
     result = _run_reconciliation(II_RECON_CORPUS_MANIFEST=str(broken))
@@ -329,38 +259,31 @@ def test_corpus_probe_fail_closed_on_sha_tamper(
     assert "corpusz-SHA elteres" in str(excinfo.value)
 
 
-def test_corpus_probe_fail_closed_on_missing_corpus_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    module = _load_module(monkeypatch)
-    synthetic = tmp_path / "missing-manifest.json"
-    synthetic.write_text(
-        json.dumps(
+@pytest.mark.parametrize(
+    "document, expected",
+    [
+        (
             {
                 "schemaVersion": "2.1",
                 "files": [{"path": "does/not/exist.txt", "sha256": "0" * 64}],
-            }
+            },
+            "vedett corpuszfajl hianyzik",
         ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(module, "CORPUS_MANIFEST", synthetic)
-    with pytest.raises(SystemExit) as excinfo:
-        module._corpus_probe()
-    assert excinfo.value.code not in (0, None)
-    assert "vedett corpuszfajl hianyzik" in str(excinfo.value)
-
-
-def test_corpus_probe_fail_closed_on_empty_files_list(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        ({"schemaVersion": "2.1", "files": []}, "files"),
+    ],
+    ids=["missing-corpus-file", "empty-files-list"],
+)
+def test_corpus_probe_fail_closed_on_invalid_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, document: dict, expected: str
 ) -> None:
     module = _load_module(monkeypatch)
-    synthetic = tmp_path / "empty-manifest.json"
-    synthetic.write_text(json.dumps({"schemaVersion": "2.1", "files": []}), encoding="utf-8")
+    synthetic = tmp_path / "synthetic-manifest.json"
+    synthetic.write_text(json.dumps(document), encoding="utf-8")
     monkeypatch.setattr(module, "CORPUS_MANIFEST", synthetic)
     with pytest.raises(SystemExit) as excinfo:
         module._corpus_probe()
     assert excinfo.value.code not in (0, None)
-    assert "files" in str(excinfo.value)
+    assert expected in str(excinfo.value)
 
 
 def test_reconciliation_fail_closed_on_missing_secret_baseline(
@@ -371,60 +294,45 @@ def test_reconciliation_fail_closed_on_missing_secret_baseline(
     assert "repository baseline is missing" in result.stderr
 
 
-def test_secret_baseline_probe_fail_closed_on_introduced_digest_candidate(
-    monkeypatch: pytest.MonkeyPatch,
-    canonical_scan_document: dict,
-) -> None:
-    """Az auditált állapot után bevezetett új digest fail-closed.
-
-    A Task37 remediation óta a probe az auditált repository-állapothoz
-    horgonyzott: egy olyan digest, amely az auditált commitban sehol sem
-    szerepelt, a baseline- és állapot-egyezés ellenére is addition -- a
-    strukturális osztályozó futtatható forrásban nem bizonyít, így a probe
-    plaintext nélkül, az érintett fájlt megnevezve bukik.
-    """
-    module = _load_module(monkeypatch)
-    tampered = copy.deepcopy(canonical_scan_document)
+def _introduced_digest_tamper(document: dict) -> str:
+    """Új digest az auditált állapot után egy ismert forrásfájlban."""
     filename = "services/platform-core/app/seed.py"
     synthetic_hash = hashlib.sha1(b"synthetic-post-audit-candidate").hexdigest()
-    tampered["results"].setdefault(filename, []).append(
-        {
-            "type": "Hex High Entropy String",
-            "hashed_secret": synthetic_hash,
-            "line_number": 10**9,
-        }
+    document["results"].setdefault(filename, []).append(
+        {"type": "Hex High Entropy String", "hashed_secret": synthetic_hash, "line_number": 10**9}
     )
+    return filename
+
+
+def _duplicate_occurrence_tamper(document: dict) -> str:
+    """Egy auditált digest új soron ismételt másolata."""
+    filename, _, finding = _find_live_finding(document)
+    duplicate = dict(finding)
+    duplicate["line_number"] = 10**9
+    document["results"][filename].append(duplicate)
+    return filename
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [_introduced_digest_tamper, _duplicate_occurrence_tamper],
+    ids=["introduced-digest", "introduced-duplicate-occurrence"],
+)
+def test_secret_baseline_probe_fail_closed_on_post_audited_state_tamper(
+    monkeypatch: pytest.MonkeyPatch, canonical_scan_document: dict, tamper
+) -> None:
+    """Az auditált állapot UTÁN bevezetett jelölt (új digest, vagy auditált
+    digest új soron ismételt másolata) fail-closed: a probe plaintext nélkül,
+    test_secret_tracked_scan.py fedi le."""
+    module = _load_module(monkeypatch)
+    tampered = copy.deepcopy(canonical_scan_document)
+    filename = tamper(tampered)
     _pin_canonical_scan(module, monkeypatch, tampered)
     with pytest.raises(SystemExit) as excinfo:
         module._secret_baseline_probe()
     assert excinfo.value.code not in (0, None)
     assert "unclassified candidate(s)" in str(excinfo.value)
     assert filename in str(excinfo.value)
-    baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
-    _assert_no_secret_material(baseline, str(excinfo.value))
-
-
-def test_secret_baseline_probe_fail_closed_on_introduced_duplicate_occurrence(
-    monkeypatch: pytest.MonkeyPatch,
-    canonical_scan_document: dict,
-) -> None:
-    """Egy auditált digest ÚJ soron ismételt másolata fail-closed.
-
-    Az occurrence-aware szerződés második iránya: az auditált érték
-    előfordulásszáma eggyel nő, az új sor azonban strukturálisan nem
-    bizonyítható -- a probe plaintext nélkül bukik, hiába auditált a digest.
-    """
-    module = _load_module(monkeypatch)
-    tampered = copy.deepcopy(canonical_scan_document)
-    filename, _, finding = _find_live_finding(tampered)
-    duplicate = dict(finding)
-    duplicate["line_number"] = 10**9
-    tampered["results"][filename].append(duplicate)
-    _pin_canonical_scan(module, monkeypatch, tampered)
-    with pytest.raises(SystemExit) as excinfo:
-        module._secret_baseline_probe()
-    assert excinfo.value.code not in (0, None)
-    assert "unclassified candidate(s)" in str(excinfo.value)
     baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
     _assert_no_secret_material(baseline, str(excinfo.value))
 
@@ -526,40 +434,24 @@ def test_source_lock_probe_ignores_conflicting_ambient_expected_env(
 
 
 @pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
-def test_source_lock_probe_fail_closed_on_missing_version_field(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
+@pytest.mark.parametrize(
+    "mutate, mutation",
+    [
+        (lambda lock, field: lock.pop(field), "missing"),
+        (lambda lock, field: lock.__setitem__(field, ""), "empty"),
+        (lambda lock, field: lock.__setitem__(field, 1.0), "wrong-type"),
+    ],
+)
+def test_source_lock_probe_fail_closed_on_invalid_version_field(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    mutate,
+    mutation: str,
 ) -> None:
     module = _load_module(monkeypatch)
     lock = _canonical_lock()
-    lock.pop(field)
-    monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
-    with pytest.raises(SystemExit) as excinfo:
-        module._source_lock_probe()
-    assert excinfo.value.code not in (0, None)
-    assert f"SOURCE_LOCK {field} ervenytelen" in str(excinfo.value)
-
-
-@pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
-def test_source_lock_probe_fail_closed_on_empty_version_field(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
-) -> None:
-    module = _load_module(monkeypatch)
-    lock = _canonical_lock()
-    lock[field] = ""
-    monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
-    with pytest.raises(SystemExit) as excinfo:
-        module._source_lock_probe()
-    assert excinfo.value.code not in (0, None)
-    assert f"SOURCE_LOCK {field} ervenytelen" in str(excinfo.value)
-
-
-@pytest.mark.parametrize("field", REQUIRED_LOCK_VERSION_FIELDS)
-def test_source_lock_probe_fail_closed_on_wrong_type_version_field(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
-) -> None:
-    module = _load_module(monkeypatch)
-    lock = _canonical_lock()
-    lock[field] = 1.0
+    mutate(lock, field)
     monkeypatch.setattr(module, "SOURCE_LOCK", _write_lock(tmp_path, lock))
     with pytest.raises(SystemExit) as excinfo:
         module._source_lock_probe()

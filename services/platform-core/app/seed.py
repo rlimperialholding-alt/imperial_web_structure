@@ -50,23 +50,20 @@ from .roles import ROLE_DEFINITIONS
 from .services.development_governance import seed_canonical_discoveries
 
 DEMO_LOGIN_ENV = "CONTROL_CENTER_DEMO_LOGIN"
-# A szintetikus demo-belépés értéke nem szerepel a forrásban semmilyen
-# rekonstruálható formában: fix literál vagy abból összerakható rész NINCS.
-# Nem-production módban az érték vagy a CONTROL_CENTER_DEMO_LOGIN környezeti
-# változóból érkezik (nincs default), vagy futásonként/telepítésenként
-# biztonságosan generált, egyedi véletlen érték (secrets.token_urlsafe).
-# A biztonságot nem is ez a konstrukció adja -- az érték szándékosan ismert,
-# a login oldal ki is írja nem-production módban --, hanem a
-# demo_accounts_allowed() production kapu: production adatbázisba szintetikus
-# demo fiók egyetlen belépési ponton sem kerülhet.
+# A szintetikus demo-belépési érték fix, forrásból rekonstruálható formában
+# NINCS a forrásban: vagy a CONTROL_CENTER_DEMO_LOGIN környezeti változóból
+# érkezik (nincs default), vagy futásonként biztonságosan generált, egyedi
+# véletlen érték. A biztonságot nem az érték adja -- a login oldal
+# nem-production módban ki is írja --, hanem a demo_accounts_allowed()
+# production kapu.
 
 
 def demo_login_value(environ: Mapping[str, str] | None = None) -> str:
     """A demo fiókok szintetikus belépési értéke.
 
-    Sorrend: (1) a ``CONTROL_CENTER_DEMO_LOGIN`` környezeti változó, ha nem
-    üres; (2) egyébként futásonként biztonságosan generált, egyedi véletlen
-    érték. Fix, forrásból rekonstruálható default nincs.
+    (1) a ``CONTROL_CENTER_DEMO_LOGIN`` környezeti változó, ha nem üres;
+    (2) egyébként futásonként generált egyedi véletlen érték. Fix default
+    nincs.
     """
     values = os.environ if environ is None else environ
     override = values.get(DEMO_LOGIN_ENV, "").strip()
@@ -76,23 +73,18 @@ def demo_login_value(environ: Mapping[str, str] | None = None) -> str:
 
 
 DEMO_PARTNER_CODE_ENV = "CONTROL_CENTER_PARTNER_DEMO_CODE"
-# A szintetikus partneri terepi (field-PWA) belépőkód is ugyanazt a szerződést
-# követi, mint a demo-belépés: fix, forrásból rekonstruálható érték NINCS. Az
-# érték vagy a CONTROL_CENTER_PARTNER_DEMO_CODE környezeti változóból érkezik
-# (nincs default), vagy futásonként biztonságosan generált egyedi érték. A
-# szándékosan rövid, hatjegyű numerikus alak a belépő oldal beviteli
-# szerződését (numerikus billentyűzet, min. 6 jegy) őrzi meg; a biztonságot
-# nem az érték entrópiája adja -- a login oldal nem-production módban ki is
-# írja --, hanem a production kapu: production adatbázisba a szintetikus
-# hozzáférés egyetlen seed-útvonalon sem kerülhet.
+# A szintetikus partneri terepi belépőkód ugyanazt a szerződést követi: fix,
+# rekonstruálható érték NINCS. A hatjegyű numerikus alak a belépő oldal
+# beviteli szerződését (numerikus billentyűzet, min. 6 jegy) őrzi meg; a
+# biztonságot itt is a production kapu adja.
 
 
 def demo_partner_code(environ: Mapping[str, str] | None = None) -> str:
     """A szintetikus partneri terepi belépőkód.
 
-    Sorrend: (1) a ``CONTROL_CENTER_PARTNER_DEMO_CODE`` környezeti változó, ha
-    nem üres; (2) egyébként futásonként biztonságosan generált, egyedi
-    hatjegyű numerikus érték. Fix, forrásból rekonstruálható default nincs.
+    (1) a ``CONTROL_CENTER_PARTNER_DEMO_CODE`` környezeti változó, ha nem
+    üres; (2) egyébként futásonként generált egyedi hatjegyű numerikus
+    érték. Fix default nincs.
     """
     values = os.environ if environ is None else environ
     override = values.get(DEMO_PARTNER_CODE_ENV, "").strip()
@@ -106,9 +98,9 @@ def demo_accounts_allowed() -> bool:
 
     ``settings.demo_runtime_enabled`` a ``DEMO_FEATURES_ENABLED`` flaggel
     production alatt is igazra kényszeríthető, és a worker belépési pontja
-    (``worker.initialize``) nem futtat ``settings.validate()`` ellenőrzést.
-    Ezért a tiltás itt, a felhasználás pontján is érvényesül: production
-    környezetben a válasz a flag értékétől függetlenül hamis.
+    nem futtat ``validate()`` ellenőrzést -- ezért a tiltás itt, a
+    felhasználás pontján is érvényesül: production módban a válasz a flag
+    értékétől függetlenül hamis.
     """
     if settings.is_production:
         return False
@@ -117,45 +109,33 @@ def demo_accounts_allowed() -> bool:
 
 # --- A demo-belépés közös, nem követett futásidejű állapota ------------------
 #
-# A generált demo-belépési érték és partner-kód többfolyamatos és újraindítás
-# utáni konzisztenciája determinisztikusan biztonságos: az a folyamat, amelyik
-# a demo fiókokat seedeli, és az a folyamat, amelyik a login oldalt rendereli,
-# ugyanazt az értéket használja -- több worker és újraindítás után is. Az
-# érték egyetlen közös, atomosan cserélt állapotfájlban él, amely a git-ignored
-# ``services/platform-core/runtime/`` könyvtárban van, tehát semmilyen
+# A generált demo-belépési érték és partner-kód egyetlen közös, atomosan
+# cserélt állapotfájlban él a git-ignored ``services/platform-core/runtime/``
+# könyvtárban, így a seedelő és a login oldalt renderelő folyamat -- több
+# worker és újraindítás után is -- ugyanazt az értéket használja, és semmilyen
 # plaintext demo érték nem jelenhet meg a tracked munkafában.
 #
-# Az *első létrehozás* és a felülírás atomi exclusive-create lock
-# (``O_CREAT | O_EXCL``, Windows alatt is atomi) mögött történik: pontosan egy
-# folyamat generál és persistál, minden párhuzamos folyamat a persistált
-# állapothoz konvergál -- korábban két egyidejű folyamat is üres állapotot
-# olvashatott, különböző értékeket generálhatott és mindkettő írhatott
-# (a Task36 review HIGH-ja). A vegyes override/no-override versenyre
+# Az első létrehozás és a felülírás atomi exclusive-create lock (``O_CREAT |
+# O_EXCL``, Windows alatt is atomi) mögött történik: pontosan egy folyamat
+# generál és persistál, minden párhuzamos folyamat a persistált állapothoz
+# konvergál (a Task36 review HIGH-ja: korábban két egyidejű folyamat is
+# divergens értéket írhatott). A vegyes override/no-override versenyre
 # ugyanez a koordináció érvényes (Task37 review HIGH regressziója): az
-# override nélküli hívó csak lock alatt olvasott értéket adhat vissza, így
-# nem rögzítheti egy párhuzamos override-írás előtti, elavult állapotot --
-# minden folyamat pontosan egy persistált állapothoz konvergál. A
+# override nélküli hívó csak lock alatt olvasott értéket adhat vissza. A
 # lock-várakozás korlátos; a korlát kimerülése, nem biztonságos
-# (szimlink/nem reguláris) állapot vagy lock, illetve a sikeres írás utáni
-# ellenőrizhetetlen visszaolvasás fail-closed ``DemoCredentialsStateError``
-# -- sosem egy ellenőrizetlen vagy divergens érték visszaadása. A lock és az
-# állapotfájl egyaránt a git-ignored runtime könyvtárban él. A tesztek a
+# (szimlink/nem reguláris) állapot vagy lock, illetve az ellenőrizhetetlen
+# visszaolvasás fail-closed ``DemoCredentialsStateError``. A tesztek a
 # ``DEMO_CREDENTIALS_STATE_PATH`` környezeti változóval a pytest
-# temp-gyökerébe irányítják át mindkettőt, hogy a suite soha ne írja a
-# repository runtime könyvtárát.
+# temp-gyökerébe irányítják át az állapotfájlt.
 
 DEMO_CREDENTIALS_STATE_ENV = "DEMO_CREDENTIALS_STATE_PATH"
-# A creation-lock megszerzésére szánt, dokumentált, korlátos várakozási ablak.
-# A holder kritikus szakasza néhány milliszekundum (olvas + esetleges generálás
-# + atomi írás + visszaolvasás), így a késleltetések összege bőven elég a
-# valódi versenyre; a korlát kimerülése explicit fail-closed hiba. A várakozó
-# folyamat közben folyamatosan újraolvassa az állapotfájlt, így a holder
-# sikeres írása után azonnal konvergál -- a teljes ablakra csak akkor van
-# szükség, ha a holder egyáltalán nem tud publikálni.
+# A creation-lock korlátos várakozási ablaka: a holder kritikus szakasza
+# néhány milliszekundum, a várakozó folyamat közben folyamatosan újraolvassa
+# az állapotfájlt; a korlát kimerülése explicit fail-closed hiba.
 _DEMO_STATE_LOCK_RETRY_DELAYS = (0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 0.8, 0.8, 0.8, 0.8)
-# Az írás utáni visszaolvasás korlátos újrapróbálkozása: Windows alatt egy
-# átmeneti AV/indexer megnyitás rövid időre blokkolhatja a frissen cserélt
-# fájl olvasását; a korlát kimerülése fail-closed hiba, nem fallback érték.
+# Az írás utáni visszaolvasás korlátos újrapróbálkozása (Windows alatt egy
+# átmeneti AV/indexer megnyitás blokkolhatja a frissen cserélt fájlt); a
+# korlát kimerülése fail-closed hiba, nem fallback érték.
 _STATE_READBACK_ATTEMPTS = 5
 _STATE_READBACK_DELAY = 0.05
 
@@ -163,11 +143,9 @@ _STATE_READBACK_DELAY = 0.05
 def _demo_credentials_state_path() -> Path:
     """A közös, nem követett demo-hitelesítő állapotfájl útvonala.
 
-    Alapértelmezés: ``services/platform-core/runtime/demo-credentials-state.json``.
-    Az egész ``runtime`` könyvtár git-ignored, így a plaintext demo értékek
-    (a login oldal nem-production módban egyébként is kiírja őket) soha nem
-    kerülhetnek tracked fájlba. A creation-lock sibling fájl (``.lock``
-    utótaggal) ugyanabban a könyvtárban él, tehát szintén git-ignored.
+    Alapértelmezés: ``services/platform-core/runtime/demo-credentials-state.json``
+    (az egész ``runtime`` könyvtár git-ignored, így a plaintext demo értékek
+    soha nem kerülhetnek tracked fájlba; a ``.lock`` sibling szintén ott él).
     """
     override = os.environ.get(DEMO_CREDENTIALS_STATE_ENV, "").strip()
     if override:
@@ -176,12 +154,8 @@ def _demo_credentials_state_path() -> Path:
 
 
 class DemoCredentialsStateError(RuntimeError):
-    """Fail-closed közös demo-hitelesítő állapothiba.
-
-    Az üzenetek sosem hordozzák magukat a hitelesítő értékeket -- csak az
-    állapotot írják le, hogy a hiba logolható legyen plaintext szivárgás
-    nélkül.
-    """
+    """Fail-closed demo-hitelesítő állapothiba; az üzenetek sosem hordozzák
+    magukat a hitelesítő értékeket (logolható plaintext szivárgás nélkül)."""
 
 
 def _demo_credentials_lock_path(state_path: Path) -> Path:
@@ -192,10 +166,8 @@ def _demo_credentials_lock_path(state_path: Path) -> Path:
 def _assert_safe_runtime_target(path: Path, role: str) -> None:
     """Fail-closed nem biztonságos runtime célpontra (szimlink/nem reguláris).
 
-    A state vagy lock útvonalra ültetett szimlink átirányíthatná az
-    olvasást/írást, egy könyvtár pedig csendben lenyelné az atomi cserét.
-    Mindkettő ``DemoCredentialsStateError``: ilyen bemenetet a rendszer soha
-    nem szolgál ki és nem ír felül csendben.
+    A szimlink átirányíthatná az olvasást/írást, egy könyvtár csendben
+    lenyelné az atomi cserét -- mindkettő ``DemoCredentialsStateError``.
     """
     if path.is_symlink():
         raise DemoCredentialsStateError(f"demo credential {role} path is a symlink: {path.name}")
@@ -208,10 +180,9 @@ def _assert_safe_runtime_target(path: Path, role: str) -> None:
 def _try_create_demo_state_lock(lock_path: Path) -> bool:
     """Atomi exclusive-create a sibling lock fájlra; ``False``, ha már létezik.
 
-    ``O_CREAT | O_EXCL`` Windows alatt is atomi (CreateFile ``CREATE_NEW``);
-    ez a protokoll egyetlen kizárólagossági primitívje: pontosan egy folyamat
-    lehet egyszerre a generáló/persistáló holder. A lock tartalma a holder
-    PID-je, kizárólag diagnosztikai célra.
+    ``O_CREAT | O_EXCL`` Windows alatt is atomi: pontosan egy folyamat lehet
+    egyszerre a generáló/persistáló holder. A lock tartalma a holder PID-je,
+    kizárólag diagnosztikai célra.
     """
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -227,11 +198,10 @@ def _try_create_demo_state_lock(lock_path: Path) -> bool:
 def _release_demo_state_lock(lock_path: Path) -> None:
     """Felszabadítja a creation-lockot; Windows-átmeneti hibákra korlátosan retry-z.
 
-    A holder csak a sikeres, atomi állapotírás után engedi el a lockot, így a
-    várakozó folyamat sosem lát „üres lock” állapotot. Az unlink tartós
-    kudarca (átmeneti AV/indexer zárolás) fail-closed hibává válik: egy
-    csendben otthagyott lock minden későbbi folyamatot tartósan blokkolna,
-    ami rosszabb, mint a hangos bukás.
+    A holder csak a sikeres, atomi állapotírás után engedi el a lockot; az
+    unlink tartós kudarca (átmeneti AV/indexer zárolás) fail-closed hibává
+    válik, mert egy csendben otthagyott lock minden későbbi folyamatot
+    tartósan blokkolna.
     """
     for attempt in range(1, _STATE_READBACK_ATTEMPTS + 1):
         try:
@@ -248,11 +218,9 @@ def _release_demo_state_lock(lock_path: Path) -> None:
 def _read_demo_credentials_state(state_path: Path) -> tuple[str, str] | None:
     """Beolvassa a megosztott állapotot; hiányzó/sérült fájl esetén ``None``.
 
-    A ``None`` eredmény nem fail-closed hiba, hanem öngyógyító állapot: az
-    érték ilyenkor a lock-protokollon keresztül újragenerálódik, a sérült
-    állapot pedig a következő atomi írással felülíródik. Nem biztonságos
-    állapot -- szimlink vagy nem reguláris fájl a state útvonalon -- viszont
-    fail-closed ``DemoCredentialsStateError``.
+    A ``None`` öngyógyító állapot: az érték a lock-protokollon keresztül
+    újragenerálódik, a sérült állapotot a következő atomi írás felülírja. A
+    nem biztonságos state útvonal viszont fail-closed hiba.
     """
     _assert_safe_runtime_target(state_path, "state")
     try:
@@ -313,12 +281,10 @@ def _resolve_demo_state_under_lock(
 ) -> tuple[str, str]:
     """A lock birtokában: beolvas vagy generál, atomosan persistál, visszaolvas.
 
-    A holder pontosan egyszer ír: ha a számított (login, partner) pár már
-    megegyezik a persistált állapottal, nincs újraírás. Az írás után a
-    visszaolvasás korlátos retry-val történik (Windows-átmeneti megosztási
-    ablak), és a visszaolvasott értéknek pontosan a kiírt párnak kell lennie
-    -- eltérés vagy olvashatatlanság fail-closed hiba, sosem egy
-    ellenőrizetlen érték visszaadása.
+    A holder pontosan egyszer ír; az írás utáni visszaolvasás korlátos
+    retry-val történik (Windows-átmeneti megosztási ablak), és a
+    visszaolvasott értéknek pontosan a kiírt párnak kell lennie -- eltérés
+    vagy olvashatatlanság fail-closed hiba, sosem ellenőrizetlen érték.
     """
     persisted = _read_demo_credentials_state(state_path)
     stored_login, stored_partner = persisted if persisted is not None else ("", "")
@@ -351,42 +317,26 @@ def demo_runtime_credentials(
 
     Sorrend: (1) explicit környezeti override; (2) a közös, nem követett
     futásidejű állapotfájl; (3) biztonságosan generált érték, amely azonnal a
-    közös állapotba íródik.
-
-    Az első létrehozás és a felülírás atomi exclusive-create lock mögött
-    történik: pontosan egy folyamat generál és persistál, minden párhuzamos
-    folyamat a persistált állapothoz konvergál. A lock-várakozás korlátos; a
-    korlát kimerülése, nem biztonságos (szimlink/nem reguláris) állapot vagy
-    lock, illetve a sikeres írás utáni ellenőrizhetetlen visszaolvasás
-    fail-closed ``DemoCredentialsStateError``.
-
-    Vegyes override/no-override verseny (Task37 review HIGH regressziója): a
-    lock nélküli gyorsút kizárólag explicit override-os hívónak jár, mert az
-    ő visszatérési értékét a saját override-ja horgonyozza. Override nélküli
-    hívó a persistált állapot lock nélküli előolvasásával éppen egy másik
-    folyamat override-írásának közepén térhetne vissza a lecserélendő,
-    elavult állapottal -- ezért az ilyen hívó mindig a lockon keresztül
-    koordinál, és csak lock alatt olvasott, az aktuális persistált állapotot
-    tükröző értéket adhat vissza (a várakozó hívó nem térhet vissza lock
-    nélküli köztes olvasással). Így minden párhuzamos folyamat -- override-os
-    és override nélküli egyaránt -- pontosan egy persistált állapothoz
-    konvergál.
-
-    A production kaput a hívó alkalmazza: production módban ezt a függvényt
-    nem szabad meghívni, mert a plaintext demo értékek kizárólag
-    nem-production, demo-engedélyezett környezetben írhatók futásidejű
-    állapotba (lásd ``_process_demo_credentials``).
+    közös állapotba íródik. Az első létrehozás és a felülírás atomi
+    exclusive-create lock mögött történik: pontosan egy folyamat generál és
+    persistál, minden párhuzamos folyamat a persistált állapothoz konvergál;
+    a lock-várakozás korlátos, a korlát kimerülése, nem biztonságos állapot
+    vagy lock, illetve az ellenőrizhetetlen visszaolvasás fail-closed
+    ``DemoCredentialsStateError``. Vegyes override/no-override versenyben
+    (Task37 review HIGH regressziója) a lock nélküli gyorsút kizárólag
+    explicit override-os hívónak jár (az ő értékét a saját override-ja
+    horgonyozza); az override nélküli hívó mindig a lockon keresztül
+    koordinál, és csak lock alatt olvasott értéket adhat vissza. A production
+    kaput a hívó alkalmazza (``_process_demo_credentials``): production
+    módban ezt a függvényt nem szabad meghívni.
     """
     values = os.environ if environ is None else environ
     path = _demo_credentials_state_path() if state_path is None else state_path
     override_login = values.get(DEMO_LOGIN_ENV, "").strip()
     override_partner = values.get(DEMO_PARTNER_CODE_ENV, "").strip()
-    # A gyorsút csak explicit override-os hívónak jár: az ő értékét a saját
-    # override-ja horgonyozza, így egy párhuzamos override-írás közbeni
-    # előolvasás sem adhat vissza olyan állapotot, amely ne teljesítené a
-    # hívó saját override-jait. Override nélküli hívó esetén az előolvasás
-    # épp egy másik folyamat lecserélendő, elavult állapotát rögzíthetné --
-    # az ilyen hívó kizárólag lock alatt olvasott értéket adhat vissza.
+    # A gyorsút csak explicit override-os hívónak jár (az ő értékét a saját
+    # override-ja horgonyozza); az override nélküli hívó kizárólag lock alatt
+    # olvasott értéket adhat vissza.
     has_override = bool(override_login or override_partner)
     if has_override:
         persisted = _read_demo_credentials_state(path)
@@ -426,10 +376,9 @@ def _process_demo_credentials() -> tuple[str, str]:
     """A folyamat tényleges demo-hitelesítői a production kapu mögött.
 
     Production (vagy letiltott demo runtime) esetén a közös állapotfájlhoz
-    hozzá sem nyúlunk: az érték env-override vagy folyamatonkénti véletlen, és
-    semmilyen felületen nem jelenik meg. Demo-engedélyezett környezetben a
-    megosztott futásidejű állapot garantálja a többfolyamatos és újraindítás
-    utáni konzisztenciát.
+    hozzá sem nyúlunk: az érték env-override vagy folyamatonkénti véletlen,
+    és semmilyen felületen nem jelenik meg. Demo-engedélyezett környezetben
+    a megosztott állapot garantálja a konzisztenciát.
     """
     if demo_accounts_allowed():
         return demo_runtime_credentials(os.environ)
@@ -702,10 +651,8 @@ DEMO_PARTNER_ACCESS_ID = "PFA-GOD-DEMO"
 def _partner_field_demo_workers(db: Session) -> list[PartnerWorker]:
     """A szintetikus demo hozzáféréshez tartozó ``PartnerWorker`` sorok.
 
-    Pontos azonosító-egyezés a szintetikus ``access_id``-ra: minden ilyen sor
-    kizárólag e szintetikus hozzáférés alatt kap felhatalmazást (a
-    ``partner_field`` szolgáltatás a jelenlét- és bejelentési műveleteknél
-    ``access_id`` + ``active`` szerint szűr), ezért a hozzáférés lezárásakor
+    Pontos ``access_id`` egyenlőség: minden ilyen sor kizárólag e szintetikus
+    hozzáférés alatt kap felhatalmazást, ezért a hozzáférés lezárásakor
     egyik sem maradhat aktív -- akkor sem, ha nem a seed három alapsorának
     egyike. Valódi partneri hozzáféréshez tartozó munkavállalót ez a szűrés
     nem érhet el.
@@ -720,25 +667,16 @@ def _partner_field_demo_workers(db: Session) -> list[PartnerWorker]:
 def retire_partner_field_demo_access(db: Session) -> None:
     """A szintetikus partneri terepi hozzáférés fail-closed lezárása.
 
-    Production -- vagy bármely demo-tiltott futás -- esetén egy KORÁBBI futás
-    által létrehozott szintetikus hozzáférés nem maradhat aktív: a
-    ``PFA-GOD-DEMO`` hozzáférés és a hozzá tartozó szintetikus
-    ``PartnerWorker`` sorok is inaktívvá válnak. Ez pontosan a termék saját
-    lezárási szemantikája (``partner_field.deactivate_access``:
-    ``active = False``), és pontosan ez az a jelzés, amelyre a belépés és a
-    munkavállalói felhatalmazás is szűr: ``authenticate_access`` csak
-    ``active`` hozzáférést vizsgál, ``access_is_valid`` inaktívra hamis,
-    a jelenlét/bejelentés pedig csak ``active`` munkavállalót fogad el.
-
-    A művelet:
-
-    * pontos azonosítóra hat (``DEMO_PARTNER_ACCESS_ID`` egyenlőség), tehát
-      valódi partneri hozzáférést vagy munkavállalót nem módosít, és nem
-      szélesíti ki az azonosítókat;
-    * idempotens: a már inaktív sorokat nem írja újra, ismételt futás után az
-      állapot bitre változatlan;
-    * tranzakcionális: a hívó ``seed_database`` egyetlen munkaegységében fut,
-      és azzal együtt commitál -- részleges lezárás nem maradhat hátra.
+    Demo-tiltott futás esetén egy KORÁBBI futás által létrehozott szintetikus
+    hozzáférés nem maradhat aktív: a ``PFA-GOD-DEMO`` hozzáférés és a hozzá
+    tartozó ``PartnerWorker`` sorok is inaktívvá válnak. Ez pontosan a
+    termék saját lezárási szemantikája (``partner_field.deactivate_access``:
+    ``active = False``), és pontosan ez az a jelzés, amelyre a belépés
+    (``authenticate_access``), az érvényesség (``access_is_valid``) és a
+    jelenlét/bejelentés (``PartnerWorker.active``) szűr. A művelet pontos
+    azonosítóra hat, idempotens (már inaktív sort nem ír újra), és a
+    ``seed_database`` egyetlen munkaegységében fut -- részleges lezárás nem
+    maradhat hátra.
     """
     existing = db.scalar(
         select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == DEMO_PARTNER_ACCESS_ID)
@@ -756,19 +694,13 @@ def seed_partner_field_demo_access(db: Session) -> None:
     Kizárólag a ``demo_accounts_allowed()`` fail-closed kapun belül készülhet:
     production adatbázisba -- a ``DEMO_FEATURES_ENABLED`` flagtől függetlenül --
     gyenge vagy aktív szintetikus partneri hozzáférés egyetlen seed-útvonalon
-    sem kerülhet. A kapu zárva NEM elég passzívan visszatérni: egy korábbi
-    (demo-engedélyezett) futás hozzáférése ott maradna aktívan, ezért a zárt
-    kapun a meglévő szintetikus hozzáférés és munkavállalói lezárásra kerülnek
-    (``retire_partner_field_demo_access``).
-
-    Újrafutás (reseed/restart) esetén a már létező hozzáférés hash-e
-    biztonságosan frissül az aktuális folyamat demo partner-kódjához, és a sor
-    -- valamint munkavállalói -- újra aktívvá válnak, így egy korábbi
-    production-módú lezárás után is működik a demo belépés, és a login oldal
-    által kiírt kód újraindítás után is nyit. A függvény a
-    ``seed_operations_demo`` PMPhase-korlátjától függetlenül fut, tehát a
-    hash-szinkron akkor is megtörténik, ha a demo üzemeltetési adatok már
-    léteznek.
+    sem kerülhet. A zárt kapun NEM elég passzívan visszatérni: egy korábbi
+    futás hozzáférése aktívan maradna, ezért a meglévő szintetikus hozzáférés
+    és munkavállalói lezárásra kerülnek (``retire_partner_field_demo_access``).
+    Újrafutáskor a létező hozzáférés hash-e frissül az aktuális folyamat
+    partner-kódjához és a sor aktívvá válik, így egy korábbi lezárás után is
+    működik a demo belépés; a hash-szinkron a ``seed_operations_demo``
+    PMPhase-korlátjától függetlenül fut.
     """
     if not demo_accounts_allowed():
         retire_partner_field_demo_access(db)
@@ -780,8 +712,6 @@ def seed_partner_field_demo_access(db: Session) -> None:
     )
     if existing is not None:
         existing.access_code_hash = partner_hash
-        # Egy korábbi demo-tiltott futás lezárhatta a sort; a demo kapun belül
-        # a szintetikus hozzáférés és a munkavállalói ismét aktívak.
         existing.active = True
         for worker in _partner_field_demo_workers(db):
             worker.active = True
@@ -1004,10 +934,6 @@ def seed_database(db: Session) -> None:
                 demo_user.role = role.id
                 demo_user.active = True
                 demo_user.itep_subject_id = f"ITEP-DEMO-{role.id.upper()}"
-                # A futásonkénti érték változhat (env override vagy friss
-                # generálás), ezért a meglévő fiók hash-e is mindig a
-                # folyamat aktuális értékét követi: a login oldal által
-                # kiírt érték újraindítás után is működik.
                 demo_user.password_hash = DEMO_PASSWORD_HASH
     canonical_module_ids = {module[0] for module in MODULES}
     existing_modules = db.scalars(select(ModuleRegistry)).all()
