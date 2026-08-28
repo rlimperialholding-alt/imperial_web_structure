@@ -5,7 +5,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-SPEC_VERSION = "2026-08-20-canonical-wide-v1"
+SPEC_VERSION = "2026-08-28-building-v2.16"
 SOURCE_LEDGER_SPREADSHEET_ID = "1ddn6e2EbuafPc_S9_eb6oetBQsp4iOO9cFuMD6sQ4H4"
 SOURCE_LEDGER_SHEET_ID = 959591161
 SOURCE_LEDGER_SHEET_NAME = "Útvonal-nyilvántartás"
@@ -303,12 +303,13 @@ class DailyGateResult:
     unique_leads: int
     question_topics: int
     content_brands: int
+    route_target: int = DAILY_ROUTE_ATTEMPT_MINIMUM
 
     @property
     def errors(self) -> tuple[str, ...]:
         errors: list[str] = []
-        if self.route_attempts < DAILY_ROUTE_ATTEMPT_MINIMUM:
-            errors.append("route_attempt_minimum_not_met")
+        if self.route_attempts < self.route_target:
+            errors.append("active_route_universe_not_fully_attempted")
         if self.unique_leads < DAILY_UNIQUE_LEAD_MINIMUM:
             errors.append("unique_lead_minimum_not_met")
         if self.question_topics < DAILY_QUESTION_TOPIC_MINIMUM:

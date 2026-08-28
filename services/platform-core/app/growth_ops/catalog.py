@@ -5,6 +5,7 @@ import ipaddress
 import json
 import re
 import socket
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, time, timedelta
 from html.parser import HTMLParser
@@ -15,14 +16,13 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import case, func, or_, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ..land_acquisition.registry import is_named_portal_host
 from .canonical_policy import (
-    DAILY_ROUTE_ATTEMPT_MINIMUM,
     DAILY_UNIQUE_LEAD_MINIMUM,
     SOURCE_LEDGER_ROUTE_COUNT,
     SOURCE_LEDGER_SHEET_ID,
@@ -58,7 +58,38 @@ QUESTION_SURFACE_ROUTE_OVERRIDES = {
     "EVB-06834": "https://qjob.hu/budapest/munka/epitomernok-allas",
 }
 
-DAILY_ROUTE_ATTEMPT_MAXIMUM = 2_000
+BUILDING_ACQUISITION_SCOPE_VERSION = "2026-08-28-building-v2.16"
+
+_PROCUREMENT_MARKERS = (
+    "ausschreibung",
+    "award notice",
+    "beszerzes",
+    "framework award",
+    "kozbeszerzes",
+    "obstaravanie",
+    "procurement",
+    "tender",
+    "verebes obstaranie",
+    "verejne obstaravanie",
+    "vergabe",
+    "vergebener auftrag",
+    "vysledok verejneho obstaravania",
+    "zuschlag",
+)
+
+_FOREIGN_FAMILY_HOUSE_BUILD_OR_EXTENSION_PHRASES = (
+    "building a house",
+    "csaladi haz bovites",
+    "csaladi haz epites",
+    "einfamilienhausbau",
+    "hausbau",
+    "house construction",
+    "house extension",
+    "pristavba domu",
+    "rozsirenie rodinneho domu",
+    "stavba domu",
+    "vystavba rodinneho domu",
+)
 
 
 class UnsafeRouteError(ValueError):
@@ -290,44 +321,6 @@ def _canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _paced_route_target(cfg: Any, local_now: datetime, start_local: datetime) -> int:
-    elapsed_minutes = max(0.0, (local_now - start_local).total_seconds() / 60)
-    handoff_hour, handoff_minute = (
-        int(part) for part in getattr(cfg, "canonical_internal_handoff_at", "18:30").split(":")
-    )
-    handoff_local = datetime.combine(
-        local_now.date(), time(handoff_hour, handoff_minute), local_now.tzinfo
-    )
-    if handoff_local <= start_local:
-        handoff_local += timedelta(days=1)
-    # Finish the minimum route coverage before the mandatory internal handoff,
-    # leaving a thirty-minute recovery window for slow sources.
-    pacing_deadline = max(
-        start_local + timedelta(hours=1), handoff_local - timedelta(minutes=30)
-    )
-    pacing_window_minutes = max(
-        60.0, (pacing_deadline - start_local).total_seconds() / 60
-    )
-    return min(
-        DAILY_ROUTE_ATTEMPT_MINIMUM,
-        max(
-            cfg.canonical_route_batch_size,
-            int(elapsed_minutes / pacing_window_minutes * DAILY_ROUTE_ATTEMPT_MINIMUM),
-        ),
-    )
-
-
-def _daily_route_target(
-    *, attempted_today: int, unique_leads_today: int, paced_minimum_target: int
-) -> int:
-    if (
-        attempted_today >= DAILY_ROUTE_ATTEMPT_MINIMUM
-        and unique_leads_today < DAILY_UNIQUE_LEAD_MINIMUM
-    ):
-        return DAILY_ROUTE_ATTEMPT_MAXIMUM
-    return paced_minimum_target
-
-
 def _text(value: Any, limit: int | None = None) -> str | None:
     if value is None:
         return None
@@ -335,6 +328,47 @@ def _text(value: Any, limit: int | None = None) -> str | None:
     if not result:
         return None
     return result[:limit] if limit else result
+
+
+def _scope_text(value: Any) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or ""))
+    ascii_text = "".join(
+        character for character in normalized if not unicodedata.combining(character)
+    )
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_text.casefold()).split())
+
+
+def _building_route_enabled(record: dict[str, Any]) -> bool:
+    status = _scope_text(record.get("Katalógusstátusz"))
+    if status in {"disabled", "retired"}:
+        return False
+    if _scope_text(record.get("Motor")) != "imperial bautica prefab":
+        return False
+    canonical = _scope_text(_canonical_json(record))
+    if contains_no_monitoring_entity(_canonical_json(record)):
+        return False
+    if any(marker in canonical for marker in _PROCUREMENT_MARKERS):
+        return False
+    country = _scope_text(record.get("Ország"))
+    if country == "hu":
+        return True
+    if country not in {"at", "sk"}:
+        return False
+    explicit_route_text = _scope_text(
+        " ".join(
+            str(record.get(key) or "")
+            for key in (
+                "Kategória",
+                "Forrás neve",
+                "Keresési jel/kifejezés",
+                "Márkailleszkedés",
+            )
+        )
+    )
+    return any(
+        phrase in explicit_route_text
+        for phrase in _FOREIGN_FAMILY_HOUSE_BUILD_OR_EXTENSION_PHRASES
+    )
 
 
 def _load_manifest(path: str | Path) -> tuple[dict[str, Any], str]:
@@ -424,7 +458,7 @@ def _row(record: dict[str, Any], catalog_sha256: str, now: datetime) -> dict[str
         "notes": _text(record.get("Megjegyzés")),
         "source_row_sha256": hashlib.sha256(canonical.encode()).hexdigest(),
         "source_record_json": canonical,
-        "enabled": (catalog_status or "").casefold() not in {"disabled", "retired"},
+        "enabled": _building_route_enabled(record),
         "created_at": now,
         "updated_at": now,
     }
@@ -524,11 +558,11 @@ def import_snapshot(
         )
         or 0
     )
-    if active_count != SOURCE_LEDGER_ROUTE_COUNT:
+    if active_count <= 0:
         db.rollback()
-        raise GrowthRegistryError("Imported active source-route count mismatch")
+        raise GrowthRegistryError("Imported building source scope is empty")
     revision.status = "active"
-    revision.route_count = active_count
+    revision.route_count = len(rows)
     revision.imported_at = now
     db.commit()
     return revision
@@ -639,11 +673,38 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         return {"status": "not_due", "attempted": 0}
     revision = active_revision(db)
     start_utc = start_local.astimezone(UTC)
+    from .models import CanonicalGrowthDailyRun
+
+    daily_run = db.scalar(
+        select(CanonicalGrowthDailyRun).where(
+            CanonicalGrowthDailyRun.local_date == local_now.date()
+        )
+    )
+    run_id = (
+        daily_run.run_id
+        if daily_run
+        else f"BUILDING-{local_now.strftime('%Y%m%d')}-V216"
+    )
+    active_route_target = int(
+        db.scalar(
+            select(func.count())
+            .select_from(SourceCoverageRoute)
+            .where(
+                SourceCoverageRoute.enabled.is_(True),
+                SourceCoverageRoute.catalog_sha256 == revision.catalog_sha256,
+            )
+        )
+        or 0
+    )
     attempted_today = int(
         db.scalar(
             select(func.count())
             .select_from(SourceCoverageAttempt)
-            .where(SourceCoverageAttempt.started_at >= start_utc)
+            .where(
+                SourceCoverageAttempt.started_at >= start_utc,
+                SourceCoverageAttempt.catalog_sha256 == revision.catalog_sha256,
+                SourceCoverageAttempt.run_id == run_id,
+            )
         )
         or 0
     )
@@ -655,16 +716,9 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         )
         or 0
     )
-    paced_minimum_target = _paced_route_target(cfg, local_now, start_local)
-    paced_target = _daily_route_target(
-        attempted_today=attempted_today,
-        unique_leads_today=unique_leads_today,
-        paced_minimum_target=paced_minimum_target,
-    )
     allowance = min(
         cfg.canonical_route_batch_size,
-        DAILY_ROUTE_ATTEMPT_MAXIMUM - attempted_today,
-        paced_target - attempted_today,
+        active_route_target - attempted_today,
     )
     if allowance <= 0:
         return {
@@ -673,17 +727,21 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
             "attempted_today": attempted_today,
             "unique_leads_today": unique_leads_today,
             "daily_lead_target_met": unique_leads_today >= DAILY_UNIQUE_LEAD_MINIMUM,
-            "paced_target": paced_target,
+            "active_route_target": active_route_target,
+            "coverage_complete": attempted_today >= active_route_target,
+            "run_id": run_id,
         }
+    attempted_route_keys = select(SourceCoverageAttempt.route_key).where(
+        SourceCoverageAttempt.started_at >= start_utc,
+        SourceCoverageAttempt.catalog_sha256 == revision.catalog_sha256,
+        SourceCoverageAttempt.run_id == run_id,
+    )
     candidates = db.scalars(
         select(SourceCoverageRoute)
         .where(
             SourceCoverageRoute.enabled.is_(True),
             SourceCoverageRoute.catalog_sha256 == revision.catalog_sha256,
-            or_(
-                SourceCoverageRoute.next_due_at.is_(None),
-                SourceCoverageRoute.next_due_at <= current,
-            ),
+            SourceCoverageRoute.route_key.not_in(attempted_route_keys),
         )
         .order_by(
             case((SourceCoverageRoute.route_mode == "direct", 0), else_=1),
@@ -723,6 +781,7 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
             attempt_id=f"SCA-{uuid4().hex[:20].upper()}",
             route_key=route.route_key,
             catalog_sha256=revision.catalog_sha256,
+            run_id=run_id,
             status=status,
             http_status=result.get("http_status"),
             response_sha256=result.get("response_sha256"),
@@ -753,8 +812,6 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         if status == "succeeded":
             route.success_count += 1
             route.last_success_at = completed
-        elif status == "rejected":
-            route.enabled = False
         outcomes[status] = outcomes.get(status, 0) + 1
     db.commit()
     return {
@@ -763,6 +820,9 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         "attempted_today": attempted_today + len(selected),
         "unique_leads_today": unique_leads_today,
         "daily_lead_target_met": unique_leads_today >= DAILY_UNIQUE_LEAD_MINIMUM,
-        "paced_target": paced_target,
+        "active_route_target": active_route_target,
+        "coverage_complete": attempted_today + len(selected) >= active_route_target,
+        "remaining_routes": max(0, active_route_target - attempted_today - len(selected)),
+        "run_id": run_id,
         "outcomes": outcomes,
     }

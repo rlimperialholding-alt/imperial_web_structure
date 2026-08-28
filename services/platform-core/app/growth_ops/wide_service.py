@@ -29,6 +29,7 @@ from .models import (
     QuestionRadarTopic,
     SourceCatalogRevision,
     SourceCoverageAttempt,
+    SourceCoverageRoute,
 )
 from .registry import GrowthRegistryError, settings
 
@@ -95,11 +96,31 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
     _bootstrap_content_obligations(db, local_day)
     local_start = datetime.combine(local_day, datetime.min.time(), ZoneInfo(settings().timezone))
     start_utc = local_start.astimezone(UTC)
+    catalog = db.scalar(
+        select(SourceCatalogRevision)
+        .where(SourceCatalogRevision.status == "active")
+        .order_by(SourceCatalogRevision.imported_at.desc())
+        .limit(1)
+    )
+    active_route_target = int(
+        db.scalar(
+            select(func.count())
+            .select_from(SourceCoverageRoute)
+            .where(
+                SourceCoverageRoute.enabled.is_(True),
+                SourceCoverageRoute.catalog_sha256 == (catalog.catalog_sha256 if catalog else ""),
+            )
+        )
+        or 0
+    )
     row.route_attempts = int(
         db.scalar(
             select(func.count())
             .select_from(SourceCoverageAttempt)
-            .where(SourceCoverageAttempt.started_at >= start_utc)
+            .where(
+                SourceCoverageAttempt.started_at >= start_utc,
+                SourceCoverageAttempt.run_id == row.run_id,
+            )
         )
         or 0
     )
@@ -135,6 +156,7 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
         unique_leads=row.unique_leads,
         question_topics=row.question_topics,
         content_brands=row.content_brands,
+        route_target=active_route_target,
     )
     row.gate_errors_json = _canonical_json(gate.errors)
     row.status = "full" if gate.passed else "partial"
@@ -151,6 +173,8 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
             "content_obligations_created": len(ACTIVE_CONTENT_BRANDS),
             "catalog_modified_time": manifest["modified_time"],
             "catalog_sha256": manifest["catalog_sha256"],
+            "active_route_target": active_route_target,
+            "active_route_coverage_complete": row.route_attempts >= active_route_target,
             "etdr_branches": [
                 "NEW_OR_CHANGED_RECORD_DELTA",
                 "ETDR_START_NOT_VERIFIED",
@@ -218,7 +242,18 @@ def readiness(db: Session) -> dict[str, Any]:
             "db_route_count": catalog.route_count if catalog else 0,
         },
         "daily_gates": {
-            "route_attempts": 800,
+            "route_attempts": int(
+                db.scalar(
+                    select(func.count())
+                    .select_from(SourceCoverageRoute)
+                    .where(
+                        SourceCoverageRoute.enabled.is_(True),
+                        SourceCoverageRoute.catalog_sha256
+                        == (catalog.catalog_sha256 if catalog else ""),
+                    )
+                )
+                or 0
+            ),
             "unique_leads": 100,
             "question_topics": 80,
             "content_brands": 19,
