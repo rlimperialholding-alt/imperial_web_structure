@@ -1,30 +1,17 @@
 """Pinned detect-secrets scan worker for ``check_secret_baseline.py``.
 
-Single-purpose subprocess driver. It reads repo-relative candidate paths from
+Single-purpose subprocess driver: reads repo-relative candidate paths from
 stdin, scans each with the pinned package's own ``scan.scan_file`` (the exact
-code path the package CLI pool scan uses per file), and prints one
-deterministic JSON document to stdout. The package's INFO log -- including one
-``Checking file: <path>`` line for every file the scanner actually opens -- is
-written to stderr; the caller parses those lines as the per-file coverage
-accounting, so a file the scanner silently skips (any unmodeled filename
-filter, a locked file, a decode surprise) can never disappear unnoticed.
-
-Determinism contract:
-
-* the ``default_settings()`` context configures exactly the built-in plugin
-  and filter set of the pinned CLI defaults;
-* files are scanned in the order given on stdin, and findings are deduplicated
-  per file on ``(type, hashed_secret, line_number)``: one entry per reported
-  line is preserved, so the same value occurring on several lines is never
-  collapsed into the lowest line. The caller classifies every line separately
-  and fails closed if any line cannot be proven harmless; the emitted document
-  is byte-identical on every host;
-* the forced UTF-8 environment (set by the caller) makes file decoding and
-  stdio encoding platform-independent.
-
-This script contains no secret material and is itself a tracked candidate of
-the very scan it drives; the caller's fail-closed coverage check applies to it
-exactly like to every other file.
+code path the package CLI pool scan uses), and prints one deterministic JSON
+document to stdout. The package's INFO log -- one ``Checking file: <path>``
+line for every file the scanner actually opens -- goes to stderr and is
+parsed by the caller as per-file coverage accounting, so a silently skipped
+file can never disappear unnoticed. Determinism: ``default_settings()``
+configures the pinned CLI defaults; files are scanned in stdin order and
+findings deduplicated per file on ``(type, hashed_secret, line_number)`` (one
+entry per reported line, never collapsed); the forced UTF-8 environment makes
+decoding and stdio platform-independent. This script contains no secret
+material and is itself a tracked candidate of the very scan it drives.
 """
 
 from __future__ import annotations

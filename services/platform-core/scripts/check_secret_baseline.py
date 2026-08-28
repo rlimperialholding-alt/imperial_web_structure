@@ -7,183 +7,110 @@ only tracked file paths, counts and SHA-1 fingerprints are reported.
 
 Tracked-file contract (canonical and cross-platform):
 
-* the candidate file set is derived explicitly from ``git ls-files`` of the
-  repository root: only regular-file index entries (modes 100644/100755) are
-  candidates, so symlink/gitlink entries, untracked, ignored, build, cache and
-  runtime files can never influence the result;
-* index records are parsed with strict validation: an unknown index mode, a
-  malformed record or non-UTF-8 index output fails closed, and a filename
-  containing a tab character survives parsing intact (the path is everything
-  after the record's first tab delimiter, which the format itself places
-  before the path);
-* the baseline file and this script's own runtime audit output are each
-  excluded exactly once from that set, so the scanner can never re-scan the
-  fingerprints it just wrote (the audit lives in a git-ignored directory, so
-  the exclusion is defence in depth, not the only barrier);
-* paths are normalized to forward slashes so Windows and POSIX produce the
-  same keys, and the list is sorted so chunking is identical on every
-  platform. A duplicate after normalization always fails closed; a pair of
-  paths differing only by case fails closed only on case-insensitive
-  platforms (determined with ``os.path.normcase``), because distinct names
-  such as ``Module.py``/``module.py`` are legal on Linux;
-* the pinned scanner is fed only that bounded set. The scan runs through a
-  dedicated driver subprocess (``_detect_secrets_scan_driver.py``) that calls
-  the pinned package's own ``scan.scan_file`` per file -- the exact code path
-  the package CLI uses -- with the file list travelling on stdin, so there is
-  no platform command-line length limit and no repository walk. The driver
-  emits the deterministic results document on stdout and the scanner's own
-  INFO accounting on stderr; the subprocess is forced into UTF-8 mode, because
-  file *decoding* -- not file selection -- is the actual cross-platform
-  divergence. The pinned scanner reads candidates with a bare ``open()`` and
-  silently drops any file that raises ``UnicodeDecodeError`` (detect_secrets
-  core/scan.py, "we flat out ignore binary files"). That default encoding is
-  locale dependent: UTF-8 on GitHub's Linux runners, but cp1250 on a Hungarian
-  Windows host. Hungarian UTF-8 text such as ``Ő`` (U+0150) encodes to
-  ``C5 90``, and byte ``0x90`` is undefined in cp1250 -- so those files decode
-  cleanly on Linux and raise on Windows, where the scanner then skips them
-  entirely and under-reports. Forcing UTF-8 mode (and a pinned stdio
-  encoding) makes both platforms decode identically and strictly increases
-  Windows coverage; it never suppresses a finding;
-* per-file coverage is proven, not assumed, in two layers. Before scanning,
-  every candidate is classified deterministically into exactly one of two
-  categories: scanned, or scanner-exempt -- the three filename-level filters
-  of the pinned scanner (ignored extension suffix, lock-file basename such as
-  ``package-lock.json``, ``swagger`` path), imported from the pinned package
-  itself so they can never drift, plus content that is not valid UTF-8 and
-  therefore undecodable on every platform. Exempt files are reported by path
-  in the reconciliation message, so no file can disappear silently. After
-  scanning, the driver's stderr accounting is parsed: the scanner logs one
-  ``Checking file: <path>`` line for every file it actually opens, so a
-  requested file absent from that accounting -- whatever the unmodeled reason
-  -- fails closed with status 2. Each driver chunk additionally carries a
-  synthetic sentinel probe whose known fingerprint must appear in that chunk's
-  output, proving detection really worked in every invocation. Any git/driver
-  error, missing candidate file, malformed driver output, duplicate or
-  ambiguous path, lost chunk coverage, missing sentinel detection, missing
-  per-file accounting or driver output outside the canonical set fails closed
-  with status 2;
-* the scanner version is pinned and verified, so a differently-versioned
-  scanner cannot silently change fingerprints.
+* the candidate set comes from ``git ls-files``: only regular-file index
+  entries (100644/100755) are candidates, so symlink/gitlink entries,
+  untracked, ignored, build, cache and runtime files can never influence the
+  result; index records are strictly validated. The baseline file and this
+  script's own runtime audit output are each excluded exactly once, so the
+  scanner can never re-scan the fingerprints it just wrote. Paths are
+  normalized to forward slashes and sorted, so chunking is identical
+  everywhere; duplicates after normalization always fail closed, and
+  case-only pairs fail closed only on case-insensitive platforms
+  (``os.path.normcase``);
+* the pinned scanner is fed only that bounded set, through a dedicated
+  driver subprocess (``_detect_secrets_scan_driver.py``) calling the pinned
+  package's own ``scan.scan_file`` per file with the list on stdin (no
+  command-line length limit, no repository walk). The subprocess is forced
+  into UTF-8 mode, because file *decoding* -- not file selection -- is the
+  cross-platform divergence: the scanner's bare ``open()`` silently drops
+  files raising ``UnicodeDecodeError`` under the host locale (cp1250 on a
+  Hungarian Windows host skips UTF-8 text that Linux scans). Forced UTF-8
+  makes both platforms identical and never suppresses a finding;
+* per-file coverage is proven, not assumed: every candidate is classified
+  as scanned or scanner-exempt (the pinned scanner's own filename filters,
+  imported so they can never drift, plus not-UTF-8 content) and exempt
+  files are reported by path; the driver's stderr accounting (one
+  ``Checking file:`` line per opened file) is parsed, and a requested file
+  absent from it fails closed with status 2. Each chunk carries a synthetic
+  sentinel probe whose known fingerprint must appear in that chunk's
+  output. Any git/driver error, missing candidate, malformed output,
+  duplicate or ambiguous path, lost chunk coverage, missing sentinel
+  detection or driver output outside the canonical set fails closed with
+  status 2. The scanner version is pinned and verified.
 
 Audited-set contract:
 
-* the audited set is exactly ``.secrets.baseline`` (protected; its rotation is
-  a separate R3 attestation). There is no committed allowlist, delta file or
-  suppression list next to it, and **no artifact this script writes is ever
-  read back as input**. The audit output below is a report, never a filter:
-  deleting it, corrupting it or hand-editing it cannot make a finding pass;
-* the audited identity is occurrence-aware **and content-bearing**: the
-  comparison unit is ``(normalized path, detector type, SHA-1 fingerprint,
-  line number, SHA-256 line-content fingerprint)``. The fifth part is
-  immutable evidence, not a position: the audited side takes it from the file
-  version in git history at the audited anchor commit, the live side from the
-  working tree, so the two sides can only ever agree on *bytes*. A bare
-  line-number match is therefore never sufficient anywhere in this module --
-  an audited fingerprint that stays on its line while its key or context
-  changes (a classified ``reference_sha256`` binding rewritten to an
-  unclassified one) has no content evidence, so it stays an addition and must
-  be proven harmless by a structural classifier on that exact line or fail
-  closed. A value already baselined on one classified line can never suppress
-  a new occurrence of the same digest on any other line: the new line is an
-  addition and must be proven harmless on that exact line, or the run fails
-  closed. A baseline entry without a usable line number or without audited
-  line-content evidence can never match a live finding, and a live finding
-  without a usable line number or without live line-content evidence can
-  never reconcile -- all of these fail closed;
+* the audited set is exactly ``.secrets.baseline`` (protected; its rotation
+  is a separate R3 attestation). There is no committed allowlist, delta file
+  or suppression list next to it, and **no artifact this script writes is
+  ever read back as input** -- the audit output is a report, never a filter;
+* the audited identity is occurrence-aware **and content-bearing**:
+  ``(normalized path, detector type, SHA-1 fingerprint, line number, SHA-256
+  line-content fingerprint)``. The fifth part is immutable evidence, not a
+  position: the audited side takes it from git history at the audited
+  anchor commit, the live side from the working tree, so the two sides can
+  only ever agree on *bytes*. A bare line-number match is therefore never
+  sufficient anywhere in this module: an audited fingerprint whose line was
+  rewritten from a classified context to an unclassified one stays an
+  addition and must be proven harmless by a structural classifier on that
+  exact line or fail closed; a baselined value can never suppress a new
+  occurrence on any other line; an identity without a usable line number or
+  line-content evidence on either side can never match;
 * the audited *occurrence set* is normalized from git history, not assumed
-  from the baseline document alone. The protected baseline was generated by
-  the pinned CLI, which records each audited value once (identical
-  ``(type, fingerprint)`` pairs per file collapse to their first line) and
-  silently skips files it cannot decode under the host locale -- so a value
-  that legally repeats on several lines of an unchanged audited file, a
-  value whose line drifted after an unrelated edit above it, and every value
-  inside a file the baseline generator could not decode are all documented
-  baseline-representation gaps, not secret additions. The audited
-  occurrence set is therefore re-derived by scanning the tracked file
-  versions at the audited anchor commit (the commit that last modified the
-  baseline file) with the same pinned, forced-UTF-8, per-line driver as the
-  live scan, through a dedicated seam (``_run_audited_driver``), with temp
-  copies written only under the git-ignored runtime directory and always
-  removed. A baseline that is untracked, uncommitted or outside the
-  reconciled root fails closed (status 2), and a file that did not exist at
-  the audited commit has no audited state at all -- every finding in it
-  fails closed unless structurally classified;
-* reconciliation is occurrence-aware against that audited set, strictly per
-  line, and always backed by immutable line-content evidence: a live identity
-  reconciles only when it matches a baseline entry on the same line *with
-  byte-identical line content*, matches an audited occurrence on the same line
-  with byte-identical line content, or is *proven* to be one specific audited
-  occurrence that an unrelated edit shifted. In every case the proof is the
-  same immutable evidence -- the live line text must be byte-identical
-  (compared as SHA-256 content fingerprints) to the audited line's text read
-  from git history at the anchor commit -- and it is injective: every audited
-  occurrence backs at most one live occurrence, and a live occurrence already
-  sitting on its audited line claims that audited occurrence first. Neither
-  aggregate occurrence counts nor bare line numbers are ever a reconciliation
-  input: a value's total count matching the audited total proves nothing about
-  *which* occurrence is live, and a matching line number proves nothing about
-  *what* that line now says. An audited digest deleted from its classified
-  line and reintroduced on a different, unclassified line stays an addition,
-  and so does an audited digest that never left its line but whose key or
-  surrounding context was rewritten -- both must be proven harmless by a
-  structural classifier on their exact line; one unprovable line fails closed,
-  even when the same digest is audited or classified on another line. A live
-  finding without a usable line number, or without live line-content
-  evidence, never reconciles through the baseline or the audited state: it
-  stays unclassified and fails closed;
+  from the baseline document alone: the protected baseline records each
+  audited value once and skips host-locale undecodable files, so repeated
+  values, line drift and decode-skips are documented representation gaps,
+  not secret additions. The audited set is re-derived by scanning the
+  tracked file versions at the audited anchor commit (the commit that last
+  modified the baseline) with the same pinned, forced-UTF-8, per-line
+  driver, through a dedicated seam (``_run_audited_driver``), with temp
+  copies under the git-ignored runtime directory, always removed. A
+  baseline that is untracked, uncommitted or outside the reconciled root
+  fails closed (status 2), and a file absent at the audited commit has no
+  audited state -- every finding in it fails closed unless structurally
+  classified;
+* reconciliation is occurrence-aware, strictly per line, always backed by
+  immutable line-content evidence, and injective: every audited occurrence
+  backs at most one live occurrence, an unchanged-in-place occurrence
+  claims its audited occurrence first, and neither aggregate counts nor
+  bare line numbers are ever a reconciliation input. An audited digest
+  deleted from its classified line and reintroduced on a different,
+  unclassified line stays an addition, and so does one whose line text was
+  rewritten -- one unprovable line fails closed, even when the same digest
+  is audited or classified elsewhere;
 * a live candidate outside the baseline is cleared only by a *structural
-  classifier* (see ``_STRUCTURAL_CLASSIFIERS``). A classifier does not trust a
-  path, a filename or a remembered fingerprint: it re-reads the reported line
-  from the working tree, extracts the token that the classifier itself
-  considers non-secret by construction, and only clears the finding when
-  ``sha1(token)`` reproduces the fingerprint the scanner reported. A real
-  secret can therefore never inherit another value's clearance, and a
-  classified file that later gains a genuine secret still fails closed. The
-  two classes are narrow on both axes -- exact field name and exact file
-  path -- and evidence-backed:
-  ``content-digest`` (a 64-hex value bound on its own line to exactly one of
+  classifier* (``_STRUCTURAL_CLASSIFIERS``): it re-reads the reported line
+  from the working tree, extracts the token it considers non-secret by
+  construction, and only clears the finding when ``sha1(token)`` reproduces
+  the scanner's fingerprint. The two classes are narrow on both axes:
+  ``content-digest`` (a 64-hex value bound to exactly one of
   ``reference_sha256``/``fragment_sha256``/``claim_snapshot_sha256``/
-  ``source_sha256``, and only inside the repository's dedicated, provably
-  static content-registry files -- never inside an executable source file,
-  and never under a generic key name such as ``sha256``/``checksum``) and
-  ``drive-resource-id`` (a Google
-  Drive/Docs resource identifier in the documented ``1`` + 32/43
-  ``[A-Za-z0-9_-]`` form bound to exactly the ``id``/``sourceId`` key in the
-  two documented Drive index files, which must additionally be corroborated by
-  a Drive/Docs URL or an explicit ``drive`` provenance marker in the same
-  file);
-* findings are classified per line, never per digest: every new line
-  occurrence of a value is cleared only when proven non-secret on that exact
-  line; one unprovable line keeps its own per-line identity unclassified and
-  fails closed, even when the same digest is baselined or classified on
-  another line;
-* every candidate that neither the baseline nor a structural classifier
-  clears is **unclassified**, and unclassified means fail closed with status 1
-  -- new detector types, new files and new value shapes all land here by
-  default;
-* residual risk, stated explicitly rather than implied: a classifier decides
-  on *exact field name, exact file path and shape*, so a genuine secret
-  deliberately stored in the exact cleared shape -- a hex-encoded 256-bit key
-  written as ``reference_sha256`` inside one of the content-registry files, or
-  a credential shaped like a Drive id under ``id``/``sourceId`` in a Drive
-  index file that already references Drive -- would be cleared. Both require
-  an attacker to control an exact field name inside an exact documented file,
-  which is a reviewable source change, not a silent one. Extending either rule
-  (more key names, more paths, more value shapes) is a security decision and
-  needs a documented R3 attestation; it must never be done to make a red gate
-  go green;
+  ``source_sha256``, only inside the dedicated, provably static
+  content-registry files -- never executable source, never a generic key
+  such as ``sha256``/``checksum``) and ``drive-resource-id`` (the documented
+  ``1`` + 32/43 ``[A-Za-z0-9_-]`` Drive/Docs form bound to exactly
+  ``id``/``sourceId`` in the two Drive index files, corroborated by a
+  Drive/Docs URL or an explicit ``drive`` provenance marker). Classification
+  is per line, never per digest; every candidate that neither the baseline
+  nor a classifier clears is **unclassified**, and unclassified means fail
+  closed with status 1 -- new detector types, new files and new value
+  shapes all land here by default;
+* residual risk, stated explicitly: a classifier decides on *exact field
+  name, exact file path and shape*, so a genuine secret deliberately stored
+  in the exact cleared shape would be cleared. Both require an attacker to
+  control an exact field name inside an exact documented file, which is a
+  reviewable source change, not a silent one. Extending either rule is a
+  security decision needing a documented R3 attestation; never a gate fix;
 * a failing run additionally writes a *bounded* hash/path-only audit report
-  (at most ``_AUDIT_MAX_ROWS`` rows and ``_AUDIT_MAX_HASHES_PER_ROW``
-  fingerprints per row, with the truncated remainder counted explicitly, so
-  the artifact stays short and reviewable) to the git-ignored
-  ``<repo root>/services/platform-core/runtime/tracked-secret-delta-audit.json``.
-  It is untracked runtime evidence: it documents the decision without
-  revealing plaintext and without ever dirtying the tracked worktree;
+  (``_AUDIT_MAX_ROWS`` rows, ``_AUDIT_MAX_HASHES_PER_ROW`` fingerprints per
+  row, the truncated remainder counted explicitly) to the git-ignored
+  ``<repo root>/services/platform-core/runtime/tracked-secret-delta-audit.json``
+  -- untracked runtime evidence, never dirtying the tracked worktree;
 * there is no snapshot or environment seam anywhere in this module: the live
   scan can never be bypassed from a command line or an environment variable.
   Tests exercise failure paths exclusively through direct pytest
-  ``monkeypatch`` seams (pytest-bound, process-local), which cannot affect the
-  command-level behavior of this script or of ``reconciliation.py``.
+  ``monkeypatch`` seams (pytest-bound, process-local), which cannot affect
+  the command-level behavior of this script or of ``reconciliation.py``.
 """
 
 from __future__ import annotations
@@ -210,28 +137,26 @@ _REGULAR_MODES = {"100644", "100755"}
 _KNOWN_INDEX_MODES = _REGULAR_MODES | {"120000", "160000"}
 _SCAN_CHUNK_SIZE = 100
 _SCAN_WORKERS = 2
-# The scanner pinned by requirements-dev.txt. A different version may ship
-# different detectors or entropy limits, which would silently change every
-# fingerprint, so a mismatch fails closed instead of producing a delta.
+# The scanner pinned by requirements-dev.txt; a different version may ship
+# different detectors or entropy limits, silently changing every fingerprint,
+# so a mismatch fails closed instead of producing a delta.
 _PINNED_SCANNER_VERSION = "1.5.0"
 _SCANNER_DISTRIBUTION = "detect-secrets"
 _DRIVER_PATH = Path(__file__).with_name("_detect_secrets_scan_driver.py")
-# Decoding determinism, not cosmetics: see the module docstring. PYTHONUTF8
-# forces the driver's bare ``open()`` calls to UTF-8 on every host, and
-# PYTHONIOENCODING pins the JSON/stdout/stderr encodings we decode strictly,
-# so an ambient locale or inherited PYTHONIOENCODING cannot alter the result.
+# Decoding determinism, not cosmetics: PYTHONUTF8 forces the driver's bare
+# ``open()`` calls to UTF-8 on every host and PYTHONIOENCODING pins the
+# encodings we decode strictly, so an ambient locale cannot alter the result.
 _SCANNER_ENV_OVERRIDES = {"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
-# Narrow, documented allowlist of transient Windows subprocess-start failures.
-# Under heavy parallel suite load Windows can reject a fresh process with
-# STATUS_DLL_INIT_FAILED (0xC0000142, exit code 3221225794); the identical
+# Narrow, documented allowlist of transient Windows subprocess-start failures:
+# under heavy parallel load Windows can reject a fresh process with
+# STATUS_DLL_INIT_FAILED (0xC0000142, exit code 3221225794) and the identical
 # spawn succeeds a moment later. Only this code, only on Windows, is retried
-# with bounded short delays; every other failure stays fail-closed on the
-# first attempt, and a persistent transient code still fails closed.
+# with bounded short delays; every other failure stays fail-closed.
 _SPAWN_RETRY_DELAYS = (0.2, 0.5)
 _TRANSIENT_WINDOWS_START_CODES = {3221225794}
 # Runtime artifact emitted only when live candidates remain unmatched; the
 # platform-core ``runtime`` directory is git-ignored, so a passing gate never
-# writes and even a failing gate never dirties the tracked worktree. This
+# writes and even a failing gate never dirties the tracked worktree. The
 # artifact is write-only for the scanner: nothing reads it back as input.
 _UNMATCHED_AUDIT_RELATIVE_PATH = (
     "services",
@@ -239,19 +164,17 @@ _UNMATCHED_AUDIT_RELATIVE_PATH = (
     "runtime",
     "tracked-secret-delta-audit.json",
 )
-# The audit is a short review aid, not a data dump: a fail-closed run must stay
-# readable even if thousands of candidates are unmatched. The truncated
-# remainder is always reported as an explicit count, never silently dropped.
+# The audit is a short review aid, not a data dump: bounded rows and hashes,
+# and the truncated remainder is always an explicit count, never silent.
 _AUDIT_MAX_ROWS = 25
 _AUDIT_MAX_HASHES_PER_ROW = 5
 _PROBE_PREFIX = ".secrets-scan-probe-"
 _CHECKING_FILE_PREFIX = "Checking file: "
 # The audited-state scan writes temporary copies of the audited file versions
-# under the git-ignored platform-core runtime directory (sibling of the
-# unmatched audit artifact), so no historical content can ever dirty the
-# tracked worktree. The original basename is kept (only the directory and an
-# index prefix change), so the pinned driver's filename-level filters classify
-# the temp copy exactly like the live candidate.
+# under the git-ignored runtime directory (sibling of the audit artifact), so
+# no historical content can ever dirty the tracked worktree. The original
+# basename is kept, so the driver's filename-level filters classify the temp
+# copy exactly like the live candidate.
 _HISTORICAL_SCAN_RELATIVE_DIR = ("services", "platform-core", "runtime", "historical")
 
 
@@ -272,11 +195,10 @@ def _is_transient_windows_start_failure(returncode: int) -> bool:
 
 
 def _is_case_insensitive_platform() -> bool:
-    """Deterministic platform path semantics, via ``os.path.normcase``.
+    """Deterministic platform path semantics via ``os.path.normcase``:
 
-    Windows-style platforms fold case (normcase lowercases), so two tracked
-    paths differing only by case are ambiguous there. POSIX-style platforms
-    keep case, and such distinct paths are legal and must not be rejected.
+    Windows-style platforms fold case, so case-only pairs are ambiguous
+    there; POSIX keeps case and such distinct paths are legal.
     """
     return os.path.normcase("A") == os.path.normcase("a")
 
@@ -291,16 +213,9 @@ def _audit_output_relative_path() -> str:
 
 
 def _scanner_filename_predicates() -> tuple[Any, Any, Any]:
-    """The pinned scanner's filename-level skip predicates.
-
-    Imported from the pinned package itself so the exemption classification
-    can never drift from what the scanner actually skips at the filename-filter
-    level: ``is_non_text_file`` (exact ignored-extension suffix),
-    ``is_lock_file`` (documented lock-file basenames such as
-    ``package-lock.json``) and ``is_swagger_file`` (paths containing
-    ``swagger``). ``is_invalid_file`` (not a regular file) is handled by the
-    fail-closed existence check, and the baseline file by the explicit
-    exclusions above.
+    """The pinned scanner's filename-level skip predicates, imported from
+    the pinned package so the exemption classification can never drift:
+    ignored-extension suffix, lock-file basename and ``swagger`` path.
     """
     try:
         from detect_secrets.filters.heuristic import (
@@ -314,12 +229,8 @@ def _scanner_filename_predicates() -> tuple[Any, Any, Any]:
 
 
 def _probe_secret_value() -> str:
-    """Runtime-constructed synthetic value for the sentinel probe.
-
-    Deliberately assembled at runtime so no secret-like plaintext literal
-    exists anywhere in this source file; the scanner detects the probe line
-    with the same detectors it applies to every candidate.
-    """
+    """Runtime-constructed synthetic value; no secret-like literal exists
+    in this source file, and the scanner detects it with its normal detectors."""
     return "".join(("Synthetic", "PlaintextValue", "-1234567890-ABC"))
 
 
@@ -327,24 +238,17 @@ def _probe_line() -> str:
     return "password = '" + _probe_secret_value() + "'\n"
 
 
-def _run_git_ls_files(repo_root: Path) -> bytes:
-    """Run ``git ls-files`` once; bounded retry only for the documented
-    transient Windows start failure. Module-local seam for the retry tests."""
+def _run_git_checked(repo_root: Path, *args: str) -> bytes:
+    """``git -C <repo> <args...>`` with the documented bounded transient retry.
+
+    Shared by every git invocation of this module, so the transient
+    Windows-start retry and its fail-closed exhaustion behave identically for
+    all of them.
+    """
+    command = ["git", "-C", str(repo_root), *args]
     for attempt in range(1, len(_SPAWN_RETRY_DELAYS) + 2):
         try:
-            return subprocess.check_output(
-                [
-                    "git",
-                    "-c",
-                    "core.quotepath=false",
-                    "-C",
-                    str(repo_root),
-                    "ls-files",
-                    "-s",
-                    "-z",
-                ],
-                stderr=subprocess.DEVNULL,
-            )
+            return subprocess.check_output(command, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError as exc:
             if attempt <= len(_SPAWN_RETRY_DELAYS) and _is_transient_windows_start_failure(
                 exc.returncode
@@ -352,20 +256,23 @@ def _run_git_ls_files(repo_root: Path) -> bytes:
                 time.sleep(_SPAWN_RETRY_DELAYS[attempt - 1])
                 continue
             raise
-    # Csak statikus elemzési biztonság: a ciklus mindig returnöl vagy raise-el.
-    raise ScanFailure("git ls-files retry loop exhausted.")  # pragma: no cover
+    raise ScanFailure("git retry loop exhausted.")  # pragma: no cover
+
+
+def _run_git_ls_files(repo_root: Path) -> bytes:
+    """Run ``git ls-files`` once; bounded transient retry. Module-local seam."""
+    return _run_git_checked(repo_root, "-c", "core.quotepath=false", "ls-files", "-s", "-z")
 
 
 def _parse_git_ls_files(raw: bytes) -> list[str]:
     """Parse ``git ls-files -s -z`` records with strict validation.
 
     A record is ``<mode> SP <40-hex sha1> SP <stage> TAB <path>``; with ``-z``
-    the path is raw bytes, so a tab inside a filename is preserved intact
-    (everything after the first tab is the path). Anything else -- unknown
-    mode, malformed object id or stage, or missing path -- fails closed
-    instead of silently skipping a file the scanner would otherwise never
-    see. Symlink/gitlink modes are the single documented non-regular
-    category and are skipped.
+    the path is raw bytes, so a tab inside a filename survives parsing
+    intact (everything after the first tab is the path). Unknown mode,
+    malformed object id or stage, or missing path fails closed instead of
+    silently skipping a file. Symlink/gitlink modes are the single
+    documented non-regular category and are skipped.
     """
     try:
         decoded = raw.decode("utf-8")
@@ -393,46 +300,19 @@ def _parse_git_ls_files(raw: bytes) -> list[str]:
 
 
 def _run_git_baseline_anchor(repo_root: Path, relative_path: str) -> str:
-    """``git log -1 --format=%H`` of the baseline file; bounded transient retry.
-
-    Module-local seam for the anchor tests; the same documented Windows
-    transient process-start retry applies as to every other git invocation.
-    """
-    for attempt in range(1, len(_SPAWN_RETRY_DELAYS) + 2):
-        try:
-            return subprocess.check_output(
-                [
-                    "git",
-                    "-C",
-                    str(repo_root),
-                    "log",
-                    "-1",
-                    "--format=%H",
-                    "--",
-                    relative_path,
-                ],
-                stderr=subprocess.DEVNULL,
-                text=True,
-                encoding="utf-8",
-            ).strip()
-        except subprocess.CalledProcessError as exc:
-            if attempt <= len(_SPAWN_RETRY_DELAYS) and _is_transient_windows_start_failure(
-                exc.returncode
-            ):
-                time.sleep(_SPAWN_RETRY_DELAYS[attempt - 1])
-                continue
-            raise
-    raise ScanFailure("git baseline anchor retry loop exhausted.")  # pragma: no cover
+    """``git log -1 --format=%H`` of the baseline file; module-local seam."""
+    return _run_git_checked(repo_root, "log", "-1", "--format=%H", "--", relative_path).decode(
+        "utf-8"
+    ).strip()
 
 
 def _baseline_anchor_commit(repo_root: Path, baseline_path: Path) -> str:
     """The commit that last modified the protected baseline in git history.
 
     The audited occurrence state is reconstructed from the tracked file
-    versions at this commit, so the anchor must exist: a baseline that is
-    untracked, uncommitted or outside the reconciled root fails closed. The
-    returned object id is validated as a 40-hex sha, so a malformed git
-    answer can never be used as a git rev argument.
+    versions at this commit, so the anchor must exist (untracked,
+    uncommitted or outside-root baselines fail closed) and the object id is
+    validated as a 40-hex sha before any use as a git rev argument.
     """
     try:
         relative = _normalize(str(baseline_path.relative_to(repo_root)))
@@ -448,36 +328,19 @@ def _baseline_anchor_commit(repo_root: Path, baseline_path: Path) -> str:
 
 
 def _run_git_show_audited_file(repo_root: Path, anchor: str, path: str) -> bytes:
-    """``git show <anchor>:<path>`` raw bytes; bounded transient retry.
-
-    Module-local seam for the audited-state tests. ``CalledProcessError``
-    means the path did not exist at the audited commit (the documented
-    new-file case); the caller maps that to an absent audited state, which
-    fails closed for every live finding in that file.
-    """
-    for attempt in range(1, len(_SPAWN_RETRY_DELAYS) + 2):
-        try:
-            return subprocess.check_output(
-                ["git", "-C", str(repo_root), "show", f"{anchor}:{path}"],
-                stderr=subprocess.DEVNULL,
-            )
-        except subprocess.CalledProcessError as exc:
-            if attempt <= len(_SPAWN_RETRY_DELAYS) and _is_transient_windows_start_failure(
-                exc.returncode
-            ):
-                time.sleep(_SPAWN_RETRY_DELAYS[attempt - 1])
-                continue
-            raise
-    raise ScanFailure("git show audited file retry loop exhausted.")  # pragma: no cover
+    """``git show <anchor>:<path>`` raw bytes; module-local seam for the
+    audited-state tests. ``CalledProcessError`` means the path did not exist
+    at the audited commit (the documented new-file case); the caller maps
+    that to an absent audited state, which fails closed for every live
+    finding in that file."""
+    return _run_git_checked(repo_root, "show", f"{anchor}:{path}")
 
 
 def _audited_file_bytes(repo_root: Path, anchor: str, path: str) -> bytes | None:
-    """Tracked file content at the audited commit; ``None`` when absent there.
+    """Tracked file content at the audited commit; ``None`` when absent.
 
-    A path that did not exist at the audited commit has no audited state:
-    every live finding in it is an addition and fails closed unless a
-    structural classifier proves it. Any other git failure raises
-    ``ScanFailure``.
+    A path absent at the audited commit has no audited state: every live
+    finding in it fails closed unless structurally classified.
     """
     try:
         return _run_git_show_audited_file(repo_root, anchor, path)
@@ -492,12 +355,10 @@ def _git_tracked_candidates(repo_root: Path, baseline_path: Path) -> list[str]:
 
     Only regular-file index entries (modes 100644/100755) are candidates; the
     protected baseline and this script's own runtime audit output are each
-    excluded exactly once. Excluding the audit output keeps the scanner from
-    ever re-scanning the SHA-1 fingerprints it just wrote (which the Hex High
-    Entropy detector would otherwise flag, producing a self-sustaining delta).
-    The audit already lives in a git-ignored directory, so this is a second,
-    explicit barrier that survives the directory being un-ignored or moved.
-    Raises ScanFailure on git errors or malformed index output. The derived
+    excluded exactly once, so the scanner can never re-scan the SHA-1
+    fingerprints it just wrote (a self-sustaining delta). The audit already
+    lives in a git-ignored directory; this is a second, explicit barrier.
+    Raises ScanFailure on git errors or malformed index output; the derived
     list is validated by ``_validate_candidates`` at the point of use.
     """
     try:
@@ -530,11 +391,10 @@ def _validate_candidate_names(normalized: list[str]) -> None:
 def _validate_candidates(candidates: list[str], repo_root: Path) -> list[str]:
     """Normalize, validate and sort a candidate file list; raises ScanFailure.
 
-    Applies at the point of use, independent of how the list was derived:
-    an empty set, duplicate paths after normalization, paths differing only
-    by case on a case-insensitive platform, or a candidate file missing or
-    non-regular on disk all fail closed. Returns the forward-slash-
-    normalized, sorted list.
+    Applies at the point of use, independent of how the list was derived: an
+    empty set, duplicate paths after normalization, paths differing only by
+    case on a case-insensitive platform, or a candidate file missing or
+    non-regular on disk all fail closed. Returns the normalized, sorted list.
     """
     normalized = [_normalize(path) for path in candidates]
     _validate_candidate_names(normalized)
@@ -555,17 +415,10 @@ def _classify_candidates(
 ) -> tuple[list[str], dict[str, str]]:
     """Split candidates into scanned and scanner-exempt, deterministically.
 
-    The pinned scanner silently skips exactly the files rejected by its
-    filename-level filters plus files it cannot decode: an exact ignored
-    extension suffix, a documented lock-file basename, a ``swagger`` path, or
-    a ``UnicodeDecodeError`` under the forced UTF-8 mode (platform
-    independent, mirroring the driver's decoding exactly). The filename
-    predicates are imported from the pinned package itself, so this
-    classification can never drift from the scanner's own behavior. Every
-    exempt file is returned with its reason and reported by path in the
-    reconciliation message -- no file can disappear silently. A candidate that
-    cannot even be read fails closed: a file the scanner could not account for
-    must never be passed over quietly.
+    Exempts exactly what the pinned scanner silently skips: its own filename
+    filters (imported from the pinned package so they can never drift) plus
+    not-UTF-8 content; exempt files are reported by path, and an unreadable
+    candidate fails closed.
     """
     non_text, lock_file, swagger_file = _scanner_filename_predicates()
     scannable: list[str] = []
@@ -595,11 +448,8 @@ def _classify_candidates(
 
 
 def _assert_pinned_scanner() -> None:
-    """Fail closed unless the installed scanner is exactly the pinned version.
-
-    The driver imports the same installed distribution, so the metadata
-    visible here is the one the subprocess will use.
-    """
+    """Fail closed unless the installed scanner is exactly the pinned
+    version (the driver imports the same installed distribution)."""
     try:
         installed = metadata.version(_SCANNER_DISTRIBUTION)
     except metadata.PackageNotFoundError as exc:
@@ -615,10 +465,9 @@ def _run_driver_scan(files: list[str], repo_root: Path) -> subprocess.CompletedP
 
     The file list travels on stdin, so no platform command-line length limit
     applies. The driver runs with the documented forced-UTF-8 environment and
-    prints the deterministic results document on stdout plus the scanner's own
-    per-file ``Checking file:`` accounting lines on stderr. Bounded retry
-    applies only to the documented transient Windows process-start failure;
-    every other outcome returns on the first attempt.
+    prints the deterministic results document on stdout plus the scanner's
+    per-file ``Checking file:`` accounting on stderr. Bounded retry applies
+    only to the documented transient Windows process-start failure.
     """
     env = dict(os.environ)
     env.update(_SCANNER_ENV_OVERRIDES)
@@ -665,10 +514,9 @@ def _accounted_files(stderr: bytes) -> set[str]:
     """Parse the scanner's own per-file accounting from its INFO log.
 
     The pinned scanner logs ``Checking file: <path>`` for every file it
-    actually opens, after the filename-level filters and before decoding. A
-    file that never appears here was never scanned -- whatever the reason --
-    and the caller fails closed on it. Non-UTF-8 stderr cannot be parsed and
-    therefore cannot prove coverage; it fails closed here too.
+    actually opens; a file that never appears here was never scanned --
+    whatever the reason -- and the caller fails closed. Non-UTF-8 stderr
+    cannot prove coverage and fails closed here too.
     """
     try:
         text = stderr.decode("utf-8")
@@ -688,25 +536,16 @@ def _scan_file_set(
     repo_root: Path,
     runner: Any,
 ) -> dict[str, Any]:
-    """Chunked, sentinel-probed, coverage-accounted scan of ``files`` via ``runner``.
+    """Chunked, sentinel-probed, coverage-accounted scan via ``runner``.
 
-    Shared by the live scan (``_run_driver_scan``) and the audited-state scan
-    (``_run_audited_driver``): chunking, the per-chunk sentinel probe, the
-    per-file coverage accounting and the canonical-set check are byte-for-byte
-    identical for both, so the audited state is derived with exactly the
-    live-scan strength.
-
-    Every requested path is passed to the driver exactly once; the merged
-    output must not mention any file outside the requested set. Per-file
-    coverage is proven, not assumed: the driver stderr carries the scanner's
-    own ``Checking file:`` line for every file it opens, and any requested
-    file absent from that accounting fails closed (the probe files are the
-    only exception -- they are never part of the requested set). Each chunk
-    additionally carries a sentinel probe (a runtime-generated file inside the
-    repository root, always removed afterwards, including on failure) whose
-    known fingerprint must appear in the chunk output, proving detection
-    worked in that invocation. Raises ScanFailure on driver errors, malformed
-    output, lost coverage, a missing probe detection or probe write/delete
+    Shared by the live and audited-state scans, so the audited state has
+    exactly the live-scan strength. Every requested path is passed exactly
+    once; output outside the requested set fails closed. Per-file coverage
+    is proven: the driver stderr carries the scanner's ``Checking file:``
+    line per opened file, and a requested file absent from it fails closed.
+    Each chunk carries a sentinel probe whose known fingerprint must appear
+    in the chunk output. Raises ScanFailure on driver errors, malformed
+    output, lost coverage, missing probe detection or probe write/delete
     errors.
     """
     if not files:
@@ -812,18 +651,14 @@ def _audited_occurrence_identities(
 ) -> set[tuple[str, str, str, int]]:
     """Per-line occurrence identities of the addition files at the audited commit.
 
-    The audited state is the *normalized* audited set: the protected baseline
-    records each audited value once (the pinned CLI collapses identical
-    ``(type, fingerprint)`` pairs per file to their first line and silently
-    skips files it cannot decode under the host locale), so the occurrence
-    set the audited commit actually contained is re-derived here by scanning
-    the tracked file versions at the anchor commit with the same pinned,
-    forced-UTF-8, per-line driver as the live scan. Temporary copies are
-    written under the git-ignored runtime directory with their original
-    basename (so the driver's filename-level filters classify them exactly
-    like the live candidates) and are always removed, including on failure;
-    any write/scan/cleanup failure fails closed. A path that did not exist
-    at the audited commit contributes no audited state.
+    The baseline records each audited value once and skips host-locale
+    undecodable files, so the audited occurrence set is re-derived by
+    scanning the tracked file versions at the anchor commit with the same
+    pinned, forced-UTF-8, per-line driver as the live scan. Temporary copies
+    live under the git-ignored runtime directory with their original
+    basename (so the driver's filename filters classify them identically)
+    and are always removed; any write/scan/cleanup failure fails closed. A
+    path absent at the audited commit contributes no audited state.
     """
     if not addition_paths:
         return set()
@@ -838,9 +673,6 @@ def _audited_occurrence_identities(
         for index, path in enumerate(sorted(addition_paths)):
             content = _audited_file_bytes(repo_root, anchor, path)
             if content is None:
-                # Új fájl az audited commit óta: nincs auditált állapota, így
-                # minden élő találata addition -- fail-closed, hacsak a
-                # strukturális osztályozó nem bizonyítja.
                 continue
             temp_path = temp_root / f"{index}-{Path(path).name}"
             try:
@@ -888,9 +720,7 @@ def _line_content_digests(lines: list[str]) -> dict[int, str]:
     """Map each 1-based line number to the SHA-256 of that exact line text.
 
     Only the digest is retained, never the line itself, so the per-line
-    equivalence evidence used by ``_split_additions`` can be compared, counted
-    and reasoned about without any secret plaintext ever entering a data
-    structure, a message or a report.
+    equivalence evidence never carries secret plaintext.
     """
     return {
         index: hashlib.sha256(line.encode("utf-8")).hexdigest()
@@ -905,19 +735,13 @@ def _audited_line_content_digests(
 ) -> dict[str, dict[int, str]]:
     """Per-line content fingerprints of the given files at the audited commit.
 
-    This is the immutable evidence behind every audited identity: it lets
-    ``_split_baseline_matches`` require that a baselined line still says the
-    same thing, and ``_split_additions`` prove that a *specific* audited
-    occurrence still exists after an unrelated edit shifted its line. The
-    audited line text is read straight from git history at the anchor commit,
-    so nothing in the working tree can influence it.
-
-    A path that did not exist at the audited commit, or whose audited content
-    is not valid UTF-8 (the driver forces UTF-8, so such a version was never
-    line-addressable either), contributes no evidence at all -- every live
-    occurrence in it then stays an addition and fails closed unless a
-    structural classifier proves it. Any other git failure raises
-    ``ScanFailure`` through ``_audited_file_bytes``.
+    The immutable evidence behind every audited identity: baselined lines
+    must still say the same thing, and a shifted occurrence must still exist
+    byte-identically. Read straight from git history at the anchor commit,
+    so nothing in the working tree can influence it. A path absent at the
+    audited commit, or not UTF-8 there, contributes no evidence -- every
+    live occurrence in it stays an addition and fails closed unless a
+    structural classifier proves it.
     """
     evidence: dict[str, dict[int, str]] = {}
     for path in sorted(paths):
@@ -928,7 +752,7 @@ def _audited_line_content_digests(
             text = content.decode("utf-8")
         except UnicodeDecodeError:
             continue
-        evidence[path] = _line_content_digests(text.splitlines())
+        evidence[path] = _line_content_digests(_universal_newline_lines(text))
     return evidence
 
 
@@ -938,9 +762,10 @@ def _live_line_content_digests(
 ) -> dict[str, dict[int, str]]:
     """Per-line content fingerprints of the given files in the working tree.
 
-    Read through the same strict UTF-8 reader the structural classifiers use,
-    so the equivalence proof and the classification see byte-identical line
-    text. An unreadable candidate raises ``ScanFailure`` and fails closed.
+    Read through the same strict UTF-8 reader and the same scanner-compatible
+    line split the structural classifiers use, so the equivalence proof and
+    the classification see byte-identical line text. An unreadable candidate
+    raises ``ScanFailure`` and fails closed.
     """
     return {
         path: _line_content_digests(_read_text_for_classification(repo_root / path))
@@ -951,13 +776,9 @@ def _live_line_content_digests(
 def _normalized_line_number(finding: dict[str, Any]) -> int | None:
     """The 1-based line number of a finding; ``None`` when absent or malformed.
 
-    The audited identity is occurrence-aware: the line number is part of the
-    comparison unit, so a value baselined on one classified line can never
-    suppress a new occurrence of the same digest on a different unclassified
-    line. ``None`` is deliberately distinct from every real line number: a
-    baseline entry without a usable line can never match a live finding, so
-    both sides fail closed through the classifier instead of being silently
-    reconciled.
+    ``None`` is deliberately distinct from every real line number: a finding
+    without a usable line can never match the other side, so it fails closed
+    through the classifier instead of being silently reconciled.
     """
     raw = finding.get("line_number")
     if raw is None:
@@ -973,15 +794,11 @@ def _fingerprints(document: dict[str, Any]) -> set[tuple[str, str, str, int | No
 
     Both the audited set (from the protected baseline) and the observed set
     (from the live scan) are reduced through this single function, so the two
-    sides always start from the same per-line identity. Because the line number
-    is part of the identity, the same digest on a different line is a different
-    occurrence.
-
-    This four-part identity is never a reconciliation decision on its own:
-    ``_content_bearing_identities`` extends it with the immutable line-content
-    fingerprint that both the baseline subtraction and the audited-state
-    matching require, so a matching path/type/fingerprint/line whose line text
-    changed can never reconcile.
+    sides always start from the same per-line identity; the same digest on a
+    different line is a different occurrence. This four-part identity is
+    never a reconciliation decision on its own -- ``_content_bearing_identities``
+    extends it with the immutable line-content fingerprint that both the
+    baseline subtraction and the audited-state matching require.
     """
     fingerprints: set[tuple[str, str, str, int | None]] = set()
     for filename, findings in document.get("results", {}).items():
@@ -1003,21 +820,14 @@ def _content_bearing_identities(
 ) -> set[tuple[str, str, str, int, str]]:
     """Extend per-line identities with their immutable line-content evidence.
 
-    The full occurrence identity is
-    ``(path, detector type, fingerprint, line number, line-content digest)``.
-    ``line_digests`` supplies the fifth part for exactly one side: git history
-    at the audited anchor commit for the audited side (see
-    ``_audited_line_content_digests``), the working tree for the live side
-    (see ``_live_line_content_digests``). Because the two sides draw their
-    evidence from different, independent sources, an identity can only ever be
-    shared when the line text itself is byte-identical -- position alone is
-    never enough.
-
-    An identity without a usable line number, or whose line carries no content
-    fingerprint on this side (out of range, or a file version that was never
-    line-addressable), produces no content-bearing identity at all. It can
-    therefore never match the other side: it stays an addition and fails
-    closed unless a structural classifier proves it on its exact line.
+    The full occurrence identity is ``(path, detector type, fingerprint,
+    line number, line-content digest)``. ``line_digests`` supplies the fifth
+    part for exactly one side: git history at the audited anchor commit for
+    the audited side, the working tree for the live side -- different,
+    independent sources, so an identity can only ever be shared when the
+    line text is byte-identical. An identity without a usable line number or
+    content fingerprint produces nothing and can never match: it stays an
+    addition and fails closed unless a structural classifier proves it.
     """
     bearing: set[tuple[str, str, str, int, str]] = set()
     for path, finding_type, hashed, line_number in identities:
@@ -1041,20 +851,15 @@ def _split_baseline_matches(
 ]:
     """Split live identities into proven baseline matches and additions.
 
-    Returns ``(baseline matches, additions)``. A live occurrence leaves the
-    addition set only when the protected baseline records that exact
-    ``(path, type, fingerprint, line)`` identity **and** the line still carries
-    byte-identical content: the working-tree line text must reproduce the
-    audited line text read from git history at the anchor commit.
-
-    A bare four-part match is deliberately not sufficient. An audited
-    fingerprint that never leaves its line while its key or surrounding
-    context is rewritten -- a classified ``reference_sha256`` binding turned
-    into an unclassified one, for instance -- keeps the same path, detector
-    type, fingerprint and line number, so a line-number-only subtraction would
-    silently clear it without ever consulting a structural classifier. With
-    content evidence in the identity it has no audited counterpart, stays an
-    addition, and must be proven harmless on that exact line or fail closed.
+    A live occurrence leaves the addition set only when the protected
+    baseline records that exact ``(path, type, fingerprint, line)`` identity
+    **and** the line still carries byte-identical content (working tree vs.
+    git history at the anchor commit). A bare four-part match is never
+    sufficient: an audited fingerprint whose line was rewritten from a
+    classified to an unclassified context keeps the same four parts, so a
+    line-number-only subtraction would silently clear it. Without content
+    evidence it has no audited counterpart, stays an addition, and must be
+    proven harmless on that exact line or fail closed.
     """
     matched_with_content = _content_bearing_identities(
         observed, live_line_digests
@@ -1066,14 +871,39 @@ def _split_baseline_matches(
     return matched, observed - matched
 
 
+def _universal_newline_lines(text: str) -> list[str]:
+    """Split decoded text exactly like text-mode line iteration.
+
+    The pinned scanner reads candidates through a text-mode ``open()`` and
+    ``readlines()``: CRLF and lone CR translate to LF, and ``U+2028``/``U+2029``
+    are **not** line boundaries. ``str.splitlines()`` would split on both, so
+    a file containing either character would shift every subsequent line
+    number between the scanner's findings and this module's line-content
+    evidence and classifier reads -- a substitution seam. This function
+    reproduces the scanner's numbering: the translated text is split on LF,
+    and exactly one empty final element is dropped when the text ends with a
+    line break (iteration never yields a trailing empty line).
+    """
+    if not text:
+        return []
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    if lines[-1] == "" and text.endswith(("\r", "\n")):
+        lines.pop()
+    return lines
+
+
 def _read_text_for_classification(path: Path) -> list[str]:
     """Read a candidate as UTF-8 for structural classification.
 
-    The scanner already proved the file decodes; a read error here still fails
-    closed via the caller, because an unreadable file can never be classified.
+    Split with the scanner's own text-mode line numbering (see
+    ``_universal_newline_lines``), so the classifier reads exactly the line
+    the scanner numbered. The scanner already proved the file decodes; a read
+    error here still fails closed via the caller, because an unreadable file
+    can never be classified.
     """
     try:
-        return path.read_text(encoding="utf-8").splitlines()
+        return _universal_newline_lines(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as exc:
         raise ScanFailure(f"candidate is unreadable for classification: {path.name}.") from exc
 
@@ -1082,20 +912,16 @@ def _read_text_for_classification(path: Path) -> list[str]:
 #
 # A classifier clears a live finding ONLY by re-deriving it from the working
 # tree: it extracts the token it considers non-secret by construction and must
-# reproduce the scanner's own SHA-1 fingerprint. Nothing here trusts a
-# filename alone or a remembered hash, so a genuine secret cannot inherit
-# clearance, and adding one to an otherwise classified file still fails
-# closed. Each rule is additionally narrowed to *exact*, non-generic field
-# names and *exact* file paths: dedicated, provably static content-registry
-# documents only -- never executable source files, never ``*.py``. Extending
-# either set is an R3 security decision, never a gate fix. Clearance is
-# decided per reported line, so a value whose occurrences span a classified
-# digest line and an unprovable line stays unclassified.
+# reproduce the scanner's own SHA-1 fingerprint, so a genuine secret can
+# never inherit clearance. Each rule is narrowed to *exact*, non-generic
+# field names and *exact* file paths: dedicated, provably static
+# content-registry documents only -- never executable source files, never
+# ``*.py``. Extending either set is an R3 security decision, never a gate
+# fix. Clearance is decided per reported line.
 
-# The exact digest field names used by the repository's content registries.
-# Only precise, non-generic names qualify: any other key -- ``api_sha256``,
-# ``some_checksum``, a name merely ending in ``sha256``, and the generic
-# ``sha256``/``checksum`` themselves -- stays unclassified.
+# The exact digest field names used by the content registries: only
+# precise, non-generic names qualify (generic ``sha256``/``checksum`` and
+# lookalikes such as ``api_sha256`` stay unclassified).
 _CONTENT_DIGEST_KEYS = frozenset(
     {
         "reference_sha256",
@@ -1104,11 +930,10 @@ _CONTENT_DIGEST_KEYS = frozenset(
         "source_sha256",
     }
 )
-# The exact content-registry files whose 64-hex values are content digests by
-# construction. Every entry is a dedicated, provably static registry document
-# (JSON data, no executable content); an executable source file must never be
-# added to this set, and the same exact key in any other file -- including
-# every ``.py`` file -- stays unclassified.
+# The exact content-registry files whose 64-hex values are content digests
+# by construction: dedicated, provably static registry documents (JSON data,
+# no executable content). An executable source file must never be added, and
+# the same key in any other file stays unclassified.
 _CONTENT_DIGEST_PATHS = frozenset(
     {
         "services/platform-core/app/static/prevalidated-commercial-sources/manifest.json",
@@ -1126,8 +951,7 @@ _CONTENT_DIGEST_RE = re.compile(
     + "|".join(sorted(_CONTENT_DIGEST_KEYS, key=len, reverse=True))
     + r")[\"']?\s*[:=]\s*[\"']([0-9a-f]{64})[\"']"
 )
-# The exact Drive-index field names. Any other key (``driveId``, ``file_id``,
-# a name merely ending in ``id``) stays unclassified.
+# The exact Drive-index field names; any other key stays unclassified.
 _DRIVE_RESOURCE_ID_KEYS = frozenset({"id", "sourceId"})
 # The exact Drive/Docs index files. A Drive-shaped value under the same exact
 # key in any other file stays unclassified.
@@ -1148,9 +972,9 @@ _DRIVE_RESOURCE_ID_RE = re.compile(
     + r")[\"']?\s*[:=]\s*[\"']"
     r"(1[A-Za-z0-9_-]{32}(?:[A-Za-z0-9_-]{11})?)[\"']"
 )
-# Corroboration that a file really is a Drive/Docs index: an actual Drive URL,
-# or an explicit ``drive`` provenance marker on a sibling field. Without one of
-# these, a Drive-shaped token stays unclassified.
+# Corroboration that a file really is a Drive/Docs index: an actual Drive
+# URL or an explicit ``drive`` provenance marker; without one, a Drive-shaped
+# token stays unclassified.
 _DRIVE_PROVENANCE_RE = re.compile(
     r"https://(?:docs|drive)\.google\.com|[\"']kind[\"']\s*:\s*[\"']drive-|"
     r"[\"']path[\"']\s*:\s*[\"']/drive/"
@@ -1193,18 +1017,11 @@ def _classify_additions(
     """Split live-but-unbaselined per-line findings into classified/unclassified.
 
     Returns ``(classified counts by classification name, unclassified set)``.
-    Every finding that no structural classifier proves is returned as
-    unclassified, so the caller fails closed on it.
-
-    Classification is per line, never per digest: the addition identity is
-    ``(path, detector type, fingerprint, line number)``, so a value already
-    baselined on a classified line still puts every *new* line occurrence
-    through the structural classifier on that exact line. Only the exact new
-    lines are evaluated -- a baselined line never needs re-proving, and a new
-    line that cannot be proven non-secret there keeps its own identity
-    unclassified, even when the same digest is proven harmless elsewhere.
-    A finding whose line number is absent, malformed or out of range can
-    never be classified and stays unclassified.
+    Classification is per line, never per digest: every *new* line occurrence
+    goes through the structural classifier on that exact line, and a line
+    that cannot be proven non-secret there keeps its own identity
+    unclassified even when the same digest is proven harmless elsewhere. An
+    absent, malformed or out-of-range line number can never be classified.
     """
     by_path: dict[str, list[dict[str, Any]]] = {}
     for filename, findings in current.get("results", {}).items():
@@ -1219,8 +1036,6 @@ def _classify_additions(
         document = "\n".join(lines)
         entries = by_path.get(path, [])
         if not entries:
-            # A dokumentum inkonzisztens (addition élő finding nélkül): az
-            # identitások osztályozatlanok maradnak -- fail-closed a hívóban.
             continue
         for finding in entries:
             finding_type = str(finding.get("type", ""))
@@ -1255,20 +1070,14 @@ def _emit_unmatched_audit(
 ) -> Path:
     """Write the bounded hash/path/line-only audit for unmatched candidates.
 
-    Rows carry the normalized path, the detector type, the SHA-1
-    fingerprints and the finding line numbers only -- never plaintext secret
-    material -- and are marked unclassified. The artifact is written to the
-    git-ignored runtime directory, so only a failing (fail-closed) run
-    writes anything.
-
-    The report is deliberately bounded: at most ``_AUDIT_MAX_ROWS`` rows and
-    ``_AUDIT_MAX_HASHES_PER_ROW`` per-line entries per row. Truncation is
-    never silent -- the omitted counts are stated explicitly and the totals
-    always describe the full finding set -- so the artifact stays short
-    enough to read in a review without ever understating what failed closed.
-
-    This file is write-only evidence. Nothing in this module reads it back,
-    so it can never act as an allowlist, baseline or suppression input.
+    Rows carry the normalized path, detector type, SHA-1 fingerprints and
+    line numbers only -- never plaintext -- and are marked unclassified.
+    Deliberately bounded (``_AUDIT_MAX_ROWS`` rows,
+    ``_AUDIT_MAX_HASHES_PER_ROW`` per row); truncation is never silent (the
+    omitted counts are stated explicitly), so the artifact stays short
+    without understating what failed closed. Write-only evidence: nothing in
+    this module reads it back, so it can never act as an allowlist, baseline
+    or suppression input.
     """
     by_path: dict[str, dict[str, list[tuple[str, int | None]]]] = {}
     for filename, finding_type, hashed, line_number in additions:
@@ -1331,24 +1140,15 @@ def reconcile_tracked_secrets(
 ) -> tuple[int, str]:
     """Reconcile the audited set against the canonical tracked-secret scan.
 
-    Returns ``(status, message)``. Status 0: every live candidate is either in
-    the protected baseline, reconciled with the audited repository state (see
-    ``_audited_occurrence_identities``) or proven non-secret by a structural
-    classifier (stale-only entries, scanner-exempt files and the per-class
-    classified counts are reported as documented warnings). Status 1: at
-    least one live candidate is unclassified -- a bounded
-    hash/path/line-only audit report is written to the git-ignored runtime
-    directory. Status 2: missing or malformed baseline, any scanner/git
-    failure or canonical-set condition. The live scan always runs; there is
-    no snapshot or environment bypass. Messages never contain secret
-    material, only file paths/counts and fingerprints. Comparison is
-    occurrence-aware, strictly per line and always content-bearing: a
-    baseline entry clears a live occurrence only when the line still carries
-    byte-identical content, an audited occurrence reconciles on its own line
-    or on a shifted line only when immutable line-content evidence proves it
-    is that same occurrence (never an aggregate count and never a bare line
-    number), and every other occurrence must still be proven harmless by a
-    structural classifier on its exact line (see the module docstring).
+    Returns ``(status, message)``. Status 0: every live candidate is in the
+    protected baseline, reconciled with the audited repository state, or
+    proven non-secret by a structural classifier. Status 1: at least one
+    unclassified candidate (a bounded audit report is written to the
+    git-ignored runtime directory). Status 2: missing or malformed
+    baseline, any scanner/git failure or canonical-set condition. The live
+    scan always runs; there is no snapshot or environment bypass. Messages
+    never contain secret material; comparison is occurrence-aware, strictly
+    per line and always content-bearing.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     if not baseline_path.is_file():
@@ -1378,10 +1178,6 @@ def reconcile_tracked_secrets(
     audited_line_digests: dict[str, dict[int, str]] = {}
     live_line_digests: dict[str, dict[int, str]] = {}
     try:
-        # A sor-szintű, megváltoztathatatlan tartalmi bizonyíték MINDEN élő
-        # találat identitásához kell -- a baseline-kivonáshoz is, nem csak az
-        # elcsúszott előfordulások egyeztetéséhez --, ezért az összes találatot
-        # hordozó path bizonyítéka egyszerre készül el.
         finding_paths = sorted({filename for filename, _, _, _ in observed})
         if finding_paths:
             audited_anchor = _baseline_anchor_commit(root, baseline_path)
@@ -1415,11 +1211,6 @@ def reconcile_tracked_secrets(
         if audit_path is not None:
             message += f"\nbounded hash/path-only audit report written to: {audit_path}"
         return 1, message
-    # Only occurrences whose baseline identity is backed by byte-identical line
-    # content may be reported as "matching the audited baseline"; audited-state
-    # reconciliations and structurally classified candidates are counted
-    # separately, so the message can never overstate how much the protected
-    # baseline covers.
     parts = [f"{len(baseline_matched)} tracked candidate(s) match the audited baseline"]
     if resolved:
         parts.append(
@@ -1452,31 +1243,18 @@ def _match_occurrences(
 ) -> dict[int, int]:
     """Maximum one-to-one seating of live occurrences on audited occurrences.
 
-    Returns ``{audited line: live line}``: the audited occurrences that are
-    proven still live, and which live occurrence each one accounts for. Every
-    live occurrence left unseated is a new occurrence and stays an addition.
-
-    Seating requires byte-identical line content on both sides -- there is no
-    bare line-number path here at all. A shared line number without shared
-    content proves only that *something* still sits at that offset, which is
-    exactly the substitution this module must reject: an audited fingerprint
-    whose line was rewritten from a classified context to an unclassified one
-    keeps its number and loses its evidence, so it stays an addition.
-
-    Byte-identical line content is an *equivalence* relation, so the
-    content-proof graph is a disjoint union of complete bipartite blocks --
-    one per content fingerprint. Maximum matching therefore needs no search:
-    inside a block, ``min(live, audited)`` occurrences seat, and an
-    occurrence that is unchanged in place (its live line is also an audited
-    line of the same content) seats first, so a stronger claim is never
-    displaced by a weaker one. A file whose block drifted wholesale still
-    seats perfectly, because every occurrence in it carries its own content
-    proof.
-
-    A line with no content fingerprint on either side (out of range, or a
-    file with no audited content evidence) never forms a content edge and
-    therefore never seats. All iteration is over sorted inputs, so the result
-    is deterministic.
+    Returns ``{audited line: live line}``; every live occurrence left
+    unseated is a new occurrence and stays an addition. Seating requires
+    byte-identical line content on both sides -- there is no bare
+    line-number path at all: a shared line number without shared content is
+    exactly the substitution this module must reject. Content equality is an
+    equivalence relation, so the proof graph is a disjoint union of complete
+    bipartite blocks (one per content fingerprint) and maximum matching
+    needs no search: inside a block ``min(live, audited)`` occurrences seat,
+    unchanged-in-place occurrences first, so a stronger claim is never
+    displaced by a weaker one and a wholesale drift still seats perfectly. A
+    line with no content fingerprint on either side never seats. All
+    iteration is over sorted inputs, so the result is deterministic.
     """
     audited_by_content: dict[str, list[int]] = {}
     for audited_line in audited_lines:
@@ -1494,9 +1272,6 @@ def _match_occurrences(
     for content, block_audited in sorted(audited_by_content.items()):
         block_live = live_by_content.get(content, [])
         block_audited_set = set(block_audited)
-        # Előbb a helyükön változatlan előfordulások ülnek le, csak utána a
-        # bizonyítottan elcsúszottak -- így egy változatlan előfordulást
-        # sosem szoríthat ki egy elcsúszott másolat.
         for line in block_live:
             if line in block_audited_set:
                 assignment[line] = line
@@ -1523,44 +1298,22 @@ def _split_additions(
 
     Strict per-line identity, with no aggregate-count substitution anywhere.
     Per ``(path, type, fingerprint)`` value, the live occurrences are matched
-    one-to-one against the audited occurrences of that same value. Only a
-    live occurrence that is *individually* matched to an audited occurrence
-    counts as pre-existing; every unmatched one stays an addition and must be
-    proven harmless by a structural classifier on its exact line.
-
-    A live occurrence may be seated on an audited occurrence only on
-    immutable content evidence, in strictly decreasing strength (see
-    ``_match_occurrences``):
-
-    1. same line number *and* byte-identical line content -- the audited
-       occurrence demonstrably still sits untouched where it was audited;
-    2. byte-identical line content -- the audited occurrence is proven to be
-       this very occurrence, shifted by an unrelated edit above it. Both
-       sides are compared as SHA-256 content fingerprints, one taken from git
-       history at the anchor commit, one from the working tree.
-
-    There is deliberately no third, weaker rule: a shared line number without
-    shared content never seats. The strongest available evidence is committed
-    first, so an occurrence that is unchanged in place can never be displaced
-    by a weaker claim, and a value audited once that now appears twice can
-    never have both copies cleared.
-
-    Equivalence is therefore proven per occurrence, never inferred from how
-    many occurrences a value happens to have and never from where it sits: an
-    audited digest deleted from its classified line and reintroduced on a
-    different, unclassified line has no edge at all and fails closed, even
-    though the total count is unchanged; so does an audited digest that stayed
-    on its line while its key or context was rewritten. Because the
-    structural classifiers decide on exactly that line text (plus the
-    unchanged path), byte-identical content cannot smuggle a classified key,
-    context or position into an unclassified one -- any change to the line
-    breaks the proof.
-
-    An identity without a usable line number, one in a file with no audited
-    content evidence (new at the audited commit, or not UTF-8 decodable
-    there), and one whose live line is out of range never reconcile through
-    the audited state: they always stay remaining (fail closed). Ordering is
-    fully sorted, so the split is deterministic.
+    one-to-one against the audited occurrences of that same value (see
+    ``_match_occurrences``); only an *individually* matched occurrence counts
+    as pre-existing. Seating uses immutable content evidence only -- same
+    line and byte-identical content, or byte-identical content proving the
+    occurrence shifted with an unrelated edit -- with the strongest evidence
+    committed first, so an unchanged occurrence can never be displaced and a
+    value audited once that now appears twice can never have both copies
+    cleared. There is deliberately no weaker rule, and equivalence is never
+    inferred from counts or positions: an audited digest moved to an
+    unclassified line has no edge and fails closed even though the count is
+    unchanged. Because the structural classifiers decide on exactly that
+    line text, byte-identical content cannot smuggle a classified context
+    into an unclassified one. Identities without a usable line number, in
+    files with no audited content evidence, or on out-of-range lines never
+    reconcile and stay remaining (fail closed). Ordering is fully sorted, so
+    the split is deterministic.
     """
     audited_by_value: dict[tuple[str, str, str], set[int]] = {}
     for path, finding_type, hashed, line_number in audited_state:
