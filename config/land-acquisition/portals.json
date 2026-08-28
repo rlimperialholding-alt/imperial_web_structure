@@ -1,69 +1,76 @@
 {
   "version": 1,
-  "policy": "licensed-connectors-only",
+  "policy": "public-html-respect-robots",
   "portals": [
     {
       "key": "ingatlan_com",
       "domains": ["ingatlan.com"],
-      "discovery_mode": "manual",
+      "discovery_mode": "public_html",
       "publish_mode": "manual",
-      "discovery_enabled": false,
+      "discovery_enabled": true,
       "publish_enabled": false,
-      "adapter_module": null
+      "adapter_module": null,
+      "respect_robots_txt": true
     },
     {
       "key": "zenga",
       "domains": ["zenga.hu"],
-      "discovery_mode": "manual",
+      "discovery_mode": "public_html",
       "publish_mode": "manual",
-      "discovery_enabled": false,
+      "discovery_enabled": true,
       "publish_enabled": false,
-      "adapter_module": null
+      "adapter_module": null,
+      "respect_robots_txt": true
     },
     {
       "key": "dh",
       "domains": ["dh.hu"],
-      "discovery_mode": "manual",
+      "discovery_mode": "public_html",
       "publish_mode": "manual",
-      "discovery_enabled": false,
+      "discovery_enabled": true,
       "publish_enabled": false,
-      "adapter_module": null
+      "adapter_module": null,
+      "respect_robots_txt": true
     },
     {
       "key": "oc",
       "domains": ["oc.hu"],
-      "discovery_mode": "manual",
+      "discovery_mode": "public_html",
       "publish_mode": "manual",
-      "discovery_enabled": false,
+      "discovery_enabled": true,
       "publish_enabled": false,
-      "adapter_module": null
+      "adapter_module": null,
+      "respect_robots_txt": true
     },
     {
       "key": "jofogas",
       "domains": ["jofogas.hu"],
-      "discovery_mode": "manual",
+      "discovery_mode": "public_html",
       "publish_mode": "manual",
-      "discovery_enabled": false,
+      "discovery_enabled": true,
       "publish_enabled": false,
-      "adapter_module": null
+      "adapter_module": null,
+      "respect_robots_txt": true
     },
     {
       "key": "koltozzbe",
       "domains": ["koltozzbe.hu"],
-      "discovery_mode": "manual",
+      "discovery_mode": "public_html",
       "publish_mode": "manual",
-      "discovery_enabled": false,
+      "discovery_enabled": true,
       "publish_enabled": false,
-      "adapter_module": null
+      "adapter_module": null,
+      "respect_robots_txt": true
     },
     {
       "key": "ingatlannet",
       "domains": ["ingatlannet.hu"],
-      "discovery_mode": "manual",
+      "discovery_mode": "public_html",
       "publish_mode": "manual",
-      "discovery_enabled": false,
+      "discovery_enabled": true,
       "publish_enabled": false,
-      "adapter_module": null
+      "adapter_module": null,
+      "respect_robots_txt": true
     },
     {
       "key": "imperial_plot_finder",
@@ -72,7 +79,8 @@
       "publish_mode": "manual",
       "discovery_enabled": false,
       "publish_enabled": false,
-      "adapter_module": null
+      "adapter_module": null,
+      "respect_robots_txt": false
     }
   ]
 }

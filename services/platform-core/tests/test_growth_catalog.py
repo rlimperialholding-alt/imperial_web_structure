@@ -14,6 +14,7 @@ from app.growth_ops.models import (
     SourceCoverageAttempt,
     SourceCoverageRoute,
 )
+from app.growth_ops.processing import _signal_type, _specific_listing_permalink
 from app.growth_ops.registry import GrowthRegistryError
 
 
@@ -90,6 +91,46 @@ def test_catalog_import_blocks_named_no_monitoring_entity_before_storage(
 
     assert db.scalar(select(func.count()).select_from(SourceCoverageRoute)) == 0
     assert db.scalar(select(func.count()).select_from(SourceCatalogRevision)) == 0
+
+
+def test_catalog_import_replaces_robots_disallowed_legacy_land_route(
+    db, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(catalog, "SOURCE_LEDGER_ROUTE_COUNT", 1)
+    record = _record(12)
+    record.update(
+        {
+            "RouteKey": "BUILDING:SRC-0012",
+            "RouteID": "SRC-0012",
+            "Kategória": "Ingatlan",
+            "Forrás neve": "ingatlan.com telek keresés",
+            "Forrástípus": "real_estate",
+            "Útvonal URL": "https://ingatlan.com/lista/elado+telek",
+        }
+    )
+    snapshot, manifest, _digest = _snapshot(tmp_path, [record])
+
+    catalog.import_snapshot(db, snapshot_path=snapshot, manifest_path=manifest)
+
+    route = db.scalar(select(SourceCoverageRoute))
+    assert route is not None
+    assert route.route_url == "https://ingatlan.com/elado+telek"
+    assert "/lista" in route.source_record_json
+
+
+def test_land_public_html_route_and_listing_permalink_are_classified():
+    route = SimpleNamespace(
+        motor="Imperial–Bautica–Prefab",
+        catalog_part="BASE",
+        category="Ingatlan",
+        source_name="ingatlan.com telek keresés",
+        search_signal=None,
+        route_url="https://ingatlan.com/elado+telek",
+    )
+
+    assert _signal_type(route) == "residential_building_plot"
+    assert _specific_listing_permalink("https://ingatlan.com/35500001") is True
+    assert _specific_listing_permalink("https://ingatlan.com/elado+telek") is False
 
 
 def test_scanner_uses_db_catalog_and_records_real_attempt(db, tmp_path, monkeypatch):

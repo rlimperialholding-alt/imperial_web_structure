@@ -45,6 +45,9 @@ LAND_RECIPIENT_TYPES_BY_ROLE = {
 LAND_OWNER_PRIOR_CONSENT_HARD_GATE = (
     "land_owner_natural_person_prior_consent_required"
 )
+LAND_AGENT_PRIOR_CONSENT_HARD_GATE = (
+    "land_agent_natural_person_prior_consent_required"
+)
 
 
 def utcnow() -> datetime:
@@ -126,7 +129,9 @@ def _is_public_land_listing_contact(data: GrowthSignalIn) -> bool:
     return (
         data.signal_type == "residential_building_plot"
         and data.contact_basis == "public_property_listing"
-        and data.recipient_role in {"listing_agent", "property_owner"}
+        and data.recipient_role == "listing_agent"
+        and data.subject_type == "organization"
+        and data.recipient_email_type == "role"
         and bool(data.public_contact_url)
     )
 
@@ -157,7 +162,10 @@ def _is_recipient_hard_gate_error(exc: Exception) -> bool:
         or reason.startswith("canonical_hard_gate_blocked:")
         or reason.startswith("outbound_recipient_hard_gate_no_send:")
         or reason.startswith("cross_brand_customer_facing_content_no_send:")
-        or reason == LAND_OWNER_PRIOR_CONSENT_HARD_GATE
+        or reason in {
+            LAND_OWNER_PRIOR_CONSENT_HARD_GATE,
+            LAND_AGENT_PRIOR_CONSENT_HARD_GATE,
+        }
     )
 
 
@@ -241,13 +249,7 @@ def _block_existing_signal_for_new_hard_gate(
 def _land_agent_gate_reason(signal: GrowthSignalIn | GrowthSignal) -> str | None:
     if signal.signal_type != "residential_building_plot":
         return None
-    if (
-        signal.recipient_role == "property_owner"
-        and signal.subject_type == "natural_person"
-        and signal.contact_basis not in {"explicit_request", "documented_consent"}
-    ):
-        return LAND_OWNER_PRIOR_CONSENT_HARD_GATE
-    return land_agent_hard_gate_reason(
+    exclusion_reason = land_agent_hard_gate_reason(
         recipient_role=signal.recipient_role,
         contact_name=signal.company_name,
         organization_name=signal.recipient_organization_name,
@@ -256,6 +258,17 @@ def _land_agent_gate_reason(signal: GrowthSignalIn | GrowthSignal) -> str | None
         public_contact_url=signal.public_contact_url,
         evidence_url=signal.evidence_url,
     )
+    if exclusion_reason:
+        return exclusion_reason
+    if signal.subject_type == "natural_person" and signal.contact_basis not in {
+        "explicit_request",
+        "documented_consent",
+    }:
+        if signal.recipient_role == "property_owner":
+            return LAND_OWNER_PRIOR_CONSENT_HARD_GATE
+        if signal.recipient_role == "listing_agent":
+            return LAND_AGENT_PRIOR_CONSENT_HARD_GATE
+    return None
 
 
 def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
@@ -485,7 +498,14 @@ def _queue_message(
         and (
             (
                 signal.recipient_role == "listing_agent"
-                and signal.contact_basis == "public_property_listing"
+                and (
+                    signal.contact_basis in {"explicit_request", "documented_consent"}
+                    or (
+                        signal.contact_basis == "public_property_listing"
+                        and signal.subject_type == "organization"
+                        and signal.recipient_email_type == "role"
+                    )
+                )
             )
             or (
                 signal.recipient_role == "property_owner"

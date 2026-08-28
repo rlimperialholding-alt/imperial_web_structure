@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.growth_ops.canonical_policy import LAND_AGENT_HARD_GATE_GDN
 from app.growth_ops.catalog import _fetch
-from app.growth_ops.models import GrowthSignal, OutreachMessage
+from app.growth_ops.models import GrowthSignal, OutreachMessage, SourceCoverageRoute
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn
 from app.growth_ops.service import (
@@ -25,6 +25,7 @@ from app.land_acquisition.models import (
     LandOpportunity,
     LandPublicationAttempt,
 )
+from app.land_acquisition.registry import LandRegistryError, PortalRegistry
 from app.land_acquisition.schemas import (
     AuthorityGrantIn,
     DealIn,
@@ -135,7 +136,9 @@ def _public_land_outreach_input(
         company_name=recipient_name,
         company_registration_id=None,
         recipient_organization_name=organization_name,
-        subject_type="natural_person",
+        subject_type=(
+            "organization" if recipient_role == "listing_agent" else "natural_person"
+        ),
         recipient_role=recipient_role,
         recipient_type=(
             "real_estate_agent" if recipient_role == "listing_agent" else "land_owner"
@@ -147,7 +150,7 @@ def _public_land_outreach_input(
         recipient_classification_verified=True,
         exclusion_screening_verified=True,
         recipient_email=recipient_email,
-        recipient_email_type="named",
+        recipient_email_type="role" if recipient_role == "listing_agent" else "named",
         contact_basis="public_property_listing",
         public_contact_url=f"https://example.test/listing/{external_key}",
         location="Sülysáp",
@@ -388,7 +391,57 @@ def _approved_package(db):
     return opportunity, grant, package
 
 
-def test_named_portal_is_never_read_by_generic_scanner(monkeypatch):
+def _portal_registry(tmp_path: Path, *, enabled: bool = True) -> Path:
+    registry_path = tmp_path / "portals-public-html.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "portals": [
+                    {
+                        "key": "ingatlan_com",
+                        "domains": ["ingatlan.com"],
+                        "discovery_mode": "public_html" if enabled else "manual",
+                        "publish_mode": "manual",
+                        "discovery_enabled": enabled,
+                        "publish_enabled": False,
+                        "adapter_module": None,
+                        "respect_robots_txt": enabled,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return registry_path
+
+
+def test_public_html_registry_requires_robots_enforcement():
+    with pytest.raises(LandRegistryError, match="robots.txt enforcement is required"):
+        PortalRegistry(
+            {
+                "version": 1,
+                "portals": [
+                    {
+                        "key": "ingatlan_com",
+                        "domains": ["ingatlan.com"],
+                        "discovery_mode": "public_html",
+                        "publish_mode": "manual",
+                        "discovery_enabled": True,
+                        "publish_enabled": False,
+                        "adapter_module": None,
+                        "respect_robots_txt": False,
+                    }
+                ],
+            }
+        )
+
+
+def test_named_portal_requires_explicit_public_html_registry(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "LAND_ACQUISITION_PORTAL_REGISTRY_FILE",
+        str(_portal_registry(tmp_path, enabled=False)),
+    )
     monkeypatch.setattr(
         "app.growth_ops.catalog.httpx.Client",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network call forbidden")),
@@ -401,18 +454,205 @@ def test_named_portal_is_never_read_by_generic_scanner(monkeypatch):
     )
     assert result == {
         "status": "rejected",
-        "error_type": "portal_licensed_connector_required",
+        "error_type": "portal_public_html_not_enabled",
     }
 
 
-def test_land_readiness_fails_closed_without_a_live_discovery_adapter(db):
+def test_public_html_portal_respects_robots_and_reads_allowed_page(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "LAND_ACQUISITION_PORTAL_REGISTRY_FILE",
+        str(_portal_registry(tmp_path)),
+    )
+    monkeypatch.setattr(
+        "app.growth_ops.catalog.socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("93.184.216.34", 443))],
+    )
+    from app.growth_ops import catalog
+
+    catalog._ROBOTS_CACHE.clear()
+
+    class FakeResponse:
+        def __init__(self, body: bytes, status_code: int = 200):
+            self.content = body
+            self.text = body.decode()
+            self.status_code = status_code
+            self.headers = {"content-type": "text/html; charset=utf-8"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def iter_bytes(self):
+            yield self.content
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, url):
+            assert url == "https://www.ingatlan.com/robots.txt"
+            return FakeResponse(b"User-agent: *\nAllow: /\n")
+
+        def stream(self, method, url):
+            assert method == "GET"
+            assert url == "https://www.ingatlan.com/35500001"
+            return FakeResponse(
+                b"<html><head><title>Elado telek</title></head>"
+                b"<body>Elado 800 m2-es epitesi telek.</body></html>"
+            )
+
+    monkeypatch.setattr("app.growth_ops.catalog.httpx.Client", FakeClient)
+    result = _fetch(
+        SimpleNamespace(
+            route_url="https://www.ingatlan.com/35500001",
+            source_record_json="{}",
+        )
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["evidence"]["discovery_mode"] == "public_html"
+    assert result["evidence"]["robots_txt"] == "allowed"
+    assert "800 m2-es epitesi telek" in result["analysis_text"]
+
+
+def test_public_html_portal_does_not_fetch_robots_disallowed_path(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "LAND_ACQUISITION_PORTAL_REGISTRY_FILE",
+        str(_portal_registry(tmp_path)),
+    )
+    monkeypatch.setattr(
+        "app.growth_ops.catalog.socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("93.184.216.34", 443))],
+    )
+    from app.growth_ops import catalog
+
+    catalog._ROBOTS_CACHE.clear()
+
+    class FakeRobotsResponse:
+        status_code = 200
+        content = b"User-agent: *\nDisallow: /lista\n"
+        text = content.decode()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, _url):
+            return FakeRobotsResponse()
+
+        def stream(self, *_args, **_kwargs):
+            raise AssertionError("robots-disallowed listing must not be fetched")
+
+    monkeypatch.setattr("app.growth_ops.catalog.httpx.Client", FakeClient)
+    result = _fetch(
+        SimpleNamespace(
+            route_url="https://www.ingatlan.com/lista/elado+telek",
+            source_record_json="{}",
+        )
+    )
+
+    assert result == {"status": "rejected", "error_type": "portal_robots_disallowed"}
+
+
+def test_public_html_portal_retries_after_temporary_robots_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "LAND_ACQUISITION_PORTAL_REGISTRY_FILE",
+        str(_portal_registry(tmp_path)),
+    )
+    monkeypatch.setattr(
+        "app.growth_ops.catalog.socket.getaddrinfo",
+        lambda *args, **kwargs: [(2, 1, 6, "", ("93.184.216.34", 443))],
+    )
+    from app.growth_ops import catalog
+
+    catalog._ROBOTS_CACHE.clear()
+
+    class FakeRobotsResponse:
+        status_code = 503
+        content = b"temporarily unavailable"
+        text = content.decode()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, _url):
+            return FakeRobotsResponse()
+
+        def stream(self, *_args, **_kwargs):
+            raise AssertionError("page must not be fetched without a usable robots policy")
+
+    monkeypatch.setattr("app.growth_ops.catalog.httpx.Client", FakeClient)
+    result = _fetch(
+        SimpleNamespace(
+            route_url="https://www.ingatlan.com/35500001",
+            source_record_json="{}",
+        )
+    )
+
+    assert result == {"status": "failed", "error_type": "portal_robots_unavailable"}
+
+
+def test_land_readiness_fails_closed_without_a_public_html_route(db):
     ready, detail = land_readiness(db)
 
     assert ready is False
     assert detail["live_discovery"] is False
-    assert detail["blocking_reasons"] == [
-        "no_licensed_land_discovery_adapter_enabled"
-    ]
+    assert detail["blocking_reasons"] == ["no_public_html_land_routes_configured"]
+
+
+def test_land_readiness_accepts_enabled_public_html_route(db):
+    db.add(
+        SourceCoverageRoute(
+            route_key="LAND-PUBLIC-HTML-UAT",
+            route_id="LAND-PUBLIC-HTML-UAT",
+            catalog_sha256="d" * 64,
+            motor="construction",
+            catalog_part="land",
+            country="HU",
+            brand_fit="imperial",
+            category="residential_building_plot",
+            source_name="ingatlan.com",
+            source_type="public_html",
+            search_signal="elado telek",
+            route_url="https://ingatlan.com/elado+telek",
+            base_url="https://ingatlan.com",
+            route_mode="direct",
+            priority="P1",
+            validation="robots",
+            catalog_status="active",
+            source_row_sha256="e" * 64,
+            source_record_json="{}",
+            enabled=True,
+        )
+    )
+    db.commit()
+
+    ready, detail = land_readiness(db)
+
+    assert ready is True
+    assert detail["live_discovery"] is True
+    assert detail["registry"]["public_html_route_counts"]["ingatlan_com"] == 1
 
 
 def test_land_outreach_copy_is_specific_simple_and_actionable(monkeypatch):
@@ -554,10 +794,12 @@ def test_owner_approved_land_initial_email_is_policy_released(
         recipient_organization_name=(
             "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
         ),
-        subject_type="natural_person",
+        subject_type=(
+            "organization" if recipient_role == "listing_agent" else "natural_person"
+        ),
         recipient_role=recipient_role,
         recipient_email=f"{recipient_role}@example.test",
-        recipient_email_type="named",
+        recipient_email_type="role" if recipient_role == "listing_agent" else "named",
         contact_basis=(
             "documented_consent"
             if recipient_role == "property_owner"
@@ -711,8 +953,16 @@ def test_dispatch_blocks_legacy_queued_gdn_agent_before_registry_or_smtp(db):
     assert signal.rejection_reasons_json == f'["{LAND_AGENT_HARD_GATE_GDN}"]'
 
 
-def test_dispatch_blocks_private_owner_without_prior_consent(db):
-    reason = "land_owner_natural_person_prior_consent_required"
+@pytest.mark.parametrize(
+    ("recipient_role", "reason"),
+    [
+        ("property_owner", "land_owner_natural_person_prior_consent_required"),
+        ("listing_agent", "land_agent_natural_person_prior_consent_required"),
+    ],
+)
+def test_dispatch_blocks_natural_person_land_contact_without_prior_consent(
+    db, recipient_role, reason
+):
     signal = GrowthSignal(
         signal_id="SIG-LAND-PRIVATE-LEGACY",
         motor_key="construction",
@@ -721,9 +971,12 @@ def test_dispatch_blocks_private_owner_without_prior_consent(db):
         external_key="LISTING-PRIVATE-LEGACY",
         signal_type="residential_building_plot",
         detected_at=datetime.now(UTC),
-        company_name="Magánhirdető",
+        company_name="Nyilvános hirdető",
+        recipient_organization_name=(
+            "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
+        ),
         subject_type="natural_person",
-        recipient_role="property_owner",
+        recipient_role=recipient_role,
         recipient_email="seller@example.test",
         recipient_email_type="named",
         contact_basis="public_property_listing",

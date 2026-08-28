@@ -11,9 +11,8 @@ class LandRegistryError(ValueError):
     pass
 
 
-# These domains are denied to the generic HTML scanner even when the optional
-# registry cannot be loaded. A licensed feed/API connector is the only accepted
-# discovery path for named real-estate portals.
+# These domains are handled only through the explicit land-acquisition registry.
+# They must never silently fall back to unrestricted generic scanning.
 NAMED_PORTAL_DOMAINS = frozenset(
     {
         "dh.hu",
@@ -56,13 +55,16 @@ class Portal:
     discovery_enabled: bool
     publish_enabled: bool
     adapter_module: str | None
+    respect_robots_txt: bool
 
     def permits(self, action: str) -> bool:
         if action == "discover":
-            return (
-                self.discovery_enabled
-                and self.discovery_mode in {"licensed_api", "feed"}
-                and bool(self.adapter_module)
+            if not self.discovery_enabled:
+                return False
+            if self.discovery_mode == "public_html":
+                return self.respect_robots_txt
+            return self.discovery_mode in {"licensed_api", "feed"} and bool(
+                self.adapter_module
             )
         if action in {"publish", "withdraw"}:
             return (
@@ -102,11 +104,26 @@ class PortalRegistry:
                 discovery_enabled=item.get("discovery_enabled") is True,
                 publish_enabled=item.get("publish_enabled") is True,
                 adapter_module=str(item.get("adapter_module") or "").strip() or None,
+                respect_robots_txt=item.get("respect_robots_txt") is True,
             )
-            if portal.discovery_enabled and portal.discovery_mode not in {"licensed_api", "feed"}:
+            if portal.discovery_enabled and portal.discovery_mode not in {
+                "licensed_api",
+                "feed",
+                "public_html",
+            }:
                 raise LandRegistryError(f"Unsafe discovery mode enabled: {key}")
-            if portal.discovery_enabled and not portal.adapter_module:
+            if (
+                portal.discovery_enabled
+                and portal.discovery_mode in {"licensed_api", "feed"}
+                and not portal.adapter_module
+            ):
                 raise LandRegistryError(f"Discovery adapter is missing: {key}")
+            if (
+                portal.discovery_enabled
+                and portal.discovery_mode == "public_html"
+                and not portal.respect_robots_txt
+            ):
+                raise LandRegistryError(f"robots.txt enforcement is required: {key}")
             if portal.publish_enabled and (
                 portal.publish_mode != "licensed_api" or not portal.adapter_module
             ):
@@ -144,6 +161,11 @@ class PortalRegistry:
             ),
             "publishing_enabled": sorted(
                 portal.key for portal in self.portals.values() if portal.permits("publish")
+            ),
+            "public_html_enabled": sorted(
+                portal.key
+                for portal in self.portals.values()
+                if portal.permits("discover") and portal.discovery_mode == "public_html"
             ),
             "manual_only": sorted(
                 portal.key
