@@ -1476,7 +1476,8 @@ def _set_roof(geometry: dict[str, Any], payload: dict[str, Any]) -> None:
     pitch = int(payload.get("pitchDeg") or (0 if roof_type == "flat" else 30))
     if not 0 <= pitch <= 60:
         raise GeometryError("roof_pitch_invalid", "A tető hajlásszöge 0–60 fok lehet.")
-    existing = level.get("roof") if isinstance(level.get("roof"), dict) else {}
+    existing_roof = level.get("roof")
+    existing = existing_roof if isinstance(existing_roof, dict) else {}
     level["roof"] = {
         "type": roof_type,
         "pitchDeg": pitch,

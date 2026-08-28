@@ -1,6 +1,21 @@
+# A typecheck runtime determinisztikus és Windows application-control
+# kompatibilis: a `--no-binary mypy` a tiszta Python sdist-ből telepít, tehát a
+# `python -m mypy` egyetlen pip-telepített natív kiterjesztést sem tölt be. Ez
+# nem enyhítés: a mypy scope-ja, konfigurációja és szigora változatlan, csak a
+# futtató kód lesz .py. Indok: a mypyc-fordított kerék `.pyd` moduljait -- és
+# a mypy 1.19+ kötelező, KIZÁRÓLAG bináris kerékként létező `librt`
+# függőségének `.pyd` moduljait -- egy Windows application-control házirend
+# letilthatja (`ImportError: DLL load failed while importing base64`), ami a
+# statikus kaput a forráshibáktól függetlenül, nem determinisztikusan
+# megbuktatja. A pin ezért a legutolsó `librt`-mentes kiadás, és pontos (a
+# korábbi `>=1.17,<2.0` tartomány csendben 1.20.2-re lépett, ezzel hozta be a
+# csak bináris natív függőséget). A pinnelt runtime tisztaságát a
+# `scripts/check_typecheck_runtime.py` fail-closed módon ellenőrzi.
+--no-binary mypy
+
 pytest>=8.0,<9.0
 pytest-cov>=7.1,<8.0
 httpx>=0.27,<1.0
 ruff>=0.12,<1.0
-mypy>=1.17,<2.0
+mypy==1.18.2
 detect-secrets==1.5.0
