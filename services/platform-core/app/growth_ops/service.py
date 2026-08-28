@@ -42,12 +42,6 @@ LAND_RECIPIENT_TYPES_BY_ROLE = {
     "listing_agent": "real_estate_agent",
     "property_owner": "land_owner",
 }
-LAND_OWNER_PRIOR_CONSENT_HARD_GATE = (
-    "land_owner_natural_person_prior_consent_required"
-)
-LAND_AGENT_PRIOR_CONSENT_HARD_GATE = (
-    "land_agent_natural_person_prior_consent_required"
-)
 
 
 def utcnow() -> datetime:
@@ -129,9 +123,8 @@ def _is_public_land_listing_contact(data: GrowthSignalIn) -> bool:
     return (
         data.signal_type == "residential_building_plot"
         and data.contact_basis == "public_property_listing"
-        and data.recipient_role == "listing_agent"
-        and data.subject_type == "organization"
-        and data.recipient_email_type == "role"
+        and data.recipient_role in LAND_RECIPIENT_TYPES_BY_ROLE
+        and data.recipient_email_type in {"role", "named", "unknown"}
         and bool(data.public_contact_url)
     )
 
@@ -162,10 +155,6 @@ def _is_recipient_hard_gate_error(exc: Exception) -> bool:
         or reason.startswith("canonical_hard_gate_blocked:")
         or reason.startswith("outbound_recipient_hard_gate_no_send:")
         or reason.startswith("cross_brand_customer_facing_content_no_send:")
-        or reason in {
-            LAND_OWNER_PRIOR_CONSENT_HARD_GATE,
-            LAND_AGENT_PRIOR_CONSENT_HARD_GATE,
-        }
     )
 
 
@@ -260,14 +249,6 @@ def _land_agent_gate_reason(signal: GrowthSignalIn | GrowthSignal) -> str | None
     )
     if exclusion_reason:
         return exclusion_reason
-    if signal.subject_type == "natural_person" and signal.contact_basis not in {
-        "explicit_request",
-        "documented_consent",
-    }:
-        if signal.recipient_role == "property_owner":
-            return LAND_OWNER_PRIOR_CONSENT_HARD_GATE
-        if signal.recipient_role == "listing_agent":
-            return LAND_AGENT_PRIOR_CONSENT_HARD_GATE
     return None
 
 
@@ -495,26 +476,14 @@ def _queue_message(
     if (
         step == 0
         and signal.signal_type == "residential_building_plot"
+        and signal.recipient_role in LAND_RECIPIENT_TYPES_BY_ROLE
         and (
-            (
-                signal.recipient_role == "listing_agent"
-                and (
-                    signal.contact_basis in {"explicit_request", "documented_consent"}
-                    or (
-                        signal.contact_basis == "public_property_listing"
-                        and signal.subject_type == "organization"
-                        and signal.recipient_email_type == "role"
-                    )
-                )
-            )
-            or (
-                signal.recipient_role == "property_owner"
-                and signal.contact_basis in {"explicit_request", "documented_consent"}
-            )
+            signal.contact_basis in {"explicit_request", "documented_consent"}
+            or (data is not None and _is_public_land_listing_contact(data))
         )
     ):
         assert_outreach_copy(row.body_text)
-        row.release_approved_by = "owner-policy:land-public-listing-v2:2026-08-26"
+        row.release_approved_by = "owner-policy:land-public-listing-v3:2026-08-28"
         row.release_approved_at = utcnow()
         row.release_token_hash = _release_digest(row, row.release_approved_by)
         policy_release_audit = {

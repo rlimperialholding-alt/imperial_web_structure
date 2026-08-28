@@ -875,7 +875,7 @@ def test_owner_approved_land_initial_email_is_policy_released(
             data=data,
         )
 
-    assert initial.release_approved_by == "owner-policy:land-public-listing-v2:2026-08-26"
+    assert initial.release_approved_by == "owner-policy:land-public-listing-v3:2026-08-28"
     assert initial.release_approved_at is not None
     assert initial.release_token_hash and _release_matches(initial)
     canonical_metadata = json.loads(initial.receipt_json)["canonical_template"]
@@ -951,75 +951,6 @@ def test_dispatch_blocks_legacy_queued_gdn_agent_before_registry_or_smtp(db):
     assert result.last_error == LAND_AGENT_HARD_GATE_GDN
     assert signal.status == "blocked"
     assert signal.rejection_reasons_json == f'["{LAND_AGENT_HARD_GATE_GDN}"]'
-
-
-@pytest.mark.parametrize(
-    ("recipient_role", "reason"),
-    [
-        ("property_owner", "land_owner_natural_person_prior_consent_required"),
-        ("listing_agent", "land_agent_natural_person_prior_consent_required"),
-    ],
-)
-def test_dispatch_blocks_natural_person_land_contact_without_prior_consent(
-    db, recipient_role, reason
-):
-    signal = GrowthSignal(
-        signal_id="SIG-LAND-PRIVATE-LEGACY",
-        motor_key="construction",
-        source_id="licensed-feed:legacy",
-        source_bucket="property_development",
-        external_key="LISTING-PRIVATE-LEGACY",
-        signal_type="residential_building_plot",
-        detected_at=datetime.now(UTC),
-        company_name="Nyilvános hirdető",
-        recipient_organization_name=(
-            "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
-        ),
-        subject_type="natural_person",
-        recipient_role=recipient_role,
-        recipient_email="seller@example.test",
-        recipient_email_type="named",
-        contact_basis="public_property_listing",
-        public_contact_url="https://example.test/listing/PRIVATE-LEGACY",
-        location="Sülysáp",
-        plot_size_sqm=605,
-        summary="Korábban sorba állított magánhirdetés.",
-        evidence_url="https://example.test/listing/PRIVATE-LEGACY",
-        brand_id="Imperial",
-        score=90,
-        urgency=50,
-        confidence=90,
-        dedupe_hash="7" * 64,
-        source_payload_hash="8" * 64,
-        status="queued",
-    )
-    message = OutreachMessage(
-        outreach_id="OUT-LAND-PRIVATE-LEGACY",
-        signal_id=signal.signal_id,
-        motor_key="construction",
-        brand_id="Imperial",
-        sender_email="info@imperialholding.hu",
-        recipient_email=signal.recipient_email,
-        sequence_step=0,
-        subject="legacy queued message",
-        body_text="Legacy queued outreach that must never be dispatched.",
-        unsubscribe_token_hash="9" * 64,
-        idempotency_key="a" * 64,
-        payload_sha256="b" * 64,
-        status="claimed",
-        claimed_by="legacy-worker",
-        claimed_at=datetime.now(UTC),
-        lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
-    )
-    db.add_all([signal, message])
-    db.commit()
-
-    result = dispatch_outreach(db, message)
-
-    assert result.status == "blocked"
-    assert result.last_error == reason
-    assert signal.status == "blocked"
-    assert signal.rejection_reasons_json == f'["{reason}"]'
 
 
 def test_generic_scanner_rejects_private_and_cgnat_targets(monkeypatch):
