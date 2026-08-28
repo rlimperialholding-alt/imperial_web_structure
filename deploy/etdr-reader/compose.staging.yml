@@ -169,6 +169,13 @@ services:
   reader-sales-digest:
     <<: *reader-service
     command: ["python", "-m", "app.authority_reader.sales_digest"]
+    environment:
+      <<: *reader-environment
+      PLATFORM_GROWTH_DB_HOST: ${PLATFORM_GROWTH_DB_HOST:-platform-postgres}
+      PLATFORM_GROWTH_DB_PORT: ${PLATFORM_GROWTH_DB_PORT:-5432}
+      PLATFORM_GROWTH_DB_NAME: ${PLATFORM_GROWTH_DB_NAME:-imperial_platform}
+      PLATFORM_GROWTH_DB_USER: ${PLATFORM_GROWTH_DB_USER:-etdr_lead_bridge}
+      PLATFORM_GROWTH_DB_PASSWORD_FILE: /run/secrets/platform_growth_db_password
     secrets:
       - reader_db_password
       - reader_internal_token
@@ -176,9 +183,11 @@ services:
       - reader_policy_evidence
       - sales_digest_google_oauth
       - sales_digest_recipients
+      - platform_growth_db_password
     networks:
       - backend
       - egress
+      - platform_growth
     mem_limit: 192m
     cpus: 0.25
     healthcheck:
