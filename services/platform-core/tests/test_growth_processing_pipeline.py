@@ -338,6 +338,47 @@ def test_source_extraction_accepts_only_literal_evidence(db, monkeypatch):
     assert topic.source_url == source_permalink
 
 
+def test_source_extraction_deduplicates_repeated_leads_before_flush(db, monkeypatch):
+    text = (
+        "A Faedra Group társasház-fejlesztést készít elő Budapesten. "
+        "A projekt élhető otthonokat és praktikus tereket tervez."
+    )
+    repeated = {
+        "organization_name": "Faedra Group",
+        "project_title": "társasház-fejlesztés",
+        "summary": "Társasház-fejlesztés Budapesten.",
+        "evidence_excerpt": "A Faedra Group társasház-fejlesztést készít elő Budapesten.",
+        "confidence": 90,
+        "urgency": 70,
+    }
+    response = {
+        "leads": [
+            repeated | {"location": "Budapest VII. kerület"},
+            repeated | {"location": "Budapest XIII. kerület"},
+        ],
+        "questions": [],
+    }
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(
+        processing,
+        "complete_json",
+        lambda *args, **kwargs: SimpleNamespace(
+            request_id="DS-DUPLICATE-LEAD", content=json.dumps(response)
+        ),
+    )
+    route = _route()
+    route.route_id = "EXP-BLD-00428"
+    attempt = _attempt()
+    db.add_all([route, attempt])
+    db.flush()
+
+    result = processing.process_source_attempt(db, route=route, attempt=attempt, text=text)
+    db.commit()
+
+    assert result == {"status": "completed", "leads": 1, "questions": 0}
+    assert len(db.scalars(select(GrowthSignal)).all()) == 1
+
+
 def test_question_permalink_is_preserved_only_for_exact_forum_candidate(db, monkeypatch):
     question = "Milyen falazatot érdemes választani egy családi házhoz?"
     text = f"{question} ma Nyitott 0 válasz"

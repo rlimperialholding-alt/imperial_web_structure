@@ -1035,6 +1035,8 @@ def process_source_attempt(
     safe_leads: list[dict[str, Any]] = []
     safe_questions: list[dict[str, Any]] = []
     question_decisions: list[dict[str, Any]] = []
+    pending_lead_external_keys: set[str] = set()
+    pending_lead_dedupe_hashes: set[str] = set()
     allowed_permalinks = {
         str(candidate["url"])
         for candidate in safe_link_candidates
@@ -1086,6 +1088,16 @@ def process_source_attempt(
                 "source_permalink": evidence_url,
             }
         )
+        # SessionLocal deliberately runs with autoflush disabled. A model can
+        # return the same evidence twice in one response (for example with two
+        # inferred locations), so database lookups alone cannot see the first
+        # still-pending signal. De-duplicate the current payload before adding
+        # ORM rows; the database constraints remain the cross-transaction guard.
+        if (
+            external_key in pending_lead_external_keys
+            or dedupe in pending_lead_dedupe_hashes
+        ):
+            continue
         if db.scalar(
             select(GrowthSignal.id).where(
                 or_(
@@ -1129,6 +1141,8 @@ def process_source_attempt(
                 rejection_reasons_json=_json(sorted(rejection)),
             )
         )
+        pending_lead_external_keys.add(external_key)
+        pending_lead_dedupe_hashes.add(dedupe)
         safe_leads.append(
             {
                 "organization": organization or None,
