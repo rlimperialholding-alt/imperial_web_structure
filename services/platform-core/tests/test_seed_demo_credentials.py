@@ -593,7 +593,8 @@ class TestPartnerDemoAccessGate:
             db.delete(access)
         db.flush()
 
-        monkeypatch.setattr(seed, "settings", _development_settings(demo_features_enabled=False))
+        monkeypatch.setattr(seed, "settings", _development_settings(demo_runtime_enabled_override=False))
+        assert seed.settings.demo_runtime_enabled is False
         assert demo_accounts_allowed() is False
         seed_database(db)
         db.flush()
@@ -737,7 +738,8 @@ class TestDemoBusinessRecordsGate:
     def test_demo_disabled_development_seed_creates_no_business_records(
         self, db, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(seed, "settings", _development_settings(demo_features_enabled=False))
+        monkeypatch.setattr(seed, "settings", _development_settings(demo_runtime_enabled_override=False))
+        assert seed.settings.demo_runtime_enabled is False
         assert demo_accounts_allowed() is False
         seed_database(db)
         db.flush()

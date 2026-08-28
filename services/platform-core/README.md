@@ -61,8 +61,11 @@ Fejlesztői belépés:
 - a belépési értéket és a partneri demókódot egy közös, git-ignored
   futásidejű állapotfájl tartja konzisztensen
   (`services/platform-core/runtime/demo-credentials-state.json`);
-  production adatbázisba a `demo_accounts_allowed()` kapu miatt szintetikus
-  demo fiók vagy partneri hozzáférés nem kerülhet.
+  a demo-runtime kapcsolót a `DEMO_RUNTIME_ENABLED` változó dönti el
+  explicit módon (a `DEMO_FEATURES_ENABLED` flag a korábbi, kompatibilis
+  út); production adatbázisba a `demo_accounts_allowed()` kapu miatt
+  szintetikus demo fiók, partneri hozzáférés vagy demo üzleti rekord nem
+  kerülhet.
 
 Élesítés előtt a demo-felhasználót és minden titkot cserélni kell.
 

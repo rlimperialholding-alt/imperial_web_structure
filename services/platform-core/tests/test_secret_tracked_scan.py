@@ -895,6 +895,108 @@ def test_unicode_line_separators_never_shift_scanner_line_identity(
     assert "content-digest: 1" in message
 
 
+@pytest.mark.parametrize("separator", [" ", " "])
+def test_real_driver_and_classifier_agree_on_line_identity_across_separators(
+    tmp_path: Path, separator: str
+) -> None:
+    """A valódi driver sorszáma és a classifier digestsorai U+2028/U+2029
+    tartalom mellett is azonos sort azonosítanak (közvetlen cross-check)."""
+    repo = _init_repo(tmp_path / "repo")
+    secret_line = PASSWORD_LINE.rstrip("\n")
+    _write_tracked(repo, "tracked.py", "header" + separator + "continues\n" + PASSWORD_LINE)
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "_detect_secrets_scan_driver.py")],
+        cwd=str(repo),
+        input="tracked.py\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert completed.returncode == 0, completed.stderr
+    findings = json.loads(completed.stdout)["results"]["tracked.py"]
+    line_number = next(
+        finding["line_number"] for finding in findings if finding["type"] == "Secret Keyword"
+    )
+    lines = check_secret_baseline._read_text_for_classification(repo / "tracked.py")
+    digests = check_secret_baseline._live_line_content_digests(repo, ["tracked.py"])
+    assert lines[line_number - 1] == secret_line
+    assert digests["tracked.py"][line_number] == hashlib.sha256(
+        secret_line.encode("utf-8")
+    ).hexdigest()
+
+
+@pytest.mark.parametrize("separator", [" ", " "])
+def test_same_line_substitution_with_separator_content_fails_closed(
+    tmp_path: Path, separator: str
+) -> None:
+    """U+2028/U+2029 tartalom mellett az azonos soros contextuscsere sem
+    tisztázható: a separator nem tolhatja el a scanner és a classifier
+    sorszámozását, a helyettesített sor marad addition és fail-closed."""
+    repo, baseline, target, _, hashed = _baselined_digest_repo(
+        tmp_path, b"synthetic-same-line-separator"
+    )
+    digest = hashlib.sha256(b"synthetic-same-line-separator").hexdigest()
+    target.write_text(
+        '{"title": "fejezet' + separator + 'folytatás",\n  "unbound": "'
+        + digest
+        + '",\n  "x": 1\n}\n',
+        encoding="utf-8",
+    )
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1, message
+    assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
+    assert "content-digest" not in message
+    assert "reconcile with the audited repository state" not in message
+    audit = repo / "services" / "platform-core" / "runtime" / "tracked-secret-delta-audit.json"
+    document = json.loads(audit.read_text(encoding="utf-8"))
+    row = document["rows"][0]
+    assert row["hashes"] == [hashed]
+    assert row["lineNumbers"] == [2]
+    anchor = check_secret_baseline._baseline_anchor_commit(repo, baseline)
+    audited_digests = check_secret_baseline._audited_line_content_digests(
+        repo, anchor, [_DIGEST_MANIFEST_PATH]
+    )
+    live_digests = check_secret_baseline._live_line_content_digests(repo, [_DIGEST_MANIFEST_PATH])
+    assert audited_digests[_DIGEST_MANIFEST_PATH][2] != live_digests[_DIGEST_MANIFEST_PATH][2]
+
+
+@pytest.mark.parametrize("separator", [" ", " "])
+def test_moved_line_substitution_with_separator_content_fails_closed(
+    tmp_path: Path, separator: str
+) -> None:
+    """U+2028/U+2029 tartalom mellett a sor-áthelyezés is fail-closed: a
+    digest az új (3.) soron, kötetlen kulcshoz kötve marad addition, a
+    separator semmilyen sorszám-eltolódást nem okozhat."""
+    repo, baseline, target, _, hashed = _baselined_digest_repo(
+        tmp_path, b"synthetic-moved-line-separator"
+    )
+    digest = hashlib.sha256(b"synthetic-moved-line-separator").hexdigest()
+    target.write_text(
+        '{\n  "title": "fejezet' + separator + 'folytatás",\n  "unbound": "'
+        + digest
+        + '",\n  "x": 1\n}\n',
+        encoding="utf-8",
+    )
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1, message
+    assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
+    assert "content-digest" not in message
+    assert "reconcile with the audited repository state" not in message
+    audit = repo / "services" / "platform-core" / "runtime" / "tracked-secret-delta-audit.json"
+    document = json.loads(audit.read_text(encoding="utf-8"))
+    row = document["rows"][0]
+    assert row["hashes"] == [hashed]
+    assert row["lineNumbers"] == [3]
+    anchor = check_secret_baseline._baseline_anchor_commit(repo, baseline)
+    audited_state = check_secret_baseline._audited_occurrence_identities(
+        repo, anchor, [_DIGEST_MANIFEST_PATH]
+    )
+    assert {line for _, _, _, line in audited_state} == {2}
+    assert row["findingCount"] == 1
+
+
 def test_content_digest_classifier_rejects_an_unbound_hex_value(tmp_path: Path) -> None:
     """The same 64-hex value fails closed when it is not bound to a digest key."""
     repo = _init_repo(tmp_path / "repo")

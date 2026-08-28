@@ -88,11 +88,11 @@ def demo_partner_code(environ: Mapping[str, str] | None = None) -> str:
 def demo_accounts_allowed() -> bool:
     """Fail-closed kapu: production adatbázisba demo fiók nem kerülhet.
 
-    ``settings.demo_runtime_enabled`` a ``DEMO_FEATURES_ENABLED`` flaggel
-    production alatt is igazra kényszeríthető, és a worker belépési pontja
-    nem futtat ``validate()`` ellenőrzést -- ezért a tiltás itt, a
-    felhasználás pontján is érvényesül: production módban a válasz a flag
-    értékétől függetlenül hamis.
+    ``settings.demo_runtime_enabled`` a ``DEMO_RUNTIME_ENABLED`` (elsőbbség)
+    vagy a ``DEMO_FEATURES_ENABLED`` flaggel production alatt is igazra
+    kényszeríthető, és a worker belépési pontja nem futtat ``validate()``
+    ellenőrzést -- ezért a tiltás itt, a felhasználás pontján is érvényesül:
+    production módban a válasz a flag értékétől függetlenül hamis.
     """
     if settings.is_production:
         return False
@@ -740,7 +740,7 @@ def seed_commercial_integration(db: Session) -> None:
             **data, status="approved", requested_by="owner_instruction", reviewed_by="owner_instruction",
             reviewed_at=datetime.now(timezone.utc),
         ))
-    if settings.demo_runtime_enabled and not db.scalar(select(ProjectObjectState).where(ProjectObjectState.source_module == "change_control", ProjectObjectState.object_id == "CHG-DEMO-001")):
+    if demo_accounts_allowed() and not db.scalar(select(ProjectObjectState).where(ProjectObjectState.source_module == "change_control", ProjectObjectState.object_id == "CHG-DEMO-001")):
         db.add(ProjectObjectState(
             project_id="IMP-FONYOD-011", source_module="change_control", object_type="Change", object_id="CHG-DEMO-001",
             status="customer_accepted", summary="Támfal és tereprendezés módosított scope – ügyfél által elfogadva; munkakezdési engedély még szükséges.",
@@ -927,7 +927,7 @@ def seed_database(db: Session) -> None:
             db.delete(module)
     db.flush()
     verified_at = datetime.now(timezone.utc)
-    if settings.demo_runtime_enabled:
+    if demo_accounts_allowed():
         module_runtime: dict[str, Any] = {
             "lifecycle_status": "test_ready",
             "integration_status": "healthy",
@@ -949,7 +949,7 @@ def seed_database(db: Session) -> None:
         }
     for key, name, version, owner, criticality in MODULES:
         health_url = (
-            f"/api/demo/modules/{key}" if settings.demo_runtime_enabled else None
+            f"/api/demo/modules/{key}" if demo_accounts_allowed() else None
         )
         runtime_module = db.scalar(select(ModuleRegistry).where(ModuleRegistry.module_key == key))
         if not runtime_module:

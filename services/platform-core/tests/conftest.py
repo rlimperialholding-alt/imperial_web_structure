@@ -105,13 +105,54 @@ from app.main import app  # noqa: E402
 from app.seed import DEMO_PASSWORD, seed_database  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+# A per-test tiszta adatbázis a teljes drop/create/seed ismétlése nélkül: az
+# első teszt a szokásos módon építi fel a teljes, seedelt állapotot, azt a
+# futás bytes-pontosan (sqlite serialize/deserialize) tárolja, és minden
+# további teszt ugyanezt a bájt-azonos pristine állapotot kapja vissza --
+# szemantikailag megegyezik a korábbi drop_all/create_all/seed_database
+# sorozattal (minden teszt friss, teljesen seedelt adatbázisból indul),
+# csak a soronkénti coverage-tracing alatti többszörös seed-költség nélkül.
+# Nem-in-memory vagy nem-SQLite környezetben a megszokott, teljes újraseedelő
+# út fut változatlanul.
+_seeded_snapshot: bytes | None = None
+
+
+def _is_in_memory_database() -> bool:
+    return engine.url.get_backend_name() == "sqlite" and engine.url.database in (
+        None,
+        "",
+        ":memory:",
+    )
+
+
+def _restore_seeded_snapshot() -> None:
+    global _seeded_snapshot
+    if not _is_in_memory_database():
+        return
+    if _seeded_snapshot is None:
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        with SessionLocal() as db:
+            seed_database(db)
+        connection = engine.raw_connection()
+        _seeded_snapshot = connection.serialize()
+        connection.close()
+        return
+    connection = engine.raw_connection()
+    connection.rollback()
+    connection.deserialize(_seeded_snapshot)
+    connection.close()
+
 
 @pytest.fixture(autouse=True)
 def clean_database():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        seed_database(db)
+    if _is_in_memory_database():
+        _restore_seeded_snapshot()
+    else:
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        with SessionLocal() as db:
+            seed_database(db)
     yield
 
 

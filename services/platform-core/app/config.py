@@ -209,6 +209,11 @@ class Settings:
     typehouse_factory_vision_model: str = os.getenv("OPENAI_VISION_MODEL", "")
     require_https: bool = os.getenv("REQUIRE_HTTPS", "false").lower() == "true"
     demo_features_enabled: bool | None = _optional_bool("DEMO_FEATURES_ENABLED")
+    # Az explicit demo-runtime kapcsoló: a ``demo_runtime_enabled`` származtatott
+    # értékét ez dönti el először (production alatt a felhasználási ponti
+    # ``demo_accounts_allowed()`` kapu akkor is fail-closed marad). A demo
+    # hitelesítők, seed és tisztítás mindig ezt a származtatott értéket nézik.
+    demo_runtime_enabled_override: bool | None = _optional_bool("DEMO_RUNTIME_ENABLED")
     ai_external_calls_enabled: bool = (
         os.getenv("AI_EXTERNAL_CALLS_ENABLED", "false").lower() == "true"
     )
@@ -229,6 +234,8 @@ class Settings:
 
     @property
     def demo_runtime_enabled(self) -> bool:
+        if self.demo_runtime_enabled_override is not None:
+            return self.demo_runtime_enabled_override
         if self.demo_features_enabled is not None:
             return self.demo_features_enabled
         return not self.is_production

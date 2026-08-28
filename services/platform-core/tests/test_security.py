@@ -43,6 +43,20 @@ def test_production_rejects_explicit_demo_runtime():
     assert any("DEMO_FEATURES_ENABLED" in error for error in production.validate())
 
 
+def test_production_rejects_explicit_demo_runtime_override():
+    production = Settings(
+        environment="production",
+        database_url="postgresql+psycopg://platform@postgres/platform",
+        session_secret="s" * 32,
+        api_token="api-token",
+        require_https=True,
+        demo_runtime_enabled_override=True,
+    )
+
+    assert production.demo_runtime_enabled is True
+    assert any("DEMO_FEATURES_ENABLED" in error for error in production.validate())
+
+
 def test_live_ai_routing_requires_provider_key_and_budget():
     unsafe = Settings(
         ai_external_calls_enabled=True,
@@ -190,7 +204,11 @@ class TestDemoTemplateCredentialsGate:
     A Task40 review MEDIUM regressziója: a templátum-globals csak a
     ``settings.is_production``-t nézte, ezért non-production, kikapcsolt demo
     runtime mellett is kiírta a demo hitelesítőket, miközben a seed ilyenkor
-    sem demo fiókot, sem szintetikus partneri hozzáférést nem hoz létre.
+    sem demo fiókot, sem szintetikus partneri hozzáférést nem hoz létre. A
+    kikapcsolt esetet a ``demo_runtime_enabled`` explicit kapcsolója
+    (``DEMO_RUNTIME_ENABLED``) állítja be, nem a megkülönböztetett
+    ``demo_features_enabled`` feature-flag: az acceptance eset közvetlenül a
+    runtime-értéket rögzíti.
     """
 
     def test_demo_disabled_non_production_exposes_no_template_credentials(
@@ -202,9 +220,10 @@ class TestDemoTemplateCredentialsGate:
             dataclasses.replace(
                 seed_module.settings,
                 environment="staging",
-                demo_features_enabled=False,
+                demo_runtime_enabled_override=False,
             ),
         )
+        assert seed_module.settings.demo_runtime_enabled is False
         assert demo_accounts_allowed() is False
         assert main_module._demo_template_credentials() == (None, None)
 
@@ -217,9 +236,10 @@ class TestDemoTemplateCredentialsGate:
             dataclasses.replace(
                 seed_module.settings,
                 environment="staging",
-                demo_features_enabled=True,
+                demo_runtime_enabled_override=True,
             ),
         )
+        assert seed_module.settings.demo_runtime_enabled is True
         assert main_module._demo_template_credentials() == (DEMO_PASSWORD, DEMO_PARTNER_CODE)
 
     def test_production_never_exposes_template_credentials_even_with_forced_flag(
@@ -231,9 +251,10 @@ class TestDemoTemplateCredentialsGate:
             dataclasses.replace(
                 seed_module.settings,
                 environment="production",
-                demo_features_enabled=True,
+                demo_runtime_enabled_override=True,
             ),
         )
+        assert seed_module.settings.demo_runtime_enabled is True
         assert demo_accounts_allowed() is False
         assert main_module._demo_template_credentials() == (None, None)
 
@@ -245,7 +266,7 @@ class TestDemoTemplateCredentialsGate:
     def test_demo_disabled_non_production_hides_credentials_end_to_end(
         self, tmp_path: Path
     ) -> None:
-        """Friss folyamat, staging + DEMO_FEATURES_ENABLED=false: a valódi
+        """Friss folyamat, staging + DEMO_RUNTIME_ENABLED=false: a valódi
         import-időben rögzített globals és a renderelt login oldalak sem demo
         jelszót, sem partneri demókódot nem mutatnak."""
         platform_core = Path(seed_module.__file__).resolve().parents[1]
@@ -256,6 +277,7 @@ class TestDemoTemplateCredentialsGate:
             "from app import seed\n"
             "from fastapi.testclient import TestClient\n"
             "assert not seed.settings.is_production\n"
+            "assert seed.settings.demo_runtime_enabled is False\n"
             "assert seed.demo_accounts_allowed() is False\n"
             "print(app_main.templates.env.globals['demo_password'])\n"
             "print(app_main.templates.env.globals['partner_demo_code'])\n"
@@ -268,7 +290,7 @@ class TestDemoTemplateCredentialsGate:
         env = {
             **os.environ,
             "ENVIRONMENT": "staging",
-            "DEMO_FEATURES_ENABLED": "false",
+            "DEMO_RUNTIME_ENABLED": "false",
             "DEMO_CREDENTIALS_STATE_PATH": str(tmp_path / "demo-credentials-state.json"),
         }
         completed = subprocess.run(

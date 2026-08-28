@@ -1167,9 +1167,10 @@ async def lifespan(app: FastAPI):
         seed_database(db)
         ensure_typehouse_auto_approved_rights(db)
         ensure_house_catalog_seed(db)
-        ensure_houseplan_source_cutover(db, demo_auto_approve=settings.demo_runtime_enabled)
-        ensure_house_studio_demo_grants(db, enabled=settings.demo_runtime_enabled)
-        ensure_market_demo_grants(db, enabled=settings.demo_runtime_enabled)
+        demo_allowed = demo_accounts_allowed()
+        ensure_houseplan_source_cutover(db, demo_auto_approve=demo_allowed)
+        ensure_house_studio_demo_grants(db, enabled=demo_allowed)
+        ensure_market_demo_grants(db, enabled=demo_allowed)
         migrate_market_snapshot_encryption(db)
         migrate_house_designer_site_encryption(db)
         synchronize_schedule_sources(db, actor="system:startup")
@@ -3515,7 +3516,10 @@ def api_auth_session(user: User = Depends(require_session_user)):
 
 
 def require_demo_runtime() -> None:
-    if not settings.demo_runtime_enabled:
+    # Ugyanaz a fail-closed kapu, mint a demo seednél és tisztításnál: a
+    # demo-runtime API felület production alatt akkor sem nyílik meg, ha a
+    # DEMO_FEATURES_ENABLED flag erőltetve van.
+    if not demo_accounts_allowed():
         raise HTTPException(404, "Demo runtime is disabled in this environment.")
 
 
