@@ -1423,8 +1423,8 @@ def run_once(db: Session) -> dict[str, Any]:
     )
     from .wide_service import run_due as run_due_wide
 
-    route_scan = scan_due_routes(db)
     wide_run = run_due_wide(db)
+    route_scan = scan_due_routes(db)
     question_answers = generate_question_radar_answers(db)
     content_factory = generate_daily_content(db)
     publication_queue = enqueue_daily_publications(db)
