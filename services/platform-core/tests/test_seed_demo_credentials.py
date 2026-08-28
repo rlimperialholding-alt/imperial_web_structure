@@ -29,6 +29,7 @@ from app.security import verify_password
 from app.seed import (
     DEMO_CREDENTIALS_STATE_ENV,
     DEMO_LOGIN_ENV,
+    DEMO_PARTNER_ACCESS_ID,
     DEMO_PARTNER_CODE,
     DEMO_PARTNER_CODE_ENV,
     DEMO_PASSWORD,
@@ -39,6 +40,7 @@ from app.seed import (
     demo_runtime_credentials,
     seed_database,
 )
+from app.services.partner_field import access_is_valid, authenticate_access
 
 SEED_SOURCE = Path(seed.__file__).read_text(encoding="utf-8")
 # `password = "..."`, `secret: "..."` és társai: a beégetett, credential alakú
@@ -50,10 +52,36 @@ _CREDENTIAL_LITERAL = re.compile(
 _URLSAFE = re.compile(r"^[A-Za-z0-9_-]+$")
 # Szintetikus, credential-alak nélküli sentinel a stale hash szimulálásához.
 STALE_HASH = "stale-hash"
+# Ugyanilyen sentinel a NEM-demo (szintetikus, de nem a demo azonosítójú)
+# partneri sorhoz: a tisztítás hatókör-szűkítését bizonyítja.
+NON_DEMO_ACCESS_HASH = "non-demo-hash"
+NON_DEMO_ACCESS_ID = "PFA-SYNTHETIC-NON-DEMO-01"
+NON_DEMO_WORKER_ID = "PWR-SYNTHETIC-NON-DEMO-01"
 
 
 def _production_settings(**overrides):
     return dataclasses.replace(seed.settings, environment="production", **overrides)
+
+
+def _synthetic_partner_state(db) -> dict:
+    """A szintetikus demo partneri hozzáférés megfigyelhető állapota.
+
+    Csak az engedélyezési döntést hordozó mezőket rögzíti (aktív jelző és
+    belépőkód-hash, illetve a munkavállalók aktív jelzője), így két egymást
+    követő tisztítás eredménye közvetlenül összehasonlítható.
+    """
+    access = db.scalar(
+        select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == DEMO_PARTNER_ACCESS_ID)
+    )
+    workers = db.scalars(
+        select(PartnerWorker)
+        .where(PartnerWorker.access_id == DEMO_PARTNER_ACCESS_ID)
+        .order_by(PartnerWorker.worker_id)
+    ).all()
+    return {
+        "access": None if access is None else (access.active, access.access_code_hash),
+        "workers": [(worker.worker_id, worker.active) for worker in workers],
+    }
 
 
 class TestSeedSourceHasNoCredentialLiteral:
@@ -709,6 +737,160 @@ class TestPartnerDemoAccessGate:
         db.flush()
 
         assert db.scalars(select(PartnerFieldAccess)).all() == []
+
+    def test_demo_disabled_seed_deactivates_pre_existing_synthetic_access(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A Task39 review HIGH közvetlen regressziója: nincs bennmaradó hozzáférés.
+
+        A korábbi kód a zárt kapun passzívan visszatért, ezért egy KORÁBBI,
+        demo-engedélyezett futás ``PFA-GOD-DEMO`` hozzáférése -- és a hozzá
+        tartozó munkavállalói felhatalmazás -- aktívan a production
+        adatbázisban maradt, jogosulatlan terepi hozzáférést engedve. A
+        fixture aktív szintetikus hozzáférést hoz létre, tehát a kiindulás
+        pontosan az a "stale" állapot, amit a korábbi teszt (az előzetes
+        törléssel) nem tudott felfedni.
+        """
+        access = db.scalar(
+            select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == DEMO_PARTNER_ACCESS_ID)
+        )
+        assert access is not None, "a fixture-nek aktív demo hozzáférést kell létrehoznia"
+        assert access.active is True
+        # Egy negyedik munkavállaló, amely NEM a seed három alapsora közül való,
+        # de a szintetikus hozzáférés alatt kap felhatalmazást: ennek is le kell
+        # zárulnia, különben a tisztítás csak a három ismert azonosítót fedné.
+        db.add(
+            PartnerWorker(
+                worker_id="PWR-GOD-DEMO-EXTRA",
+                access_id=DEMO_PARTNER_ACCESS_ID,
+                name="Szintetikus Extra Munkás",
+                role="Segédmunkás",
+                active=True,
+            )
+        )
+        db.flush()
+        assert authenticate_access(db, DEMO_PARTNER_CODE) is not None
+
+        monkeypatch.setattr(seed, "settings", _production_settings(demo_features_enabled=True))
+        assert demo_accounts_allowed() is False
+        seed_database(db)
+        db.flush()
+
+        retired = db.scalar(
+            select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == DEMO_PARTNER_ACCESS_ID)
+        )
+        assert retired is not None
+        assert retired.active is False
+        assert access_is_valid(retired) is False
+        workers = db.scalars(
+            select(PartnerWorker).where(PartnerWorker.access_id == DEMO_PARTNER_ACCESS_ID)
+        ).all()
+        assert len(workers) == 4, "a szintetikus munkavállalói sorok auditálhatóan megmaradnak"
+        assert [worker.active for worker in workers] == [False] * 4
+        # A korábban kiírt szintetikus belépőkód sem nyit többé: a belépés
+        # kizárólag aktív hozzáférést vizsgál.
+        assert authenticate_access(db, DEMO_PARTNER_CODE) is None
+
+    def test_repeated_demo_disabled_cleanup_is_idempotent(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Ismételt tisztítás biztonságos: a második futás nem változtat semmit."""
+        monkeypatch.setattr(seed, "settings", _production_settings(demo_features_enabled=True))
+        assert demo_accounts_allowed() is False
+        seed_database(db)
+        db.flush()
+        first = _synthetic_partner_state(db)
+        assert first["access"] is not None
+        assert first["access"][0] is False
+        assert first["workers"] and all(not active for _, active in first["workers"])
+
+        seed_database(db)
+        db.flush()
+        assert _synthetic_partner_state(db) == first
+
+    def test_demo_disabled_cleanup_never_touches_a_non_demo_partner_access(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A tisztítás pontos azonosítóra hat, nem prefixre vagy mintára.
+
+        Egy szintetikus, de NEM demo azonosítójú partneri hozzáférés (és
+        munkavállalója) érintetlen marad ugyanabban a futásban, amelyben a
+        demo hozzáférés lezárul -- így a lezárás sosem érinthet valódi
+        partneri jogosultságot.
+        """
+        db.add(
+            PartnerFieldAccess(
+                access_id=NON_DEMO_ACCESS_ID,
+                company_name="Szintetikus Nem-Demo Partner Kft.",
+                project_id="IMP-SYNTHETIC-001",
+                work_package_id="WP-SYNTHETIC-001",
+                access_code_hash=NON_DEMO_ACCESS_HASH,
+                active=True,
+                attendance_required=True,
+                can_report_changes=True,
+            )
+        )
+        db.add(
+            PartnerWorker(
+                worker_id=NON_DEMO_WORKER_ID,
+                access_id=NON_DEMO_ACCESS_ID,
+                name="Szintetikus Nem-Demo Munkás",
+                role="Kőműves",
+                active=True,
+            )
+        )
+        db.flush()
+
+        monkeypatch.setattr(seed, "settings", _production_settings(demo_features_enabled=True))
+        seed_database(db)
+        db.flush()
+
+        untouched = db.scalar(
+            select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == NON_DEMO_ACCESS_ID)
+        )
+        assert untouched is not None
+        assert untouched.active is True
+        assert untouched.access_code_hash == NON_DEMO_ACCESS_HASH
+        untouched_worker = db.scalar(
+            select(PartnerWorker).where(PartnerWorker.worker_id == NON_DEMO_WORKER_ID)
+        )
+        assert untouched_worker is not None
+        assert untouched_worker.active is True
+        # ...és ugyanez a futás a demo hozzáférést lezárta.
+        state = _synthetic_partner_state(db)
+        assert state["access"] is not None
+        assert state["access"][0] is False
+
+    def test_demo_reseed_reactivates_a_previously_retired_synthetic_access(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A lezárás visszafordítható: a demo kapun belül újra aktív, friss kóddal.
+
+        A fail-closed tisztítás nem törheti el a demo útvonalat: egy
+        production-módú lezárás után a demo-engedélyezett újraseedelés a
+        hozzáférést és a munkavállalóit ismét aktívvá teszi, és a hash az
+        aktuális folyamat partner-kódját követi.
+        """
+        monkeypatch.setattr(seed, "settings", _production_settings(demo_features_enabled=True))
+        seed_database(db)
+        db.flush()
+        retired = _synthetic_partner_state(db)
+        assert retired["access"] is not None and retired["access"][0] is False
+
+        monkeypatch.setattr(
+            seed, "settings", dataclasses.replace(seed.settings, environment="development")
+        )
+        monkeypatch.setattr(seed, "DEMO_PARTNER_CODE", "445566")
+        assert demo_accounts_allowed() is True
+        seed_database(db)
+        db.flush()
+
+        restored = _synthetic_partner_state(db)
+        assert restored["access"] is not None
+        assert restored["access"][0] is True
+        assert restored["workers"] and all(active for _, active in restored["workers"])
+        assert verify_password("445566", restored["access"][1])
+        assert authenticate_access(db, "445566") is not None
 
 
 class TestProductionDemoAccountGate:

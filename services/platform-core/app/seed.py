@@ -692,34 +692,105 @@ def seed_operations_demo(db: Session) -> None:
     db.add(MaterialUsageControl(control_id="USE-GOD-101", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", lot_id="LOT-GOD-101", subcontractor="Falazó brigád", planned_quantity=Decimal("30"), waste_pct=Decimal("5"), allowed_quantity=Decimal("31.5"), actual_quantity=Decimal("33"), unit="raklap", unit_cost_huf=Decimal("132000"), damage_huf=Decimal("0"), decision_status="review_required", contractual_basis="Alvállalkozói szerződés anyagfelelősségi pontja"))
 
 
+# A szintetikus partneri terepi hozzáférés kanonikus, pontos azonosítója. A
+# demo-tiltott tisztítás kizárólag erre az egyetlen azonosítóra hat -- pontos
+# egyenlőséggel, nem prefix-, LIKE- vagy mintaillesztéssel --, így valódi
+# partneri hozzáférést vagy annak munkavállalóit nem érintheti.
+DEMO_PARTNER_ACCESS_ID = "PFA-GOD-DEMO"
+
+
+def _partner_field_demo_workers(db: Session) -> list[PartnerWorker]:
+    """A szintetikus demo hozzáféréshez tartozó ``PartnerWorker`` sorok.
+
+    Pontos azonosító-egyezés a szintetikus ``access_id``-ra: minden ilyen sor
+    kizárólag e szintetikus hozzáférés alatt kap felhatalmazást (a
+    ``partner_field`` szolgáltatás a jelenlét- és bejelentési műveleteknél
+    ``access_id`` + ``active`` szerint szűr), ezért a hozzáférés lezárásakor
+    egyik sem maradhat aktív -- akkor sem, ha nem a seed három alapsorának
+    egyike. Valódi partneri hozzáféréshez tartozó munkavállalót ez a szűrés
+    nem érhet el.
+    """
+    return list(
+        db.scalars(
+            select(PartnerWorker).where(PartnerWorker.access_id == DEMO_PARTNER_ACCESS_ID)
+        ).all()
+    )
+
+
+def retire_partner_field_demo_access(db: Session) -> None:
+    """A szintetikus partneri terepi hozzáférés fail-closed lezárása.
+
+    Production -- vagy bármely demo-tiltott futás -- esetén egy KORÁBBI futás
+    által létrehozott szintetikus hozzáférés nem maradhat aktív: a
+    ``PFA-GOD-DEMO`` hozzáférés és a hozzá tartozó szintetikus
+    ``PartnerWorker`` sorok is inaktívvá válnak. Ez pontosan a termék saját
+    lezárási szemantikája (``partner_field.deactivate_access``:
+    ``active = False``), és pontosan ez az a jelzés, amelyre a belépés és a
+    munkavállalói felhatalmazás is szűr: ``authenticate_access`` csak
+    ``active`` hozzáférést vizsgál, ``access_is_valid`` inaktívra hamis,
+    a jelenlét/bejelentés pedig csak ``active`` munkavállalót fogad el.
+
+    A művelet:
+
+    * pontos azonosítóra hat (``DEMO_PARTNER_ACCESS_ID`` egyenlőség), tehát
+      valódi partneri hozzáférést vagy munkavállalót nem módosít, és nem
+      szélesíti ki az azonosítókat;
+    * idempotens: a már inaktív sorokat nem írja újra, ismételt futás után az
+      állapot bitre változatlan;
+    * tranzakcionális: a hívó ``seed_database`` egyetlen munkaegységében fut,
+      és azzal együtt commitál -- részleges lezárás nem maradhat hátra.
+    """
+    existing = db.scalar(
+        select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == DEMO_PARTNER_ACCESS_ID)
+    )
+    if existing is not None and existing.active:
+        existing.active = False
+    for worker in _partner_field_demo_workers(db):
+        if worker.active:
+            worker.active = False
+
+
 def seed_partner_field_demo_access(db: Session) -> None:
     """A szintetikus partneri terepi hozzáférés seedelése.
 
     Kizárólag a ``demo_accounts_allowed()`` fail-closed kapun belül készülhet:
     production adatbázisba -- a ``DEMO_FEATURES_ENABLED`` flagtől függetlenül --
     gyenge vagy aktív szintetikus partneri hozzáférés egyetlen seed-útvonalon
-    sem kerülhet. Újrafutás (reseed/restart) esetén a már létező hozzáférés
-    hash-e biztonságosan frissül az aktuális folyamat demo partner-kódjához,
-    így a login oldal által kiírt kód újraindítás után is működik. A függvény
-    a ``seed_operations_demo`` PMPhase-korlátjától függetlenül fut, tehát a
+    sem kerülhet. A kapu zárva NEM elég passzívan visszatérni: egy korábbi
+    (demo-engedélyezett) futás hozzáférése ott maradna aktívan, ezért a zárt
+    kapun a meglévő szintetikus hozzáférés és munkavállalói lezárásra kerülnek
+    (``retire_partner_field_demo_access``).
+
+    Újrafutás (reseed/restart) esetén a már létező hozzáférés hash-e
+    biztonságosan frissül az aktuális folyamat demo partner-kódjához, és a sor
+    -- valamint munkavállalói -- újra aktívvá válnak, így egy korábbi
+    production-módú lezárás után is működik a demo belépés, és a login oldal
+    által kiírt kód újraindítás után is nyit. A függvény a
+    ``seed_operations_demo`` PMPhase-korlátjától függetlenül fut, tehát a
     hash-szinkron akkor is megtörténik, ha a demo üzemeltetési adatok már
     léteznek.
     """
     if not demo_accounts_allowed():
+        retire_partner_field_demo_access(db)
         return
     now = datetime.now(timezone.utc)
     partner_hash = hash_password(DEMO_PARTNER_CODE)
     existing = db.scalar(
-        select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == "PFA-GOD-DEMO")
+        select(PartnerFieldAccess).where(PartnerFieldAccess.access_id == DEMO_PARTNER_ACCESS_ID)
     )
     if existing is not None:
         existing.access_code_hash = partner_hash
+        # Egy korábbi demo-tiltott futás lezárhatta a sort; a demo kapun belül
+        # a szintetikus hozzáférés és a munkavállalói ismét aktívak.
+        existing.active = True
+        for worker in _partner_field_demo_workers(db):
+            worker.active = True
         return
-    db.add(PartnerFieldAccess(access_id="PFA-GOD-DEMO", company_name="Minta Falazó Kft.", company_tax_number="12345678-2-41", contact_name="Nagy László brigádvezető", contact_phone="+36 30 000 0000", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", access_code_hash=partner_hash, active=True, valid_from=now-timedelta(days=2), valid_until=now+timedelta(days=60), attendance_required=True, can_report_changes=True))
+    db.add(PartnerFieldAccess(access_id=DEMO_PARTNER_ACCESS_ID, company_name="Minta Falazó Kft.", company_tax_number="12345678-2-41", contact_name="Nagy László brigádvezető", contact_phone="+36 30 000 0000", project_id="IMP-GOD-014", work_package_id="WP-GOD-WALL", access_code_hash=partner_hash, active=True, valid_from=now-timedelta(days=2), valid_until=now+timedelta(days=60), attendance_required=True, can_report_changes=True))
     db.add_all([
-        PartnerWorker(worker_id="PWR-GOD-001", access_id="PFA-GOD-DEMO", name="Nagy László", role="Brigádvezető", active=True),
-        PartnerWorker(worker_id="PWR-GOD-002", access_id="PFA-GOD-DEMO", name="Kiss József", role="Kőműves", active=True),
-        PartnerWorker(worker_id="PWR-GOD-003", access_id="PFA-GOD-DEMO", name="Szabó Péter", role="Segédmunkás", active=True),
+        PartnerWorker(worker_id="PWR-GOD-001", access_id=DEMO_PARTNER_ACCESS_ID, name="Nagy László", role="Brigádvezető", active=True),
+        PartnerWorker(worker_id="PWR-GOD-002", access_id=DEMO_PARTNER_ACCESS_ID, name="Kiss József", role="Kőműves", active=True),
+        PartnerWorker(worker_id="PWR-GOD-003", access_id=DEMO_PARTNER_ACCESS_ID, name="Szabó Péter", role="Segédmunkás", active=True),
     ])
 
 
