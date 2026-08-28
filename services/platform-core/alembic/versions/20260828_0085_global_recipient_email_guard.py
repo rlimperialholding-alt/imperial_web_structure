@@ -276,40 +276,42 @@ def upgrade() -> None:
         op.create_index(
             f"ix_global_email_guard_events_{column}", "global_email_guard_events", [column]
         )
-    op.execute(CLAIM_FUNCTION)
-    op.execute(FINALIZE_FUNCTION)
-    op.execute(FAIL_FUNCTION)
-    op.execute(
-        "REVOKE ALL ON FUNCTION public.claim_global_email_recipient_guard(text[],text,text,text,timestamptz) FROM PUBLIC"
-    )
-    op.execute(
-        "REVOKE ALL ON FUNCTION public.finalize_global_email_recipient_guard(text[],text,text,text,timestamptz) FROM PUBLIC"
-    )
-    op.execute(
-        "REVOKE ALL ON FUNCTION public.fail_global_email_recipient_guard(text[],text,text,text,text,text,timestamptz) FROM PUBLIC"
-    )
-    op.execute(
-        """
-        DO $$ BEGIN
-          IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'etdr_lead_bridge') THEN
-            GRANT EXECUTE ON FUNCTION public.claim_global_email_recipient_guard(text[],text,text,text,timestamptz) TO etdr_lead_bridge;
-            GRANT EXECUTE ON FUNCTION public.finalize_global_email_recipient_guard(text[],text,text,text,timestamptz) TO etdr_lead_bridge;
-            GRANT EXECUTE ON FUNCTION public.fail_global_email_recipient_guard(text[],text,text,text,text,text,timestamptz) TO etdr_lead_bridge;
-          END IF;
-        END $$
-        """
-    )
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute(CLAIM_FUNCTION)
+        op.execute(FINALIZE_FUNCTION)
+        op.execute(FAIL_FUNCTION)
+        op.execute(
+            "REVOKE ALL ON FUNCTION public.claim_global_email_recipient_guard(text[],text,text,text,timestamptz) FROM PUBLIC"
+        )
+        op.execute(
+            "REVOKE ALL ON FUNCTION public.finalize_global_email_recipient_guard(text[],text,text,text,timestamptz) FROM PUBLIC"
+        )
+        op.execute(
+            "REVOKE ALL ON FUNCTION public.fail_global_email_recipient_guard(text[],text,text,text,text,text,timestamptz) FROM PUBLIC"
+        )
+        op.execute(
+            """
+            DO $$ BEGIN
+              IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'etdr_lead_bridge') THEN
+                GRANT EXECUTE ON FUNCTION public.claim_global_email_recipient_guard(text[],text,text,text,timestamptz) TO etdr_lead_bridge;
+                GRANT EXECUTE ON FUNCTION public.finalize_global_email_recipient_guard(text[],text,text,text,timestamptz) TO etdr_lead_bridge;
+                GRANT EXECUTE ON FUNCTION public.fail_global_email_recipient_guard(text[],text,text,text,text,text,timestamptz) TO etdr_lead_bridge;
+              END IF;
+            END $$
+            """
+        )
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP FUNCTION IF EXISTS public.fail_global_email_recipient_guard(text[],text,text,text,text,text,timestamptz)"
-    )
-    op.execute(
-        "DROP FUNCTION IF EXISTS public.finalize_global_email_recipient_guard(text[],text,text,text,timestamptz)"
-    )
-    op.execute(
-        "DROP FUNCTION IF EXISTS public.claim_global_email_recipient_guard(text[],text,text,text,timestamptz)"
-    )
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute(
+            "DROP FUNCTION IF EXISTS public.fail_global_email_recipient_guard(text[],text,text,text,text,text,timestamptz)"
+        )
+        op.execute(
+            "DROP FUNCTION IF EXISTS public.finalize_global_email_recipient_guard(text[],text,text,text,timestamptz)"
+        )
+        op.execute(
+            "DROP FUNCTION IF EXISTS public.claim_global_email_recipient_guard(text[],text,text,text,timestamptz)"
+        )
     op.drop_table("global_email_guard_events")
     op.drop_table("global_email_recipient_guards")
