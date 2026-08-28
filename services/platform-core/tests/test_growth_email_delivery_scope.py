@@ -78,6 +78,8 @@ class _FakeGmail:
         url = request.full_url
         if url == "https://oauth2.googleapis.com/token":
             return _HTTPResponse({"access_token": "access-token"})
+        if url == "https://gmail.googleapis.com/gmail/v1/users/me/profile":
+            return _HTTPResponse({"emailAddress": "info@imperialholding.hu"})
         if "/users/me/messages?" in url:
             if self.sent_raw is None:
                 return _HTTPResponse({"messages": []})
@@ -367,6 +369,35 @@ def test_external_gmail_exact_sent_readback_roundtrip(monkeypatch):
     assert receipt.detail["readback_verified"] is True
     assert receipt.detail["readback_mime_sha256"] == receipt.response_sha256
     assert receipt.detail["rfc_message_id"].startswith("<imperial-")
+    assert receipt.detail["oauth_profile_email"] == "info@imperialholding.hu"
+
+
+def test_external_gmail_profile_sender_mismatch_stops_before_send(monkeypatch):
+    gmail = _FakeGmail()
+
+    def mismatched_profile(request, timeout):
+        if request.full_url == "https://oauth2.googleapis.com/token":
+            return _HTTPResponse({"access_token": "access-token"})
+        if request.full_url == "https://gmail.googleapis.com/gmail/v1/users/me/profile":
+            return _HTTPResponse({"emailAddress": "other@imperialholding.hu"})
+        return gmail.urlopen(request, timeout)
+
+    monkeypatch.setattr(
+        "app.growth_ops.email.urllib.request.urlopen", mismatched_profile
+    )
+
+    with pytest.raises(
+        EmailDeliveryError,
+        match="gmail_oauth_profile_sender_mismatch_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+            )
+        )
+
+    assert gmail.post_count == 0
 
 
 def test_external_gmail_existing_exact_sent_is_reused_without_second_post(monkeypatch):
@@ -460,6 +491,8 @@ def test_external_gmail_pre_send_search_failure_does_not_claim_acceptance(monkey
     def fail_search(request, timeout):
         if request.full_url == "https://oauth2.googleapis.com/token":
             return _HTTPResponse({"access_token": "access-token"})
+        if request.full_url == "https://gmail.googleapis.com/gmail/v1/users/me/profile":
+            return _HTTPResponse({"emailAddress": "info@imperialholding.hu"})
         raise OSError("search unavailable")
 
     monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", fail_search)

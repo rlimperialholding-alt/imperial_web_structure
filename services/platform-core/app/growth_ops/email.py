@@ -513,8 +513,41 @@ class SMTPEmailAdapter:
                 f"gmail_oauth_pre_send:{type(exc).__name__}", retry_safe=True
             ) from exc
 
-        idempotency_key = _single_header(message, "X-Imperial-Idempotency-Key")
         authorization = {"Authorization": f"Bearer {access_token}"}
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+                    headers=authorization,
+                ),
+                timeout=30,
+            ) as response:
+                profile = json.loads(response.read(1_000_000))
+            if not isinstance(profile, dict):
+                raise json.JSONDecodeError("profile response is not an object", "", 0)
+            profile_email = str(profile.get("emailAddress") or "").strip().lower()
+            if profile_email != self.binding.sender_email:
+                raise EmailDeliveryError(
+                    "gmail_oauth_profile_sender_mismatch_no_send",
+                    retry_safe=False,
+                    authentication_failure=True,
+                    detail={"profile_email": profile_email},
+                )
+        except EmailDeliveryError:
+            raise
+        except urllib.error.HTTPError as exc:
+            raise EmailDeliveryError(
+                f"gmail_oauth_profile_http_{exc.code}",
+                retry_safe=exc.code >= 500 or exc.code == 429,
+                authentication_failure=exc.code in {400, 401, 403},
+            ) from exc
+        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            raise EmailDeliveryError(
+                f"gmail_oauth_profile_pre_send:{type(exc).__name__}",
+                retry_safe=True,
+            ) from exc
+
+        idempotency_key = _single_header(message, "X-Imperial-Idempotency-Key")
         existing_provider_id: str | None = None
         try:
             candidate_ids: list[str] = []
@@ -584,6 +617,7 @@ class SMTPEmailAdapter:
                         "readback_verified": True,
                         "provider_message_id": existing_provider_id,
                         "outbound_rfc_message_id": message_id,
+                        "oauth_profile_email": profile_email,
                         "recovered_existing_sent": True,
                     }
                 )
@@ -756,6 +790,7 @@ class SMTPEmailAdapter:
                 "readback_verified": True,
                 "provider_message_id": provider_id,
                 "outbound_rfc_message_id": message_id,
+                "oauth_profile_email": profile_email,
                 "recovered_existing_sent": False,
             },
         )

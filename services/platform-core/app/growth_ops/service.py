@@ -32,7 +32,7 @@ from .canonical_policy import (
 )
 from .canonical_templates import CanonicalFirstContactRegistry
 from .connectors import SourceError, fetch_source
-from .email import EmailDeliveryError, SMTPEmailAdapter
+from .email import GMAIL_OAUTH_FIELDS, EmailDeliveryError, SMTPEmailAdapter
 from .models import (
     GrowthControlState,
     GrowthRun,
@@ -325,6 +325,34 @@ def _verified_sender(db: Session, binding: BrandBinding) -> MailSendingDomain:
         raise GrowthRegistryError("Verified sending domain binding is missing")
     if row.from_email.strip().lower() != binding.sender_email:
         raise GrowthRegistryError("Sending-domain From address conflicts with the brand registry")
+    sender_domain = binding.sender_email.rsplit("@", 1)[-1]
+    if row.domain_name.strip().lower() != sender_domain:
+        raise GrowthRegistryError("Sending-domain name conflicts with the brand registry")
+    if row.provider == "gmail_api":
+        if not GMAIL_OAUTH_FIELDS.issubset(binding.secret):
+            raise GrowthRegistryError("Gmail OAuth sender binding is incomplete")
+        scopes = str(binding.secret.get("scope") or "").split()
+        if not any(
+            scope.endswith("/gmail.compose") or scope.endswith("/gmail.send")
+            for scope in scopes
+        ) or not any(
+            scope.endswith(("/gmail.readonly", "/gmail.modify", "/mail.google.com"))
+            for scope in scopes
+        ):
+            raise GrowthRegistryError("Gmail OAuth sender scopes are incomplete")
+        try:
+            evidence = json.loads(row.verification_evidence_json or "{}")
+        except json.JSONDecodeError as exc:
+            raise GrowthRegistryError("Gmail OAuth sender evidence is unreadable") from exc
+        if (
+            not isinstance(evidence, dict)
+            or evidence.get("verification_method") != "gmail_oauth_profile"
+            or str(evidence.get("profile_email") or "").strip().lower()
+            != binding.sender_email
+            or row.verified_at is None
+        ):
+            raise GrowthRegistryError("Gmail OAuth sender profile is not verified")
+        return row
     if any(getattr(row, name) != "pass" for name in ("spf_status", "dkim_status", "dmarc_status")):
         raise GrowthRegistryError("SPF, DKIM and DMARC must all pass")
     if row.provider == "provider_not_configured":

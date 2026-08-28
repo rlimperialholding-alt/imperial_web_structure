@@ -164,6 +164,87 @@ def test_verified_business_role_signal_queues_once(db, growth_runtime):
     assert len(db.scalars(select(OutreachMessage)).all()) == 1
 
 
+def test_verified_sender_accepts_exact_gmail_oauth_profile_evidence(db):
+    binding = BrandBinding(
+        brand_id="imperial",
+        sender_email="info@imperialholding.test",
+        domain_key="imperial-gmail-test",
+        secret={
+            "client_id": "client",
+            "client_secret": "secret",
+            "refresh_token": "refresh",
+            "scope": (
+                "https://www.googleapis.com/auth/gmail.compose "
+                "https://www.googleapis.com/auth/gmail.readonly"
+            ),
+        },
+        config={},
+    )
+    db.add(
+        MailSendingDomain(
+            domain_key=binding.domain_key,
+            domain_name="imperialholding.test",
+            from_email=binding.sender_email,
+            provider="gmail_api",
+            spf_status="not_applicable_oauth",
+            dkim_status="not_applicable_oauth",
+            dmarc_status="not_applicable_oauth",
+            verification_evidence_json=json.dumps(
+                {
+                    "verification_method": "gmail_oauth_profile",
+                    "profile_email": binding.sender_email,
+                }
+            ),
+            verified_at=datetime.now(UTC),
+            active=True,
+        )
+    )
+    db.commit()
+
+    assert service._verified_sender(db, binding).provider == "gmail_api"
+
+
+def test_verified_sender_rejects_gmail_oauth_profile_mismatch(db):
+    binding = BrandBinding(
+        brand_id="imperial",
+        sender_email="info@imperialholding.test",
+        domain_key="imperial-gmail-mismatch-test",
+        secret={
+            "client_id": "client",
+            "client_secret": "secret",
+            "refresh_token": "refresh",
+            "scope": (
+                "https://www.googleapis.com/auth/gmail.send "
+                "https://www.googleapis.com/auth/gmail.readonly"
+            ),
+        },
+        config={},
+    )
+    db.add(
+        MailSendingDomain(
+            domain_key=binding.domain_key,
+            domain_name="imperialholding.test",
+            from_email=binding.sender_email,
+            provider="gmail_api",
+            verification_evidence_json=json.dumps(
+                {
+                    "verification_method": "gmail_oauth_profile",
+                    "profile_email": "other@imperialholding.test",
+                }
+            ),
+            verified_at=datetime.now(UTC),
+            active=True,
+        )
+    )
+    db.commit()
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="Gmail OAuth sender profile is not verified",
+    ):
+        service._verified_sender(db, binding)
+
+
 def test_queued_payload_is_bound_to_the_canonical_registry(db, growth_runtime):
     result = service.ingest_signal(db, _signal())
     message = db.scalar(
