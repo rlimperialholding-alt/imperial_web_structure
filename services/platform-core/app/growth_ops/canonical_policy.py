@@ -11,7 +11,9 @@ SOURCE_LEDGER_SHEET_ID = 959591161
 SOURCE_LEDGER_SHEET_NAME = "Útvonal-nyilvántartás"
 SOURCE_LEDGER_ROUTE_COUNT = 25_494
 
-DAILY_UNIQUE_LEAD_MINIMUM = 100
+# Quality-first owner policy: a complete source run may legitimately yield zero
+# contact-qualified leads. Coverage is mandatory; manufacturing a quota is not.
+DAILY_UNIQUE_LEAD_MINIMUM = 0
 DAILY_QUESTION_TOPIC_MINIMUM = 80
 DAILY_ROUTE_ATTEMPT_MINIMUM = 800
 DAILY_CONTENT_BRAND_MINIMUM = 19
