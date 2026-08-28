@@ -34,6 +34,7 @@ from ..global_email_guard import (
     fail_global_recipient_delivery,
     finalize_global_recipient_delivery,
 )
+from ..land_acquisition.registry import is_named_portal_host
 from .canonical_policy import (
     ACTIVE_CONTENT_BRANDS,
     IORA_EXECUTIVE_EMAIL,
@@ -539,6 +540,9 @@ def _signal_type(route: SourceCoverageRoute) -> str:
             "beépíthető telek",
             "lakótelek",
             "családi házas telek",
+            "eladó telek",
+            "elado+telek",
+            "telek keresés",
             "building plot",
             "residential plot",
         )
@@ -695,6 +699,29 @@ def _specific_reply_permalink(value: object) -> bool:
         part.isdigit() or len(part) >= 12 or token in part
         for part in parts
         for token in ("question", "kerdes", "thread", "topic", "tema", "post", "munka")
+    )
+
+
+def _specific_listing_permalink(value: object) -> bool:
+    canonical = _canonical_https_url(value)
+    if not canonical:
+        return False
+    parsed = urlparse(canonical)
+    host = (parsed.hostname or "").casefold()
+    if not is_named_portal_host(host):
+        return False
+    path = parsed.path.casefold().rstrip("/")
+    parts = [part for part in path.split("/") if part]
+    if not parts:
+        return False
+    if re.fullmatch(r"/\d{6,}", path):
+        return True
+    if path.endswith(".htm") and any(character.isdigit() for character in parts[-1]):
+        return True
+    return (
+        any(part in {"ingatlan", "ingatlanok"} for part in parts[:-1])
+        and parts[-1] not in _GENERIC_PATH_PARTS
+        and (len(parts[-1]) >= 8 or any(character.isdigit() for character in parts[-1]))
     )
 
 
@@ -906,6 +933,7 @@ def process_source_attempt(
         candidate
         for candidate in all_link_candidates
         if _specific_reply_permalink(candidate["url"])
+        or _specific_listing_permalink(candidate["url"])
     ]
     other_candidates = [
         candidate for candidate in all_link_candidates if candidate not in specific_candidates
@@ -1011,6 +1039,7 @@ def process_source_attempt(
         str(candidate["url"])
         for candidate in safe_link_candidates
         if _specific_reply_permalink(candidate.get("url"))
+        or _specific_listing_permalink(candidate.get("url"))
     }
     for item in payload.get("leads", []) if isinstance(payload, dict) else []:
         if not isinstance(item, dict):

@@ -35,36 +35,48 @@ szolgáltatásait bővíti.
 
 ## Forrás- és portálpolitika
 
-A generic Growth route scanner nem olvassa az `ingatlan.com`, `zenga.hu`, `dh.hu`,
-`oc.hu`, `jofogas.hu`, `koltozzbe.hu` és `ingatlannet.hu` oldalakat. Ezekhez kizárólag
-írásban engedélyezett API/feed connector használható. A scanner ezen felül elutasítja a
-nem HTTPS, credentialt tartalmazó, nem szabványos portú, private, loopback, link-local,
-reserved és CGNAT célokat. Éles környezetben resolving egress proxy/allow-list is
-kötelező a DNS-rebinding ablak lezárásához.
+A generic Growth route scanner az `ingatlan.com`, `zenga.hu`, `dh.hu`, `oc.hu`,
+`jofogas.hu`, `koltozzbe.hu` és `ingatlannet.hu` nyilvános HTML-oldalait csak explicit
+`public_html` registry-bejegyzéssel olvashatja. Minden kérés előtt érvényesíti a portál
+`robots.txt` szabályát, azonosított Imperial user agentet használ, és nem kerül meg
+bejelentkezést, CAPTCHA-t, paywallt, 403/429 választ vagy más technikai korlátozást. A
+scanner ezen felül elutasítja a nem HTTPS, credentialt tartalmazó, nem szabványos portú,
+private, loopback, link-local, reserved és CGNAT célokat. Éles környezetben resolving
+egress proxy/allow-list is kötelező a DNS-rebinding ablak lezárásához.
 
-A `config/land-acquisition/portals.json` alapállapotban minden külső olvasást, publikálást
-és visszavonást tilt. Ez szándékos: a repositoryban jelenleg nincs bizonyított szerződés,
-API-credential, portálspecifikus adapter-receipt vagy staging contract-test.
+A `config/land-acquisition/portals.json` alapállapotban engedélyezi a robots-aware
+nyilvános HTML-beolvasást, de a readiness csak akkor PASS, ha a Hetzner forráskatalógusban
+van legalább egy aktív, az adott portálhoz tartozó route. A publikálás és visszavonás
+továbbra is tiltott, mert azokhoz nincs portálspecifikus adapter-receipt vagy staging
+contract-test.
+
+Az `SRC-0012` forrássor régi `/lista/elado+telek` címe auditcélból változatlanul megmarad
+a snapshotban, de futáskor a robots-engedélyezett `https://ingatlan.com/elado+telek`
+útvonalra cserélődik. A listaoldal konkrét, portálon belüli hirdetéslinkjei önálló
+forrásbizonyítékként kerülnek a deduplikációba; a kategóriaoldal URL-je nem helyettesítheti
+a konkrét hirdetés hivatkozását.
 
 ## E-mail forrás- és címzetti kapu
 
-- A 2026-08-25-i tulajdonosi jóváhagyás alapján a nyilvános építésitelek-hirdetésben
-  közzétett kapcsolattartó egyszeri, a konkrét hirdetésre hivatkozó megkeresése
-  engedélyezett `public_property_listing` forrásalappal. Ez ingatlanközvetítőre és
-  magánhirdetőre is vonatkozik.
+- Nyilvános építésitelek-hirdetés alapján egyszeri automatikus első kapcsolatfelvétel
+  engedélyezett a hirdetésben azonosított `listing_agent` vagy `property_owner` részére,
+  szervezeti role mailboxon és név szerinti e-mail-címen egyaránt. Ehhez az útvonalhoz
+  nem szükséges külön `explicit_request` vagy `documented_consent`; a kapcsolatfelvétel
+  kizárólag a konkrét, nyilvános telekhirdetésre adott együttműködési jelentkezés lehet.
 - A forráshirdetés HTTPS URL-je, a címzett szerepköre és a hirdetésből származó
   kapcsolat visszakereshető rögzítése kötelező. Más célú természetes személyes
   megkeresésre ez a kivétel nem használható.
 - A változtathatatlan, tulajdonos által jóváhagyott sablon első levele a
-  `land-public-listing-v1` policy alapján automatikusan release-tokenes jóváhagyást kap.
+  `land-public-listing-v3` policy alapján automatikusan release-tokenes jóváhagyást kap.
   Ez kizárólag az első levélre érvényes; automatikus utánkövető levél nem készül.
 - `listing_agent` esetén a 2026-08-25-én jóváhagyott rövid levél 2,5%-os jutalékot,
   telekre illő típusházzal elkészített hirdetést, látványtervet, alaprajzot és műszaki
   leírást ajánl. A fő jutalékmondat multipart HTML levélben félkövér, a plain-text
   változatban változatlan szöveggel szerepel.
-- `property_owner` esetén a 2026-08-25-én jóváhagyott rövid levél díjmentes,
-  jutalékmentes és kötelezettség nélküli kínálatba vételt ajánl, valamint a nyilvános
-  telekkínálatra mutat: `https://imperialholding.hu/termek/telek-kereso`.
+- `property_owner` esetén a 2026-08-28-án jóváhagyott levél ingyenes, jutalékmentes és
+  kötelezettség nélküli telek + típusház hirdetést ajánl. A levél tárgya és törzse a
+  konkrét települést, telekméretet és forráshirdetés-linket tartalmazza; hiányzó változó
+  esetén a rendszer fail-closed módon nem állítja sorba.
 - Nyilvános üzleti role mailbox továbbra is a Growth Ops meglévő
   `public_business_contact` szabályával használható.
 - Bounce, complaint, unsubscribe vagy suppression esetén minden további üzenet tiltott.
@@ -98,8 +110,10 @@ Minden végpont `X-Internal-Job-Token` védett.
 
 ## Aktiválási kapuk
 
-Egy portál `discovery_enabled` vagy `publish_enabled` mezője csak akkor állítható true-ra,
-ha mindegyik feltétel teljesült:
+Egy portál `public_html` discovery módja csak akkor állítható true-ra, ha robots.txt
+érvényesítés, azonosított user agent, HTTPS source route, deduplikáció és technikai
+védelem-megkerülési tiltás aktív. Egy portál `publish_enabled` mezője csak akkor állítható
+true-ra, ha mindegyik feltétel teljesült:
 
 1. platformtól kapott írásos API/feed és hirdetésfeladási jogosultság;
 2. jóváhagyott DPIA, megkeresési jogalap és adatmegőrzési szabály;
@@ -112,6 +126,12 @@ ha mindegyik feltétel teljesült:
 ## Jelenlegi release-határ
 
 Az adatmodell, migráció, orkestráció, biztonsági kapuk, API és worker-integráció kész. A
-név szerint felsorolt portálok és az Imperial telekkereső éles connectorai nincsenek
-bekapcsolva, mert azokhoz ebben a környezetben nincs bizonyított platformjogosultság,
-credential vagy adapter contract. A rendszer ezért nem állít hamis publikációs sikert.
+név szerint felsorolt portálok nyilvános HTML-je feldolgozható, amennyiben a konkrét route
+robots-engedélyezett és nem ütközik technikai védelembe. Az Imperial telekkereső éles
+publikációs adaptere nincs bekapcsolva, ezért a rendszer nem állít hamis publikációs sikert.
+
+A napi 05:30 Europe/Budapest futáshoz a Hetzner release-környezetben az alábbi nem titkos
+kapcsolók szükségesek: `GROWTH_OPS_ENABLED=true`, `CANONICAL_GROWTH_ENABLED=true`,
+`CANONICAL_ROUTE_SCANNING_ENABLED=true` és `CANONICAL_PROCESSING_ENABLED=true`. A levélküldés
+ettől külön kapu: ellenőrzött sending domain, SMTP-secret, `ALLOW_APPROVED_WRITES` kill-switch,
+30 napos címzetti cooldown, suppression-ellenőrzés és a fenti címzetti jogalap nélkül nem indul.

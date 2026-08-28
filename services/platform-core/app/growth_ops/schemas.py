@@ -56,6 +56,7 @@ class GrowthSignalIn(BaseModel):
     consent_evidence_id: str | None = Field(default=None, max_length=200)
     public_contact_url: str | None = Field(default=None, max_length=1500)
     location: str | None = Field(default=None, max_length=500)
+    plot_size_sqm: int | None = Field(default=None, gt=0, le=10_000_000)
     summary: str = Field(min_length=10, max_length=10_000)
     evidence_url: str = Field(min_length=8, max_length=1500)
     brand_id: str | None = Field(default=None, max_length=100)
@@ -198,6 +199,9 @@ class CanonicalFirstContactRenderIn(BaseModel):
     business_context: str | None = Field(default=None, max_length=500)
     business_context_verified: bool = False
     business_context_evidence_url: str | None = Field(default=None, max_length=1500)
+    listing_location: str | None = Field(default=None, max_length=500)
+    listing_size: str | None = Field(default=None, max_length=100)
+    listing_url: str | None = Field(default=None, max_length=2000)
     unsubscribe_url: str | None = Field(default=None, max_length=2000)
     recipient_classification_verified: bool
     exclusion_screening_verified: bool

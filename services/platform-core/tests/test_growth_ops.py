@@ -542,20 +542,40 @@ def test_natural_person_without_request_is_rejected(db, growth_runtime):
     assert not db.scalars(select(OutreachMessage)).all()
 
 
-@pytest.mark.parametrize("recipient_role", ["listing_agent", "property_owner"])
-def test_public_building_plot_listing_allows_named_recipient(recipient_role):
-    recipient_type = {
-        "listing_agent": "real_estate_agent",
-        "property_owner": "land_owner",
-    }[recipient_role]
+def test_public_building_plot_listing_allows_verified_listing_agent():
     signal = _signal(
-        external_key=f"LAND-{recipient_role}",
+        external_key="LAND-listing_agent",
+        signal_type="residential_building_plot",
+        company_name="Nyilvános hirdető",
+        company_registration_id=None,
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Nyilvános hirdető",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email="hirdeto@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property-listing.example.test/LAND-001",
+        evidence_url="https://property-listing.example.test/LAND-001",
+    )
+
+    assert service._eligibility(signal, score=90) == []
+
+
+def test_public_building_plot_listing_allows_verified_owner():
+    signal = _signal(
+        external_key="LAND-property_owner",
         signal_type="residential_building_plot",
         company_name="Nyilvános hirdető",
         company_registration_id=None,
         subject_type="natural_person",
-        recipient_role=recipient_role,
-        recipient_type=recipient_type,
+        recipient_role="property_owner",
+        recipient_type="land_owner",
         recipient_name="Nyilvános hirdető",
         sender_company_name=None,
         reference_names=[],
@@ -566,10 +586,99 @@ def test_public_building_plot_listing_allows_named_recipient(recipient_role):
         recipient_email_type="named",
         contact_basis="public_property_listing",
         public_contact_url="https://property-listing.example.test/LAND-001",
+        location="Sülysáp",
+        plot_size_sqm=605,
         evidence_url="https://property-listing.example.test/LAND-001",
     )
 
+    assert service._land_agent_gate_reason(signal) is None
     assert service._eligibility(signal, score=90) == []
+
+
+def test_public_building_plot_listing_allows_named_natural_person_agent():
+    signal = _signal(
+        external_key="LAND-natural-person-listing-agent",
+        signal_type="residential_building_plot",
+        company_name="Minta Értékesítő",
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="natural_person",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Minta Értékesítő",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email="minta.ertekesito@example.test",
+        recipient_email_type="named",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property-listing.example.test/LAND-NAMED-AGENT",
+        evidence_url="https://property-listing.example.test/LAND-NAMED-AGENT",
+    )
+
+    assert service._land_agent_gate_reason(signal) is None
+    assert service._eligibility(signal, score=90) == []
+
+
+@pytest.mark.parametrize(
+    ("recipient_role", "recipient_type", "subject_type", "recipient_email_type"),
+    [
+        ("property_owner", "land_owner", "natural_person", "named"),
+        ("listing_agent", "real_estate_agent", "natural_person", "named"),
+    ],
+)
+def test_public_building_plot_listing_auto_releases_single_initial_message(
+    db,
+    growth_runtime,
+    recipient_role,
+    recipient_type,
+    subject_type,
+    recipient_email_type,
+):
+    result = service.ingest_signal(
+        db,
+        _signal(
+            external_key=f"LAND-AUTO-RELEASE-{recipient_role}",
+            signal_type="residential_building_plot",
+            company_name="Minta Hirdető",
+            company_registration_id=None,
+            recipient_organization_name=(
+                "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
+            ),
+            subject_type=subject_type,
+            recipient_role=recipient_role,
+            recipient_type=recipient_type,
+            recipient_name="Minta Hirdető",
+            sender_company_name=None,
+            reference_names=[],
+            reference_names_verified=False,
+            recipient_classification_verified=True,
+            exclusion_screening_verified=True,
+            recipient_email=f"{recipient_role}@example.test",
+            recipient_email_type=recipient_email_type,
+            contact_basis="public_property_listing",
+            public_contact_url=(
+                f"https://property-listing.example.test/AUTO-{recipient_role}"
+            ),
+            location="Sülysáp",
+            plot_size_sqm=605,
+            evidence_url=f"https://property-listing.example.test/AUTO-{recipient_role}",
+        ),
+    )
+    message = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
+    )
+
+    assert result.status == "queued"
+    assert message is not None
+    assert message.sequence_step == 0
+    assert message.release_approved_by == (
+        "owner-policy:land-public-listing-v3:2026-08-28"
+    )
+    assert message.release_approved_at is not None
+    assert message.release_token_hash
 
 
 def test_public_building_plot_owner_vs_agent_mismatch_fails_closed():
@@ -578,7 +687,7 @@ def test_public_building_plot_owner_vs_agent_mismatch_fails_closed():
         signal_type="residential_building_plot",
         company_name="Nyilvános hirdető",
         company_registration_id=None,
-        subject_type="natural_person",
+        subject_type="organization",
         recipient_role="listing_agent",
         recipient_type="land_owner",
         recipient_name="Nyilvános hirdető",
@@ -588,7 +697,7 @@ def test_public_building_plot_owner_vs_agent_mismatch_fails_closed():
         recipient_classification_verified=True,
         exclusion_screening_verified=True,
         recipient_email="hirdeto@example.test",
-        recipient_email_type="named",
+        recipient_email_type="role",
         contact_basis="public_property_listing",
         public_contact_url="https://property-listing.example.test/LAND-002",
         evidence_url="https://property-listing.example.test/LAND-002",
@@ -610,7 +719,7 @@ def test_public_building_plot_uses_only_the_canonical_registry_template(
             company_name="Minta Értékesítő",
             company_registration_id=None,
             recipient_organization_name="Független Ingatlaniroda",
-            subject_type="natural_person",
+            subject_type="organization",
             recipient_role="listing_agent",
             recipient_type="real_estate_agent",
             recipient_name="Minta Értékesítő",
@@ -620,7 +729,7 @@ def test_public_building_plot_uses_only_the_canonical_registry_template(
             recipient_classification_verified=True,
             exclusion_screening_verified=True,
             recipient_email="ertekesito@example.test",
-            recipient_email_type="named",
+            recipient_email_type="role",
             contact_basis="public_property_listing",
             public_contact_url="https://property-listing.example.test/LAND-003",
             evidence_url="https://property-listing.example.test/LAND-003",
@@ -653,7 +762,7 @@ def test_land_auto_release_failure_cannot_leave_a_partial_queued_message(
             company_name="Minta Értékesítő",
             company_registration_id=None,
             recipient_organization_name="Független Ingatlaniroda",
-            subject_type="natural_person",
+            subject_type="organization",
             recipient_role="listing_agent",
             recipient_type="real_estate_agent",
             recipient_name="Minta Értékesítő",
@@ -661,7 +770,7 @@ def test_land_auto_release_failure_cannot_leave_a_partial_queued_message(
             reference_names=[],
             reference_names_verified=False,
             recipient_email="release-fail@example.test",
-            recipient_email_type="named",
+            recipient_email_type="role",
             contact_basis="public_property_listing",
             public_contact_url="https://property.example.test/release-fail",
             evidence_url="https://property.example.test/release-fail",
@@ -687,7 +796,7 @@ def test_land_copy_assertion_failure_cannot_leave_a_partial_queued_message(
             company_name="Minta Értékesítő",
             company_registration_id=None,
             recipient_organization_name="Független Ingatlaniroda",
-            subject_type="natural_person",
+            subject_type="organization",
             recipient_role="listing_agent",
             recipient_type="real_estate_agent",
             recipient_name="Minta Értékesítő",
@@ -695,7 +804,7 @@ def test_land_copy_assertion_failure_cannot_leave_a_partial_queued_message(
             reference_names=[],
             reference_names_verified=False,
             recipient_email="copy-fail@example.test",
-            recipient_email_type="named",
+            recipient_email_type="role",
             contact_basis="public_property_listing",
             public_contact_url="https://property.example.test/copy-fail",
             evidence_url="https://property.example.test/copy-fail",

@@ -11,7 +11,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..growth_ops.models import GrowthSignal, OutreachMessage
+from ..growth_ops.models import GrowthSignal, OutreachMessage, SourceCoverageRoute
 from ..models import (
     BuildConfigCase,
     BuildConfigGate,
@@ -810,27 +810,63 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
             portal.key: {
                 "module": portal.adapter_module,
                 "ready": _adapter_ready(db, portal),
+                "discovery_enabled": portal.discovery_enabled,
+                "publishing_enabled": portal.publish_enabled,
             }
             for portal in loaded_registry.portals.values()
-            if portal.publish_enabled
+            if portal.adapter_module and (portal.discovery_enabled or portal.publish_enabled)
         }
+        public_html_route_counts = {
+            key: 0 for key in registry.get("public_html_enabled", [])
+        }
+        if public_html_route_counts:
+            route_urls = db.scalars(
+                select(SourceCoverageRoute.route_url).where(SourceCoverageRoute.enabled.is_(True))
+            ).all()
+            for route_url in route_urls:
+                host = (urlparse(route_url).hostname or "").casefold()
+                portal = loaded_registry.for_host(host)
+                if (
+                    portal
+                    and portal.key in public_html_route_counts
+                    and portal.discovery_mode == "public_html"
+                    and portal.permits("discover")
+                ):
+                    public_html_route_counts[portal.key] += 1
         registry_state: dict[str, Any] = {
             "status": "ok",
             **registry,
             "adapters": adapters,
+            "public_html_route_counts": public_html_route_counts,
         }
     except LandRegistryError as exc:
         registry_state = {"status": "failed", "error": str(exc)}
     adapters_ready = all(
         bool(value.get("ready")) for value in registry_state.get("adapters", {}).values()
     )
-    ready = database == "ok" and registry_state.get("status") == "ok" and adapters_ready
+    live_public_html = any(
+        int(count) > 0
+        for count in registry_state.get("public_html_route_counts", {}).values()
+    )
+    live_adapter_discovery = any(
+        bool(value.get("ready")) and bool(value.get("discovery_enabled"))
+        for value in registry_state.get("adapters", {}).values()
+    )
+    live_discovery = live_public_html or live_adapter_discovery
+    ready = (
+        database == "ok"
+        and registry_state.get("status") == "ok"
+        and adapters_ready
+        and live_discovery
+    )
     return ready, {
         "database": database,
         "registry": registry_state,
         "live_external_writes": bool(registry_state.get("publishing_enabled")),
+        "live_discovery": live_discovery,
+        "blocking_reasons": [] if live_discovery else ["no_public_html_land_routes_configured"],
         "safety": {
-            "generic_portal_scraping": "blocked",
+            "public_html_discovery": "robots_enforced_no_captcha_bypass",
             "natural_person_email_without_consent": "blocked_by_growth_ops",
             "four_eyes_package_release": "required",
             "publication_readback_proof": "required",

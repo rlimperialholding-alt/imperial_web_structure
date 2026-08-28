@@ -5,13 +5,16 @@ import ipaddress
 import json
 import re
 import socket
+import time as monotonic_time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, time, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
+from threading import Lock
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.robotparser import RobotFileParser
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -21,7 +24,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from ..land_acquisition.registry import is_named_portal_host
+from ..land_acquisition.registry import (
+    LandRegistryError,
+    PortalRegistry,
+    is_named_portal_host,
+)
 from .canonical_policy import (
     DAILY_UNIQUE_LEAD_MINIMUM,
     SOURCE_LEDGER_ROUTE_COUNT,
@@ -57,6 +64,26 @@ QUESTION_SURFACE_ROUTE_OVERRIDES = {
     "SRC-0002": "https://qjob.hu/budapest/munka/epitesz-munka",
     "EVB-06834": "https://qjob.hu/budapest/munka/epitomernok-allas",
 }
+
+# The canonical ledger still contains the legacy `/lista` address, which the
+# portal's current robots policy disallows. Keep the immutable source row for
+# audit, but fetch the equivalent public route that robots.txt permits.
+LAND_PUBLIC_HTML_ROUTE_OVERRIDES = {
+    "SRC-0012": "https://ingatlan.com/elado+telek",
+}
+ROUTE_URL_OVERRIDES = {
+    **QUESTION_SURFACE_ROUTE_OVERRIDES,
+    **LAND_PUBLIC_HTML_ROUTE_OVERRIDES,
+}
+
+DAILY_ROUTE_ATTEMPT_MAXIMUM = 2_000
+PORTAL_PUBLIC_HTML_USER_AGENT = (
+    "Imperial-Land-PublicHTML/1.0 (+https://imperialholding.hu; info@imperialholding.hu)"
+)
+ROBOTS_CACHE_SECONDS = 21_600
+ROBOTS_MAX_BYTES = 256_000
+_ROBOTS_CACHE: dict[str, tuple[float, list[str] | None, str | None]] = {}
+_ROBOTS_CACHE_LOCK = Lock()
 
 BUILDING_ACQUISITION_SCOPE_VERSION = "2026-08-28-building-v2.16"
 
@@ -94,6 +121,56 @@ _FOREIGN_FAMILY_HOUSE_BUILD_OR_EXTENSION_PHRASES = (
 
 class UnsafeRouteError(ValueError):
     pass
+
+
+def _public_html_portal_error(url: str) -> str | None:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").casefold().rstrip(".")
+    try:
+        portal = PortalRegistry.load().for_host(host)
+    except LandRegistryError:
+        return "portal_registry_unavailable"
+    if not portal or not portal.permits("discover") or portal.discovery_mode != "public_html":
+        return "portal_public_html_not_enabled"
+    return None
+
+
+def _robots_error(client: httpx.Client, url: str) -> str | None:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").casefold().rstrip(".")
+    now = monotonic_time.monotonic()
+    with _ROBOTS_CACHE_LOCK:
+        cached = _ROBOTS_CACHE.get(host)
+    if cached and now - cached[0] < ROBOTS_CACHE_SECONDS:
+        lines, cached_error = cached[1], cached[2]
+    else:
+        robots_url = urlunparse(("https", parsed.netloc, "/robots.txt", "", "", ""))
+        try:
+            assert_public_https_url(robots_url)
+            response = client.get(robots_url)
+            if response.status_code in {404, 410}:
+                lines, cached_error = None, None
+            elif not 200 <= response.status_code < 300:
+                lines, cached_error = None, "portal_robots_unavailable"
+            elif len(response.content) > ROBOTS_MAX_BYTES:
+                lines, cached_error = None, "portal_robots_too_large"
+            else:
+                lines = response.text.splitlines()
+                cached_error = None
+        except (httpx.HTTPError, UnsafeRouteError, UnicodeError):
+            lines, cached_error = None, "portal_robots_unavailable"
+        with _ROBOTS_CACHE_LOCK:
+            _ROBOTS_CACHE[host] = (now, lines, cached_error)
+    if cached_error:
+        return cached_error
+    if lines is None:
+        return None
+    parser = RobotFileParser()
+    parser.set_url(urlunparse(("https", parsed.netloc, "/robots.txt", "", "", "")))
+    parser.parse(lines)
+    if not parser.can_fetch(PORTAL_PUBLIC_HTML_USER_AGENT, url):
+        return "portal_robots_disallowed"
+    return None
 
 
 def assert_public_https_url(url: str) -> str:
@@ -446,7 +523,7 @@ def _row(record: dict[str, Any], catalog_sha256: str, now: datetime) -> dict[str
         "source_name": _text(record.get("Forrás neve"), 500),
         "source_type": _text(record.get("Forrástípus"), 120),
         "search_signal": _text(record.get("Keresési jel/kifejezés")),
-        "route_url": QUESTION_SURFACE_ROUTE_OVERRIDES.get(
+        "route_url": ROUTE_URL_OVERRIDES.get(
             route_id or "", _text(record.get("Útvonal URL"), 3000)
         ),
         "base_url": _text(record.get("Alap URL"), 3000),
@@ -593,11 +670,14 @@ def _fetch(route: SourceCoverageRoute) -> dict[str, Any]:
     parsed = urlparse(route.route_url)
     if parsed.scheme != "https" or not parsed.hostname:
         return {"status": "rejected", "error_type": "invalid_route_url"}
-    if is_named_portal_host(parsed.hostname):
-        return {
-            "status": "rejected",
-            "error_type": "portal_licensed_connector_required",
-        }
+    named_portal = is_named_portal_host(parsed.hostname)
+    if named_portal:
+        portal_error = _public_html_portal_error(route.route_url)
+        if portal_error:
+            return {
+                "status": "failed" if portal_error == "portal_registry_unavailable" else "rejected",
+                "error_type": portal_error,
+            }
     try:
         assert_public_https_url(route.route_url)
     except UnsafeRouteError as exc:
@@ -609,8 +689,23 @@ def _fetch(route: SourceCoverageRoute) -> dict[str, Any]:
         with httpx.Client(
             timeout=cfg.canonical_route_timeout_seconds,
             follow_redirects=False,
-            headers={"User-Agent": "Imperial-Source-Coverage/1.0"},
+            headers={
+                "User-Agent": (
+                    PORTAL_PUBLIC_HTML_USER_AGENT
+                    if named_portal
+                    else "Imperial-Source-Coverage/1.0"
+                )
+            },
         ) as client:
+            if named_portal:
+                robots_error = _robots_error(client, route.route_url)
+                if robots_error:
+                    return {
+                        "status": (
+                            "failed" if robots_error == "portal_robots_unavailable" else "rejected"
+                        ),
+                        "error_type": robots_error,
+                    }
             with client.stream("GET", route.route_url) as response:
                 for chunk in response.iter_bytes():
                     content.extend(chunk)
@@ -655,6 +750,8 @@ def _fetch(route: SourceCoverageRoute) -> dict[str, Any]:
             "content_type": content_type,
             "title": title,
             "host": parsed.hostname,
+            "discovery_mode": "public_html" if named_portal else "generic_html",
+            "robots_txt": "allowed" if named_portal else "not_applicable",
         },
         # Transient only: the worker gives this bounded visible-text sample to the
         # evidence extractor, but never persists the full fetched page body.

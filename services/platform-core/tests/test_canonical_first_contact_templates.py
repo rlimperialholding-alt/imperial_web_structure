@@ -32,14 +32,23 @@ Szeretnénk bővíteni a tervezői kapcsolatainkat, mert jelenleg kapacitáshiá
 Van szabad kapacitása? Érdekli az együttműködés?"""
 
 LAND_OWNER_BODY = """Tisztelt [Név]!
-Cégünk, az Imperial Holding, előregyártott készházak és típusházak építésével foglalkozik, és úgy gondoljuk, hogy az Ön telkében van lehetőség.
-Szívesen felvennénk a kínálatunkba DÍJMENTESEN, mert sokan keresnek nálunk a típusházakhoz eladó telkeket.
-Itt meg tudja nézni a weboldalunkon, milyen telkekkel dolgozunk jelenleg: https://imperialholding.hu/termek/telek-kereso
-Nem kérünk Öntől pénzt semmilyen formában, jutalékot sem: a lehetőség mindkettőnknek előnyös, mi a típusházat adjuk el, Ön pedig a telket. Nem kérünk semmilyen kötelezettséget, csak szeretnénk együttműködni Önnel.
-Érdekli?
+
+Az Ön által hirdetett [település], [méret]-es építési telek miatt keresem.
+
+Az Imperial Holding típustervek kulcsrakész építésével foglalkozik.
+
+Ingyen, jutalék nélkül meghirdetjük az ingatlanát a telekhez illő típusházunkkal. Önnek ezért nem kell fizetnie, és semmilyen kötelezettséget nem vállal.
+
+Csak az írásos engedélyét kérjük ahhoz, hogy a telket a telek + típusház ajánlat részeként meghirdethessük. A hirdetési anyagot mi készítjük el.
+
+A hirdetés engedélyezéséhez válaszoljon emailben: „Engedélyezem a telek hirdetését.”
+
+Hirdetés: [hirdetés linkje]
+
 Üdvözlettel:
 Imperial Holding
 info@imperialholding.hu
+
 Leiratkozás: [egyedi leiratkozási link]"""
 
 REAL_ESTATE_AGENT_BODY = """Tisztelt [Név]!
@@ -96,6 +105,9 @@ def _render(registry: CanonicalFirstContactRegistry, **changes):
         "business_context": None,
         "business_context_verified": False,
         "business_context_evidence_url": None,
+        "listing_location": None,
+        "listing_size": None,
+        "listing_url": None,
         "unsubscribe_url": None,
         "recipient_classification_verified": True,
         "exclusion_screening_verified": True,
@@ -118,11 +130,11 @@ def test_registry_contains_only_owner_approved_exact_canonical_texts():
         ),
         "LAND_OWNER_FIRST_CONTACT_HU": (
             "land_owner",
-            "szeretnék érdeklődni a telek iránt",
-            "792451ca4fd342fdf19cf530caa910030e8a5e06f96eec39f3b02700ea4159e5",
+            "Ingyen elkészítjük a [település], [méret]-es telek + típusház hirdetését",
+            "2380ca20f93d5a60371512c85f631fad045b430ce4f8f365ff61eee23b291c01",
             LAND_OWNER_BODY,
-            "aa1894dfc0a53401d3fdd5c737cbdf737acea3d325d44eb38f70b36474703500",
-            763,
+            "5f5c907b4504e667d0199aa021aeebdb27d9e6dc6b1c19ef89114809054fc910",
+            735,
         ),
         "REAL_ESTATE_AGENT_FIRST_CONTACT_HU": (
             "real_estate_agent",
@@ -284,7 +296,7 @@ def test_architect_sender_company_must_match_the_imperial_sender_brand():
         (
             "land_owner",
             LAND_OWNER_BODY,
-            "szeretnék érdeklődni a telek iránt",
+            "Ingyen elkészítjük a Sülysáp, 605 m²-es telek + típusház hirdetését",
             None,
         ),
         (
@@ -309,10 +321,19 @@ def test_land_templates_and_owner_approved_subjects_are_exact(
         reference_names=[],
         reference_names_verified=False,
         unsubscribe_url="https://intelligence.example/growth/unsubscribe/token",
+        listing_location="Sülysáp",
+        listing_size="605 m²",
+        listing_url="https://example.test/listing/605",
     )
-    expected = body.replace("[Név]", "Kovács Anna").replace(
-        "[egyedi leiratkozási link]",
-        "https://intelligence.example/growth/unsubscribe/token",
+    expected = (
+        body.replace("[Név]", "Kovács Anna")
+        .replace("[település]", "Sülysáp")
+        .replace("[méret]", "605 m²")
+        .replace("[hirdetés linkje]", "https://example.test/listing/605")
+        .replace(
+            "[egyedi leiratkozási link]",
+            "https://intelligence.example/growth/unsubscribe/token",
+        )
     )
 
     assert rendered.body_text == expected

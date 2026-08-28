@@ -25,7 +25,7 @@ REQUIRED_TEMPLATE_IDS = {
 }
 OWNER_APPROVED = {"OWNER_APPROVED", "CANONICAL"}
 LEGACY_REFERRAL_TEMPLATE_ID = "PARTNERPOINT_LEGACY_1_PERCENT_FIRST_CONTACT_HU"
-EXPECTED_REGISTRY_SHA256 = "fd0706651007b9a9374058c0d664de73634a314eec54dac56042d2f348e7de3c"
+EXPECTED_REGISTRY_SHA256 = "bd5f8f2f0d8419c9fbe9ca05a8a5501fc1a6fbd7cdbaacbd2ae719d1a116f6e7"
 EXPECTED_SELECTION_PIPELINE = [
     "HARD_GATES",
     "RECIPIENT_CLASSIFICATION_VERIFIED",
@@ -353,7 +353,7 @@ class CanonicalFirstContactRegistry:
         return cls(raw, source_bytes=source_bytes, source_path=source_path)
 
     def _validate(self) -> None:
-        if self.raw.get("schema_version") != "1.0" or self.raw.get("registry_version") != 3:
+        if self.raw.get("schema_version") != "1.0" or self.raw.get("registry_version") != 4:
             raise GrowthRegistryError("Unsupported canonical first-contact registry version")
         if set(self.raw.get("status") or []) != OWNER_APPROVED:
             raise GrowthRegistryError("Canonical registry status is not OWNER_APPROVED/CANONICAL")
@@ -433,6 +433,29 @@ class CanonicalFirstContactRegistry:
                     )
 
         referral = self.templates_by_id["REFERRAL_PARTNER_FIRST_CONTACT_HU"]
+        land_owner = self.templates_by_id["LAND_OWNER_FIRST_CONTACT_HU"]
+        if set(land_owner.get("allowed_replacements") or []) != {
+            "recipient_name",
+            "listing_location",
+            "listing_size",
+            "listing_url",
+            "unsubscribe_url",
+        }:
+            raise GrowthRegistryError("Land-owner replacement allowlist changed")
+        for marker in (
+            "[település]",
+            "[méret]",
+            "[hirdetés linkje]",
+        ):
+            if str(land_owner["owner_approved_body_text"]).count(marker) != 1:
+                raise GrowthRegistryError(
+                    f"Land-owner body marker count is not one: {marker}"
+                )
+        for marker in ("[település]", "[méret]"):
+            if str(land_owner["subject"]).count(marker) != 1:
+                raise GrowthRegistryError(
+                    f"Land-owner subject marker count is not one: {marker}"
+                )
         if referral.get("subject") != "együttműködés":
             raise GrowthRegistryError("Referral-partner subject is not the immutable owner text")
         if referral.get("subject_status") != "OWNER_APPROVED_IMMUTABLE":
@@ -559,6 +582,9 @@ class CanonicalFirstContactRegistry:
         business_context: str | None,
         business_context_verified: bool,
         business_context_evidence_url: str | None,
+        listing_location: str | None = None,
+        listing_size: str | None = None,
+        listing_url: str | None = None,
         unsubscribe_url: str | None,
         recipient_classification_verified: bool,
         exclusion_screening_verified: bool,
@@ -573,6 +599,9 @@ class CanonicalFirstContactRegistry:
             "business_context": business_context,
             "business_context_verified": business_context_verified,
             "business_context_evidence_url": business_context_evidence_url,
+            "listing_location": listing_location,
+            "listing_size": listing_size,
+            "listing_url": listing_url,
             "unsubscribe_url": unsubscribe_url,
             "recipient_classification_verified": recipient_classification_verified,
             "exclusion_screening_verified": exclusion_screening_verified,
@@ -620,7 +649,22 @@ class CanonicalFirstContactRegistry:
                 fallback = str(template["reference_policy"]["zero_reference_opening_sentence"])
                 body = _replace_once(body, opening, fallback)
             body = _replace_once(body, "Cégünk, az XY 1989", f"Cégünk, az {sender} 1989")
-        elif recipient_type in {"land_owner", "real_estate_agent"}:
+        elif recipient_type == "land_owner":
+            location = _validated_text(listing_location, field="listing_location")
+            size = _validated_text(listing_size, field="listing_size")
+            if not re.fullmatch(r"[1-9][0-9]{0,7}(?:[.,][0-9]+)? m²", size):
+                raise GrowthRegistryError("Canonical listing_size is invalid")
+            url = _validated_https_url(listing_url, field="listing URL")
+            body = _replace_once(body, "[Név]", name)
+            body = _replace_once(body, "[település]", location)
+            body = _replace_once(body, "[méret]", size)
+            body = _replace_once(body, "[hirdetés linkje]", url)
+            body = _replace_once(
+                body,
+                "[egyedi leiratkozási link]",
+                _validated_unsubscribe_url(unsubscribe_url),
+            )
+        elif recipient_type == "real_estate_agent":
             body = _replace_once(body, "[Név]", name)
             body = _replace_once(
                 body,
@@ -647,6 +691,9 @@ class CanonicalFirstContactRegistry:
 
         unresolved = (
             "[Név]",
+            "[település]",
+            "[méret]",
+            "[hirdetés linkje]",
             "[egyedi leiratkozási link]",
             "[konkrét üzlet/hálózat/termékkör]",
         )
@@ -659,6 +706,17 @@ class CanonicalFirstContactRegistry:
         if any(marker in body for marker in unresolved):
             raise GrowthRegistryError("Canonical first-contact render has unresolved markers")
         subject = template.get("subject")
+        if recipient_type == "land_owner" and subject is not None:
+            subject = _replace_once(
+                str(subject),
+                "[település]",
+                _validated_text(listing_location, field="listing_location"),
+            )
+            subject = _replace_once(
+                str(subject),
+                "[méret]",
+                _validated_text(listing_size, field="listing_size"),
+            )
         blocked_reasons = (
             ("owner_approved_subject_missing_no_fallback",) if subject is None else ()
         )
