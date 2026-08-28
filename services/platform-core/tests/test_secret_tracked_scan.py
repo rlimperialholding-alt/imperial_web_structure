@@ -45,14 +45,19 @@ Proves the tracked-file contract of ``check_secret_baseline.py``:
   of ``app/seed.py`` stay unclassified, and the pinned driver preserves one
   finding entry per line so the same digest reported on a classified line and
   on an unclassifiable line fails closed;
-* the audited identity is occurrence-aware: the comparison unit includes the
-  finding line number, so a value baselined on a classified line can never
+* the audited identity is occurrence-aware and content-bearing: the
+  comparison unit is the finding line number *plus* the SHA-256 fingerprint of
+  that exact line's text, so a value baselined on a classified line can never
   suppress a new occurrence of the same digest on a different unclassified
-  line -- the new line must be proven harmless by the structural classifier
-  on that exact line or the reconciliation fails closed. A newly introduced
-  occurrence is one that exceeds the audited occurrence count of its value:
-  unchanged repeats and line drift reconcile, a duplicate copy of an audited
-  value still blocks;
+  line, and a bare line-number match is never sufficient anywhere -- an
+  audited digest that stays on its own baselined line while its key changes
+  from a classified ``reference_sha256`` binding to an unclassified one is
+  still an addition and still fails closed. The new line must be proven
+  harmless by the structural classifier on that exact line or the
+  reconciliation fails closed. A newly introduced occurrence is one that no
+  audited occurrence can back with byte-identical line content: unchanged
+  repeats and line drift reconcile, a duplicate copy of an audited value
+  still blocks;
 * an ``OSError`` while spawning the pinned driver becomes a secret-free
   ``ScanFailure``, never a raw traceback;
 * the runtime audit directory is git-ignored, its artifact never appears in
@@ -1635,6 +1640,138 @@ def test_audited_digest_moved_to_an_unclassified_line_fails_closed(tmp_path: Pat
     )
     assert {line for _, _, _, line in audited_state} == {2}
     assert row["findingCount"] == 1
+
+
+def test_same_line_classified_to_unclassified_substitution_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """A Task39 review HIGH közvetlen regressziója: azonos soron kontextuscsere.
+
+    Az auditált digest NEM mozdul el: ugyanazon a 2. soron marad, ugyanazzal a
+    fingerprinttel, ugyanabban a fájlban -- csak a kulcs cserélődik a
+    classified ``reference_sha256``-ról a kötetlen, osztályozatlan ``unbound``
+    kulcsra. A négyrészes ``(path, type, fingerprint, line)`` identitás tehát
+    bitre azonos a védett baseline bejegyzésével, így a puszta
+    ``observed - audited`` kivonás ezt a találatot "pre-existing"-ként
+    tisztázta volna, a strukturális osztályozó megkérdezése nélkül -- ez volt a
+    bypass. A tartalmi bizonyítékkal kiegészített identitás mellett az
+    auditált (anchor commitról olvasott) és az élő (munkakönyvtárból olvasott)
+    sorszöveg eltér, ezért nincs egyezés: a találat addition marad, az
+    ``unbound`` soron a classifier nem bizonyít, és a reconciliation
+    fail-closed.
+    """
+    repo = _init_repo(tmp_path / "repo")
+    digest_line, hashed = _digest_line("reference_sha256", b"synthetic-same-line-context")
+    digest = hashlib.sha256(b"synthetic-same-line-context").hexdigest()
+    target = _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + '  "x": 1\n}\n')
+    baseline = repo / "synthetic-baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "results": {
+                    _DIGEST_MANIFEST_PATH: [
+                        {
+                            "type": "Hex High Entropy String",
+                            "hashed_secret": hashed,
+                            "line_number": 2,
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
+    _commit(repo)
+    # A digest a helyén marad (2. sor), csak a classified kötés tűnik el.
+    target.write_text(
+        '{\n  "unbound": "' + digest + '",\n  "x": 1\n}\n',
+        encoding="utf-8",
+    )
+
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 1, message
+    assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
+    assert _DIGEST_MANIFEST_PATH in message
+    # Sem classifier-engedmény, sem audited-state egyeztetés nem tisztázta.
+    assert "content-digest" not in message
+    assert "reconcile with the audited repository state" not in message
+    assert digest not in message
+    audit = repo / "services" / "platform-core" / "runtime" / "tracked-secret-delta-audit.json"
+    document = json.loads(audit.read_text(encoding="utf-8"))
+    row = document["rows"][0]
+    assert row["path"] == _DIGEST_MANIFEST_PATH
+    assert row["hashes"] == [hashed]
+    # A premissza rögzítése: az osztályozatlanul maradt élő előfordulás
+    # pontosan a baseline saját során (2.) áll, ugyanazzal a fingerprinttel --
+    # a négyrészes identitás tehát azonos, kizárólag a sortartalom más.
+    assert row["lineNumbers"] == [2]
+    baseline_document = json.loads(baseline.read_text(encoding="utf-8"))
+    assert check_secret_baseline._fingerprints(baseline_document) == {
+        (_DIGEST_MANIFEST_PATH, "Hex High Entropy String", hashed, 2)
+    }
+    anchor = check_secret_baseline._baseline_anchor_commit(repo, baseline)
+    audited_digests = check_secret_baseline._audited_line_content_digests(
+        repo, anchor, [_DIGEST_MANIFEST_PATH]
+    )
+    live_digests = check_secret_baseline._live_line_content_digests(repo, [_DIGEST_MANIFEST_PATH])
+    assert audited_digests[_DIGEST_MANIFEST_PATH][2] != live_digests[_DIGEST_MANIFEST_PATH][2]
+
+
+def test_baseline_subtraction_requires_byte_identical_line_content() -> None:
+    """``_split_baseline_matches``: a baseline-kivonás is tartalmi bizonyítékot kér.
+
+    Egységszintű bizonyíték ugyanarra a bypassra: azonos négyrészes identitás
+    mellett a sortartalom dönt, és bizonyíték hiányában (bármelyik oldalon,
+    vagy használható sorszám nélkül) a találat addition marad.
+    """
+    path = _DIGEST_MANIFEST_PATH
+    value = (path, "Hex High Entropy String", "a" * 40)
+    observed = {(*value, 2)}
+    audited = {(*value, 2)}
+    audited_digests = {path: {2: "1" * 64}}
+
+    matched, additions = check_secret_baseline._split_baseline_matches(
+        observed, audited, audited_digests, {path: {2: "2" * 64}}
+    )
+    assert matched == set()
+    assert additions == observed
+    # Ellenpróba: byte-azonos sortartalom mellett -- és csak ilyenkor -- egyezik.
+    matched, additions = check_secret_baseline._split_baseline_matches(
+        observed, audited, audited_digests, {path: {2: "1" * 64}}
+    )
+    assert matched == observed
+    assert additions == set()
+    # Hiányzó bizonyíték bármelyik oldalon: nincs egyezés.
+    for audited_side, live_side in (
+        ({}, {path: {2: "1" * 64}}),
+        (audited_digests, {}),
+    ):
+        matched, additions = check_secret_baseline._split_baseline_matches(
+            observed, audited, audited_side, live_side
+        )
+        assert matched == set()
+        assert additions == observed
+    # Használható sorszám nélküli identitás sosem egyezik.
+    matched, additions = check_secret_baseline._split_baseline_matches(
+        {(*value, None)}, {(*value, None)}, audited_digests, {path: {2: "1" * 64}}
+    )
+    assert matched == set()
+    assert additions == {(*value, None)}
+
+
+def test_bare_line_number_never_seats_an_occurrence() -> None:
+    """``_match_occurrences``: nincs puszta sorszám-alapú compatibility path.
+
+    Az eltávolított kompatibilitási ág közvetlen egység-regressziója: azonos
+    sorszám megváltozott sortartalommal nem ültet le, és tartalmi bizonyíték
+    nélkül sem ül le semmi. Byte-azonos tartalom mellett viszont igen.
+    """
+    assert check_secret_baseline._match_occurrences([2], [2], {2: "a" * 64}, {2: "b" * 64}) == {}
+    assert check_secret_baseline._match_occurrences([2], [2], {}, {}) == {}
+    assert check_secret_baseline._match_occurrences([2], [2], {2: "a" * 64}, {2: "a" * 64}) == {
+        2: 2
+    }
 
 
 def test_equal_occurrence_counts_never_substitute_across_line_content() -> None:
