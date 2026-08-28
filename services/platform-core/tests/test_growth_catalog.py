@@ -36,6 +36,27 @@ def _record(index: int, *, note: str | None = None) -> dict:
     }
 
 
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({}, True),
+        ({"Motor": "ExitFlow–Veritas–BauShield"}, False),
+        ({"Ország": "DE", "Keresési jel/kifejezés": "Hausbau"}, False),
+        ({"Ország": "HU", "Forrástípus": "procurement"}, False),
+        ({"Ország": "AT", "Keresési jel/kifejezés": "Wien | Hausbau"}, True),
+        ({"Ország": "AT", "Keresési jel/kifejezés": "hotel construction"}, False),
+        ({"Ország": "SK", "Keresési jel/kifejezés": "prístavba domu"}, True),
+        ({"Ország": "SK", "Keresési jel/kifejezés": "house extension"}, True),
+        ({"Ország": "HU/AT", "Keresési jel/kifejezés": "Hausbau"}, False),
+    ],
+)
+def test_building_route_scope_is_fail_closed(overrides, expected):
+    record = _record(1)
+    record.update(overrides)
+
+    assert catalog._building_route_enabled(record) is expected
+
+
 def _snapshot(tmp_path, records: list[dict]):
     snapshot = tmp_path / "routes.jsonl"
     lines = (
@@ -170,7 +191,23 @@ def test_scanner_uses_db_catalog_and_records_real_attempt(db, tmp_path, monkeypa
     assert result["outcomes"] == {"succeeded": 1}
     attempt = db.scalar(select(SourceCoverageAttempt))
     assert attempt and attempt.status == "succeeded"
+    assert attempt.run_id
     route = db.scalar(
         select(SourceCoverageRoute).where(SourceCoverageRoute.route_key == attempt.route_key)
     )
     assert route and route.attempt_count == 1 and route.success_count == 1
+
+    second = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 21, 8, 0, tzinfo=UTC),
+    )
+    complete = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 21, 8, 0, tzinfo=UTC),
+    )
+
+    assert second["attempted"] == 1
+    assert second["coverage_complete"] is True
+    assert complete["status"] == "on_pace"
+    assert complete["coverage_complete"] is True
+    assert complete["attempted_today"] == complete["active_route_target"] == 2

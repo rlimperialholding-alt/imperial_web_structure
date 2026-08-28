@@ -1,7 +1,7 @@
 """Store the exact plot size required by the owner-approved land email.
 
-Revision ID: 20260828_0085
-Revises: 20260827_0084
+Revision ID: 20260828_0086
+Revises: 20260828_0085
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "20260828_0085"
-down_revision = "20260827_0084"
+revision = "20260828_0086"
+down_revision = "20260828_0085"
 branch_labels = None
 depends_on = None
 
