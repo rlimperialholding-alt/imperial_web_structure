@@ -93,6 +93,12 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
         )
         db.add(row)
         db.flush()
+    # A daily row may have been created before a same-day policy/catalog release.
+    # Keep its stable run_id, but always refresh the evidence describing the
+    # policy and source manifest that the current calculation actually used.
+    row.spec_version = SPEC_VERSION
+    row.source_manifest_sha256 = manifest_hash
+    row.source_route_catalog_size = int(manifest["route_count"])
     _bootstrap_content_obligations(db, local_day)
     local_start = datetime.combine(local_day, datetime.min.time(), ZoneInfo(settings().timezone))
     start_utc = local_start.astimezone(UTC)

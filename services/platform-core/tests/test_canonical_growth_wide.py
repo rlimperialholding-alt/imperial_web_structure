@@ -144,6 +144,23 @@ def test_daily_wide_run_creates_all_brand_obligations_and_fails_closed(db, tmp_p
     assert len(db.scalars(select(DailyContentObligation)).all()) == len(ACTIVE_CONTENT_BRANDS) == 19
     assert len(db.scalars(select(CanonicalGrowthDailyRun)).all()) == 1
 
+    original_run_id = row.run_id
+    row.spec_version = "stale-spec"
+    row.source_manifest_sha256 = "0" * 64
+    row.source_route_catalog_size = 1
+    db.flush()
+
+    refreshed = wide_service.refresh_daily_run(
+        db, now=datetime(2026, 8, 20, 9, 0, tzinfo=UTC)
+    )
+
+    assert refreshed.run_id == original_run_id
+    assert refreshed.spec_version == wide_service.SPEC_VERSION
+    assert refreshed.source_manifest_sha256 == hashlib.sha256(
+        manifest_path.read_bytes()
+    ).hexdigest()
+    assert refreshed.source_route_catalog_size == SOURCE_LEDGER_ROUTE_COUNT
+
 
 def test_deepseek_json_requests_disable_default_thinking(db, monkeypatch):
     cfg = SimpleNamespace(
