@@ -180,6 +180,36 @@ def test_dispatch_batch_does_not_claim_outside_sending_window(
     assert service.dispatch_batch(db) == 0
 
 
+def test_outreach_send_capacity_enforces_hourly_and_daily_limits(growth_runtime):
+    class ScalarSequence:
+        def __init__(self, values):
+            self.values = iter(values)
+
+        def scalar(self, _query):
+            return next(self.values)
+
+    local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
+
+    assert (
+        service._outreach_send_capacity(
+            ScalarSequence([2, 47]), local_now.astimezone(UTC)
+        )
+        == 3
+    )
+    assert (
+        service._outreach_send_capacity(
+            ScalarSequence([5, 12]), local_now.astimezone(UTC)
+        )
+        == 0
+    )
+    assert (
+        service._outreach_send_capacity(
+            ScalarSequence([1, 50]), local_now.astimezone(UTC)
+        )
+        == 0
+    )
+
+
 def test_verified_business_role_signal_queues_once(db, growth_runtime):
     first = service.ingest_signal(db, _signal())
     second = service.ingest_signal(db, _signal())

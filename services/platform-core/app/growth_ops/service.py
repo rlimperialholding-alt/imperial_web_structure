@@ -1366,8 +1366,11 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
 def dispatch_batch(db: Session, *, limit: int = 20) -> int:
     if not _outreach_sending_window_open():
         return 0
+    capacity = _outreach_send_capacity(db)
+    if capacity <= 0:
+        return 0
     sent = 0
-    for _ in range(max(1, min(limit, 100))):
+    for _ in range(max(1, min(limit, capacity, 100))):
         row = claim_outreach(db)
         if not row:
             break
@@ -1390,6 +1393,49 @@ def _outreach_sending_window_open(now: datetime | None = None) -> bool:
         raise GrowthRegistryError("Outreach sending window must start before it ends")
     local_time = (now or utcnow()).astimezone(zone).time().replace(tzinfo=None)
     return start <= local_time < end
+
+
+def _outreach_send_capacity(db: Session, now: datetime | None = None) -> int:
+    config = settings()
+    try:
+        zone = ZoneInfo(config.timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise GrowthRegistryError("Configured growth timezone is unavailable") from exc
+    local_now = (now or utcnow()).astimezone(zone)
+    day_start = datetime.combine(local_now.date(), time.min, tzinfo=zone).astimezone(UTC)
+    next_day = datetime.combine(
+        local_now.date() + timedelta(days=1), time.min, tzinfo=zone
+    ).astimezone(UTC)
+    hour_start = local_now.replace(minute=0, second=0, microsecond=0).astimezone(UTC)
+    next_local_hour = local_now.replace(minute=0, second=0, microsecond=0) + timedelta(
+        hours=1
+    )
+    next_hour = next_local_hour.astimezone(UTC)
+    hourly_sent = (
+        db.scalar(
+            select(func.count())
+            .select_from(OutreachMessage)
+            .where(
+                OutreachMessage.sent_at >= hour_start,
+                OutreachMessage.sent_at < next_hour,
+            )
+        )
+        or 0
+    )
+    daily_sent = (
+        db.scalar(
+            select(func.count())
+            .select_from(OutreachMessage)
+            .where(
+                OutreachMessage.sent_at >= day_start,
+                OutreachMessage.sent_at < next_day,
+            )
+        )
+        or 0
+    )
+    hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
+    daily_limit = int(getattr(config, "outreach_max_per_day", 50))
+    return max(0, min(hourly_limit - hourly_sent, daily_limit - daily_sent))
 
 
 def schedule_followups(db: Session) -> int:
