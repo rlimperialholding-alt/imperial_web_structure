@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import json
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
@@ -1364,6 +1364,8 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
 
 
 def dispatch_batch(db: Session, *, limit: int = 20) -> int:
+    if not _outreach_sending_window_open():
+        return 0
     sent = 0
     for _ in range(max(1, min(limit, 100))):
         row = claim_outreach(db)
@@ -1372,6 +1374,22 @@ def dispatch_batch(db: Session, *, limit: int = 20) -> int:
         result = dispatch_outreach(db, row)
         sent += result.status == "sent"
     return sent
+
+
+def _outreach_sending_window_open(now: datetime | None = None) -> bool:
+    config = settings()
+    try:
+        zone = ZoneInfo(config.timezone)
+        start = time.fromisoformat(
+            getattr(config, "outreach_send_start_local", "08:00")
+        )
+        end = time.fromisoformat(getattr(config, "outreach_send_end_local", "18:00"))
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
+    if start >= end:
+        raise GrowthRegistryError("Outreach sending window must start before it ends")
+    local_time = (now or utcnow()).astimezone(zone).time().replace(tzinfo=None)
+    return start <= local_time < end
 
 
 def schedule_followups(db: Session) -> int:

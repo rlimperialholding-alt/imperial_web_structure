@@ -7,6 +7,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
@@ -152,6 +153,31 @@ def _signal(**changes) -> GrowthSignalIn:
     }
     payload.update(changes)
     return GrowthSignalIn.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("hour", "minute", "expected"),
+    [(7, 59, False), (8, 0, True), (17, 59, True), (18, 0, False)],
+)
+def test_outreach_sending_window_is_enforced_in_budapest_time(
+    growth_runtime, hour, minute, expected
+):
+    local_now = datetime(2026, 8, 28, hour, minute, tzinfo=ZoneInfo("Europe/Budapest"))
+
+    assert service._outreach_sending_window_open(local_now.astimezone(UTC)) is expected
+
+
+def test_dispatch_batch_does_not_claim_outside_sending_window(
+    db, growth_runtime, monkeypatch
+):
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: False)
+
+    def unexpected_claim(_db):
+        raise AssertionError("outreach must not be claimed outside the sending window")
+
+    monkeypatch.setattr(service, "claim_outreach", unexpected_claim)
+
+    assert service.dispatch_batch(db) == 0
 
 
 def test_verified_business_role_signal_queues_once(db, growth_runtime):

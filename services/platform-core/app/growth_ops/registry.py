@@ -25,6 +25,8 @@ class GrowthSettings:
     lease_seconds: int
     base_url: str
     timezone: str
+    outreach_send_start_local: str
+    outreach_send_end_local: str
     canonical_wide_enabled: bool
     canonical_daily_at: str
     canonical_manifest_file: str
@@ -68,6 +70,12 @@ def settings() -> GrowthSettings:
         lease_seconds=max(30, int(os.getenv("GROWTH_OPS_LEASE_SECONDS", "300"))),
         base_url=os.getenv("GROWTH_OPS_BASE_URL", "").rstrip("/"),
         timezone=os.getenv("GROWTH_OPS_TIMEZONE", "Europe/Budapest"),
+        outreach_send_start_local=os.getenv(
+            "GROWTH_OPS_OUTREACH_SEND_START_LOCAL", "08:00"
+        ),
+        outreach_send_end_local=os.getenv(
+            "GROWTH_OPS_OUTREACH_SEND_END_LOCAL", "18:00"
+        ),
         canonical_wide_enabled=os.getenv("CANONICAL_GROWTH_ENABLED", "false").lower()
         == "true",
         canonical_daily_at=os.getenv("CANONICAL_GROWTH_DAILY_AT", "05:30"),
