@@ -14,6 +14,7 @@ from app.growth_ops import deepseek as deepseek_service
 from app.growth_ops import service, wide_service
 from app.growth_ops.canonical_policy import (
     ACTIVE_CONTENT_BRANDS,
+    DailyGateResult,
     LAND_AGENT_COMMISSION_ANCHOR,
     LAND_OUTREACH_SERVICE_ANCHOR,
     LAND_OWNER_FREE_AD_ANCHOR,
@@ -160,6 +161,18 @@ def test_daily_wide_run_creates_all_brand_obligations_and_fails_closed(db, tmp_p
         manifest_path.read_bytes()
     ).hexdigest()
     assert refreshed.source_route_catalog_size == SOURCE_LEDGER_ROUTE_COUNT
+
+
+def test_quality_first_daily_gate_has_no_lead_quota():
+    gate = DailyGateResult(
+        route_attempts=1,
+        route_target=1,
+        unique_leads=0,
+        question_topics=80,
+        content_brands=19,
+    )
+
+    assert gate.passed
 
 
 def test_deepseek_json_requests_disable_default_thinking(db, monkeypatch):

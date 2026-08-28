@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .canonical_policy import (
@@ -134,7 +134,25 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
         db.scalar(
             select(func.count())
             .select_from(GrowthSignal)
-            .where(GrowthSignal.created_at >= start_utc)
+            .where(
+                GrowthSignal.created_at >= start_utc,
+                GrowthSignal.status.in_(("accepted", "queued", "contacted", "responded")),
+                or_(
+                    GrowthSignal.recipient_email.is_not(None),
+                    GrowthSignal.public_contact_url.is_not(None),
+                ),
+            )
+        )
+        or 0
+    )
+    internal_research_items = int(
+        db.scalar(
+            select(func.count())
+            .select_from(GrowthSignal)
+            .where(
+                GrowthSignal.created_at >= start_utc,
+                GrowthSignal.status.in_(("blocked", "rejected")),
+            )
         )
         or 0
     )
@@ -142,7 +160,10 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
         db.scalar(
             select(func.count())
             .select_from(QuestionRadarTopic)
-            .where(QuestionRadarTopic.local_date == local_day)
+            .where(
+                QuestionRadarTopic.local_date == local_day,
+                QuestionRadarTopic.eligibility_status == "eligible",
+            )
         )
         or 0
     )
@@ -181,6 +202,7 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
             "catalog_sha256": manifest["catalog_sha256"],
             "active_route_target": active_route_target,
             "active_route_coverage_complete": row.route_attempts >= active_route_target,
+            "internal_research_items": internal_research_items,
             "etdr_branches": [
                 "NEW_OR_CHANGED_RECORD_DELTA",
                 "ETDR_START_NOT_VERIFIED",
