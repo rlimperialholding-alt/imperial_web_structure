@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import json
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
@@ -32,7 +32,7 @@ from .canonical_policy import (
 )
 from .canonical_templates import CanonicalFirstContactRegistry
 from .connectors import SourceError, fetch_source
-from .email import EmailDeliveryError, SMTPEmailAdapter
+from .email import GMAIL_OAUTH_FIELDS, EmailDeliveryError, SMTPEmailAdapter
 from .models import (
     GrowthControlState,
     GrowthRun,
@@ -325,6 +325,34 @@ def _verified_sender(db: Session, binding: BrandBinding) -> MailSendingDomain:
         raise GrowthRegistryError("Verified sending domain binding is missing")
     if row.from_email.strip().lower() != binding.sender_email:
         raise GrowthRegistryError("Sending-domain From address conflicts with the brand registry")
+    sender_domain = binding.sender_email.rsplit("@", 1)[-1]
+    if row.domain_name.strip().lower() != sender_domain:
+        raise GrowthRegistryError("Sending-domain name conflicts with the brand registry")
+    if row.provider == "gmail_api":
+        if not GMAIL_OAUTH_FIELDS.issubset(binding.secret):
+            raise GrowthRegistryError("Gmail OAuth sender binding is incomplete")
+        scopes = str(binding.secret.get("scope") or "").split()
+        if not any(
+            scope.endswith("/gmail.compose") or scope.endswith("/gmail.send")
+            for scope in scopes
+        ) or not any(
+            scope.endswith(("/gmail.readonly", "/gmail.modify", "/mail.google.com"))
+            for scope in scopes
+        ):
+            raise GrowthRegistryError("Gmail OAuth sender scopes are incomplete")
+        try:
+            evidence = json.loads(row.verification_evidence_json or "{}")
+        except json.JSONDecodeError as exc:
+            raise GrowthRegistryError("Gmail OAuth sender evidence is unreadable") from exc
+        if (
+            not isinstance(evidence, dict)
+            or evidence.get("verification_method") != "gmail_oauth_profile"
+            or str(evidence.get("profile_email") or "").strip().lower()
+            != binding.sender_email
+            or row.verified_at is None
+        ):
+            raise GrowthRegistryError("Gmail OAuth sender profile is not verified")
+        return row
     if any(getattr(row, name) != "pass" for name in ("spf_status", "dkim_status", "dmarc_status")):
         raise GrowthRegistryError("SPF, DKIM and DMARC must all pass")
     if row.provider == "provider_not_configured":
@@ -1336,6 +1364,8 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
 
 
 def dispatch_batch(db: Session, *, limit: int = 20) -> int:
+    if not _outreach_sending_window_open():
+        return 0
     sent = 0
     for _ in range(max(1, min(limit, 100))):
         row = claim_outreach(db)
@@ -1344,6 +1374,22 @@ def dispatch_batch(db: Session, *, limit: int = 20) -> int:
         result = dispatch_outreach(db, row)
         sent += result.status == "sent"
     return sent
+
+
+def _outreach_sending_window_open(now: datetime | None = None) -> bool:
+    config = settings()
+    try:
+        zone = ZoneInfo(config.timezone)
+        start = time.fromisoformat(
+            getattr(config, "outreach_send_start_local", "08:00")
+        )
+        end = time.fromisoformat(getattr(config, "outreach_send_end_local", "18:00"))
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
+    if start >= end:
+        raise GrowthRegistryError("Outreach sending window must start before it ends")
+    local_time = (now or utcnow()).astimezone(zone).time().replace(tzinfo=None)
+    return start <= local_time < end
 
 
 def schedule_followups(db: Session) -> int:
