@@ -58,17 +58,16 @@ a konkrét hirdetés hivatkozását.
 
 ## E-mail forrás- és címzetti kapu
 
-- Nyilvános építésitelek-hirdetés alapján automatikus első kapcsolatfelvétel kizárólag
-  ellenőrzött ingatlaniroda szervezeti role mailboxára engedélyezett. Természetes személy
-  `listing_agent` vagy `property_owner` csak `explicit_request` vagy visszakereshető
-  `documented_consent` alapján kaphat levelet; a nyilvános hirdetés önmagában nem
-  hozzájárulás.
+- Nyilvános építésitelek-hirdetés alapján egyszeri automatikus első kapcsolatfelvétel
+  engedélyezett a hirdetésben azonosított `listing_agent` vagy `property_owner` részére,
+  szervezeti role mailboxon és név szerinti e-mail-címen egyaránt. Ehhez az útvonalhoz
+  nem szükséges külön `explicit_request` vagy `documented_consent`; a kapcsolatfelvétel
+  kizárólag a konkrét, nyilvános telekhirdetésre adott együttműködési jelentkezés lehet.
 - A forráshirdetés HTTPS URL-je, a címzett szerepköre és a hirdetésből származó
   kapcsolat visszakereshető rögzítése kötelező. Más célú természetes személyes
   megkeresésre ez a kivétel nem használható.
 - A változtathatatlan, tulajdonos által jóváhagyott sablon első levele a
-  `land-public-listing-v2` policy alapján automatikusan release-tokenes jóváhagyást kap,
-  de tulajdonosnál csak az előző pont szerinti hozzájárulás vagy kifejezett kérés után.
+  `land-public-listing-v3` policy alapján automatikusan release-tokenes jóváhagyást kap.
   Ez kizárólag az első levélre érvényes; automatikus utánkövető levél nem készül.
 - `listing_agent` esetén a 2026-08-25-én jóváhagyott rövid levél 2,5%-os jutalékot,
   telekre illő típusházzal elkészített hirdetést, látványtervet, alaprajzot és műszaki
