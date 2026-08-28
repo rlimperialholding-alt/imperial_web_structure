@@ -4,12 +4,13 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
+from app.database import Base, SessionLocal, engine
 from app.growth_ops import service
 from app.growth_ops.models import OutreachMessage
 from app.growth_ops.registry import settings as growth_settings
@@ -59,6 +60,9 @@ def _runtime_settings(**changes):
         ("Sales@Example.HU", "example.hu"),
         ("office@mail.example.hu.", "example.hu"),
         ("hello@branch.example.co.uk", "example.co.uk"),
+        ("hello@branch.example.com.au", "example.com.au"),
+        ("hello@a.b.ide.kyoto.jp", "b.ide.kyoto.jp"),
+        ("hello@foo.blogspot.com", "foo.blogspot.com"),
         ("hello@BÜRO.at", "xn--bro-hoa.at"),
     ],
 )
@@ -106,6 +110,15 @@ def test_root_domain_cap_cannot_be_relaxed_above_ten(monkeypatch):
     assert growth_settings().outreach_max_per_recipient_root_domain_per_day == 10
 
 
+def test_hour_and_day_caps_cannot_be_relaxed(monkeypatch):
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_MAX_PER_HOUR", "100")
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "1000")
+
+    config = growth_settings()
+    assert config.outreach_max_per_hour == 5
+    assert config.outreach_max_per_day == 50
+
+
 def test_postgresql_claim_uses_transaction_advisory_lock():
     calls = []
 
@@ -140,7 +153,12 @@ def test_claim_is_fail_closed_outside_window_without_queue_change(db, monkeypatc
 
 
 def test_direct_dispatch_cannot_bypass_window_or_reach_transport(db, monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
     row = _message(2, "office@example.hu", status="claimed")
+    row.claimed_by = "growth-cap-test"
+    row.claimed_at = datetime.now(UTC)
+    row.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    row.attempt_count = 1
     db.add(row)
     db.commit()
     monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: False)
@@ -153,7 +171,9 @@ def test_direct_dispatch_cannot_bypass_window_or_reach_transport(db, monkeypatch
     result = service.dispatch_outreach(db, row)
 
     assert result is row
-    assert row.status == "claimed"
+    assert row.status == "queued"
+    assert row.attempt_count == 0
+    assert row.claimed_by is None and row.claimed_at is None
     assert row.provider_message_id is None
 
 
@@ -176,6 +196,44 @@ def test_exact_root_domain_cap_skips_capped_domain_without_claiming(db, monkeypa
     db.refresh(capped)
     assert capped.status == "queued"
     assert capped.attempt_count == 0
+
+
+def test_capacity_usage_buckets_queued_and_claimed_by_budapest_hour_and_day(
+    db, monkeypatch
+):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
+    current = local_now.astimezone(UTC)
+    hourly_queued = _message(102, "hourly@one.hu")
+    hourly_queued.available_at = current - timedelta(minutes=5)
+    daily_queued = _message(103, "daily@two.hu")
+    daily_queued.available_at = current - timedelta(hours=2)
+    future_queued = _message(104, "future@three.hu")
+    future_queued.available_at = current + timedelta(days=1)
+    hourly_claimed = _message(105, "claimed@four.hu", status="claimed")
+    hourly_claimed.claimed_at = current - timedelta(minutes=2)
+    daily_claimed = _message(106, "claimed@five.hu", status="claimed")
+    daily_claimed.claimed_at = current - timedelta(hours=2)
+    old_claimed = _message(107, "claimed@six.hu", status="claimed")
+    old_claimed.claimed_at = current - timedelta(days=1)
+    db.add_all(
+        [
+            hourly_queued,
+            daily_queued,
+            future_queued,
+            hourly_claimed,
+            daily_claimed,
+            old_claimed,
+        ]
+    )
+    db.commit()
+
+    usage = service._outreach_capacity_usage(db, current)
+
+    assert usage.hourly_queued == 1
+    assert usage.daily_queued == 2
+    assert usage.hourly_claimed == 1
+    assert usage.daily_claimed == 2
 
 
 def test_verified_sent_plus_claimed_reservations_reach_exact_domain_cap(
@@ -231,6 +289,10 @@ def test_direct_dispatch_cannot_bypass_reserved_root_domain_cap(db, monkeypatch)
         reserved.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
         db.add(reserved)
     row = _message(140, "direct@mail.example.hu", status="claimed")
+    row.claimed_by = "growth-cap-test"
+    row.claimed_at = datetime.now(UTC)
+    row.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    row.attempt_count = 1
     db.add(row)
     db.commit()
 
@@ -242,7 +304,9 @@ def test_direct_dispatch_cannot_bypass_reserved_root_domain_cap(db, monkeypatch)
     result = service.dispatch_outreach(db, row)
 
     assert result is row
-    assert row.status == "claimed"
+    assert row.status == "queued"
+    assert row.attempt_count == 0
+    assert row.claimed_by is None and row.claimed_at is None
     assert row.provider_message_id is None
 
 
@@ -277,3 +341,36 @@ def test_parallel_claims_reserve_exactly_ten_per_root_domain(tmp_path, monkeypat
         assert sum(row.status == "claimed" for row in rows) == 10
         assert sum(row.status == "queued" for row in rows) == 2
         assert sum(row.attempt_count for row in rows) == 10
+
+
+@pytest.mark.skipif(
+    engine.dialect.name != "postgresql",
+    reason="requires the dedicated PostgreSQL integration-test database",
+)
+def test_postgresql_parallel_claims_reserve_exactly_ten_with_advisory_lock(
+    monkeypatch,
+):
+    with SessionLocal() as db:
+        db.add_all(
+            [_message(400 + index, f"person{index}@branch.example.hu") for index in range(12)]
+        )
+        db.commit()
+
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
+
+    def worker(_index):
+        with SessionLocal() as db:
+            row = service.claim_outreach(db)
+            return row.outreach_id if row else None
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        claimed_ids = list(executor.map(worker, range(12)))
+
+    assert len([value for value in claimed_ids if value]) == 10
+    with SessionLocal() as db:
+        rows = db.scalars(
+            select(OutreachMessage).where(OutreachMessage.outreach_id.like("OUT-CAP-4%"))
+        ).all()
+        assert sum(row.status == "claimed" for row in rows) == 10
+        assert sum(row.status == "queued" for row in rows) == 2

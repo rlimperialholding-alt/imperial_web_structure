@@ -187,21 +187,27 @@ def test_outreach_send_capacity_enforces_hourly_and_daily_limits(
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: (2, 47, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(
+            2, 47, 0, 0, 0, 0, {}
+        ),
     )
     assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 3
 
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: (5, 12, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(
+            5, 12, 0, 0, 0, 0, {}
+        ),
     )
     assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: (1, 50, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(
+            1, 50, 0, 0, 0, 0, {}
+        ),
     )
     assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 

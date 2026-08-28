@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from secrets import token_urlsafe
@@ -12,6 +13,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from publicsuffix2 import get_sld
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -49,26 +51,6 @@ LAND_RECIPIENT_TYPES_BY_ROLE = {
 }
 
 OUTREACH_CAPACITY_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_252
-COMMON_TWO_LABEL_PUBLIC_SUFFIXES = frozenset(
-    {
-        "co.at",
-        "co.hu",
-        "co.uk",
-        "com.au",
-        "com.br",
-        "com.hr",
-        "com.pl",
-        "com.ro",
-        "com.sk",
-        "info.hu",
-        "net.au",
-        "net.hu",
-        "org.au",
-        "org.hu",
-        "org.uk",
-        "priv.hu",
-    }
-)
 
 
 def utcnow() -> datetime:
@@ -914,10 +896,10 @@ def _recipient_root_domain(email: str) -> str:
     labels = ascii_domain.split(".")
     if any(not label or len(label) > 63 for label in labels):
         raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send")
-    if len(labels) <= 2:
-        return ascii_domain
-    suffix = ".".join(labels[-2:])
-    return ".".join(labels[-3:]) if suffix in COMMON_TWO_LABEL_PUBLIC_SUFFIXES else suffix
+    root_domain = get_sld(ascii_domain, strict=False)
+    if not root_domain:
+        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send")
+    return str(root_domain).casefold()
 
 
 def _gmail_sent_mime_verified(row: OutreachMessage) -> bool:
@@ -970,9 +952,20 @@ def _lock_outreach_claim_capacity(db: Session) -> None:
         db.execute(text("BEGIN IMMEDIATE"))
 
 
+@dataclass(frozen=True)
+class OutreachCapacityUsage:
+    hourly_verified: int
+    daily_verified: int
+    hourly_claimed: int
+    daily_claimed: int
+    hourly_queued: int
+    daily_queued: int
+    daily_domain_reservations: dict[str, int]
+
+
 def _outreach_capacity_usage(
     db: Session, now: datetime | None = None
-) -> tuple[int, int, int, dict[str, int]]:
+) -> OutreachCapacityUsage:
     day_start, next_day, hour_start, next_hour = _outreach_period_bounds(now)
     sent_rows = db.scalars(
         select(OutreachMessage).where(
@@ -982,33 +975,87 @@ def _outreach_capacity_usage(
     ).all()
     verified_rows = [row for row in sent_rows if _gmail_sent_mime_verified(row)]
     claimed_rows = db.scalars(
-        select(OutreachMessage).where(OutreachMessage.status == "claimed")
+        select(OutreachMessage).where(
+            OutreachMessage.status == "claimed",
+            OutreachMessage.claimed_at.is_not(None),
+            OutreachMessage.claimed_at >= day_start,
+            OutreachMessage.claimed_at < next_day,
+        )
+    ).all()
+    queued_rows = db.scalars(
+        select(OutreachMessage).where(
+            OutreachMessage.status == "queued",
+            OutreachMessage.available_at >= day_start,
+            OutreachMessage.available_at < next_day,
+        )
     ).all()
     domain_usage: dict[str, int] = {}
-    for row in [*verified_rows, *claimed_rows]:
+    for row in [*verified_rows, *claimed_rows, *queued_rows]:
         try:
             root_domain = _recipient_root_domain(row.recipient_email)
         except GrowthRegistryError:
             continue
         domain_usage[root_domain] = domain_usage.get(root_domain, 0) + 1
-    hourly_verified = sum(
-        hour_start <= _aware(row.sent_at) < next_hour for row in verified_rows
+    return OutreachCapacityUsage(
+        hourly_verified=sum(
+            hour_start <= _aware(row.sent_at) < next_hour for row in verified_rows
+        ),
+        daily_verified=len(verified_rows),
+        hourly_claimed=sum(
+            hour_start <= _aware(row.claimed_at) < next_hour for row in claimed_rows
+        ),
+        daily_claimed=len(claimed_rows),
+        hourly_queued=sum(
+            hour_start <= _aware(row.available_at) < next_hour for row in queued_rows
+        ),
+        daily_queued=len(queued_rows),
+        daily_domain_reservations=domain_usage,
     )
-    return hourly_verified, len(verified_rows), len(claimed_rows), domain_usage
 
 
 def _outreach_root_domain_capacity_available(
-    db: Session, recipient_email: str, now: datetime | None = None
+    db: Session, candidate: OutreachMessage, now: datetime | None = None
 ) -> bool:
     try:
-        root_domain = _recipient_root_domain(recipient_email)
+        root_domain = _recipient_root_domain(candidate.recipient_email)
     except GrowthRegistryError:
         return False
-    _hourly, _daily, _claimed, domain_usage = _outreach_capacity_usage(db, now)
-    limit = int(
-        getattr(settings(), "outreach_max_per_recipient_root_domain_per_day", 10)
+    day_start, next_day, hour_start, next_hour = _outreach_period_bounds(now)
+    usage = _outreach_capacity_usage(db, now)
+    config = settings()
+    hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
+    daily_limit = int(getattr(config, "outreach_max_per_day", 50))
+    root_limit = min(
+        10,
+        max(
+            1,
+            int(
+                getattr(
+                    config,
+                    "outreach_max_per_recipient_root_domain_per_day",
+                    10,
+                )
+            ),
+        ),
     )
-    return domain_usage.get(root_domain, 0) < min(10, max(1, limit))
+    available_at = _aware(candidate.available_at)
+    already_hourly_reserved = hour_start <= available_at < next_hour
+    already_daily_reserved = day_start <= available_at < next_day
+    return bool(
+        usage.hourly_verified
+        + usage.hourly_claimed
+        + usage.hourly_queued
+        + (0 if already_hourly_reserved else 1)
+        <= hourly_limit
+        and usage.daily_verified
+        + usage.daily_claimed
+        + usage.daily_queued
+        + (0 if already_daily_reserved else 1)
+        <= daily_limit
+        and usage.daily_domain_reservations.get(root_domain, 0)
+        + (0 if already_daily_reserved else 1)
+        <= root_limit
+    )
 
 
 def _outreach_transport_capacity_reserved(
@@ -1016,7 +1063,8 @@ def _outreach_transport_capacity_reserved(
 ) -> bool:
     if row.status != "claimed":
         return False
-    hourly_verified, daily_verified, claimed, domain_usage = _outreach_capacity_usage(db, now)
+    day_start, next_day, hour_start, next_hour = _outreach_period_bounds(now)
+    usage = _outreach_capacity_usage(db, now)
     config = settings()
     hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
     daily_limit = int(getattr(config, "outreach_max_per_day", 50))
@@ -1037,10 +1085,25 @@ def _outreach_transport_capacity_reserved(
         root_domain = _recipient_root_domain(row.recipient_email)
     except GrowthRegistryError:
         return False
+    claimed_at = _aware(row.claimed_at) if row.claimed_at else None
+    already_hourly_reserved = bool(
+        claimed_at and hour_start <= claimed_at < next_hour
+    )
+    already_daily_reserved = bool(claimed_at and day_start <= claimed_at < next_day)
     return bool(
-        hourly_verified + claimed <= hourly_limit
-        and daily_verified + claimed <= daily_limit
-        and domain_usage.get(root_domain, 0) <= root_limit
+        usage.hourly_verified
+        + usage.hourly_claimed
+        + usage.hourly_queued
+        + (0 if already_hourly_reserved else 1)
+        <= hourly_limit
+        and usage.daily_verified
+        + usage.daily_claimed
+        + usage.daily_queued
+        + (0 if already_daily_reserved else 1)
+        <= daily_limit
+        and usage.daily_domain_reservations.get(root_domain, 0)
+        + (0 if already_daily_reserved else 1)
+        <= root_limit
     )
 
 
@@ -1067,7 +1130,7 @@ def claim_outreach(db: Session) -> OutreachMessage | None:
         (
             candidate
             for candidate in candidates
-            if _outreach_root_domain_capacity_available(db, candidate.recipient_email, now)
+            if _outreach_root_domain_capacity_available(db, candidate, now)
         ),
         None,
     )
@@ -1316,6 +1379,32 @@ def _delivery_verification_pending(row: OutreachMessage) -> bool:
     return isinstance(verification, dict) and verification.get("status") == ("pending_verification")
 
 
+def _release_untransported_claim(
+    db: Session, row: OutreachMessage, *, reason: str
+) -> OutreachMessage:
+    if (
+        row.status == "claimed"
+        and row.claimed_by == settings().worker_id
+        and row.provider_message_id is None
+        and not _delivery_verification_pending(row)
+    ):
+        row.status = "queued"
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+        row.attempt_count = max(0, row.attempt_count - 1)
+        row.last_error = reason
+        db.commit()
+    return row
+
+
+def _assert_outreach_pre_send_guard(db: Session, row: OutreachMessage) -> None:
+    if not _outreach_sending_window_open():
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+    if not _outreach_transport_capacity_reserved(db, row):
+        raise GrowthRegistryError("outreach_transport_capacity_not_reserved_no_send")
+
+
 def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
     if row.status != "claimed":
         return row
@@ -1344,9 +1433,13 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         db.commit()
         return row
     if not _outreach_sending_window_open():
-        return row
+        return _release_untransported_claim(
+            db, row, reason="outreach_sending_window_closed_no_send"
+        )
     if not _outreach_transport_capacity_reserved(db, row):
-        return row
+        return _release_untransported_claim(
+            db, row, reason="outreach_transport_capacity_not_reserved_no_send"
+        )
     registry = GrowthRegistry.load()
     global_guard = None
     try:
@@ -1399,6 +1492,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             idempotency_key=row.idempotency_key,
             reply_to=str(binding.config.get("reply_to") or binding.sender_email),
             delivery_scope="external_customer",
+            pre_send_guard=lambda: _assert_outreach_pre_send_guard(db, row),
         )
         if (
             receipt.provider != "gmail_api"
@@ -1585,14 +1679,19 @@ def _outreach_sending_window_open(now: datetime | None = None) -> bool:
 
 def _outreach_send_capacity(db: Session, now: datetime | None = None) -> int:
     config = settings()
-    hourly_sent, daily_sent, claimed, _domain_usage = _outreach_capacity_usage(db, now)
+    usage = _outreach_capacity_usage(db, now)
     hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
     daily_limit = int(getattr(config, "outreach_max_per_day", 50))
+    if (
+        usage.hourly_verified + usage.hourly_claimed + usage.hourly_queued > hourly_limit
+        or usage.daily_verified + usage.daily_claimed + usage.daily_queued > daily_limit
+    ):
+        return 0
     return max(
         0,
         min(
-            hourly_limit - hourly_sent - claimed,
-            daily_limit - daily_sent - claimed,
+            hourly_limit - usage.hourly_verified - usage.hourly_claimed,
+            daily_limit - usage.daily_verified - usage.daily_claimed,
         ),
     )
 

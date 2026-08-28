@@ -80,10 +80,10 @@ def settings() -> GrowthSettings:
             "GROWTH_OPS_OUTREACH_SEND_END_LOCAL", "18:00"
         ),
         outreach_max_per_hour=max(
-            1, min(100, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_HOUR", "5")))
+            1, min(5, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_HOUR", "5")))
         ),
         outreach_max_per_day=max(
-            1, min(1_000, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "50")))
+            1, min(50, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "50")))
         ),
         outreach_max_per_recipient_root_domain_per_day=max(
             1,
