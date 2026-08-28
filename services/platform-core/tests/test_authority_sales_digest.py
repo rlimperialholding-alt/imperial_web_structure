@@ -22,6 +22,7 @@ from app.authority_reader.sales_digest import (
     DigestBlocked,
     GmailDigestAdapter,
     GmailReceipt,
+    SharedGuardDecision,
     create_digest,
     dispatch_digest,
     load_oauth,
@@ -93,7 +94,13 @@ def _settings(tmp_path, **overrides) -> ReaderSettings:
     return ReaderSettings(**values)
 
 
-def _lead(db, *, process_number: str, created_at: datetime) -> AuthoritySignalOutbox:
+def _lead(
+    db,
+    *,
+    process_number: str,
+    created_at: datetime,
+    contact_qualified: bool = False,
+) -> AuthoritySignalOutbox:
     record = AuthorityRecord(
         record_id=f"digest-record-{process_number}",
         source_key="etdr_public",
@@ -144,6 +151,18 @@ def _lead(db, *, process_number: str, created_at: datetime) -> AuthoritySignalOu
                 "lead_reason": "new_submission",
                 "confidence": 92,
                 "urgency": 90,
+                **(
+                    {
+                        "contact_qualification": {
+                            "status": "ETDR_CONTACT_QUALIFIED",
+                            "recipient_email": "kapcsolat@epito.example",
+                            "official_source_url": "https://epito.example/kapcsolat",
+                            "contact_basis": "official_company_site",
+                        }
+                    }
+                    if contact_qualified
+                    else {}
+                ),
             }
         ),
         status="delivered",
@@ -180,6 +199,20 @@ class FakeAdapter:
         return GmailReceipt("gmail-message-1", "gmail-thread-1")
 
 
+class FakeGuard:
+    @classmethod
+    def claim(cls, _recipients, _digest):
+        return SharedGuardDecision("claimed", "TEST-GUARD-CLAIM", None)
+
+    @classmethod
+    def finalize(cls, *_args, **_kwargs):
+        return None
+
+    @classmethod
+    def fail(cls, *_args, **_kwargs):
+        return None
+
+
 @pytest.fixture(autouse=True)
 def _reset_adapter():
     FakeAdapter.sent = []
@@ -188,11 +221,30 @@ def _reset_adapter():
 
 def test_digest_sends_each_day_once_and_contains_only_verified_public_fields(db, tmp_path):
     now = datetime(2026, 8, 24, 13, tzinfo=UTC)
-    _lead(db, process_number="202600070207", created_at=now - timedelta(hours=1))
+    _lead(
+        db,
+        process_number="202600070207",
+        created_at=now - timedelta(hours=1),
+        contact_qualified=True,
+    )
     active = _settings(tmp_path)
 
-    first = run_once(db, active, force=True, now=now, adapter_factory=FakeAdapter)
-    second = run_once(db, active, force=True, now=now, adapter_factory=FakeAdapter)
+    first = run_once(
+        db,
+        active,
+        force=True,
+        now=now,
+        adapter_factory=FakeAdapter,
+        guard_factory=FakeGuard,
+    )
+    second = run_once(
+        db,
+        active,
+        force=True,
+        now=now,
+        adapter_factory=FakeAdapter,
+        guard_factory=FakeGuard,
+    )
 
     assert first is not None and first.status == "sent" and first.item_count == 1
     assert second is not None and second.digest_id == first.digest_id
@@ -202,14 +254,15 @@ def test_digest_sends_each_day_once_and_contains_only_verified_public_fields(db,
     body = message.get_body(preferencelist=("plain",)).get_content()
     assert "202600070207" in body
     assert "1234 Tesztváros, Minta utca 7." in body
-    assert "nincs ellenőrzött üzleti e-mail/telefon" in body
+    assert "kapcsolat@epito.example" in body
+    assert "https://epito.example/kapcsolat" in body
     assert "https://www.etdr.gov.hu/nyilvanos-adatok/202600070207" in body
     assert first.digest_id in body
 
 
 def test_digest_payload_tamper_is_dead_lettered_before_gmail(db, tmp_path):
     now = datetime(2026, 8, 24, 13, tzinfo=UTC)
-    _lead(db, process_number="202600070208", created_at=now)
+    _lead(db, process_number="202600070208", created_at=now, contact_qualified=True)
     active = _settings(tmp_path)
     digest = create_digest(db, active, now=now, force=True)
     assert digest is not None
@@ -226,7 +279,9 @@ def test_digest_payload_tamper_is_dead_lettered_before_gmail(db, tmp_path):
     digest.status = "claimed"
     db.commit()
 
-    result = dispatch_digest(db, active, digest, adapter_factory=FakeAdapter)
+    result = dispatch_digest(
+        db, active, digest, adapter_factory=FakeAdapter, guard_factory=FakeGuard
+    )
     assert result.status == "dead_letter"
     assert result.last_error == "digest_payload_hash_mismatch"
     assert FakeAdapter.sent == []
@@ -234,7 +289,7 @@ def test_digest_payload_tamper_is_dead_lettered_before_gmail(db, tmp_path):
 
 def test_digest_approval_evidence_change_is_dead_lettered_before_gmail(db, tmp_path):
     now = datetime(2026, 8, 24, 13, tzinfo=UTC)
-    _lead(db, process_number="202600070210", created_at=now)
+    _lead(db, process_number="202600070210", created_at=now, contact_qualified=True)
     active = _settings(tmp_path)
     digest = create_digest(db, active, now=now, force=True)
     assert digest is not None
@@ -245,7 +300,9 @@ def test_digest_approval_evidence_change_is_dead_lettered_before_gmail(db, tmp_p
     digest.status = "claimed"
     db.commit()
 
-    result = dispatch_digest(db, active, digest, adapter_factory=FakeAdapter)
+    result = dispatch_digest(
+        db, active, digest, adapter_factory=FakeAdapter, guard_factory=FakeGuard
+    )
     assert result.status == "dead_letter"
     assert result.last_error == "digest_recipients_changed"
     assert FakeAdapter.sent == []
@@ -253,7 +310,7 @@ def test_digest_approval_evidence_change_is_dead_lettered_before_gmail(db, tmp_p
 
 def test_digest_reconciles_ambiguous_prior_send_without_duplicate(db, tmp_path):
     now = datetime(2026, 8, 24, 13, tzinfo=UTC)
-    _lead(db, process_number="202600070209", created_at=now)
+    _lead(db, process_number="202600070209", created_at=now, contact_qualified=True)
     active = _settings(tmp_path)
     digest = create_digest(db, active, now=now, force=True)
     assert digest is not None
@@ -261,7 +318,9 @@ def test_digest_reconciles_ambiguous_prior_send_without_duplicate(db, tmp_path):
     db.commit()
     FakeAdapter.reconciled = GmailReceipt("existing-message", "existing-thread", True)
 
-    result = dispatch_digest(db, active, digest, adapter_factory=FakeAdapter)
+    result = dispatch_digest(
+        db, active, digest, adapter_factory=FakeAdapter, guard_factory=FakeGuard
+    )
     assert result.status == "sent"
     assert result.gmail_message_id == "existing-message"
     assert result.last_error == "reconciled_after_ambiguous_send"
@@ -270,7 +329,7 @@ def test_digest_reconciles_ambiguous_prior_send_without_duplicate(db, tmp_path):
 
 def test_digest_never_resends_after_ambiguous_gmail_transport(db, tmp_path):
     now = datetime(2026, 8, 24, 13, tzinfo=UTC)
-    _lead(db, process_number="202600070211", created_at=now)
+    _lead(db, process_number="202600070211", created_at=now, contact_qualified=True)
     active = _settings(tmp_path)
     digest = create_digest(db, active, now=now, force=True)
     assert digest is not None
@@ -279,7 +338,9 @@ def test_digest_never_resends_after_ambiguous_gmail_transport(db, tmp_path):
     digest.last_error = "gmail_send_ambiguous"
     db.commit()
 
-    result = dispatch_digest(db, active, digest, adapter_factory=FakeAdapter)
+    result = dispatch_digest(
+        db, active, digest, adapter_factory=FakeAdapter, guard_factory=FakeGuard
+    )
     assert result.status == "retry"
     assert result.last_error == "gmail_reconcile_pending"
     assert FakeAdapter.sent == []
@@ -310,10 +371,35 @@ def test_empty_digest_is_audited_but_not_emailed(db, tmp_path):
     assert FakeAdapter.sent == []
 
 
+def test_raw_etdr_record_without_verified_contact_is_never_emailed(db, tmp_path):
+    now = datetime(2026, 8, 24, 13, tzinfo=UTC)
+    _lead(db, process_number="202600070299", created_at=now)
+    result = run_once(
+        db,
+        _settings(tmp_path),
+        force=True,
+        now=now,
+        adapter_factory=FakeAdapter,
+        guard_factory=FakeGuard,
+    )
+    assert result is not None and result.status == "skipped" and result.item_count == 0
+    assert FakeAdapter.sent == []
+
+
 def test_digest_caps_countrywide_volume_without_losing_backlog(db, tmp_path):
     now = datetime(2026, 8, 24, 13, tzinfo=UTC)
-    _lead(db, process_number="202600070301", created_at=now - timedelta(hours=2))
-    _lead(db, process_number="202600070302", created_at=now - timedelta(hours=1))
+    _lead(
+        db,
+        process_number="202600070301",
+        created_at=now - timedelta(hours=2),
+        contact_qualified=True,
+    )
+    _lead(
+        db,
+        process_number="202600070302",
+        created_at=now - timedelta(hours=1),
+        contact_qualified=True,
+    )
     active = _settings(tmp_path, sales_digest_max_items=1)
 
     first = create_digest(db, active, now=now, force=True)
@@ -365,6 +451,7 @@ def test_gmail_adapter_uses_refresh_token_reconciles_and_sends(tmp_path):
 
     def resolver(_host, _port):
         return {ipaddress.ip_address("93.184.216.34")}
+
     with GmailDigestAdapter(
         load_oauth(active),
         oauth_transport=httpx.MockTransport(oauth_handler),
@@ -374,9 +461,7 @@ def test_gmail_adapter_uses_refresh_token_reconciles_and_sends(tmp_path):
         assert adapter.preflight() == "info@imperialholding.hu"
         assert adapter.find_sent("ETDR-DIGEST-TEST") is None
         receipt = adapter.send(b"Message-ID: <digest-test@digest.imperialholding.hu>\r\n\r\nTest")
-        verified = adapter.get_sent(
-            receipt.message_id, "ETDR-DIGEST-TEST"
-        )
+        verified = adapter.get_sent(receipt.message_id, "ETDR-DIGEST-TEST")
     assert receipt.message_id == "sent-id"
     assert verified.thread_id == "thread-id"
     assert requests[0].url.host == "oauth2.googleapis.com"

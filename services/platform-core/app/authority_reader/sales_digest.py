@@ -18,12 +18,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-from sqlalchemy import exists, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import exists, select, text, update
+from sqlalchemy.orm import Session, sessionmaker
 
 from ..database import SessionLocal
 from ..services.safe_http import AddressResolver, SafeHttpClient, SafeHttpError
 from .config import ReaderSettings
+from .lead_bridge import LeadBridgeSettings, platform_engine
 from .models import (
     AuthorityDetailRevision,
     AuthorityRecord,
@@ -101,9 +102,7 @@ class DigestRecipients(BaseModel):
 
     @field_validator("recipients")
     @classmethod
-    def unique_recipients(
-        cls, value: tuple[DigestRecipient, ...]
-    ) -> tuple[DigestRecipient, ...]:
+    def unique_recipients(cls, value: tuple[DigestRecipient, ...]) -> tuple[DigestRecipient, ...]:
         if len({item.email for item in value}) != len(value):
             raise ValueError("duplicate digest recipient")
         return tuple(sorted(value, key=lambda item: item.email))
@@ -254,9 +253,7 @@ class GmailDigestAdapter:
             raise DigestBlocked("gmail_oauth_transport_error", retry_safe=True) from exc
         try:
             if response.status_code != 200:
-                raise DigestBlocked(
-                    "gmail_oauth_rejected", retry_safe=response.status_code >= 500
-                )
+                raise DigestBlocked("gmail_oauth_rejected", retry_safe=response.status_code >= 500)
             payload = self._response_json(response, "gmail_oauth")
             token = payload.get("access_token")
             if not isinstance(token, str) or len(token) < 20:
@@ -338,9 +335,7 @@ class GmailDigestAdapter:
             label_ids = payload.get("labelIds", [])
             message_payload = payload.get("payload", {})
             headers = (
-                message_payload.get("headers", [])
-                if isinstance(message_payload, dict)
-                else []
+                message_payload.get("headers", []) if isinstance(message_payload, dict) else []
             )
             digest_header_values = [
                 item.get("value")
@@ -420,9 +415,21 @@ def _item_snapshot(
     outbox: AuthoritySignalOutbox,
     record: AuthorityRecord,
     detail: AuthorityDetailRevision,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     lead = json.loads(outbox.payload_json)
     detail_payload = json.loads(detail.normalized_json)
+    contact = lead.get("contact_qualification")
+    if not isinstance(contact, dict):
+        return None
+    contact_email = str(contact.get("recipient_email") or "").strip().casefold()
+    contact_source_url = str(contact.get("official_source_url") or "").strip()
+    if (
+        contact.get("status") != "ETDR_CONTACT_QUALIFIED"
+        or not EMAIL_RE.fullmatch(contact_email)
+        or not contact_source_url.startswith("https://")
+        or contact.get("contact_basis") not in {"official_company_site", "official_registry"}
+    ):
+        return None
     return {
         "process_number": record.public_process_number,
         "submission_date": record.submission_date.date().isoformat(),
@@ -435,8 +442,9 @@ def _item_snapshot(
         "confidence": int(lead["confidence"]),
         "urgency": int(lead["urgency"]),
         "evidence_url": record.evidence_url,
-        "business_contact": None,
-        "contact_status": "not_available_from_etdr",
+        "business_contact": contact_email,
+        "contact_source_url": contact_source_url,
+        "contact_status": "ETDR_CONTACT_QUALIFIED",
     }
 
 
@@ -515,7 +523,12 @@ def create_digest(
         .limit(settings.sales_digest_max_items)
     )
     rows = db.execute(statement).all()
-    snapshots = [_item_snapshot(outbox, record, detail) for outbox, record, detail in rows]
+    qualified_rows = []
+    for outbox, record, detail in rows:
+        snapshot = _item_snapshot(outbox, record, detail)
+        if snapshot is not None:
+            qualified_rows.append(((outbox, record, detail), snapshot))
+    snapshots = [snapshot for _source, snapshot in qualified_rows]
     payload_hash = _digest_payload_hash(
         digest_date=digest_date,
         window_start_at=window_start,
@@ -538,14 +551,14 @@ def create_digest(
     )
     db.add(row)
     db.flush()
-    for (outbox, _record, _detail), snapshot in zip(rows, snapshots, strict=True):
+    for (outbox, _record, _detail), snapshot in qualified_rows:
         db.add(
             AuthoritySalesDigestItem(
                 digest_id=digest_id,
                 signal_outbox_id=outbox.id,
                 item_payload_sha256=hashlib.sha256(canonical_json(snapshot).encode()).hexdigest(),
                 item_snapshot_json=canonical_json(snapshot),
-                contact_status="not_available_from_etdr",
+                contact_status="ETDR_CONTACT_QUALIFIED",
             )
         )
     db.commit()
@@ -589,9 +602,8 @@ def _render_digest(
 ) -> tuple[str, str, str]:
     subject = f"ÉTDR napi leadlista – {digest.digest_date.isoformat()} – {len(items)} találat"
     intro = (
-        "Az ÉTDR-olvasó által minősített új és befejezési jel nélküli építési találatok. "
-        "Az ÉTDR nem közöl ellenőrzött ügyfél-e-mailt vagy telefonszámot; ilyen adatot a "
-        "rendszer nem talál ki. A cím és a hivatalos ügyoldal minden sornál elérhető."
+        "Csak ÉTDR_CONTACT_QUALIFIED státuszú, hivatalos vállalati forrásból "
+        "ellenőrzött kapcsolattal rendelkező építési lehetőségek."
     )
     plain_parts = [subject, "", intro, ""]
     html_rows: list[str] = []
@@ -605,13 +617,15 @@ def _render_digest(
     for index, item in enumerate(items, 1):
         label = labels.get(str(item["lead_reason"]), str(item["lead_reason"]))
         address = str(item["property_address"] or item["city"])
-        contact = "nincs ellenőrzött üzleti e-mail/telefon az ÉTDR-ben"
+        contact = str(item["business_contact"])
+        contact_source_url = str(item["contact_source_url"])
         plain_parts.extend(
             [
                 f"{index}. {item['process_number']} – {label}",
                 f"Projekt: {item['construction_activity']}",
                 f"Helyszín: {address}; HRSZ: {item['topographical_number'] or '–'}",
                 f"Elérhetőség: {contact}",
+                f"Kapcsolat forrása: {contact_source_url}",
                 f"Hivatalos adatlap: {item['evidence_url']}",
                 "",
             ]
@@ -625,7 +639,7 @@ def _render_digest(
             f"<td>{html.escape(str(item['construction_activity']))}</td>"
             f"<td>{html.escape(address)}<br>HRSZ: {hrsz}</td>"
             f"<td>{html.escape(contact)}</td>"
-            f"<td><a href=\"{evidence_url}\">ÉTDR-adatlap</a></td>"
+            f'<td><a href="{evidence_url}">ÉTDR-adatlap</a></td>'
             "</tr>"
         )
     plain_parts.append(
@@ -668,12 +682,128 @@ def _mime_message(
     return message.as_bytes()
 
 
+@dataclass(frozen=True)
+class SharedGuardDecision:
+    decision: str
+    claim_token: str | None
+    provider_message_id: str | None
+
+    @property
+    def may_send(self) -> bool:
+        return self.decision == "claimed"
+
+
+class PlatformRecipientGuard:
+    @staticmethod
+    def _session():
+        engine = platform_engine(LeadBridgeSettings.from_env())
+        return engine, sessionmaker(bind=engine, expire_on_commit=False)()
+
+    @classmethod
+    def claim(
+        cls, recipients: tuple[str, ...], digest: AuthoritySalesDigest
+    ) -> SharedGuardDecision:
+        engine, target_db = cls._session()
+        try:
+            row = target_db.execute(
+                text(
+                    "SELECT decision, claim_token, provider_message_id "
+                    "FROM public.claim_global_email_recipient_guard("
+                    ":recipients, :identity_sha256, :message_type, "
+                    ":tenant_scope, :current)"
+                ),
+                {
+                    "recipients": list(recipients),
+                    "identity_sha256": digest.payload_sha256,
+                    "message_type": "etdr_contact_qualified_digest",
+                    "tenant_scope": "imperial-holding",
+                    "current": utcnow(),
+                },
+            ).one()
+            target_db.commit()
+            return SharedGuardDecision(str(row[0]), row[1], row[2])
+        finally:
+            target_db.close()
+            engine.dispose()
+
+    @classmethod
+    def finalize(
+        cls,
+        recipients: tuple[str, ...],
+        digest: AuthoritySalesDigest,
+        *,
+        claim_token: str,
+        provider_message_id: str,
+    ) -> None:
+        engine, target_db = cls._session()
+        try:
+            ok = target_db.scalar(
+                text(
+                    "SELECT public.finalize_global_email_recipient_guard("
+                    ":recipients, :identity_sha256, :claim_token, "
+                    ":provider_message_id, :current)"
+                ),
+                {
+                    "recipients": list(recipients),
+                    "identity_sha256": digest.payload_sha256,
+                    "claim_token": claim_token,
+                    "provider_message_id": provider_message_id,
+                    "current": utcnow(),
+                },
+            )
+            if ok is not True:
+                target_db.rollback()
+                raise DigestBlocked("global_recipient_guard_finalize_rejected")
+            target_db.commit()
+        finally:
+            target_db.close()
+            engine.dispose()
+
+    @classmethod
+    def fail(
+        cls,
+        recipients: tuple[str, ...],
+        digest: AuthoritySalesDigest,
+        *,
+        claim_token: str,
+        error: str,
+        accepted_unverified: bool,
+        provider_message_id: str | None,
+    ) -> None:
+        engine, target_db = cls._session()
+        try:
+            ok = target_db.scalar(
+                text(
+                    "SELECT public.fail_global_email_recipient_guard("
+                    ":recipients, :identity_sha256, :claim_token, :status, "
+                    ":provider_message_id, :error, :current)"
+                ),
+                {
+                    "recipients": list(recipients),
+                    "identity_sha256": digest.payload_sha256,
+                    "claim_token": claim_token,
+                    "status": ("accepted_unverified" if accepted_unverified else "failed_pre_send"),
+                    "provider_message_id": provider_message_id,
+                    "error": error[:2000],
+                    "current": utcnow(),
+                },
+            )
+            if ok is not True:
+                target_db.rollback()
+                raise DigestBlocked("global_recipient_guard_failure_record_rejected")
+            target_db.commit()
+        finally:
+            target_db.close()
+            engine.dispose()
+
+
 def dispatch_digest(
     db: Session,
     settings: ReaderSettings,
     digest: AuthoritySalesDigest,
     *,
     adapter_factory: Any = GmailDigestAdapter,
+    guard_factory: Any = PlatformRecipientGuard,
 ) -> AuthoritySalesDigest:
     recipients = load_recipients(settings)
     if not hmac.compare_digest(digest.recipients_sha256, recipients_sha256(recipients)):
@@ -710,13 +840,30 @@ def dispatch_digest(
         digest.lease_expires_at = None
         db.commit()
         return digest
+    if any(item.get("contact_status") != "ETDR_CONTACT_QUALIFIED" for item in items):
+        digest.status = "dead_letter"
+        digest.last_error = "raw_etdr_sales_handoff_prohibited"
+        digest.lease_owner = None
+        digest.lease_expires_at = None
+        db.commit()
+        return digest
+    recipient_emails = tuple(item.email for item in recipients.recipients)
+    global_guard = guard_factory.claim(recipient_emails, digest)
+    reconcile_only = global_guard.decision == "reconcile_required"
+    if (not global_guard.may_send and not reconcile_only) or not global_guard.claim_token:
+        digest.status = "dead_letter"
+        digest.last_error = f"global_recipient_guard_no_send:{global_guard.decision}"
+        digest.lease_owner = None
+        digest.lease_expires_at = None
+        db.commit()
+        return digest
     subject, body_text, body_html = _render_digest(digest, items)
     try:
         with adapter_factory(load_oauth(settings)) as adapter:
             sender = adapter.preflight()
             receipt = adapter.find_sent(digest.digest_id)
             if receipt is None:
-                if digest.last_error in {
+                if reconcile_only or digest.last_error in {
                     "gmail_send_ambiguous",
                     "gmail_reconcile_pending",
                 }:
@@ -731,16 +878,28 @@ def dispatch_digest(
                         body_html=body_html,
                     )
                 )
+        guard_factory.finalize(
+            recipient_emails,
+            digest,
+            claim_token=global_guard.claim_token,
+            provider_message_id=receipt.message_id,
+        )
         digest.status = "sent"
         digest.gmail_message_id = receipt.message_id
         digest.gmail_thread_id = receipt.thread_id
         digest.sent_at = utcnow()
         digest.last_error = "reconciled_after_ambiguous_send" if receipt.reconciled else None
     except DigestBlocked as exc:
-        digest.last_error = exc.code
-        digest.status = (
-            "retry" if exc.retry_safe and digest.attempt_count < 5 else "dead_letter"
+        guard_factory.fail(
+            recipient_emails,
+            digest,
+            claim_token=global_guard.claim_token,
+            error=exc.code,
+            accepted_unverified=exc.code in {"gmail_send_ambiguous", "gmail_reconcile_pending"},
+            provider_message_id=global_guard.provider_message_id,
         )
+        digest.last_error = exc.code
+        digest.status = "retry" if exc.retry_safe and digest.attempt_count < 5 else "dead_letter"
     digest.lease_owner = None
     digest.lease_expires_at = None
     db.commit()
@@ -754,6 +913,7 @@ def run_once(
     force: bool = False,
     now: datetime | None = None,
     adapter_factory: Any = GmailDigestAdapter,
+    guard_factory: Any = PlatformRecipientGuard,
 ) -> AuthoritySalesDigest | None:
     created = create_digest(db, settings, now=now, force=force)
     if created is not None and created.status in {"sent", "skipped"}:
@@ -761,7 +921,13 @@ def run_once(
     claimed = _claim_digest(db, settings)
     if not claimed:
         return None
-    return dispatch_digest(db, settings, claimed, adapter_factory=adapter_factory)
+    return dispatch_digest(
+        db,
+        settings,
+        claimed,
+        adapter_factory=adapter_factory,
+        guard_factory=guard_factory,
+    )
 
 
 def check(settings: ReaderSettings, *, network: bool = False) -> dict[str, Any]:
