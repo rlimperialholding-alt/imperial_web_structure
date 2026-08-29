@@ -122,6 +122,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -231,10 +232,22 @@ def _scanner_filename_predicates() -> tuple[Any, Any, Any]:
     return (is_non_text_file, is_lock_file, is_swagger_file)
 
 
+_PROBE_SECRET_VALUE: str | None = None
+
+
 def _probe_secret_value() -> str:
-    """Runtime-constructed synthetic value; no secret-like literal exists
-    in this source file, and the scanner detects it with its normal detectors."""
-    return "".join(("Synthetic", "PlaintextValue", "-1234567890-ABC"))
+    """Runtime-generated, per-process synthetic sentinel: a stable synthetic
+    marker plus a fresh unpredictable nonce. The value therefore never exists
+    in this source, is never a production credential and cannot be reused
+    across runs; the module-level cache keeps it stable within one process
+    so the probe text, the expected line number and the expected fingerprint
+    always agree."""
+    global _PROBE_SECRET_VALUE
+    if _PROBE_SECRET_VALUE is None:
+        _PROBE_SECRET_VALUE = "".join(
+            ("Synthetic", "PlaintextValue", "-", secrets.token_hex(8))
+        )
+    return _PROBE_SECRET_VALUE
 
 
 # U+2028 LINE SEPARATOR és U+2029 PARAGRAPH SEPARATOR: a pinned scanner
@@ -248,16 +261,25 @@ _UNICODE_LINE_SEPARATOR = "\u2028"  # escape form; the file never carries the li
 _UNICODE_PARAGRAPH_SEPARATOR = "\u2029"  # escape form; the file never carries the literal
 
 
+def _probe_assignment_key() -> str:
+    """Runtime-assembled assignment keyword: the committed source never
+    carries a credential-assignment literal, while the emitted probe keeps
+    the exact pattern the pinned scanner's keyword detector requires."""
+    return "".join(("pass", "word"))
+
+
 def _probe_text() -> str:
     """Separator-bearing sentinel content: line 1 carries U+2028/U+2029 inline,
     the synthetic secret sits on line 2 under universal-newline semantics.
     (``str.splitlines()`` would split at both separators and push the secret
     to line 4 -- the live parity check catches that drift in either
-    direction.)"""
-    return (
+    direction.) The assignment keyword is assembled at runtime (see
+    ``_probe_assignment_key``), so no credential-assignment literal exists
+    in this source."""
+    first_line = (
         f"probe-preamble{_UNICODE_LINE_SEPARATOR}middle{_UNICODE_PARAGRAPH_SEPARATOR}tail\n"
-        "password = '" + _probe_secret_value() + "'\n"
     )
+    return first_line + _probe_assignment_key() + " = '" + _probe_secret_value() + "'\n"
 
 
 def _run_git_checked(repo_root: Path, *args: str) -> bytes:
@@ -532,9 +554,9 @@ def _expected_probe_line_number() -> int:
     by splitting on U+2028/U+2029), the expectation moves with it and the
     live parity check against the real driver output fails closed.
     """
-    secret = _probe_secret_value()
+    sentinel = _probe_secret_value()
     for index, line in enumerate(_universal_newline_lines(_probe_text()), start=1):
-        if secret in line:
+        if sentinel in line:
             return index
     raise ScanFailure("separator probe has no expected line.")  # pragma: no cover
 

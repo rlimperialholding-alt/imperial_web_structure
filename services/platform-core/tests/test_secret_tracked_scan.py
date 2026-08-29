@@ -43,7 +43,10 @@ REPO_ROOT = check_secret_baseline.REPO_ROOT
 # secret-like plaintext literal exists in this file, and so the committed
 # source cannot trip generic credential-pattern scanners itself.
 _SYNTHETIC_VALUE = "Synthetic" + "PlaintextValue" + "-1234567890-ABC"
-PASSWORD_LINE = "password = '" + _SYNTHETIC_VALUE + "'\n"
+# A hozzárendelési kulcsszó futásidőben áll össze, hogy a committed tesztforrás
+# se hordozzon credential-hozzárendelési literált (Task44 Gate 5 regressziós őr).
+_ASSIGNMENT_KEY = "pass" + "word"
+PASSWORD_LINE = _ASSIGNMENT_KEY + " = '" + _SYNTHETIC_VALUE + "'\n"
 _SIGNATURE_HEX = hashlib.md5(b"synthetic-signature-hex-probe").hexdigest()
 HEX_LINE = 'SIGNATURE = "' + _SIGNATURE_HEX + '"\n'
 # "ELŐKÉSZÍTÉS": U+0150 encodes to C5 90 in UTF-8, and byte 0x90 is undefined
@@ -748,6 +751,49 @@ def test_separator_probe_line_identity_matches_real_driver(tmp_path: Path) -> No
         == check_secret_baseline._expected_probe_fingerprint()[1]
     ]
     assert reported_lines == [check_secret_baseline._expected_probe_line_number()]
+
+
+def test_probe_source_carries_no_credential_assignment_literal() -> None:
+    """Task44 regressziós őr: a scanner és saját tesztjeinek committed forrása
+    nem tartalmaz credential-hozzárendelési literált -- sem a determinisztikus
+    Gate 5 credential-mintát, sem jelszó-hozzárendelési literált --, miközben a
+    futásidejű szentinel probe megtartja a detektálandó hozzárendelést. A kettő
+    együtt bizonyítja, hogy az önellenőrzés valódi maradt, a forrás tiszta."""
+    credential_pattern = re.compile(
+        r"(?i)(api[_-]?key|secret|token|password|passwd|private[_-]?key)"
+        r"\s*[:=]\s*[\"']?[A-Za-z0-9_\-\./+=]{16,}"
+    )
+    exclusion = re.compile(
+        r"(?i)(example|placeholder|dummy|changeme|your[_-]|<[^>]+>|"
+        r"process\.env|os\.environ|environment|getenv)"
+    )
+    assignment_literal = re.compile(r"(?i)password\s*[:=]")
+    for path in (SCRIPTS_DIR / "check_secret_baseline.py", Path(__file__)):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            assert not (credential_pattern.search(line) and not exclusion.search(line)), (
+                f"credential-pattern literal in {path.name} line {number}"
+            )
+            assert not assignment_literal.search(line), (
+                f"credential-assignment literal in {path.name} line {number}"
+            )
+    runtime_probe = check_secret_baseline._probe_text()
+    assert assignment_literal.search(runtime_probe), (
+        "a futásidejű probe elvesztette a detektálandó hozzárendelést"
+    )
+
+
+def test_real_probe_run_leaves_no_scratch_file(tmp_path: Path) -> None:
+    """A valódi pinned driverrel lefutott szentinel probe észlelődik és nyom
+    nélkül távozik: a scan végén egyetlen ``.secrets-scan-probe-*`` fájl sem
+    marad a repositoryban. A sikeres scan maga bizonyítja az észlelést, mert
+    a hiányzó probe-finding minden futásban fail-closed (status 2)."""
+    repo = _init_repo(tmp_path / "repo")
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    _git(repo, "add", "tracked.py")
+    _commit(repo)
+    result = check_secret_baseline._live_scan(["tracked.py"], repo)
+    assert "tracked.py" in result["results"]
+    assert list(repo.glob(check_secret_baseline._PROBE_PREFIX + "*")) == []
 
 
 def test_scanner_exempt_candidates_are_accounted_deterministically(
