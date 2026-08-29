@@ -878,7 +878,6 @@ def _release_expired_claims(db: Session) -> None:
         # SENT search visibility can lag. Keep every ambiguous claim held.
         row.status = "claimed"
         row.claimed_by = None
-        row.claimed_at = None
         row.lease_expires_at = None
         row.last_error = "delivery_ambiguous_pending_verification"
 
@@ -974,14 +973,14 @@ def _outreach_capacity_usage(
         )
     ).all()
     verified_rows = [row for row in sent_rows if _gmail_sent_mime_verified(row)]
-    claimed_rows = db.scalars(
-        select(OutreachMessage).where(
-            OutreachMessage.status == "claimed",
-            OutreachMessage.claimed_at.is_not(None),
-            OutreachMessage.claimed_at >= day_start,
-            OutreachMessage.claimed_at < next_day,
-        )
-    ).all()
+    claimed_rows = [
+        row
+        for row in db.scalars(
+            select(OutreachMessage).where(OutreachMessage.status == "claimed")
+        ).all()
+        if (reservation_at := _claimed_reservation_at(row)) is not None
+        and day_start <= reservation_at < next_day
+    ]
     queued_rows = db.scalars(
         select(OutreachMessage).where(
             OutreachMessage.status == "queued",
@@ -1002,7 +1001,8 @@ def _outreach_capacity_usage(
         ),
         daily_verified=len(verified_rows),
         hourly_claimed=sum(
-            hour_start <= _aware(row.claimed_at) < next_hour for row in claimed_rows
+            hour_start <= _claimed_reservation_at(row) < next_hour
+            for row in claimed_rows
         ),
         daily_claimed=len(claimed_rows),
         hourly_queued=sum(
@@ -1379,6 +1379,32 @@ def _delivery_verification_pending(row: OutreachMessage) -> bool:
     return isinstance(verification, dict) and verification.get("status") == ("pending_verification")
 
 
+def _delivery_acceptance_ambiguous(row: OutreachMessage) -> bool:
+    if row.status != "claimed":
+        return False
+    try:
+        receipt = json.loads(row.receipt_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        receipt = {}
+    return bool(
+        row.provider_message_id
+        or receipt.get("accepted") is True
+        or _delivery_verification_pending(row)
+    )
+
+
+def _claimed_reservation_at(row: OutreachMessage) -> datetime | None:
+    if row.claimed_at is not None:
+        return _aware(row.claimed_at)
+    if not _delivery_acceptance_ambiguous(row):
+        return None
+    # Older ambiguous rows cleared claimed_at. updated_at is the persisted
+    # acceptance/containment boundary for those rows; never make them retryable
+    # merely because the original claim timestamp is missing.
+    fallback = row.updated_at or row.available_at or row.created_at
+    return _aware(fallback) if fallback is not None else None
+
+
 def _release_untransported_claim(
     db: Session, row: OutreachMessage, *, reason: str
 ) -> OutreachMessage:
@@ -1596,7 +1622,6 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             row.provider_message_id = exc.provider_message_id
             row.receipt_json = canonical_json(pending_receipt)
             row.claimed_by = None
-            row.claimed_at = None
             row.lease_expires_at = None
             audit(
                 db,
@@ -1645,6 +1670,53 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
     return row
 
 
+def _contain_unexpected_dispatch_exception(
+    db: Session, row: OutreachMessage, exc: Exception
+) -> None:
+    # The exception boundary may be after bytes reached the provider. Roll back
+    # uncommitted mutations, then hold only this row as delivery-ambiguous. It
+    # remains a quota reservation and is never automatically retried.
+    row_id = row.id
+    db.rollback()
+    held = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.id == row_id)
+        .with_for_update()
+    )
+    if held is None or held.status != "claimed":
+        db.commit()
+        return
+    try:
+        receipt = json.loads(held.receipt_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        receipt = {}
+    receipt["delivery_verification"] = {
+        "status": "pending_verification",
+        "retry_safe": False,
+        "provider_message_id": held.provider_message_id,
+        "detail": {"reason": "unexpected_dispatch_exception_isolated"},
+    }
+    held.receipt_json = canonical_json(receipt)
+    held.last_error = f"unexpected_dispatch_exception:{type(exc).__name__}"
+    held.claimed_by = None
+    held.claimed_at = held.claimed_at or utcnow()
+    held.lease_expires_at = None
+    audit(
+        db,
+        actor="growth-worker",
+        action="growth_outreach_unexpected_dispatch_exception_isolated",
+        entity_type="growth_outreach",
+        entity_id=held.outreach_id,
+        after={
+            "error_type": type(exc).__name__,
+            "provider_message_id": held.provider_message_id,
+            "retry_safe": False,
+            "batch_continued": True,
+        },
+    )
+    db.commit()
+
+
 def dispatch_batch(db: Session, *, limit: int = 20) -> int:
     if not _outreach_sending_window_open():
         return 0
@@ -1656,7 +1728,17 @@ def dispatch_batch(db: Session, *, limit: int = 20) -> int:
         row = claim_outreach(db)
         if not row:
             break
-        result = dispatch_outreach(db, row)
+        try:
+            result = dispatch_outreach(db, row)
+        except Exception as exc:
+            try:
+                _contain_unexpected_dispatch_exception(db, row, exc)
+            except Exception:
+                # If containment itself cannot be committed, stop the batch.
+                # The transaction is rolled back and no later item is touched.
+                db.rollback()
+                return sent
+            continue
         sent += result.status == "sent"
     return sent
 

@@ -709,6 +709,10 @@ class SMTPEmailAdapter:
         if pre_send_guard is None:
             raise GrowthRegistryError("external_customer_pre_send_guard_required_no_send")
         pre_send_guard()
+        # Capacity verification may perform database work. Re-read the
+        # authoritative clock after it so the window check is the final local
+        # operation before the Gmail transport POST.
+        _assert_external_transport_window_open()
         try:
             with urllib.request.urlopen(
                 urllib.request.Request(
@@ -921,6 +925,7 @@ class SMTPEmailAdapter:
                             "external_customer_pre_send_guard_required_no_send"
                         )
                     pre_send_guard()
+                    _assert_external_transport_window_open()
                 refused = client.send_message(
                     message,
                     from_addr=self.binding.sender_email,

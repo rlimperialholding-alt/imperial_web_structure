@@ -236,6 +236,95 @@ def test_capacity_usage_buckets_queued_and_claimed_by_budapest_hour_and_day(
     assert usage.daily_claimed == 2
 
 
+def test_ambiguous_accepted_claim_without_claimed_at_still_reserves_capacity(
+    db, monkeypatch
+):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
+    current = local_now.astimezone(UTC)
+    ambiguous = _message(108, "held@branch.example.hu", status="claimed")
+    ambiguous.claimed_at = None
+    ambiguous.claimed_by = None
+    ambiguous.lease_expires_at = None
+    ambiguous.provider_message_id = "gmail-possibly-accepted"
+    ambiguous.receipt_json = json.dumps(
+        {
+            "provider": "gmail_api",
+            "accepted": True,
+            "delivery_verification": {
+                "status": "pending_verification",
+                "retry_safe": False,
+            },
+        }
+    )
+    ambiguous.updated_at = current - timedelta(minutes=1)
+    db.add(ambiguous)
+    db.commit()
+
+    usage = service._outreach_capacity_usage(db, current)
+
+    assert usage.hourly_claimed == 1
+    assert usage.daily_claimed == 1
+    assert usage.daily_domain_reservations == {"example.hu": 1}
+
+
+def test_ten_ambiguous_claims_without_claimed_at_block_same_domain(db, monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
+    current = datetime.now(UTC)
+    for index in range(10):
+        ambiguous = _message(
+            160 + index,
+            f"held{index}@branch.example.hu",
+            status="claimed",
+        )
+        ambiguous.claimed_at = None
+        ambiguous.claimed_by = None
+        ambiguous.lease_expires_at = None
+        ambiguous.provider_message_id = f"gmail-ambiguous-{index}"
+        ambiguous.receipt_json = json.dumps(
+            {
+                "provider": "gmail_api",
+                "accepted": True,
+                "delivery_verification": {
+                    "status": "pending_verification",
+                    "retry_safe": False,
+                },
+            }
+        )
+        ambiguous.updated_at = current
+        db.add(ambiguous)
+    candidate = _message(170, "next@mail.example.hu")
+    db.add(candidate)
+    db.commit()
+
+    assert service.claim_outreach(db) is None
+    db.refresh(candidate)
+    assert candidate.status == "queued"
+    assert candidate.attempt_count == 0
+
+
+def test_expired_ambiguous_claim_preserves_reservation_timestamp(db, monkeypatch):
+    monkeypatch.setattr(service, "_trip_runtime_kill_switch", lambda: True)
+    claimed_at = datetime.now(UTC) - timedelta(minutes=10)
+    ambiguous = _message(109, "held@example.hu", status="claimed")
+    ambiguous.claimed_by = "dead-worker"
+    ambiguous.claimed_at = claimed_at
+    ambiguous.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    db.add(ambiguous)
+    db.commit()
+
+    service._release_expired_claims(db)
+    db.commit()
+    db.refresh(ambiguous)
+
+    assert ambiguous.status == "claimed"
+    assert service._aware(ambiguous.claimed_at) == claimed_at
+    assert ambiguous.claimed_by is None
+    assert ambiguous.lease_expires_at is None
+    assert service._delivery_verification_pending(ambiguous)
+
+
 def test_verified_sent_plus_claimed_reservations_reach_exact_domain_cap(
     db, monkeypatch
 ):
@@ -274,6 +363,47 @@ def test_verified_sent_plus_claimed_reservations_reach_exact_domain_cap(
     db.refresh(candidate)
     assert candidate.status == "queued"
     assert candidate.attempt_count == 0
+
+
+def test_dispatch_batch_isolates_unexpected_row_and_continues(db, monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
+    monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db: 2)
+    bad = _message(150, "bad@example.hu", status="claimed")
+    bad.claimed_by = "growth-cap-test"
+    bad.claimed_at = datetime.now(UTC)
+    bad.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    good = _message(151, "good@different.hu", status="claimed")
+    good.claimed_by = "growth-cap-test"
+    good.claimed_at = datetime.now(UTC)
+    good.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    db.add_all([bad, good])
+    db.commit()
+    claimed_ids = iter([bad.id, good.id])
+
+    def claim_next(current_db):
+        return current_db.get(OutreachMessage, next(claimed_ids))
+
+    def dispatch_one(current_db, row):
+        if row.id == bad.id:
+            raise RuntimeError("malformed isolated row")
+        row.status = "sent"
+        current_db.commit()
+        return row
+
+    monkeypatch.setattr(service, "claim_outreach", claim_next)
+    monkeypatch.setattr(service, "dispatch_outreach", dispatch_one)
+
+    assert service.dispatch_batch(db, limit=2) == 1
+    db.refresh(bad)
+    db.refresh(good)
+    assert bad.status == "claimed"
+    assert bad.claimed_by is None
+    assert bad.claimed_at is not None
+    assert bad.lease_expires_at is None
+    assert bad.last_error == "unexpected_dispatch_exception:RuntimeError"
+    assert service._delivery_verification_pending(bad)
+    assert good.status == "sent"
 
 
 def test_direct_dispatch_cannot_bypass_reserved_root_domain_cap(db, monkeypatch):

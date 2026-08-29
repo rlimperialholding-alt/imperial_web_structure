@@ -438,6 +438,40 @@ def test_external_gmail_authoritative_window_guard_runs_before_send_post(monkeyp
     assert gmail.sent_raw is None
 
 
+def test_external_gmail_rechecks_authoritative_clock_after_capacity_guard(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    events = []
+
+    def boundary_window():
+        events.append("window")
+        if events == ["window", "capacity", "window"]:
+            raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+
+    def capacity_guard():
+        events.append("capacity")
+
+    monkeypatch.setattr(
+        "app.growth_ops.email._assert_external_transport_window_open",
+        boundary_window,
+    )
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_sending_window_closed_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                pre_send_guard=capacity_guard,
+            )
+        )
+
+    assert events == ["window", "capacity", "window"]
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
 def test_external_gmail_requires_immediate_pre_send_guard(monkeypatch):
     gmail = _FakeGmail()
     monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
