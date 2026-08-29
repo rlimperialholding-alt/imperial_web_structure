@@ -296,7 +296,14 @@ class Settings:
                 errors.append("Production környezetben CONTROL_CENTER_API_TOKEN kötelező.")
             if not self.require_https:
                 errors.append("Production környezetben REQUIRE_HTTPS=true kötelező.")
-            if self.demo_runtime_enabled:
+            # A demo-aktiválás minden tiltott kombinációját külön, a saját
+            # környezeti változóját pontosan megnevező hibával utasítjuk el.
+            # Flag-szintű ellenőrzés: az override=False + features=True
+            # kombináció is hiba, hiába hamis a származtatott runtime érték --
+            # production alatt egyetlen explicit demo-aktiválás sem maradhat.
+            if self.demo_runtime_enabled_override:
+                errors.append("Production environment must not enable DEMO_RUNTIME_ENABLED.")
+            if self.demo_features_enabled:
                 errors.append("Production environment must not enable DEMO_FEATURES_ENABLED.")
             if "*" in self.allowed_hosts:
                 errors.append(

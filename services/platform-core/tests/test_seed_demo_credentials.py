@@ -8,13 +8,36 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
 from app import seed
-from app.models import PMPhase, PartnerFieldAccess, PartnerWorker, ProjectRegistry, SiteDailyReport, TaskRecord, User
+from app.database import Base, engine
+from app.models import (
+    DeliveryNoteProjection,
+    EventRecord,
+    MaterialLot,
+    MaterialMovement,
+    MaterialUsageControl,
+    PMGateCheck,
+    PMPhase,
+    PMWorkPackage,
+    PartnerFieldAccess,
+    PartnerWorker,
+    ProcurementOrderProjection,
+    ProjectFact,
+    ProjectObjectState,
+    ProjectRegistry,
+    SiteDailyReport,
+    SiteIssue,
+    TaskRecord,
+    User,
+    WorkspaceDocument,
+)
 from app.security import verify_password
 from app.seed import (
     DEMO_CREDENTIALS_STATE_ENV,
@@ -733,18 +756,228 @@ class TestPartnerDemoAccessGate:
 
 
 class TestDemoBusinessRecordsGate:
-    """Demo workspace/operations rekord kizárólag a demo_accounts_allowed() kapun belül (Review-1 MEDIUM)."""
+    """Demo workspace/operations rekord kizárólag a demo_accounts_allowed() kapun belül (Review-1 MEDIUM).
 
-    def test_demo_disabled_development_seed_creates_no_business_records(
-        self, db, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    A tiltott futás nemcsak passzívan kihagyja a demo seedet: egy korábbi,
+    demo-engedélyezett futás által létrehozott szintetikus workspace/operations
+    rekordokat explicit törli (``retire_demo_workspace_and_operations``), és a
+    törlés kizárólag a seed pontos azonosítóira hat -- valódi rekordot nem ér.
+    """
+
+    _ALL_DEMO_BUSINESS_MODELS = (
+        ProjectRegistry,
+        TaskRecord,
+        EventRecord,
+        ProjectFact,
+        WorkspaceDocument,
+        ProjectObjectState,
+        PMPhase,
+        PMWorkPackage,
+        PMGateCheck,
+        SiteDailyReport,
+        SiteIssue,
+        ProcurementOrderProjection,
+        DeliveryNoteProjection,
+        MaterialLot,
+        MaterialMovement,
+        MaterialUsageControl,
+    )
+
+    def _assert_no_demo_business_records(self, db) -> None:
+        for model in self._ALL_DEMO_BUSINESS_MODELS:
+            assert db.scalars(select(model)).all() == [], model.__tablename__
+
+    def _seed_demo_enabled_development_database(self, db, monkeypatch) -> None:
+        """A demo-engedélyezett development seed valódi kimenetét építi fel.
+
+        A teszt-fixture "test" környezetben fut, ahol a workspace/operations
+        demo seed a development-kapuja miatt nem hoz létre rekordokat -- ezért
+        az engedélyezett -> letiltott átmenet valódi kiinduló állapotát üres
+        adatbázisból, development settings mellett építjük fel.
+        """
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        monkeypatch.setattr(seed, "settings", _development_settings())
+        assert demo_accounts_allowed() is True
+        seed_database(db)
+        db.flush()
+        assert db.scalars(select(ProjectRegistry)).all() != [], "a demo seednek projektet kell adnia"
+        assert db.scalars(select(PMPhase)).all() != [], "a demo seednek fázist kell adnia"
+
+    def _disable_demo(self, monkeypatch) -> None:
         monkeypatch.setattr(seed, "settings", _development_settings(demo_runtime_enabled_override=False))
         assert seed.settings.demo_runtime_enabled is False
         assert demo_accounts_allowed() is False
+
+    def test_demo_disabled_development_seed_retires_previously_seeded_business_records(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Átmenet engedélyezett -> letiltott futás: a letiltott újraseedelésnek
+        # minden, az engedélyezett futás által létrehozott szintetikus üzleti
+        # rekordot el kell tüntetnie.
+        self._seed_demo_enabled_development_database(db, monkeypatch)
+        self._disable_demo(monkeypatch)
         seed_database(db)
         db.flush()
-        for model in (ProjectRegistry, TaskRecord, PMPhase, SiteDailyReport):
-            assert db.scalars(select(model)).all() == []
+        self._assert_no_demo_business_records(db)
+
+    def test_demo_disabled_cleanup_is_idempotent(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._seed_demo_enabled_development_database(db, monkeypatch)
+        self._disable_demo(monkeypatch)
+        seed_database(db)
+        seed_database(db)
+        db.flush()
+        self._assert_no_demo_business_records(db)
+
+    def test_demo_disabled_initial_seed_on_empty_database_never_creates_business_records(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Kezdeti fixture: üres adatbázisból induló, letiltott demo futás sem
+        # hozhat létre szintetikus üzleti rekordot.
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        self._disable_demo(monkeypatch)
+        seed_database(db)
+        db.flush()
+        self._assert_no_demo_business_records(db)
+
+    def test_demo_disabled_cleanup_preserves_real_workspace_and_operations_records(
+        self, db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._seed_demo_enabled_development_database(db, monkeypatch)
+        db.add_all(
+            [
+                ProjectRegistry(
+                    project_id="IMP-REAL-001", name="Valódi kivitelezés", status="active"
+                ),
+                TaskRecord(
+                    task_id="TASK-REAL-001", project_id="IMP-REAL-001", title="Valódi feladat"
+                ),
+                EventRecord(
+                    event_id="EVT-REAL-001",
+                    dedupe_key="REAL-EVENT-001",
+                    project_id="IMP-REAL-001",
+                    source_module="procurement",
+                    event_type="REAL_DELIVERY",
+                ),
+                ProjectFact(
+                    project_id="IMP-REAL-001",
+                    source_module="finance",
+                    fact_key="real_margin",
+                    value_json=json.dumps(12.5),
+                ),
+                WorkspaceDocument(
+                    document_id="DOC-REAL-001",
+                    project_id="IMP-REAL-001",
+                    title="Valódi szerződés",
+                ),
+                ProjectObjectState(
+                    project_id="IMP-REAL-001",
+                    source_module="change_control",
+                    object_type="Change",
+                    object_id="CHG-REAL-001",
+                    status="draft",
+                ),
+                PMPhase(
+                    phase_id="PH-REAL-01",
+                    project_id="IMP-REAL-001",
+                    phase_key="real_phase",
+                    name="Valódi fázis",
+                ),
+                PMWorkPackage(
+                    work_package_id="WP-REAL-001", project_id="IMP-REAL-001", name="Valódi csomag"
+                ),
+                PMGateCheck(
+                    gate_id="GATE-REAL-001",
+                    project_id="IMP-REAL-001",
+                    work_package_id="WP-REAL-001",
+                    gate_code="capacity",
+                    label="Valódi kapu",
+                ),
+                SiteDailyReport(
+                    report_id="RPT-REAL-001",
+                    project_id="IMP-REAL-001",
+                    report_date=datetime.now(timezone.utc),
+                    reporter="Valódi vezető",
+                    summary="Valódi jelentés",
+                ),
+                SiteIssue(issue_id="ISS-REAL-001", project_id="IMP-REAL-001", title="Valódi hiba"),
+                ProcurementOrderProjection(
+                    order_id="ORD-REAL-001",
+                    project_id="IMP-REAL-001",
+                    supplier_name="Valódi beszállító",
+                    item_summary="Valódi tétel",
+                ),
+                DeliveryNoteProjection(
+                    delivery_note_id="DN-REAL-001",
+                    order_id="ORD-REAL-001",
+                    project_id="IMP-REAL-001",
+                    receiver="Valódi átvevő",
+                    item_summary="Valódi szállítás",
+                ),
+                MaterialLot(
+                    lot_id="LOT-REAL-001", project_id="IMP-REAL-001", material="Valódi anyag"
+                ),
+                MaterialMovement(
+                    movement_id="MOV-REAL-001",
+                    lot_id="LOT-REAL-001",
+                    project_id="IMP-REAL-001",
+                    movement_type="use",
+                    quantity=Decimal("1"),
+                ),
+                MaterialUsageControl(
+                    control_id="USE-REAL-001", project_id="IMP-REAL-001"
+                ),
+            ]
+        )
+        db.flush()
+
+        self._disable_demo(monkeypatch)
+        seed_database(db)
+        db.flush()
+
+        # A valódi (nem-demo azonosítójú) sorok minden érintett táblában
+        # érintetlenül megmaradnak, a szintetikus demo sorok eltűnnek.
+        preserved = {
+            ProjectRegistry: ("project_id", {"IMP-REAL-001"}),
+            TaskRecord: ("task_id", {"TASK-REAL-001"}),
+            EventRecord: ("event_id", {"EVT-REAL-001"}),
+            ProjectFact: (
+                "fact_key",
+                {"real_margin"},
+            ),
+            WorkspaceDocument: ("document_id", {"DOC-REAL-001"}),
+            ProjectObjectState: ("object_id", {"CHG-REAL-001"}),
+            PMPhase: ("phase_id", {"PH-REAL-01"}),
+            PMWorkPackage: ("work_package_id", {"WP-REAL-001"}),
+            PMGateCheck: ("gate_id", {"GATE-REAL-001"}),
+            SiteDailyReport: ("report_id", {"RPT-REAL-001"}),
+            SiteIssue: ("issue_id", {"ISS-REAL-001"}),
+            ProcurementOrderProjection: ("order_id", {"ORD-REAL-001"}),
+            DeliveryNoteProjection: ("delivery_note_id", {"DN-REAL-001"}),
+            MaterialLot: ("lot_id", {"LOT-REAL-001"}),
+            MaterialMovement: ("movement_id", {"MOV-REAL-001"}),
+            MaterialUsageControl: ("control_id", {"USE-REAL-001"}),
+        }
+        for model, (column, real_ids) in preserved.items():
+            rows = db.scalars(select(model)).all()
+            found_ids = {getattr(row, column) for row in rows}
+            assert real_ids <= found_ids, f"{model.__tablename__}: {real_ids} elveszett"
+            for demo_id in ("IMP-GOD-014", "IMP-POMAZ-001", "IMP-FONYOD-011", "RPT-GOD-DEMO"):
+                assert not any(getattr(row, column) == demo_id for row in rows), (
+                    f"{model.__tablename__}: demo rekord maradt: {demo_id}"
+                )
+        # A demo projekt-azonosítók projektként sem maradhatnak.
+        assert (
+            db.scalars(
+                select(ProjectRegistry).where(
+                    ProjectRegistry.project_id.in_(["IMP-GOD-014", "IMP-POMAZ-001", "IMP-FONYOD-011"])
+                )
+            ).all()
+            == []
+        )
 
 
 class TestProductionDemoAccountGate:

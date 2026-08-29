@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -881,6 +881,126 @@ def retire_seeded_content_quality_sources(db: Session) -> None:
             row.approved = False
 
 
+# A szintetikus demo workspace/operations rekordok kanonikus, pontos
+# azonosítói -- 1:1 tükrözik a seed_workspace_demo / seed_operations_demo /
+# seed_commercial_integration által létrehozott sorokat. A demo-tiltott
+# tisztítás kizárólag ezekre a pontos azonosítókra hat (pontos egyenlőséggel,
+# nem prefix-, LIKE- vagy mintaillesztéssel), így valódi üzleti rekordot nem
+# érhet el; a szülőhöz kulcsolt gyermeksorok a szintetikus szülő azonosítóján
+# keresztül, pontos egyenlőséggel szűrődnek.
+DEMO_PROJECT_IDS = frozenset({"IMP-POMAZ-001", "IMP-GOD-014", "IMP-FONYOD-011"})
+DEMO_TASK_IDS = frozenset({"TASK-DEMO-001", "TASK-DEMO-002", "TASK-DEMO-003"})
+DEMO_EVENT_IDS = frozenset({"EVT-DEMO-001", "EVT-DEMO-002"})
+DEMO_FACT_ROWS = frozenset(
+    {
+        ("IMP-POMAZ-001", "contract_generator", "approved_revenue"),
+        ("IMP-POMAZ-001", "finance", "received_customer_payments"),
+        ("IMP-POMAZ-001", "finance", "forecast_margin_percent"),
+        ("IMP-GOD-014", "procurement", "committed_total"),
+        ("IMP-GOD-014", "finance", "blocked_supplier_payment"),
+    }
+)
+DEMO_DOCUMENT_IDS = frozenset({"DOC-DEMO-001", "DOC-DEMO-002", "DOC-DEMO-003"})
+DEMO_PHASE_IDS = frozenset({"PH-GOD-01", "PH-GOD-02", "PH-POM-01", "PH-FON-01"})
+DEMO_WORK_PACKAGE_IDS = frozenset(
+    {"WP-GOD-FOUND", "WP-GOD-WALL", "WP-GOD-ROOF", "WP-POM-MEP", "WP-FON-CHANGE"}
+)
+DEMO_REPORT_IDS = frozenset({"RPT-GOD-DEMO"})
+DEMO_ISSUE_IDS = frozenset({"ISS-GOD-DEMO"})
+DEMO_ORDER_IDS = frozenset({"ORD-GOD-101", "ORD-GOD-102"})
+DEMO_DELIVERY_NOTE_IDS = frozenset({"DN-GOD-101"})
+DEMO_LOT_IDS = frozenset({"LOT-GOD-101"})
+DEMO_MOVEMENT_IDS = frozenset({"MOV-GOD-101"})
+DEMO_USAGE_CONTROL_IDS = frozenset({"USE-GOD-101"})
+DEMO_OBJECT_STATE_IDS = frozenset({"CHG-DEMO-001"})
+
+
+def _delete_seeded_demo_rows(db: Session, statement: Any) -> None:
+    """A megadott, pontos azonosítójú szintetikus demo sorok törlése.
+
+    Csak az előre rögzített demo-azonosítókra összeállított ``select``
+    találatait törli; nem létező sor törlése no-op (idempotens).
+    """
+    for demo_row in db.scalars(statement).all():
+        db.delete(demo_row)
+
+
+def retire_demo_workspace_and_operations(db: Session) -> None:
+    """A szintetikus demo workspace/operations rekordok törlése (fail-closed).
+
+    Demo-tiltott futás esetén egy KORÁBBI, demo-engedélyezett futás által
+    létrehozott szintetikus üzleti rekordok sem maradhatnak az adatbázisban:
+    ``seed_database`` ezt a tisztítást futtatja, mielőtt a demo seedek
+    helyett visszatérne. A művelet kizárólag a fenti, pontos azonosítókra hat
+    (gyermeksoroknál a szintetikus szülő azonosítójára, pontos egyenlőséggel),
+    idempotens (nem létező sor törlése no-op), és a ``seed_database`` egyetlen
+    munkaegységében fut -- részleges tisztítás nem maradhat hátra.
+    """
+    _delete_seeded_demo_rows(
+        db,
+        select(ProjectFact).where(
+            tuple_(
+                ProjectFact.project_id, ProjectFact.source_module, ProjectFact.fact_key
+            ).in_(sorted(DEMO_FACT_ROWS))
+        ),
+    )
+    _delete_seeded_demo_rows(
+        db, select(TaskRecord).where(TaskRecord.task_id.in_(DEMO_TASK_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db, select(EventRecord).where(EventRecord.event_id.in_(DEMO_EVENT_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db, select(WorkspaceDocument).where(WorkspaceDocument.document_id.in_(DEMO_DOCUMENT_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db, select(ProjectObjectState).where(ProjectObjectState.object_id.in_(DEMO_OBJECT_STATE_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db, select(PMGateCheck).where(PMGateCheck.work_package_id.in_(DEMO_WORK_PACKAGE_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db,
+        select(MaterialUsageControl).where(
+            MaterialUsageControl.control_id.in_(DEMO_USAGE_CONTROL_IDS)
+        ),
+    )
+    _delete_seeded_demo_rows(
+        db,
+        select(MaterialMovement).where(MaterialMovement.movement_id.in_(DEMO_MOVEMENT_IDS)),
+    )
+    _delete_seeded_demo_rows(
+        db, select(MaterialLot).where(MaterialLot.lot_id.in_(DEMO_LOT_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db,
+        select(DeliveryNoteProjection).where(
+            DeliveryNoteProjection.delivery_note_id.in_(DEMO_DELIVERY_NOTE_IDS)
+        ),
+    )
+    _delete_seeded_demo_rows(
+        db,
+        select(ProcurementOrderProjection).where(
+            ProcurementOrderProjection.order_id.in_(DEMO_ORDER_IDS)
+        ),
+    )
+    _delete_seeded_demo_rows(
+        db, select(SiteIssue).where(SiteIssue.issue_id.in_(DEMO_ISSUE_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db, select(SiteDailyReport).where(SiteDailyReport.report_id.in_(DEMO_REPORT_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db, select(PMWorkPackage).where(PMWorkPackage.work_package_id.in_(DEMO_WORK_PACKAGE_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db, select(PMPhase).where(PMPhase.phase_id.in_(DEMO_PHASE_IDS))
+    )
+    _delete_seeded_demo_rows(
+        db, select(ProjectRegistry).where(ProjectRegistry.project_id.in_(DEMO_PROJECT_IDS))
+    )
+
+
 def seed_database(db: Session) -> None:
     demo_emails = {
         role.id: (
@@ -1015,7 +1135,12 @@ def seed_database(db: Session) -> None:
         seed_content_quality_sources(db)
     else:
         retire_seeded_content_quality_sources(db)
-    seed_workspace_demo(db)
-    seed_operations_demo(db)
+    if demo_accounts_allowed():
+        seed_workspace_demo(db)
+        seed_operations_demo(db)
+    else:
+        # Egy korábbi, demo-engedélyezett futás szintetikus workspace/operations
+        # rekordjai sem maradhatnak: a tiltott futás explicit törli őket.
+        retire_demo_workspace_and_operations(db)
     seed_partner_field_demo_access(db)
     db.commit()

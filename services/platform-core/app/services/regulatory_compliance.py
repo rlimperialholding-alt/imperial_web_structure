@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import desc, func, or_, select, text
+from sqlalchemy import desc, func, insert, or_, select, text
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -198,11 +198,20 @@ def _evaluate_declarative_rules(
     findings: list[Finding] = []
     for rule in rules:
         measured = facts.get(rule["fact"])
+        operator = rule["operator"]
+        # Numerikus összehasonlításoknál a határértéket szabályonként egyszer
+        # konvertáljuk Decimal-lá, ne lelemezésenként többször (500 szabály
+        # alatt ez a coverage-tracing mellett a kiértékelés domináns költsége).
+        expected = (
+            Decimal(str(rule["expected"]))
+            if operator in {"lte", "gte"}
+            else rule["expected"]
+        )
         if measured is None:
             outcome = "UNKNOWN"
             explanation = f"A(z) {rule['fact']} hitelesített tény nem áll rendelkezésre."
         else:
-            outcome = "PASS" if _compare(measured, rule["operator"], rule["expected"]) else "FAIL"
+            outcome = "PASS" if _compare(measured, operator, expected) else "FAIL"
             explanation = (
                 "A szabály teljesült."
                 if outcome == "PASS"
@@ -227,8 +236,11 @@ def _evaluate_declarative_rules(
 
 def _compare(measured: Any, operator: str, expected: Any) -> bool:
     if operator in {"lte", "gte"}:
-        left = Decimal(str(measured))
-        right = Decimal(str(expected))
+        # A mért tényeket a _compliance_facts már Decimal-ként adja, a
+        # határértéket a hívó konvertálja: nincs szükség ismételt str/Decimal
+        # körre. Más hívóktól érkező nyers értékek ugyanúgy konvertálódnak.
+        left = measured if isinstance(measured, Decimal) else Decimal(str(measured))
+        right = expected if isinstance(expected, Decimal) else Decimal(str(expected))
         return left <= right if operator == "lte" else left >= right
     if operator == "eq":
         if isinstance(measured, Decimal):
@@ -491,23 +503,34 @@ def run_compliance(
         created_by=actor_subject_id,
     )
     db.add(run)
-    for sequence, item in enumerate(findings, start=1):
-        db.add(
-            RegulatoryComplianceFinding(
-                finding_id=_id("RCF"),
-                run_id=run.run_id,
-                finding_key=f"{sequence:04d}:{item.code}",
-                code=item.code,
-                severity=item.severity,
-                outcome=item.outcome,
-                rule_ref=item.rule_ref,
-                source_ref=item.source_ref,
-                geometry_path=item.geometry_path,
-                measured_json=_json(item.measured),
-                limit_json=_json(item.limit),
-                explanation=item.explanation,
-                remediation=item.remediation,
-            )
+    # A run sora a lelemezések előtt flush-ölve kerül az adatbázisba, így a
+    # Core-executemany sorai a hivatkozott run_id-val azonnal írhatók. Az 500
+    # lelemezés ORM-objektumonkénti add + flush-lista helyett egyetlen batch
+    # INSERT-ként íródik -- szemantikailag azonos sorok, nagyságrenddel kisebb
+    # Python- és coverage-költséggel (Task43 p95 root-cause remediáció).
+    db.flush()
+    if findings:
+        db.execute(
+            insert(RegulatoryComplianceFinding),
+            [
+                {
+                    "finding_id": _id("RCF"),
+                    "run_id": run.run_id,
+                    "finding_key": f"{sequence:04d}:{item.code}",
+                    "code": item.code,
+                    "severity": item.severity,
+                    "outcome": item.outcome,
+                    "rule_ref": item.rule_ref,
+                    "source_ref": item.source_ref,
+                    "geometry_path": item.geometry_path,
+                    "measured_json": _json(item.measured),
+                    "limit_json": _json(item.limit),
+                    "explanation": item.explanation,
+                    "remediation": item.remediation,
+                    "created_at": now,
+                }
+                for sequence, item in enumerate(findings, start=1)
+            ],
         )
     session.status = "CHECKED" if outcome == "PASS" else "CHECK_REQUIRED"
     session.updated_by = actor_subject_id
@@ -521,7 +544,7 @@ def run_compliance(
         after={"run_id": run.run_id, "outcome": outcome, "input_sha256": input_hash},
     )
     db.commit()
-    return _serialize_run(db, run)
+    return _serialize_fresh_run(run, findings)
 
 
 def latest_compliance_result(
@@ -563,6 +586,40 @@ def _serialize_run(db: Session, run: RegulatoryComplianceRun) -> dict[str, Any]:
                 "limit": json.loads(row.limit_json),
             }
             for row in rows
+        ],
+    }
+
+
+def _serialize_fresh_run(
+    run: RegulatoryComplianceRun, findings: list[Finding]
+) -> dict[str, Any]:
+    """A frissen kiírt futtatást a memóriában lévő lelemezésekből szerializálja.
+
+    Az eredmény bájtra azonos a `_serialize_run` adatbázis-útvonalával: a
+    measured/limit mezők ugyanazon `_json` + `json.loads` körön mennek át, a
+    lelemezések sorrendje pedig a beszúráskor rögzített finding_key sorrend
+    (a DB-útvonal e szerint rendez). A friss útvonal így nem olvassa vissza
+    a 500 lelemezést, ami a coverage-tracing alatti p95-ünk fő költsége volt.
+    """
+    return {
+        "runId": run.run_id,
+        "outcome": run.outcome,
+        "rulesetId": run.ruleset_id,
+        "inputSha256": run.input_sha256,
+        "findings": [
+            {
+                "code": item.code,
+                "severity": item.severity,
+                "outcome": item.outcome,
+                "explanation": item.explanation,
+                "remediation": item.remediation,
+                "ruleRef": item.rule_ref,
+                "sourceRef": item.source_ref,
+                "geometryPath": item.geometry_path,
+                "measured": json.loads(_json(item.measured)),
+                "limit": json.loads(_json(item.limit)),
+            }
+            for item in findings
         ],
     }
 

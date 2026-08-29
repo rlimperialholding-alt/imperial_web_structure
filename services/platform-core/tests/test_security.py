@@ -30,31 +30,93 @@ def test_production_disables_demo_runtime_by_default():
     assert production.demo_runtime_enabled is False
 
 
-def test_production_rejects_explicit_demo_runtime():
-    production = Settings(
+DEMO_FEATURES_ERROR = "Production environment must not enable DEMO_FEATURES_ENABLED."
+DEMO_OVERRIDE_ERROR = "Production environment must not enable DEMO_RUNTIME_ENABLED."
+
+
+def _production_with_demo(**demo_flags):
+    return Settings(
         environment="production",
         database_url="postgresql+psycopg://platform@postgres/platform",
         session_secret="s" * 32,
         api_token="api-token",
         require_https=True,
-        demo_features_enabled=True,
+        **demo_flags,
     )
 
-    assert any("DEMO_FEATURES_ENABLED" in error for error in production.validate())
+
+def _demo_errors(errors):
+    return [error for error in errors if "DEMO_" in error]
+
+
+def test_production_rejects_explicit_demo_runtime():
+    production = _production_with_demo(demo_features_enabled=True)
+
+    demo_errors = _demo_errors(production.validate())
+    # Pontos, stabil hibaszemantika: a features flag saját üzenete, kizárólag
+    # az (az override flag említése nélkül).
+    assert demo_errors == [DEMO_FEATURES_ERROR]
 
 
 def test_production_rejects_explicit_demo_runtime_override():
-    production = Settings(
-        environment="production",
-        database_url="postgresql+psycopg://platform@postgres/platform",
-        session_secret="s" * 32,
-        api_token="api-token",
-        require_https=True,
-        demo_runtime_enabled_override=True,
-    )
+    production = _production_with_demo(demo_runtime_enabled_override=True)
 
     assert production.demo_runtime_enabled is True
-    assert any("DEMO_FEATURES_ENABLED" in error for error in production.validate())
+    demo_errors = _demo_errors(production.validate())
+    assert demo_errors == [DEMO_OVERRIDE_ERROR]
+
+
+def test_production_rejects_both_demo_flags_with_distinct_messages():
+    production = _production_with_demo(
+        demo_runtime_enabled_override=True,
+        demo_features_enabled=True,
+    )
+
+    demo_errors = _demo_errors(production.validate())
+    assert DEMO_OVERRIDE_ERROR in demo_errors
+    assert DEMO_FEATURES_ERROR in demo_errors
+
+
+def test_production_override_false_does_not_mask_features_activation():
+    # Az override=False + features=True kombináció production alatt akkor is
+    # tiltott, ha a származtatott demo_runtime_enabled értéke hamis: egyetlen
+    # explicit demo-aktiválás sem maradhat a precedence árnyékában.
+    production = _production_with_demo(
+        demo_runtime_enabled_override=False,
+        demo_features_enabled=True,
+    )
+
+    assert production.demo_runtime_enabled is False
+    demo_errors = _demo_errors(production.validate())
+    assert demo_errors == [DEMO_FEATURES_ERROR]
+
+
+def test_production_explicit_demo_disable_and_defaults_are_accepted():
+    disabled = _production_with_demo(demo_runtime_enabled_override=False)
+    assert disabled.demo_runtime_enabled is False
+    assert _demo_errors(disabled.validate()) == []
+
+    defaults = _production_with_demo()
+    assert defaults.demo_runtime_enabled is False
+    assert _demo_errors(defaults.validate()) == []
+
+
+def test_non_production_allows_demo_activations():
+    for environment in ("development", "staging"):
+        for demo_flags in (
+            {"demo_features_enabled": True},
+            {"demo_runtime_enabled_override": True},
+        ):
+            allowed = Settings(environment=environment, **demo_flags)
+            assert allowed.demo_runtime_enabled is True
+            assert _demo_errors(allowed.validate()) == []
+        masked = Settings(
+            environment=environment,
+            demo_runtime_enabled_override=False,
+            demo_features_enabled=True,
+        )
+        assert masked.demo_runtime_enabled is False
+        assert _demo_errors(masked.validate()) == []
 
 
 def test_live_ai_routing_requires_provider_key_and_budget():

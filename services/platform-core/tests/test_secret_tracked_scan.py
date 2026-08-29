@@ -109,8 +109,12 @@ def _empty_baseline(repo: Path, name: str = "synthetic-baseline.json") -> Path:
 
 
 def _expected_probe_entry() -> dict:
-    expected_type, expected_hash = check_secret_baseline._expected_probe_fingerprint()
-    return {"type": expected_type, "hashed_secret": expected_hash}
+    expected_type, expected_hash, expected_line = check_secret_baseline._expected_probe_fingerprint()
+    return {
+        "type": expected_type,
+        "hashed_secret": expected_hash,
+        "line_number": expected_line,
+    }
 
 
 def _driver_fake(
@@ -696,6 +700,54 @@ def test_probe_delete_error_fails_closed(tmp_path: Path, monkeypatch: pytest.Mon
     status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
     assert status == 2
     assert "sentinel probe could not be removed" in message
+
+
+def test_separator_probe_text_carries_separators_and_models_line_two() -> None:
+    """Az U+2028/U+2029-tartalmú szentinel probe a titkot a 2. sorra helyezi a
+    universal-newline modell szerint; a splitlines() modell mindkét separatornál
+    tördelne (4. sorra tolva a titkot) -- a probe a két modell közötti eltérést
+    minden futásban érzékeli."""
+    text = check_secret_baseline._probe_text()
+    assert check_secret_baseline._UNICODE_LINE_SEPARATOR in text
+    assert check_secret_baseline._UNICODE_PARAGRAPH_SEPARATOR in text
+    lines = check_secret_baseline._universal_newline_lines(text)
+    assert len(lines) == 2
+    assert check_secret_baseline._probe_secret_value() in lines[1]
+    assert check_secret_baseline._expected_probe_line_number() == 2
+    splitlines_model = text.splitlines()
+    secret_on_splitlines_line = next(
+        index
+        for index, line in enumerate(splitlines_model, start=1)
+        if check_secret_baseline._probe_secret_value() in line
+    )
+    assert secret_on_splitlines_line == 4, "a splitlines() modell eltérése nélkül a probe nem őrködik"
+
+
+def test_separator_probe_line_identity_matches_real_driver(tmp_path: Path) -> None:
+    """A valódi pinned driver ugyanazon a sorszámon jelenti a probe titkát,
+    mint az ``_expected_probe_line_number`` -- a live parity ellenőrzés
+    közvetlen bizonyítéka (nem csak a fake kontraktus)."""
+    repo = _init_repo(tmp_path / "repo")
+    probe = repo / "probe-parity.txt"
+    probe.write_text(check_secret_baseline._probe_text(), encoding="utf-8")
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "_detect_secrets_scan_driver.py")],
+        cwd=str(repo),
+        input="probe-parity.txt\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert completed.returncode == 0, completed.stderr
+    findings = json.loads(completed.stdout)["results"]["probe-parity.txt"]
+    reported_lines = [
+        finding["line_number"]
+        for finding in findings
+        if finding["type"] == "Secret Keyword"
+        and finding["hashed_secret"]
+        == check_secret_baseline._expected_probe_fingerprint()[1]
+    ]
+    assert reported_lines == [check_secret_baseline._expected_probe_line_number()]
 
 
 def test_scanner_exempt_candidates_are_accounted_deterministically(

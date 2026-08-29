@@ -33,8 +33,11 @@ Tracked-file contract (canonical and cross-platform):
   ``Checking file:`` line per opened file) is parsed, and a requested file
   absent from it fails closed with status 2. Each chunk carries a synthetic
   sentinel probe whose known fingerprint must appear in that chunk's
-  output. Any git/driver error, missing candidate, malformed output,
-  duplicate or ambiguous path, lost chunk coverage, missing sentinel
+  output -- on the exact line number this module's own scanner-compatible
+  line model predicts for separator-bearing content, so U+2028/U+2029 line
+  identity is verified live against the pinned driver on every scan run,
+  not only by tests. Any git/driver error, missing candidate, malformed
+  output, duplicate or ambiguous path, lost chunk coverage, missing sentinel
   detection or driver output outside the canonical set fails closed with
   status 2. The scanner version is pinned and verified.
 
@@ -234,8 +237,27 @@ def _probe_secret_value() -> str:
     return "".join(("Synthetic", "PlaintextValue", "-1234567890-ABC"))
 
 
-def _probe_line() -> str:
-    return "password = '" + _probe_secret_value() + "'\n"
+# U+2028 LINE SEPARATOR és U+2029 PARAGRAPH SEPARATOR: a pinned scanner
+# text-mode ``open()`` + ``readlines()`` útvonala NEM tördel ezeknél, a
+# ``str.splitlines()`` viszont igen -- ez a különbség a sorazonossági seam.
+# A futás során minden chunk szentinel probe-ja ezt a két karaktert hordozza,
+# és a scanner a titkos sorát pontosan azon a sorszámon kell jelentse, amelyet
+# a ``_universal_newline_lines`` modell jósol; eltérés minden futásban
+# fail-closed (status 2).
+_UNICODE_LINE_SEPARATOR = "\u2028"  # escape form; the file never carries the literal
+_UNICODE_PARAGRAPH_SEPARATOR = "\u2029"  # escape form; the file never carries the literal
+
+
+def _probe_text() -> str:
+    """Separator-bearing sentinel content: line 1 carries U+2028/U+2029 inline,
+    the synthetic secret sits on line 2 under universal-newline semantics.
+    (``str.splitlines()`` would split at both separators and push the secret
+    to line 4 -- the live parity check catches that drift in either
+    direction.)"""
+    return (
+        f"probe-preamble{_UNICODE_LINE_SEPARATOR}middle{_UNICODE_PARAGRAPH_SEPARATOR}tail\n"
+        "password = '" + _probe_secret_value() + "'\n"
+    )
 
 
 def _run_git_checked(repo_root: Path, *args: str) -> bytes:
@@ -501,10 +523,28 @@ def _probe_filename(chunk_index: int) -> str:
     return f"{_PROBE_PREFIX}{chunk_index}-{os.getpid()}.txt"
 
 
-def _expected_probe_fingerprint() -> tuple[str, str]:
+def _expected_probe_line_number() -> int:
+    """The line on which ``_probe_text`` places the synthetic secret under
+    this module's own scanner-compatible line model.
+
+    Derived from ``_universal_newline_lines``, not hard-coded: if the model
+    ever drifts from the pinned scanner's text-mode numbering (for example
+    by splitting on U+2028/U+2029), the expectation moves with it and the
+    live parity check against the real driver output fails closed.
+    """
+    secret = _probe_secret_value()
+    for index, line in enumerate(_universal_newline_lines(_probe_text()), start=1):
+        if secret in line:
+            return index
+    raise ScanFailure("separator probe has no expected line.")  # pragma: no cover
+
+
+def _expected_probe_fingerprint() -> tuple[str, str, int]:
+    """(type, fingerprint, expected line) -- the full live-parity identity."""
     return (
         "Secret Keyword",
         hashlib.sha1(_probe_secret_value().encode("utf-8")).hexdigest(),
+        _expected_probe_line_number(),
     )
 
 
@@ -542,9 +582,11 @@ def _scan_file_set(
     is proven: the driver stderr carries the scanner's ``Checking file:``
     line per opened file, and a requested file absent from it fails closed.
     Each chunk carries a sentinel probe whose known fingerprint must appear
-    in the chunk output. Raises ScanFailure on driver errors, malformed
-    output, lost coverage, missing probe detection or probe write/delete
-    errors.
+    in the chunk output on the exact line this module's scanner-compatible
+    line model predicts for U+2028/U+2029-bearing content -- the live
+    scanner-versus-classifier line-identity parity check. Raises ScanFailure
+    on driver errors, malformed output, lost coverage, missing probe
+    detection or probe write/delete errors.
     """
     if not files:
         raise ScanFailure("no candidate files to scan.")
@@ -554,7 +596,7 @@ def _scan_file_set(
     ]
     if sum(len(chunk) for chunk in chunks) != len(files):
         raise ScanFailure("candidate chunking lost files (incomplete coverage).")
-    expected_type, expected_hash = _expected_probe_fingerprint()
+    expected_type, expected_hash, expected_line = _expected_probe_fingerprint()
 
     def _run_chunk(
         chunk_index: int, chunk: list[str]
@@ -563,7 +605,7 @@ def _scan_file_set(
         probe_path = repo_root / probe_name
         try:
             try:
-                probe_path.write_text(_probe_line(), encoding="utf-8")
+                probe_path.write_text(_probe_text(), encoding="utf-8")
             except OSError as exc:
                 raise ScanFailure(f"sentinel probe could not be written: {probe_name}.") from exc
             return probe_name, runner([*chunk, probe_name], repo_root)
@@ -603,6 +645,7 @@ def _scan_file_set(
                     isinstance(finding, dict)
                     and str(finding.get("type", "")) == expected_type
                     and str(finding.get("hashed_secret", "")) == expected_hash
+                    and _normalized_line_number(finding) == expected_line
                     for finding in findings
                 ):
                     probe_seen = True
@@ -873,14 +916,19 @@ def _universal_newline_lines(text: str) -> list[str]:
     """Split decoded text exactly like text-mode line iteration.
 
     The pinned scanner reads candidates through a text-mode ``open()`` and
-    ``readlines()``: CRLF and lone CR translate to LF, and ``U+2028``/``U+2029``
-    are **not** line boundaries. ``str.splitlines()`` would split on both, so
-    a file containing either character would shift every subsequent line
-    number between the scanner's findings and this module's line-content
-    evidence and classifier reads -- a substitution seam. This function
-    reproduces the scanner's numbering: the translated text is split on LF,
-    and exactly one empty final element is dropped when the text ends with a
-    line break (iteration never yields a trailing empty line).
+    ``readlines()``: CRLF and lone CR translate to LF, and
+    ``_UNICODE_LINE_SEPARATOR`` (U+2028) / ``_UNICODE_PARAGRAPH_SEPARATOR``
+    (U+2029) are **not** line boundaries: this normalization translates only
+    CRLF and CR, so both separators pass through untouched and can never
+    start a new line. ``str.splitlines()`` would split on both, so a file
+    containing either character would shift every subsequent line number
+    between the scanner's findings and this module's line-content evidence
+    and classifier reads -- a substitution seam. This function reproduces
+    the scanner's numbering: the translated text is split on LF, and exactly
+    one empty final element is dropped when the text ends with a line break
+    (iteration never yields a trailing empty line). The live sentinel probe
+    (``_probe_text``/``_expected_probe_line_number``) pins this contract
+    against the real pinned driver on every scan run.
     """
     if not text:
         return []
