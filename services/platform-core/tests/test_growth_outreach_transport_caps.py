@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, SessionLocal, engine
-from app.growth_ops import service
+from app.growth_ops import registry, service
 from app.growth_ops.models import OutreachMessage
 from app.growth_ops.registry import settings as growth_settings
 
@@ -117,6 +117,32 @@ def test_hour_and_day_caps_cannot_be_relaxed(monkeypatch):
     config = growth_settings()
     assert config.outreach_max_per_hour == 5
     assert config.outreach_max_per_day == 50
+
+
+def test_runtime_trip_uses_configured_writable_path_and_closes_writes(
+    tmp_path, monkeypatch
+):
+    owner_gate = tmp_path / "owner-gate"
+    runtime_gate = tmp_path / "runtime" / "growth-kill-switch"
+    runtime_gate.parent.mkdir()
+    owner_gate.write_text("ALLOW_STAGING_WRITES\n", encoding="utf-8")
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("GROWTH_OPS_KILL_SWITCH_FILE", str(owner_gate))
+    monkeypatch.setenv("GROWTH_OPS_RUNTIME_KILL_SWITCH_FILE", str(runtime_gate))
+
+    config = growth_settings()
+    assert config.kill_switch_file == str(owner_gate)
+    assert config.runtime_kill_switch_file == str(runtime_gate)
+    assert registry.writes_unlocked()
+
+    assert service._trip_runtime_kill_switch()
+    assert runtime_gate.read_text(encoding="utf-8") == "KILLED\n"
+    assert not registry.writes_unlocked()
+
+    runtime_gate.unlink()
+    assert registry.writes_unlocked()
+    owner_gate.write_text("OWNER_STOP\n", encoding="utf-8")
+    assert not registry.writes_unlocked()
 
 
 def test_postgresql_claim_uses_transaction_advisory_lock():

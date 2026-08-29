@@ -20,6 +20,7 @@ class GrowthSettings:
     registry_file: str
     secret_dir: str
     kill_switch_file: str
+    runtime_kill_switch_file: str
     worker_id: str
     poll_seconds: int
     lease_seconds: int
@@ -67,6 +68,10 @@ def settings() -> GrowthSettings:
         secret_dir=os.getenv("GROWTH_OPS_SECRET_DIR", "/run/secrets/growth"),
         kill_switch_file=os.getenv(
             "GROWTH_OPS_KILL_SWITCH_FILE", "/run/secrets/growth/kill-switch"
+        ),
+        runtime_kill_switch_file=os.getenv(
+            "GROWTH_OPS_RUNTIME_KILL_SWITCH_FILE",
+            "/app/runtime/growth-kill-switch",
         ),
         worker_id=os.getenv("GROWTH_OPS_WORKER_ID", "imperial-growth-worker"),
         poll_seconds=max(5, int(os.getenv("GROWTH_OPS_POLL_SECONDS", "30"))),
@@ -222,7 +227,7 @@ def _managed_secret(reference: str) -> Path:
 
 
 def writes_unlocked() -> bool:
-    runtime_kill = Path("/app/runtime/growth-kill-switch")
+    runtime_kill = Path(settings().runtime_kill_switch_file)
     if runtime_kill.is_file():
         return False
     gate = Path(settings().kill_switch_file)

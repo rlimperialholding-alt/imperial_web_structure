@@ -134,6 +134,7 @@ services:
       GROWTH_OPS_REGISTRY_FILE: /app/config/growth/registry.json
       GROWTH_OPS_SECRET_DIR: /run/secrets/growth
       GROWTH_OPS_KILL_SWITCH_FILE: /run/secrets/growth/kill-switch
+      GROWTH_OPS_RUNTIME_KILL_SWITCH_FILE: /app/runtime/growth-kill-switch
       GROWTH_OPS_WORKER_ID: ${GROWTH_OPS_WORKER_ID:-imperial-growth-worker}
       GROWTH_OPS_POLL_SECONDS: ${GROWTH_OPS_POLL_SECONDS:-10}
       GROWTH_OPS_LEASE_SECONDS: ${GROWTH_OPS_LEASE_SECONDS:-300}

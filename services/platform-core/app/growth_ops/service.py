@@ -1362,7 +1362,9 @@ def _release_matches(row: OutreachMessage) -> bool:
 
 def _trip_runtime_kill_switch() -> bool:
     try:
-        Path("/app/runtime/growth-kill-switch").write_text("KILLED\n", encoding="utf-8")
+        Path(settings().runtime_kill_switch_file).write_text(
+            "KILLED\n", encoding="utf-8"
+        )
     except OSError:
         return False
     return True
