@@ -258,14 +258,43 @@ function Invoke-ADASIndependentReview {
         [Parameter(Mandatory = $true)][string]$Model,
         [Parameter(Mandatory = $true)][string]$TaskText,
         [Parameter(Mandatory = $true)][string]$DiffText,
+        [Parameter(Mandatory = $true)][bool]$DiffTruncated,
         [Parameter(Mandatory = $true)]$RiskProfile,
         [Parameter(Mandatory = $true)][object[]]$GateSummaries,
         [Parameter(Mandatory = $true)][string]$OutputPath,
-        [int]$TimeoutSeconds = 240
+        [int]$TimeoutSeconds = 240,
+        [string]$DiffSha256 = '',
+        [int64]$DiffCharacterCount = -1
     )
-    # Coverage preflight: a truncated diff cannot prove full changed-file/hunk coverage; fail closed without any request.
-    if ($DiffText -match '--- DIFF TRUNCATED BY ADAS ---') {
-        $truncatedResult = New-ADASReviewUnavailableResult -RequestedModel $Model -Attempts @() -Evidence 'A diff szövege ADAS-csonkolt (DIFF TRUNCATED BY ADAS); a teljes changed-file/hunk lefedettség nem bizonyítható, ezért a review kérés nélkül fail-closed BLOCKED.'
+    # Coverage preflight (Task54 detection contract): a diff is treated as truncated ONLY when the
+    # diff-acquisition layer actually truncated it, never on an unanchored sentinel match anywhere
+    # in the text. Proofs accepted, in order:
+    #   1. the mandatory -DiffTruncated acquisition metadata flag (authoritative);
+    #   2. the exact terminal suffix sentinel that Get-ADASDiffText appends when it truncates:
+    #      the literal line "--- DIFF TRUNCATED BY ADAS ---" as the very last characters of the
+    #      text, preceded by a line break. This is deterministic for both line endings: acquisition
+    #      appends CRLF before the sentinel line, and the LF-suffix EndsWith check matches the CRLF
+    #      form as well. A mid-diff occurrence of the literal inside an added source/test line can
+    #      never match: acquisition appends the suffix only after the final byte it kept, and every
+    #      git diff content line carries a '+'/'-'/' ' prefix while headers carry path parts, so a
+    #      real diff line can never be byte-identical with the suffix line;
+    #   3. ambiguous metadata: a provided -DiffSha256 or -DiffCharacterCount that does not match the
+    #      text under review fails closed instead of guessing.
+    $truncationEvidence = ''
+    if ($DiffTruncated) {
+        $truncationEvidence = 'a diff-acquisition réteg explicit truncated metadata flaget adott'
+    }
+    elseif ($DiffText.EndsWith("`n--- DIFF TRUNCATED BY ADAS ---")) {
+        $truncationEvidence = 'a diff a Get-ADASDiffText által hozzáfűzött terminális csonkolási sentinellel zárul'
+    }
+    elseif ((-not [string]::IsNullOrEmpty($DiffSha256)) -and ((Get-ADASSha256Text $DiffText) -ne $DiffSha256)) {
+        $truncationEvidence = 'a diff-acquisition SHA-256 metadata nem egyezik a review alá vont diff szövegével'
+    }
+    elseif (($DiffCharacterCount -ge 0) -and ($DiffText.Length -ne $DiffCharacterCount)) {
+        $truncationEvidence = 'a diff-acquisition karakterszám-metadata nem egyezik a review alá vont diff szövegével'
+    }
+    if ($truncationEvidence) {
+        $truncatedResult = New-ADASReviewUnavailableResult -RequestedModel $Model -Attempts @() -Evidence ("A diff nem bizonyítható teljesnek (" + $truncationEvidence + "); a teljes changed-file/hunk lefedettség nem bizonyítható, ezért a review kérés nélkül fail-closed BLOCKED.")
         Write-ADASJson -Path $OutputPath -Value $truncatedResult
         return $truncatedResult
     }
