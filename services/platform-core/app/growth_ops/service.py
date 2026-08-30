@@ -1877,7 +1877,8 @@ def claim_outreach(db: Session) -> OutreachMessage | None:
         )
     candidates = db.scalars(
         query.order_by(OutreachMessage.available_at, OutreachMessage.id).with_for_update(
-            skip_locked=True
+            skip_locked=True,
+            of=OutreachMessage,
         )
     ).all()
     row = next(
