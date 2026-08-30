@@ -19,6 +19,14 @@ The construction and distress motors run hourly. IVS runs once per Europe/Budape
 day after 08:00. The construction target is at least 300 reviewed raw signals per UTC day; this
 is an evidence metric, never an instruction to manufacture leads or bypass contact safeguards.
 
+`official_company_html` is an ingest-only source kind for exact, individually enumerated
+Hungarian architect-office bindings. It is never returned to the scheduled JSON/RSS fetcher.
+Each enabled binding must match the mounted OWNER_APPROVED/CANONICAL real-estate source
+registry bytes, exact official HTTPS context/contact URLs, public role address, verified public
+organization names, fresh evidence and its deterministic binding hash. The kind is deliberately
+restricted to `architect_office`; expanding it to referral partners or other recipient classes
+requires a separately authorized schema change and source artifact.
+
 ## Canonical wide daily layer (2026-08-20)
 
 The server-managed `source-ledger-manifest.json` binds the imported database revision to

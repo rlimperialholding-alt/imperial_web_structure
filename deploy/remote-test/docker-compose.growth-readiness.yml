@@ -1,0 +1,4 @@
+services:
+  platform-core:
+    environment:
+      GROWTH_OPS_ENABLED: "true"

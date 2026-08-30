@@ -1,25 +1,86 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import stat
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+from publicsuffix2 import get_sld
 
 
 class GrowthRegistryError(ValueError):
     pass
 
 
+_EMAIL_RE = re.compile(
+    r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
+    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _valid_email(value: str) -> bool:
+    return bool(_EMAIL_RE.fullmatch(value))
+
+
+def _sha256_hex(value: Any) -> bool:
+    return bool(_SHA256_RE.fullmatch(str(value or "")))
+
+
+def _normalized_name(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _clean_unique_strings(value: Any) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    normalized = [_normalized_name(item) for item in value]
+    return all(normalized) and len(set(normalized)) == len(normalized)
+
+
+def _registrable_domain(hostname: str) -> str:
+    try:
+        ascii_hostname = hostname.strip(".").encode("idna").decode("ascii").lower()
+    except UnicodeError as exc:
+        raise GrowthRegistryError("Official-company source hostname is invalid") from exc
+    result = get_sld(ascii_hostname, strict=False)
+    if not result:
+        raise GrowthRegistryError("Official-company source root domain is invalid")
+    return str(result).casefold()
+
+
+def _dynamic_source_id(root_domain: str) -> str:
+    return "DYNAMIC_HU_" + re.sub(r"[^A-Z0-9]+", "_", root_domain.upper()).strip("_")
+
+
+def _official_source_binding_sha256(source_id: str, source: dict[str, Any]) -> str:
+    payload = {"source_id": source_id, **source}
+    payload.pop("binding_sha256", None)
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 @dataclass(frozen=True)
 class GrowthSettings:
     enabled: bool
     registry_file: str
+    real_estate_source_registry_file: str
     secret_dir: str
     kill_switch_file: str
+    runtime_kill_switch_file: str
     worker_id: str
     poll_seconds: int
     lease_seconds: int
@@ -29,6 +90,7 @@ class GrowthSettings:
     outreach_send_end_local: str
     outreach_max_per_hour: int
     outreach_max_per_day: int
+    outreach_max_per_recipient_root_domain_per_day: int
     canonical_wide_enabled: bool
     canonical_daily_at: str
     canonical_manifest_file: str
@@ -63,9 +125,17 @@ def settings() -> GrowthSettings:
     return GrowthSettings(
         enabled=os.getenv("GROWTH_OPS_ENABLED", "false").lower() == "true",
         registry_file=os.getenv("GROWTH_OPS_REGISTRY_FILE", "/app/config/growth/registry.json"),
+        real_estate_source_registry_file=os.getenv(
+            "REAL_ESTATE_SOURCE_REGISTRY_FILE",
+            "/app/config/outbound/real_estate_source_registry_hu_v1.json",
+        ),
         secret_dir=os.getenv("GROWTH_OPS_SECRET_DIR", "/run/secrets/growth"),
         kill_switch_file=os.getenv(
             "GROWTH_OPS_KILL_SWITCH_FILE", "/run/secrets/growth/kill-switch"
+        ),
+        runtime_kill_switch_file=os.getenv(
+            "GROWTH_OPS_RUNTIME_KILL_SWITCH_FILE",
+            "/app/runtime/growth-kill-switch",
         ),
         worker_id=os.getenv("GROWTH_OPS_WORKER_ID", "imperial-growth-worker"),
         poll_seconds=max(5, int(os.getenv("GROWTH_OPS_POLL_SECONDS", "30"))),
@@ -79,10 +149,22 @@ def settings() -> GrowthSettings:
             "GROWTH_OPS_OUTREACH_SEND_END_LOCAL", "18:00"
         ),
         outreach_max_per_hour=max(
-            1, min(100, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_HOUR", "5")))
+            1, min(5, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_HOUR", "5")))
         ),
         outreach_max_per_day=max(
-            1, min(1_000, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "50")))
+            1, min(50, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "50")))
+        ),
+        outreach_max_per_recipient_root_domain_per_day=max(
+            1,
+            min(
+                10,
+                int(
+                    os.getenv(
+                        "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
+                        "10",
+                    )
+                ),
+            ),
         ),
         canonical_wide_enabled=os.getenv("CANONICAL_GROWTH_ENABLED", "false").lower()
         == "true",
@@ -209,7 +291,7 @@ def _managed_secret(reference: str) -> Path:
 
 
 def writes_unlocked() -> bool:
-    runtime_kill = Path("/app/runtime/growth-kill-switch")
+    runtime_kill = Path(settings().runtime_kill_switch_file)
     if runtime_kill.is_file():
         return False
     gate = Path(settings().kill_switch_file)
@@ -236,6 +318,10 @@ class BrandBinding:
 
 
 class GrowthRegistry:
+    FETCHABLE_SOURCE_KINDS = {"json", "rss"}
+    OFFICIAL_COMPANY_SOURCE_KIND = "official_company_html"
+    OFFICIAL_COMPANY_FETCH_MODE = "ingest_only"
+    ARCHITECT_SOURCE_AUTHORITY_ID = "IMPERIAL_REAL_ESTATE_DISCOVERY_SOURCES_HU_V1"
     REQUIRED_MOTORS = {"construction", "distress", "ivs"}
     REQUIRED_CONSTRUCTION_BUCKETS = {
         "etdr",
@@ -328,7 +414,16 @@ class GrowthRegistry:
                 raise GrowthRegistryError(
                     f"Current source-policy evidence is required: {source_id}"
                 )
-            if str(source.get("kind")) not in {"json", "rss"}:
+            kind = str(source.get("kind") or "")
+            fetch_mode = str(source.get("fetch_mode") or "scheduled")
+            if kind in self.FETCHABLE_SOURCE_KINDS:
+                if fetch_mode != "scheduled":
+                    raise GrowthRegistryError(
+                        f"Fetchable source must use scheduled mode: {source_id}"
+                    )
+            elif kind == self.OFFICIAL_COMPANY_SOURCE_KIND:
+                self._validate_official_company_source(source_id, source)
+            else:
                 raise GrowthRegistryError(f"Unsupported enabled source kind: {source_id}")
         if not self.REQUIRED_CONSTRUCTION_BUCKETS.issubset(buckets["construction"]):
             raise GrowthRegistryError("All six construction source buckets must be represented")
@@ -375,10 +470,195 @@ class GrowthRegistry:
         return [
             (source_id, dict(source))
             for source_id, source in sorted(self.sources.items())
-            if source.get("motor") == motor_key and source.get("enabled")
+            if source.get("motor") == motor_key
+            and source.get("enabled")
+            and str(source.get("kind") or "") in self.FETCHABLE_SOURCE_KINDS
+            and str(source.get("fetch_mode") or "scheduled") == "scheduled"
         ]
 
-    def validate_signal_source(self, *, source_id: str, motor_key: str, source_bucket: str) -> None:
+    def _validate_official_company_source(
+        self, source_id: str, source: dict[str, Any]
+    ) -> None:
+        if str(source.get("fetch_mode") or "") != self.OFFICIAL_COMPANY_FETCH_MODE:
+            raise GrowthRegistryError(
+                f"Official-company source must be ingest-only: {source_id}"
+            )
+        if source.get("motor") != "construction" or source.get("bucket") != "architect_office":
+            raise GrowthRegistryError(
+                f"Official-company source is restricted to architect offices: {source_id}"
+            )
+        url = str(source.get("url") or "")
+        source_host = urlparse(url).hostname or ""
+        source_root_domain = _registrable_domain(source_host)
+        if source_id != _dynamic_source_id(source_root_domain):
+            raise GrowthRegistryError(
+                f"Official-company source ID does not match its root domain: {source_id}"
+            )
+        allowed_urls = source.get("allowed_evidence_urls")
+        if (
+            not isinstance(allowed_urls, list)
+            or not allowed_urls
+            or any(not isinstance(value, str) for value in allowed_urls)
+            or len(set(allowed_urls)) != len(allowed_urls)
+            or url not in allowed_urls
+            or source.get("context_evidence_url") not in allowed_urls
+            or source.get("public_contact_url") not in allowed_urls
+        ):
+            raise GrowthRegistryError(
+                f"Official-company source requires exact evidence URLs: {source_id}"
+            )
+        for allowed_url in allowed_urls:
+            parsed = urlparse(allowed_url)
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.fragment
+            ):
+                raise GrowthRegistryError(
+                    f"Official-company evidence URL is unsafe: {source_id}"
+                )
+            if _registrable_domain(parsed.hostname) != source_root_domain:
+                raise GrowthRegistryError(
+                    f"Official-company evidence URL crosses root domains: {source_id}"
+                )
+        binding = source.get("recipient_binding")
+        if not isinstance(binding, dict):
+            raise GrowthRegistryError(
+                f"Official-company recipient binding is required: {source_id}"
+            )
+        expected_email = str(binding.get("recipient_email") or "").strip().lower()
+        organization_names = binding.get("organization_names")
+        recipient_names = binding.get("recipient_names")
+        if (
+            binding.get("recipient_type") != "architect_office"
+            or binding.get("recipient_email_type") != "role"
+            or binding.get("contact_basis") != "public_business_contact"
+            or binding.get("primary_language") != "hu"
+            or not _valid_email(expected_email)
+            or binding.get("recipient_email") != expected_email
+            or not _clean_unique_strings(organization_names)
+            or not _clean_unique_strings(recipient_names)
+        ):
+            raise GrowthRegistryError(
+                f"Official-company recipient binding is invalid: {source_id}"
+            )
+        if _registrable_domain(expected_email.rsplit("@", 1)[1]) != source_root_domain:
+            raise GrowthRegistryError(
+                f"Official-company email crosses root domains: {source_id}"
+            )
+        evidence = source.get("policy_evidence")
+        if not isinstance(evidence, dict):
+            raise GrowthRegistryError(
+                f"Official-company policy evidence is required: {source_id}"
+            )
+        if (
+            evidence.get("evidence_url") not in allowed_urls
+            or evidence.get("final_url") not in allowed_urls
+            or int(evidence.get("http_status") or 0) != 200
+            or not str(evidence.get("content_type") or "").lower().startswith("text/html")
+            or not _sha256_hex(evidence.get("content_sha256"))
+            or int(source.get("max_evidence_age_seconds") or 0) not in range(1, 86_401)
+        ):
+            raise GrowthRegistryError(
+                f"Official-company live evidence is invalid: {source_id}"
+            )
+        checked_at = _parse_time(evidence.get("checked_at"))
+        valid_until = _parse_time(evidence.get("valid_until"))
+        if (
+            not checked_at
+            or not valid_until
+            or checked_at > datetime.now(UTC)
+            or valid_until <= checked_at
+            or valid_until - checked_at > timedelta(days=31)
+        ):
+            raise GrowthRegistryError(
+                f"Official-company evidence validity is invalid: {source_id}"
+            )
+        authority = source.get("authority")
+        if not isinstance(authority, dict):
+            raise GrowthRegistryError(
+                f"Official-company source authority is required: {source_id}"
+            )
+        authority_path = Path(settings().real_estate_source_registry_file)
+        authority_raw = _load_json(authority_path)
+        try:
+            authority_sha256 = hashlib.sha256(authority_path.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise GrowthRegistryError(
+                "Unreadable architect-source authority registry"
+            ) from exc
+        discovery_policy = authority_raw.get("discovery_policy") or {}
+        dynamic_discovery = authority_raw.get("dynamic_discovery") or {}
+        if (
+            authority.get("registry_id") != self.ARCHITECT_SOURCE_AUTHORITY_ID
+            or authority.get("registry_id") != authority_raw.get("registry_id")
+            or authority.get("version") != authority_raw.get("version")
+            or authority.get("sha256") != authority_sha256
+            or not _sha256_hex(authority.get("sha256"))
+            or not {
+                "OWNER_APPROVED",
+                "CANONICAL",
+            }.issubset(set(authority_raw.get("status") or []))
+            or "architect_office"
+            not in set((authority_raw.get("send_gates") or {}).get("allowed_recipient_types") or [])
+            or not bool(discovery_policy.get("allow_unlisted_public_sources"))
+            or not bool(discovery_policy.get("include_search_discovered_sources"))
+            or not bool(discovery_policy.get("runtime_live_check_required"))
+            or not bool(discovery_policy.get("current_listing_or_current_office_page_required"))
+            or not bool(
+                discovery_policy.get(
+                    "architect_office_sources_may_be_discovered_outside_real_estate_portals"
+                )
+            )
+            or not bool(dynamic_discovery.get("enabled"))
+            or dynamic_discovery.get("stable_source_id_format")
+            != "DYNAMIC_<COUNTRY>_<NORMALIZED_ROOT_DOMAIN>"
+            or not bool(dynamic_discovery.get("same_send_gates_as_seed_sources"))
+            or not bool(
+                dynamic_discovery.get(
+                    "new_source_must_be_logged_with_root_domain_and_evidence_url"
+                )
+            )
+            or not bool(
+                dynamic_discovery.get(
+                    "new_source_does_not_require_registry_file_edit_before_use"
+                )
+            )
+            or dynamic_discovery.get("source_reputation_or_identity_uncertainty") != "NO_SEND"
+            or not str(authority.get("owner_instruction_ref") or "").strip()
+        ):
+            raise GrowthRegistryError(
+                f"Official-company source authority does not match canonical policy: {source_id}"
+            )
+        if (
+            not _sha256_hex(source.get("binding_sha256"))
+            or source.get("binding_sha256")
+            != _official_source_binding_sha256(source_id, source)
+        ):
+            raise GrowthRegistryError(
+                f"Official-company source binding hash is invalid: {source_id}"
+            )
+
+    def validate_signal_source(
+        self,
+        *,
+        source_id: str,
+        motor_key: str,
+        source_bucket: str,
+        recipient_type: str | None = None,
+        recipient_email: str | None = None,
+        recipient_email_type: str | None = None,
+        contact_basis: str | None = None,
+        recipient_name: str | None = None,
+        company_name: str | None = None,
+        recipient_organization_name: str | None = None,
+        evidence_url: str | None = None,
+        public_contact_url: str | None = None,
+        source_payload_hash: str | None = None,
+        detected_at: datetime | None = None,
+    ) -> None:
         source = self.sources.get(source_id)
         if not isinstance(source, dict) or not source.get("enabled"):
             raise GrowthRegistryError("Signal source is not enabled in the managed registry")
@@ -386,6 +666,43 @@ class GrowthRegistry:
             raise GrowthRegistryError(
                 "Signal source motor or bucket conflicts with the managed registry"
             )
+        if str(source.get("kind") or "") != self.OFFICIAL_COMPANY_SOURCE_KIND:
+            return
+        binding = source["recipient_binding"]
+        organization_values = {
+            _normalized_name(company_name),
+            _normalized_name(recipient_organization_name),
+        } - {""}
+        allowed_organizations = {
+            _normalized_name(value) for value in binding["organization_names"]
+        }
+        if (
+            recipient_type != binding["recipient_type"]
+            or str(recipient_email or "").strip().lower() != binding["recipient_email"]
+            or recipient_email_type != binding["recipient_email_type"]
+            or contact_basis != binding["contact_basis"]
+            or _normalized_name(recipient_name)
+            not in {_normalized_name(value) for value in binding["recipient_names"]}
+            or not organization_values
+            or not organization_values.issubset(allowed_organizations)
+            or evidence_url != source["context_evidence_url"]
+            or public_contact_url != source["public_contact_url"]
+            or source_payload_hash != source["binding_sha256"]
+        ):
+            raise GrowthRegistryError(
+                "Signal conflicts with the exact official-company source binding"
+            )
+        observed_at = detected_at
+        if observed_at and not observed_at.tzinfo:
+            observed_at = observed_at.replace(tzinfo=UTC)
+        max_age_seconds = int(source["max_evidence_age_seconds"])
+        age_seconds = (
+            (datetime.now(UTC) - observed_at).total_seconds()
+            if observed_at
+            else max_age_seconds + 1
+        )
+        if age_seconds < 0 or age_seconds > max_age_seconds:
+            raise GrowthRegistryError("Official-company source evidence is not fresh")
 
     def readiness(self) -> dict[str, Any]:
         return {

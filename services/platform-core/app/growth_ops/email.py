@@ -11,16 +11,20 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, time
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import formatdate
 from html.parser import HTMLParser
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .canonical_policy import ACTIVE_CONTENT_BRANDS
 from .registry import BrandBinding, GrowthRegistryError
+from .registry import settings as growth_settings
 
 HARD_BLOCKED_RECIPIENT_DOMAINS = {
     "leier.hu",
@@ -281,6 +285,21 @@ def _assert_internal_outbound_allowed(
         raise GrowthRegistryError("internal_reply_to_domain_no_send")
 
 
+def _assert_external_transport_window_open() -> None:
+    config = growth_settings()
+    try:
+        zone = ZoneInfo(config.timezone)
+        start = time.fromisoformat(config.outreach_send_start_local)
+        end = time.fromisoformat(config.outreach_send_end_local)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
+    if start >= end:
+        raise GrowthRegistryError("Outreach sending window must start before it ends")
+    local_time = datetime.now(zone).time().replace(tzinfo=None)
+    if not start <= local_time < end:
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+
+
 def _single_header(message: EmailMessage, name: str) -> str:
     values = message.get_all(name, [])
     if len(values) != 1:
@@ -473,6 +492,7 @@ class SMTPEmailAdapter:
         message: EmailMessage,
         message_id: str,
         reconcile_only: bool = False,
+        pre_send_guard: Callable[[], None] | None = None,
     ) -> EmailReceipt:
         token_body = urllib.parse.urlencode(
             {
@@ -685,6 +705,14 @@ class SMTPEmailAdapter:
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).rstrip(b"=").decode("ascii")
         send_body = json.dumps({"raw": raw}, separators=(",", ":")).encode()
+        _assert_external_transport_window_open()
+        if pre_send_guard is None:
+            raise GrowthRegistryError("external_customer_pre_send_guard_required_no_send")
+        pre_send_guard()
+        # Capacity verification may perform database work. Re-read the
+        # authoritative clock after it so the window check is the final local
+        # operation before the Gmail transport POST.
+        _assert_external_transport_window_open()
         try:
             with urllib.request.urlopen(
                 urllib.request.Request(
@@ -807,6 +835,7 @@ class SMTPEmailAdapter:
         body_html: str | None = None,
         reply_to: str | None = None,
         attachments: list[tuple[str, bytes, str]] | None = None,
+        pre_send_guard: Callable[[], None] | None = None,
     ) -> EmailReceipt:
         if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
             _assert_customer_facing_outbound_allowed(
@@ -858,6 +887,7 @@ class SMTPEmailAdapter:
                 message=message,
                 message_id=message_id,
                 reconcile_only=reconcile_only,
+                pre_send_guard=pre_send_guard,
             )
         if reconcile_only:
             raise EmailDeliveryError(
@@ -888,6 +918,14 @@ class SMTPEmailAdapter:
             raise EmailDeliveryError(type(exc).__name__, retry_safe=True) from exc
         try:
             with client:
+                if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
+                    _assert_external_transport_window_open()
+                    if pre_send_guard is None:
+                        raise GrowthRegistryError(
+                            "external_customer_pre_send_guard_required_no_send"
+                        )
+                    pre_send_guard()
+                    _assert_external_transport_window_open()
                 refused = client.send_message(
                     message,
                     from_addr=self.binding.sender_email,

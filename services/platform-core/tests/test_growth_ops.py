@@ -25,7 +25,12 @@ from app.growth_ops.canonical_policy import (
 )
 from app.growth_ops.connectors import SourceBatch, _timestamp
 from app.growth_ops.email import EmailDeliveryError, SMTPEmailAdapter
-from app.growth_ops.models import GrowthRun, GrowthSignal, OutreachMessage
+from app.growth_ops.models import (
+    GrowthRun,
+    GrowthSignal,
+    GrowthWorkerHeartbeat,
+    OutreachMessage,
+)
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn, OutreachReleaseIn
 from app.models import MailSendingDomain, MailSuppression
@@ -43,7 +48,12 @@ class FakeRegistry:
     }
     brands = {"imperial": {}}
 
-    def validate_signal_source(self, *, source_id: str, motor_key: str, source_bucket: str) -> None:
+    def readiness(self) -> dict[str, object]:
+        return {"ready": True, "enabled_sources": 1, "version": "test-v1"}
+
+    def validate_signal_source(
+        self, *, source_id: str, motor_key: str, source_bucket: str, **_: object
+    ) -> None:
         if (source_id, motor_key, source_bucket) != (
             "construction-etdr",
             "construction",
@@ -180,34 +190,36 @@ def test_dispatch_batch_does_not_claim_outside_sending_window(
     assert service.dispatch_batch(db) == 0
 
 
-def test_outreach_send_capacity_enforces_hourly_and_daily_limits(growth_runtime):
-    class ScalarSequence:
-        def __init__(self, values):
-            self.values = iter(values)
-
-        def scalar(self, _query):
-            return next(self.values)
-
+def test_outreach_send_capacity_enforces_hourly_and_daily_limits(
+    db, growth_runtime, monkeypatch
+):
     local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: service.OutreachCapacityUsage(
+            2, 47, 0, 0, 0, 0, {}
+        ),
+    )
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 3
 
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([2, 47]), local_now.astimezone(UTC)
-        )
-        == 3
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: service.OutreachCapacityUsage(
+            5, 12, 0, 0, 0, 0, {}
+        ),
     )
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([5, 12]), local_now.astimezone(UTC)
-        )
-        == 0
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
+
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: service.OutreachCapacityUsage(
+            1, 50, 0, 0, 0, 0, {}
+        ),
     )
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([1, 50]), local_now.astimezone(UTC)
-        )
-        == 0
-    )
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 
 
 def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
@@ -228,6 +240,85 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
         service.run_once(db)
 
     assert events == ["mail", "wide"]
+
+
+def test_readiness_accepts_fresh_degraded_worker_as_serving(db, growth_runtime):
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id="growth-test-worker",
+            status="degraded",
+            detail_json='{"blocking_errors":["unrelated_content_not_complete"]}',
+            heartbeat_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is True
+    assert payload["worker_heartbeat"] == "degraded_sla"
+    assert payload["worker_status"] == "degraded"
+
+
+def test_readiness_rejects_stale_degraded_worker(db, growth_runtime):
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id="growth-test-worker",
+            status="degraded",
+            heartbeat_at=datetime.now(UTC) - timedelta(seconds=121),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is False
+    assert payload["worker_heartbeat"] == "stale_or_missing"
+    assert payload["worker_status"] == "degraded"
+
+
+@pytest.mark.parametrize("status", ["starting", "stopped", "failed"])
+def test_readiness_rejects_fresh_non_serving_worker_state(db, growth_runtime, status):
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id="growth-test-worker",
+            status=status,
+            heartbeat_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is False
+    assert payload["worker_heartbeat"] == "stale_or_missing"
+    assert payload["worker_status"] == status
+
+
+def test_internal_growth_routes_reject_unauthenticated_requests(client):
+    readiness_response = client.get("/api/internal/growth-ops/readiness")
+    ingest_response = client.post("/api/internal/growth-ops/signals", json={})
+
+    assert readiness_response.status_code == 401
+    assert readiness_response.json() == {"detail": "invalid internal token"}
+    assert ingest_response.status_code == 401
+    assert ingest_response.json() == {"detail": "invalid internal token"}
+
+
+def test_growth_readiness_compose_override_only_enables_platform_core():
+    override = (
+        Path(__file__).resolve().parents[3]
+        / "deploy"
+        / "remote-test"
+        / "docker-compose.growth-readiness.yml"
+    )
+
+    assert override.read_text(encoding="utf-8") == (
+        "services:\n"
+        "  platform-core:\n"
+        "    environment:\n"
+        '      GROWTH_OPS_ENABLED: "true"\n'
+    )
 
 
 def test_verified_business_role_signal_queues_once(db, growth_runtime):
@@ -474,7 +565,9 @@ def test_release_rejects_current_signal_screening_drift(db, growth_runtime):
         )
 
 
-def test_dispatch_blocks_current_signal_leier_affiliation(db, growth_runtime):
+def test_dispatch_blocks_current_signal_leier_affiliation(
+    db, growth_runtime, monkeypatch
+):
     result = service.ingest_signal(
         db, _signal(external_key="ETDR-CURRENT-LEIER-DISPATCH")
     )
@@ -496,8 +589,12 @@ def test_dispatch_blocks_current_signal_leier_affiliation(db, growth_runtime):
     )
     signal.recipient_organization_name = "Leier Hungária"
     message.status = "claimed"
+    message.claimed_by = service.settings().worker_id
+    message.claimed_at = datetime.now(UTC)
+    message.lease_expires_at = message.claimed_at + timedelta(minutes=5)
     message.attempt_count = 1
     db.commit()
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
 
     dispatched = service.dispatch_outreach(db, message)
 
@@ -563,6 +660,7 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
 
     monkeypatch.setattr(service, "SMTPEmailAdapter", AcceptedUnverifiedAdapter)
     monkeypatch.setattr(service, "_trip_runtime_kill_switch", fake_trip)
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
 
     first = service.dispatch_outreach(db, message)
     second = service.dispatch_outreach(db, message)
@@ -1256,6 +1354,8 @@ def test_global_suppression_prevents_queue(db, growth_runtime):
 def test_invalid_source_binding_fails_closed(db, growth_runtime):
     with pytest.raises(GrowthRegistryError, match="source mismatch"):
         service.ingest_signal(db, _signal(source_bucket="public_request"))
+    assert not db.scalars(select(GrowthSignal)).all()
+    assert not db.scalars(select(OutreachMessage)).all()
 
 
 def test_daily_schedule_runs_once_after_budapest_0800(growth_runtime):

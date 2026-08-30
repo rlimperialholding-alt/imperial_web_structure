@@ -120,6 +120,14 @@ class _FakeGmail:
         raise AssertionError(f"unexpected URL: {url}")
 
 
+@pytest.fixture(autouse=True)
+def external_transport_window_open(monkeypatch):
+    monkeypatch.setattr(
+        "app.growth_ops.email._assert_external_transport_window_open",
+        lambda: None,
+    )
+
+
 @pytest.fixture
 def smtp_transport(monkeypatch):
     sent = []
@@ -151,6 +159,7 @@ def _payload(**changes):
         "subject": "együttműködés",
         "body_text": "Az Imperial Holding ajánlata.",
         "idempotency_key": "a" * 64,
+        "pre_send_guard": lambda: None,
     }
     payload.update(changes)
     return payload
@@ -370,6 +379,117 @@ def test_external_gmail_exact_sent_readback_roundtrip(monkeypatch):
     assert receipt.detail["readback_mime_sha256"] == receipt.response_sha256
     assert receipt.detail["rfc_message_id"].startswith("<imperial-")
     assert receipt.detail["oauth_profile_email"] == "info@imperialholding.hu"
+
+
+def test_external_gmail_rechecks_guard_immediately_before_send_post(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    guard_calls = 0
+
+    def window_closed_at_post_boundary():
+        nonlocal guard_calls
+        guard_calls += 1
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_sending_window_closed_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                pre_send_guard=window_closed_at_post_boundary,
+            )
+        )
+
+    assert guard_calls == 1
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_authoritative_window_guard_runs_before_send_post(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    window_calls = 0
+
+    def closed_window():
+        nonlocal window_calls
+        window_calls += 1
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+
+    monkeypatch.setattr(
+        "app.growth_ops.email._assert_external_transport_window_open",
+        closed_window,
+    )
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_sending_window_closed_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+            )
+        )
+
+    assert window_calls == 1
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_rechecks_authoritative_clock_after_capacity_guard(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    events = []
+
+    def boundary_window():
+        events.append("window")
+        if events == ["window", "capacity", "window"]:
+            raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+
+    def capacity_guard():
+        events.append("capacity")
+
+    monkeypatch.setattr(
+        "app.growth_ops.email._assert_external_transport_window_open",
+        boundary_window,
+    )
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_sending_window_closed_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                pre_send_guard=capacity_guard,
+            )
+        )
+
+    assert events == ["window", "capacity", "window"]
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_requires_immediate_pre_send_guard(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="external_customer_pre_send_guard_required_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                pre_send_guard=None,
+            )
+        )
+
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
 
 
 def test_external_gmail_profile_sender_mismatch_stops_before_send(monkeypatch):
