@@ -1,9 +1,8 @@
-# One-shot provenance extraction used ONLY by Task53 author to create the
-# canonical tracked unit from the Task52 live profile block (byte-exact).
-# Not part of the runtime tooling; kept for reviewability of the extraction.
-# Task55 guard: the canonical source now carries TWO sections (acquisition +
-# review); this Task53 one-shot tool must never overwrite it, so it refuses to
-# run when the target already contains the Task55 acquisition section.
+# One-shot provenance extraction used ONLY by Task53 author to create the canonical tracked
+# unit from the Task52 live profile block (byte-exact). Not runtime tooling. Task55/56 guard:
+# the canonical source now carries TWO sections (acquisition + review); this Task53 one-shot
+# tool must never overwrite it, so it refuses to run when the target already contains the
+# Task55 acquisition section.
 [CmdletBinding()]
 param(
     [string]$ModulePath = 'C:/Users/user/AppData/Local/ImperialAI/projects/imperial-intelligence-r2/pro/bin/Imperial-ADAS.psm1',
@@ -35,16 +34,11 @@ if (-not ($trimmedEnd.EndsWith('}'))) { throw 'block does not end at closing bra
 $sha = [Security.Cryptography.SHA256]::Create()
 try {
     $blockHash = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($block))) -replace '-', '').ToLowerInvariant()
-    $normalized = $block -replace "`r`n", "`n"
-    $normHash = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($normalized))) -replace '-', '').ToLowerInvariant()
+    $normHash = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($block -replace "`r`n", "`n")))) -replace '-', '').ToLowerInvariant()
 }
 finally { $sha.Dispose() }
 # Structural sanity: all eight named functions present in canonical order
-$expected = @(
-    'New-ADASReviewAttemptRecord', 'Get-ADASReviewGateCompact', 'Get-ADASReviewDiffSections',
-    'Invoke-ADASDeepSeekCompletion', 'Test-ADASReviewContract', 'ConvertTo-ADASReviewContractObject',
-    'New-ADASReviewUnavailableResult', 'Invoke-ADASIndependentReview'
-)
+$expected = @('New-ADASReviewAttemptRecord', 'Get-ADASReviewGateCompact', 'Get-ADASReviewDiffSections', 'Invoke-ADASDeepSeekCompletion', 'Test-ADASReviewContract', 'ConvertTo-ADASReviewContractObject', 'New-ADASReviewUnavailableResult', 'Invoke-ADASIndependentReview')
 $position = -1
 foreach ($name in $expected) {
     $idx = $block.IndexOf("function $name {", $position + 1)
