@@ -3584,7 +3584,11 @@ def heartbeat(
     db.commit()
 
 
-def run_once(db: Session) -> dict[str, Any]:
+def run_once(
+    db: Session,
+    *,
+    write_terminal_heartbeat: bool = True,
+) -> dict[str, Any]:
     from ..land_acquisition.service import (
         readiness as land_readiness,
     )
@@ -3620,7 +3624,8 @@ def run_once(db: Session) -> dict[str, Any]:
     land_ready, land_readiness_detail = land_readiness(db)
     publication_digest = send_publication_digest(db)
     if not settings().enabled:
-        heartbeat(db, status="disabled")
+        if write_terminal_heartbeat:
+            heartbeat(db, status="disabled")
         return {
             "status": "wide_shadow" if wide_run else "disabled",
             "runs": 0,
@@ -3670,7 +3675,8 @@ def run_once(db: Session) -> dict[str, Any]:
             ]
         ),
     }
-    heartbeat(db, status=result["status"], detail=result)
+    if write_terminal_heartbeat:
+        heartbeat(db, status=result["status"], detail=result)
     return result
 
 
