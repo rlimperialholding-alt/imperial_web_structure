@@ -1,10 +1,8 @@
 function Get-ADASReviewModelContextWindow {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$ReviewerModel, [string]$ModelMetadataPath = '')
     # Task55/56 — local context-window lookup for the requested reviewer model slug. Reads ONLY
-    # the profile codex models capability manifest; no key/token/credential/personal data is
-    # ever read or returned. Unknown/missing/invalid metadata => valid=false with a named
-    # reason; callers must fail closed (never assume infinity). Default path:
-    # <profile root>\codex-home\models.json.
+    # the profile codex models capability manifest (no key/token/credential/personal data);
+    # unknown/missing/invalid metadata => valid=false with a named reason; callers fail closed.
     $invalid = [pscustomobject]@{ requestedModel = $ReviewerModel; contextWindow = [int64]0; maxContextWindow = [int64]0; effectivePercent = [int]0; effectiveWindow = [int64]0; sourcePath = ''; valid = $false; reason = '' }
     if ([string]::IsNullOrWhiteSpace($ReviewerModel)) { $invalid.reason = 'reviewer-model-not-specified'; return $invalid }
     $path = $ModelMetadataPath
@@ -35,18 +33,12 @@ function Get-ADASReviewModelContextWindow {
 function Get-ADASReviewDiffBudget {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$ReviewerModel, [string]$ModelMetadataPath = '', [int64]$MaxOutputTokens = 24000, [int64]$PromptReserveTokens = 65536, [int64]$SafetyReserveTokens = 32768, [int64]$FallbackBudgetCharacters = 350000)
     # Task55/56 — conservative, auditable diff-input budget: budgetTokens = effectiveWindow -
-    # MaxOutputTokens(24,000, request max_tokens cap) - PromptReserveTokens(65,536: system
-    # instruction, task text, compact gate summary, compact risk profile, section framing, JSON
-    # envelope) - SafetyReserveTokens(32,768: tokenizer variance, JSON escaping inflation);
-    # budgetBytes = budgetCharacters = budgetTokens. Hard token guarantee: the provider uses a
-    # byte-level tokenizer, so token count <= byte count; byteCount <= budgetTokens therefore
-    # bounds the prompt inside the effective window together with the reserves.
+    # MaxOutputTokens(24,000) - PromptReserveTokens(65,536) - SafetyReserveTokens(32,768);
+    # budgetBytes = budgetCharacters = budgetTokens; token count <= byte count bounds the prompt.
     # Task56 state machine: (1) valid + budgetTokens>0 => 'context-window' budget; (2) valid +
-    # budgetTokens<=0 => explicit ZERO budget with fallbackReason='context-window-too-small-for-
-    # reserves'; the 350,000 fallback is FORBIDDEN in this branch (structured
-    # diff-budget-exceeded/context-capacity BLOCKED, 0 provider requests); (3) missing/invalid
-    # metadata => documented conservative legacy fallback cap 350,000 characters/bytes (bounded,
-    # fail-closed, never infinity, never silent), budgetSource='fallback-cap'.
+    # budgetTokens<=0 => explicit ZERO budget (the 350,000 fallback is FORBIDDEN in this branch:
+    # structured diff-budget-exceeded/context-capacity BLOCKED, 0 provider requests); (3)
+    # missing/invalid metadata => documented conservative legacy fallback cap 350,000 (bounded).
     $window = Get-ADASReviewModelContextWindow -ReviewerModel $ReviewerModel -ModelMetadataPath $ModelMetadataPath
     $budgetTokens = [int64]0; $budgetValue = [int64]0; $source = 'context-window'; $fallbackReason = ''
     if (-not [bool]$window.valid) {
@@ -65,12 +57,10 @@ function Get-ADASDiffAcquisitionMeta {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$DiffText, [int64]$MaxCharacters = 0, [string[]]$ReviewerModel = @(), [string]$ModelMetadataPath = '')
     # Task55/56 — full-diff acquisition metadata + conservative context-derived input budget.
     # NEVER truncates: an over-budget diff fails closed (budgetExceeded=true, truncated=true,
-    # text='') while exact character/byte/line/file counts and the full sha256 stay available
-    # for the audit record. No terminal sentinel is ever appended (Task54 sentinel detection
-    # remains defense-in-depth for legacy artifacts). Budget precedence: explicit -MaxCharacters
-    # > 0 (legacy-compatible, testing/back-compat) else the context-derived budget of the
-    # requested model(s); multiple slugs => MINIMUM budget wins, Task56 zero budget wins
-    # regardless of slug order. Comparison is on UTF-8 bytes: byteCount > budgetBytes => exceeded.
+    # text='') with exact counts and the full sha256 in the audit record; no terminal sentinel
+    # is ever appended. Budget precedence: explicit -MaxCharacters > 0 (legacy-compatible) else
+    # the context-derived budget of the requested model(s); multiple slugs => MINIMUM budget
+    # wins (Task56 zero budget wins regardless of order); UTF-8 bytes: byteCount > budgetBytes.
     $characterCount = $DiffText.Length; $byteCount = [int64][Text.Encoding]::UTF8.GetByteCount($DiffText)
     $lineCount = ([regex]::Matches($DiffText, "`n")).Count
     if ($characterCount -gt 0 -and -not $DiffText.EndsWith("`n")) { $lineCount++ }
@@ -105,8 +95,7 @@ function New-ADASDiffBudgetExceededResult {
     param([Parameter(Mandatory = $true)][string]$RequestedModel, [Parameter(Mandatory = $true)][int64]$DiffCharacterCount, [Parameter(Mandatory = $true)][int64]$DiffByteCount, [Parameter(Mandatory = $true)][string]$DiffSha256, [Parameter(Mandatory = $true)][int64]$BudgetCharacters, [Parameter(Mandatory = $true)][int64]$BudgetBytes, [string]$BudgetSource = '', [string]$FallbackReason = '', [string]$OutputPath = '')
     # Task55/56 — fail-closed structured diff-budget-exceeded review result, produced BEFORE any
     # provider request: exact size/budget/hash metadata (no diff content, no secrets), BLOCKED
-    # provider attestation. contextCapacityBlocked=true marks the Task56 zero-budget state
-    # (valid metadata whose effective window cannot cover the output/prompt/safety reserves).
+    # provider attestation. contextCapacityBlocked=true marks the Task56 zero-budget state.
     $contextCapacityBlocked = [bool]($BudgetBytes -le 0); $sourceText = $(if ($BudgetSource) { $BudgetSource } else { 'ismeretlen' })
     $capacityNote = $(if ($contextCapacityBlocked) { '; a reviewer context window nem fedezi a kötelező output/prompt/safety reserve-eket (context-capacity BLOCKED)' } else { '' })
     $evidenceText = "a teljes diff ($DiffCharacterCount karakter, $DiffByteCount bájt, sha256=$DiffSha256) meghaladja a reviewer input budgetet ($BudgetCharacters karakter, $BudgetBytes bájt, forrás: $sourceText$capacityNote); csonkítás nem történt, provider request nem indult"
@@ -121,11 +110,10 @@ function New-ADASDiffBudgetExceededResult {
 }
 function Get-ADASDiffText {
     param([Parameter(Mandatory = $true)][string]$GitPath, [Parameter(Mandatory = $true)][string]$WorktreePath, [Parameter(Mandatory = $true)][string]$BeforeCommit, [Parameter(Mandatory = $true)][string]$AfterCommit, [int64]$MaxCharacters = 0, [string[]]$ReviewerModel = @(), [string]$ModelMetadataPath = '', [ref]$Truncated)
-    # Task55/56 — structured diff-acquisition entry point (replaces the legacy 350,000-character
-    # truncating Get-ADASDiffText). Byte-faithful capture via git --output=<path> + UTF-8 decode;
-    # no truncation, no terminal sentinel: an over-budget diff fails closed in the returned
-    # metadata (budgetExceeded=true, text=''); the legacy [ref]$Truncated out-flag reports that
-    # fail-closed budget state.
+    # Task55/56 — structured diff-acquisition entry point (replaces the legacy truncating
+    # Get-ADASDiffText). Byte-faithful capture via git --output=<path> + UTF-8 decode; no
+    # truncation, no terminal sentinel: an over-budget diff fails closed in the returned
+    # metadata (budgetExceeded=true, text=''); the [ref]$Truncated out-flag reports that state.
     $tempFile = Join-Path ([IO.Path]::GetTempPath()) ("adas-diff-" + [Guid]::NewGuid().ToString('N') + ".diff")
     try {
         & $GitPath -C $WorktreePath diff --no-ext-diff --unified=5 "$BeforeCommit..$AfterCommit" --output=$tempFile
@@ -175,19 +163,12 @@ function Get-ADASReviewDiffSections {
     $sections = New-Object 'System.Collections.Generic.List[object]'
     $cursor = 0
     while ($cursor -lt $DiffText.Length) {
-        if ($DiffText.Length - $cursor -le $MaxSectionCharacters) {
-            $sections.Add([pscustomobject]@{ start = $cursor; length = $DiffText.Length - $cursor })
-            break
-        }
+        if ($DiffText.Length - $cursor -le $MaxSectionCharacters) { $sections.Add([pscustomobject]@{ start = $cursor; length = $DiffText.Length - $cursor }); break }
         $cut = $cursor + $MaxSectionCharacters
         $best = -1
         foreach ($fileStart in $fileStarts) { if ($fileStart -gt $cursor -and $fileStart -le $cut) { $best = $fileStart } }
-        if ($best -lt 0) {
-            foreach ($hunkStart in $hunkStarts) { if ($hunkStart -gt $cursor -and $hunkStart -le $cut) { $best = $hunkStart } }
-        }
-        if ($best -lt 0) {
-            foreach ($lineStart in $lineStarts) { if ($lineStart -gt $cursor -and $lineStart -le $cut) { $best = $lineStart } }
-        }
+        if ($best -lt 0) { foreach ($hunkStart in $hunkStarts) { if ($hunkStart -gt $cursor -and $hunkStart -le $cut) { $best = $hunkStart } } }
+        if ($best -lt 0) { foreach ($lineStart in $lineStarts) { if ($lineStart -gt $cursor -and $lineStart -le $cut) { $best = $lineStart } } }
         if ($best -le $cursor) { $best = $cut }
         $sections.Add([pscustomobject]@{ start = $cursor; length = $best - $cursor })
         $cursor = $best
@@ -195,16 +176,14 @@ function Get-ADASReviewDiffSections {
     $result = New-Object 'System.Collections.Generic.List[object]'
     $count = $sections.Count
     for ($i = 0; $i -lt $count; $i++) {
-        $section = $sections[$i]
-        $text = $DiffText.Substring([int]$section.start, [int]$section.length)
+        $section = $sections[$i]; $text = $DiffText.Substring([int]$section.start, [int]$section.length)
         $result.Add([pscustomobject]@{ segment = $i + 1; segmentCount = $count; diffSha256 = $diffSha256; segmentSha256 = Get-ADASSha256Text $text; text = $text })
     }
     return ,@($result | ForEach-Object { $_ })
 }
 function Invoke-ADASDeepSeekCompletion {
     param([Parameter(Mandatory = $true)][string]$ApiKey, [Parameter(Mandatory = $true)][string]$Model, [Parameter(Mandatory = $true)][string]$UserPrompt, [int]$TimeoutSeconds = 240)
-    # Single fresh, conversation-independent request: system instruction + compact prompt,
-    # mandatory model only, no fallback, no undocumented thinking parameter.
+    # Single fresh, conversation-independent request: mandatory model only, no fallback.
     $body = [ordered]@{ model = $Model; messages = @(@{ role = 'system'; content = 'You are a strict independent software assurance reviewer. Output valid JSON only.' }, @{ role = 'user'; content = $UserPrompt }); temperature = 0; max_tokens = 24000; response_format = @{ type = 'json_object' } }
     $result = [pscustomobject]@{ ok = $false; transportErrorClass = ''; content = ''; finishReason = ''; actualModel = ''; requestId = ''; inputTokens = [int64]0; outputTokens = [int64]0; totalTokens = [int64]0 }
     try {
@@ -222,8 +201,7 @@ function Invoke-ADASDeepSeekCompletion {
     $choices = @(Get-ADASObjectPropertyInternal $response 'choices' @())
     if ($choices.Count -gt 0) {
         $message = Get-ADASObjectPropertyInternal $choices[0] 'message' $null
-        $result.content = [string](Get-ADASObjectPropertyInternal $message 'content' '')
-        $result.finishReason = [string](Get-ADASObjectPropertyInternal $choices[0] 'finish_reason' '')
+        $result.content = [string](Get-ADASObjectPropertyInternal $message 'content' ''); $result.finishReason = [string](Get-ADASObjectPropertyInternal $choices[0] 'finish_reason' '')
     }
     $result.actualModel = [string](Get-ADASObjectPropertyInternal $response 'model' '')
     $result.requestId = [string](Get-ADASObjectPropertyInternal $response 'id' '')
@@ -235,10 +213,9 @@ function Invoke-ADASDeepSeekCompletion {
 }
 function Test-ADASReviewContract {
     param([Parameter(Mandatory = $true)]$Parsed)
-    # Returns '' when the parsed review satisfies the compact output contract; otherwise a
-    # technical error class (truncated JSON is never repaired). Task56: every finding requires
-    # non-empty severity, category, evidence and requiredFix — incomplete payloads are
-    # schema-error (fail-closed).
+    # Returns '' when the review satisfies the compact output contract, else a technical error
+    # class. Task56: every finding requires non-empty severity/category/evidence/requiredFix.
+    # Task57: optional finding file/line must be exclusively null or string (else schema-error).
     if ($null -eq $Parsed -or $Parsed -isnot [pscustomobject]) { return 'schema-error' }
     foreach ($name in @('verdict','confidence','summary','findings','missingEvidence','businessRisks')) {
         if (-not ($Parsed.PSObject.Properties.Name -contains $name)) { return 'schema-error' }
@@ -260,6 +237,9 @@ function Test-ADASReviewContract {
         foreach ($name in @('category','evidence','requiredFix')) {
             if ([string]::IsNullOrWhiteSpace([string]$finding.$name)) { return 'schema-error' }
         }
+        foreach ($name in @('file','line')) {
+            if ($finding.PSObject.Properties.Name -contains $name -and $null -ne $finding.$name -and $finding.$name -isnot [string]) { return 'schema-error' }
+        }
     }
     foreach ($item in @($Parsed.missingEvidence)) { if ($null -eq $item) { return 'schema-error' } }
     foreach ($item in @($Parsed.businessRisks)) { if ($null -eq $item) { return 'schema-error' } }
@@ -267,8 +247,8 @@ function Test-ADASReviewContract {
 }
 function ConvertTo-ADASReviewContractObject {
     param([Parameter(Mandatory = $true)]$Parsed)
-    # Only the schema fields are accepted; everything else is dropped (non-empty severity/
-    # category/evidence/requiredFix already enforced by Test-ADASReviewContract).
+    # Only the schema fields are accepted; everything else is dropped (non-empty fields
+    # already enforced by Test-ADASReviewContract).
     $findings = @($Parsed.findings | ForEach-Object {
         $finding = $_
         [pscustomobject]@{
@@ -283,9 +263,11 @@ function ConvertTo-ADASReviewContractObject {
     return [pscustomobject]@{ verdict = [string]$Parsed.verdict; confidence = [double]$Parsed.confidence; summary = [string]$Parsed.summary; findings = $findings; missingEvidence = @($Parsed.missingEvidence | ForEach-Object { [string]$_ }); businessRisks = @($Parsed.businessRisks | ForEach-Object { [string]$_ }) }
 }
 function New-ADASReviewUnavailableResult {
-    param([Parameter(Mandatory = $true)][string]$RequestedModel, [Parameter(Mandatory = $true)][string]$Evidence, [object[]]$Attempts = @())
+    param([Parameter(Mandatory = $true)][string]$RequestedModel, [Parameter(Mandatory = $true)][string]$Evidence, [object[]]$Attempts = @(), [bool]$FallbackObserved = $false, [string]$FailureClass = 'review-unavailable')
     # Fail-closed review-unavailable BLOCKED; attempt records never become a PASS attestation.
-    $providerMeta = [pscustomobject]@{ schemaVersion = '1.0'; status = 'BLOCKED'; provider = 'DeepSeek'; endpointFamily = 'https://api.deepseek.com'; requestedModel = $RequestedModel; actualModel = ''; providerRequestId = $null; requestIdentifier = ''; requestIdentifierType = 'request_id'; inputTokens = 0; outputTokens = 0; totalTokens = 0; fallbackAllowed = $false; fallbackObserved = $true; observedAt = (Get-Date).ToUniversalTime().ToString('o'); secretMaterialRecorded = $false }
+    # Task57: fallbackObserved is true ONLY when a different model was actually observed;
+    # generic failures carry their precise unavailabilityClass instead (verdict stays BLOCKED).
+    $providerMeta = [pscustomobject]@{ schemaVersion = '1.0'; status = 'BLOCKED'; provider = 'DeepSeek'; endpointFamily = 'https://api.deepseek.com'; requestedModel = $RequestedModel; actualModel = ''; providerRequestId = $null; requestIdentifier = ''; requestIdentifierType = 'request_id'; inputTokens = 0; outputTokens = 0; totalTokens = 0; fallbackAllowed = $false; fallbackObserved = $FallbackObserved; unavailabilityClass = $FailureClass; observedAt = (Get-Date).ToUniversalTime().ToString('o'); secretMaterialRecorded = $false }
     return [pscustomobject]@{ verdict = 'BLOCKED'; confidence = 0; summary = 'A független AI-review technikai hiba miatt nem áll rendelkezésre; fail-closed döntés.'; findings = @(@{ severity = 'HIGH'; category = 'review-unavailable'; file = $null; line = $null; evidence = $Evidence; requiredFix = 'A review-t sikeresen újra kell futtatni.' }); missingEvidence = @('independent-review'); businessRisks = @(); _adasProvider = $providerMeta; _adasAttempts = @($Attempts | ForEach-Object { $_ }) }
 }
 function Invoke-ADASIndependentReview {
@@ -294,9 +276,9 @@ function Invoke-ADASIndependentReview {
     # diff-acquisition layer actually truncated it. Proofs, in order: (1) the mandatory
     # -DiffTruncated acquisition metadata flag (authoritative); (2) the exact terminal suffix
     # sentinel "--- DIFF TRUNCATED BY ADAS ---" as the very last characters, preceded by a line
-    # break (a mid-diff occurrence can never match: every git diff content line carries a
-    # '+'/'-'/' ' prefix while headers carry path parts); (3) ambiguous -DiffSha256 or
-    # -DiffCharacterCount metadata that does not match the text under review fails closed.
+    # break (a mid-diff occurrence can never match: diff content lines carry '+'/'-'/' '
+    # prefixes); (3) ambiguous -DiffSha256/-DiffCharacterCount metadata that does not match the
+    # text under review fails closed.
     $truncationEvidence = ''
     if ($DiffTruncated) {
         $truncationEvidence = 'a diff-acquisition réteg explicit truncated metadata flaget adott'
@@ -311,7 +293,7 @@ function Invoke-ADASIndependentReview {
         $truncationEvidence = 'a diff-acquisition karakterszám-metadata nem egyezik a review alá vont diff szövegével'
     }
     if ($truncationEvidence) {
-        $truncatedResult = New-ADASReviewUnavailableResult -RequestedModel $Model -Attempts @() -Evidence ("A diff nem bizonyítható teljesnek (" + $truncationEvidence + "); a teljes changed-file/hunk lefedettség nem bizonyítható, ezért a review kérés nélkül fail-closed BLOCKED.")
+        $truncatedResult = New-ADASReviewUnavailableResult -RequestedModel $Model -Attempts @() -FailureClass 'truncation-evidence' -Evidence ("A diff nem bizonyítható teljesnek (" + $truncationEvidence + "); a teljes changed-file/hunk lefedettség nem bizonyítható, ezért a review kérés nélkül fail-closed BLOCKED.")
         Write-ADASJson -Path $OutputPath -Value $truncatedResult; return $truncatedResult
     }
     $attempts = New-Object 'System.Collections.Generic.List[object]'
@@ -369,6 +351,7 @@ $diffSectionBlock
 "@
     $repairReason = ''
     $terminalEvidence = ''
+    $terminalErrorClass = 'review-unavailable'
     for ($attemptNumber = 1; $attemptNumber -le 2; $attemptNumber++) {
         $repairHeader = if ($attemptNumber -gt 1) {
             "REPAIR REQUEST: the previous attempt for this exact task and diff was unusable ($repairReason). Produce the complete review now, freshly: output ONLY the single JSON object per the contract below - no prose, no markdown, no reasoning, complete and well-formed.`n`n"
@@ -377,6 +360,7 @@ $diffSectionBlock
         if (-not $completion.ok) {
             $attempts.Add((New-ADASReviewAttemptRecord -Attempt $attemptNumber -RequestedModel $Model -Disposition 'failed-terminal' -ErrorClass ([string]$completion.transportErrorClass) -ActualModel ([string]$completion.actualModel) -TotalTokens $completion.totalTokens))
             $terminalEvidence = "A DeepSeek hívás transport hibát adott ($($completion.transportErrorClass)); ilyen hibára retry nem engedélyezett."
+            $terminalErrorClass = 'transport-' + ([string]$completion.transportErrorClass)
             break
         }
         $errorClass = ''; $parsed = $null
@@ -394,6 +378,7 @@ $diffSectionBlock
         if ($errorClass) {
             $retryable = @('empty-content','finish-reason-length','json-parse-error','schema-error') -contains $errorClass
             $attempts.Add((New-ADASReviewAttemptRecord -Attempt $attemptNumber -RequestedModel $Model -Disposition $(if ($retryable) { 'failed-retryable' } else { 'failed-terminal' }) -ErrorClass $errorClass -FinishReason ([string]$completion.finishReason) -ActualModel ([string]$completion.actualModel) -RequestId ([string]$completion.requestId) -InputTokens $completion.inputTokens -OutputTokens $completion.outputTokens -TotalTokens $completion.totalTokens))
+            $terminalErrorClass = $errorClass
             if (-not $retryable) {
                 $terminalEvidence = "A reviewer kimenete a kimeneti kontraktust sérti ($errorClass); erre az osztályra retry nem engedélyezett."
                 break
@@ -406,9 +391,14 @@ $diffSectionBlock
             continue
         }
         # Provider attestation only from the finally parsed, accepted attempt: its request id,
-        # actual/requested model and token counters.
+        # actual/requested model and token counters. Task57: PASS requires a non-empty
+        # actualModel that exactly equals the requested model, a non-empty requestId, positive
+        # totalTokens and no observed fallback; an empty or mismatched actual model is a
+        # fail-closed BLOCKED attestation while the attempt records keep the provider/model/
+        # token/request data.
         $fallbackObserved = (-not [string]::IsNullOrWhiteSpace($completion.actualModel) -and $completion.actualModel -ne $Model)
-        $attestationPass = (-not [string]::IsNullOrWhiteSpace($completion.requestId) -and $completion.totalTokens -gt 0 -and -not $fallbackObserved)
+        $modelAttested = (-not [string]::IsNullOrWhiteSpace($completion.actualModel) -and $completion.actualModel -eq $Model)
+        $attestationPass = ($modelAttested -and -not [string]::IsNullOrWhiteSpace($completion.requestId) -and $completion.totalTokens -gt 0 -and -not $fallbackObserved)
         $providerMeta = [pscustomobject]@{ schemaVersion = '1.0'; status = $(if ($attestationPass) { 'PASS' } else { 'BLOCKED' }); provider = 'DeepSeek'; endpointFamily = 'https://api.deepseek.com'; requestedModel = $Model; actualModel = $completion.actualModel; providerRequestId = $(if ($completion.requestId) { $completion.requestId } else { $null }); requestIdentifier = $(if ($completion.requestId) { $completion.requestId } else { '' }); requestIdentifierType = 'request_id'; inputTokens = $completion.inputTokens; outputTokens = $completion.outputTokens; totalTokens = $completion.totalTokens; fallbackAllowed = $false; fallbackObserved = $fallbackObserved; observedAt = (Get-Date).ToUniversalTime().ToString('o'); secretMaterialRecorded = $false }
         $attempts.Add((New-ADASReviewAttemptRecord -Attempt $attemptNumber -RequestedModel $Model -Disposition 'accepted' -FinishReason ([string]$completion.finishReason) -ActualModel ([string]$completion.actualModel) -RequestId ([string]$completion.requestId) -InputTokens $completion.inputTokens -OutputTokens $completion.outputTokens -TotalTokens $completion.totalTokens))
         $review = ConvertTo-ADASReviewContractObject -Parsed $parsed
@@ -417,6 +407,13 @@ $diffSectionBlock
         Write-ADASJson -Path $OutputPath -Value $review; return $review
     }
     if ([string]::IsNullOrWhiteSpace($terminalEvidence)) { $terminalEvidence = 'A független review nem készült el; fail-closed.' }
-    $fallback = New-ADASReviewUnavailableResult -RequestedModel $Model -Evidence $terminalEvidence -Attempts @($attempts | ForEach-Object { $_ })
+    # Task57: fallbackObserved ONLY from an actually observed different model in an attempt;
+    # transport/parse/schema failures keep the precise failure class instead. (.ToArray():
+    # PS 5.1 throws on @() over a List[object] of PSCustomObjects.)
+    $terminalFallbackObserved = $false
+    foreach ($attempt in $attempts.ToArray()) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$attempt.actualModel) -and ([string]$attempt.actualModel -ne $Model)) { $terminalFallbackObserved = $true }
+    }
+    $fallback = New-ADASReviewUnavailableResult -RequestedModel $Model -Evidence $terminalEvidence -Attempts @($attempts | ForEach-Object { $_ }) -FallbackObserved $terminalFallbackObserved -FailureClass $terminalErrorClass
     Write-ADASJson -Path $OutputPath -Value $fallback; return $fallback
 }
