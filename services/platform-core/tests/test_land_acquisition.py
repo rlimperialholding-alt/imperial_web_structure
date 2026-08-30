@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.growth_ops.canonical_policy import LAND_AGENT_HARD_GATE_GDN
 from app.growth_ops.catalog import _fetch
-from app.growth_ops.models import GrowthSignal, OutreachMessage, SourceCoverageRoute
+from app.growth_ops.models import GrowthSignal, OutreachMessage
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn
 from app.growth_ops.service import (
@@ -39,6 +39,7 @@ from app.land_acquisition.service import (
     approve_package,
     confirm_publication,
     create_listing_package,
+    ensure_public_html_land_routes,
     grant_authority,
     record_deal,
     request_publication,
@@ -463,53 +464,22 @@ def test_public_html_portal_respects_robots_and_reads_allowed_page(tmp_path, mon
         "LAND_ACQUISITION_PORTAL_REGISTRY_FILE",
         str(_portal_registry(tmp_path)),
     )
-    monkeypatch.setattr(
-        "app.growth_ops.catalog.socket.getaddrinfo",
-        lambda *args, **kwargs: [(2, 1, 6, "", ("93.184.216.34", 443))],
-    )
     from app.growth_ops import catalog
 
-    catalog._ROBOTS_CACHE.clear()
-
-    class FakeResponse:
-        def __init__(self, body: bytes, status_code: int = 200):
-            self.content = body
-            self.text = body.decode()
-            self.status_code = status_code
-            self.headers = {"content-type": "text/html; charset=utf-8"}
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def iter_bytes(self):
-            yield self.content
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def get(self, url):
-            assert url == "https://www.ingatlan.com/robots.txt"
-            return FakeResponse(b"User-agent: *\nAllow: /\n")
-
-        def stream(self, method, url):
-            assert method == "GET"
-            assert url == "https://www.ingatlan.com/35500001"
-            return FakeResponse(
+    monkeypatch.setattr(catalog, "_fresh_pinned_robots_error", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        catalog,
+        "_pinned_https_get",
+        lambda url, **_kwargs: {
+            "status_code": 200,
+            "headers": {"content-type": "text/html; charset=utf-8"},
+            "body": (
                 b"<html><head><title>Elado telek</title></head>"
                 b"<body>Elado 800 m2-es epitesi telek.</body></html>"
-            )
-
-    monkeypatch.setattr("app.growth_ops.catalog.httpx.Client", FakeClient)
+            ),
+            "source_ip": "93.184.216.34",
+        },
+    )
     result = _fetch(
         SimpleNamespace(
             route_url="https://www.ingatlan.com/35500001",
@@ -528,36 +498,20 @@ def test_public_html_portal_does_not_fetch_robots_disallowed_path(tmp_path, monk
         "LAND_ACQUISITION_PORTAL_REGISTRY_FILE",
         str(_portal_registry(tmp_path)),
     )
-    monkeypatch.setattr(
-        "app.growth_ops.catalog.socket.getaddrinfo",
-        lambda *args, **kwargs: [(2, 1, 6, "", ("93.184.216.34", 443))],
-    )
     from app.growth_ops import catalog
 
-    catalog._ROBOTS_CACHE.clear()
-
-    class FakeRobotsResponse:
-        status_code = 200
-        content = b"User-agent: *\nDisallow: /lista\n"
-        text = content.decode()
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def get(self, _url):
-            return FakeRobotsResponse()
-
-        def stream(self, *_args, **_kwargs):
-            raise AssertionError("robots-disallowed listing must not be fetched")
-
-    monkeypatch.setattr("app.growth_ops.catalog.httpx.Client", FakeClient)
+    monkeypatch.setattr(
+        catalog,
+        "_fresh_pinned_robots_error",
+        lambda *_args, **_kwargs: "portal_robots_disallowed",
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_pinned_https_get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("robots-disallowed listing must not be fetched")
+        ),
+    )
     result = _fetch(
         SimpleNamespace(
             route_url="https://www.ingatlan.com/lista/elado+telek",
@@ -573,36 +527,20 @@ def test_public_html_portal_retries_after_temporary_robots_failure(tmp_path, mon
         "LAND_ACQUISITION_PORTAL_REGISTRY_FILE",
         str(_portal_registry(tmp_path)),
     )
-    monkeypatch.setattr(
-        "app.growth_ops.catalog.socket.getaddrinfo",
-        lambda *args, **kwargs: [(2, 1, 6, "", ("93.184.216.34", 443))],
-    )
     from app.growth_ops import catalog
 
-    catalog._ROBOTS_CACHE.clear()
-
-    class FakeRobotsResponse:
-        status_code = 503
-        content = b"temporarily unavailable"
-        text = content.decode()
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def get(self, _url):
-            return FakeRobotsResponse()
-
-        def stream(self, *_args, **_kwargs):
-            raise AssertionError("page must not be fetched without a usable robots policy")
-
-    monkeypatch.setattr("app.growth_ops.catalog.httpx.Client", FakeClient)
+    monkeypatch.setattr(
+        catalog,
+        "_fresh_pinned_robots_error",
+        lambda *_args, **_kwargs: "portal_robots_unavailable",
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_pinned_https_get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("page must not be fetched without a usable robots policy")
+        ),
+    )
     result = _fetch(
         SimpleNamespace(
             route_url="https://www.ingatlan.com/35500001",
@@ -618,35 +556,19 @@ def test_land_readiness_fails_closed_without_a_public_html_route(db):
 
     assert ready is False
     assert detail["live_discovery"] is False
-    assert detail["blocking_reasons"] == ["no_public_html_land_routes_configured"]
+    assert detail["blocking_reasons"][0] == "no_public_html_land_routes_configured"
+    assert len(
+        [
+            reason
+            for reason in detail["blocking_reasons"]
+            if reason.startswith("public_land_route:")
+        ]
+    ) == 7
 
 
 def test_land_readiness_accepts_enabled_public_html_route(db):
-    db.add(
-        SourceCoverageRoute(
-            route_key="LAND-PUBLIC-HTML-UAT",
-            route_id="LAND-PUBLIC-HTML-UAT",
-            catalog_sha256="d" * 64,
-            motor="construction",
-            catalog_part="land",
-            country="HU",
-            brand_fit="imperial",
-            category="residential_building_plot",
-            source_name="ingatlan.com",
-            source_type="public_html",
-            search_signal="elado telek",
-            route_url="https://ingatlan.com/elado+telek",
-            base_url="https://ingatlan.com",
-            route_mode="direct",
-            priority="P1",
-            validation="robots",
-            catalog_status="active",
-            source_row_sha256="e" * 64,
-            source_record_json="{}",
-            enabled=True,
-        )
-    )
-    db.commit()
+    result = ensure_public_html_land_routes(db, dry_run=False)
+    assert result["readback_pass"] is True
 
     ready, detail = land_readiness(db)
 
@@ -861,6 +783,9 @@ def test_owner_approved_land_initial_email_is_policy_released(
         available_at=datetime.now(UTC),
         enforce_recipient_cooldown=False,
         data=data,
+        source_evidence_manifest_sha256=(
+            "e" * 64 if recipient_role == "listing_agent" else None
+        ),
     )
     with pytest.raises(
         GrowthRegistryError, match="owner_approved_followup_template_missing_no_send"
@@ -873,6 +798,9 @@ def test_owner_approved_land_initial_email_is_policy_released(
             available_at=datetime.now(UTC),
             enforce_recipient_cooldown=False,
             data=data,
+            source_evidence_manifest_sha256=(
+                "e" * 64 if recipient_role == "listing_agent" else None
+            ),
         )
 
     assert initial.release_approved_by == "owner-policy:land-public-listing-v3:2026-08-28"

@@ -11,13 +11,21 @@ Production remains fail-closed until all of the following are true:
   status `pass`;
 - every enabled signal source uses HTTPS and has non-expired policy evidence;
 - `GROWTH_OPS_BASE_URL` is the public HTTPS control-center URL;
-- the kill-switch file contains `ALLOW_APPROVED_CANARY` for canary or
-  `ALLOW_APPROVED_WRITES` for normal production operation;
+- the production kill-switch file contains exactly `ALLOW_APPROVED_WRITES`;
 - `/api/internal/growth-ops/readiness` returns HTTP 200.
 
 The construction and distress motors run hourly. IVS runs once per Europe/Budapest calendar
 day after 08:00. The construction target is at least 300 reviewed raw signals per UTC day; this
 is an evidence metric, never an instruction to manufacture leads or bypass contact safeguards.
+
+The public land HTML pipeline has one exact managed source binding:
+`construction_public_land_html`, with `kind=public_land_listing_html`,
+`fetch_mode=ingest_only`, motor `construction`, bucket `property_development`, and route-set
+SHA-256 `f8f86c9a28160e1f2d919bf5f86bde7d6765bcea30945b17bba9a4364f478a1f`. It is excluded
+from scheduled JSON/RSS fetches. The template stays disabled and non-runnable. This aggregate
+binding intentionally has no single URL or policy-evidence URL: the exact digest-bound 7/7 route
+readback plus fresh per-request HTTPS/robots checks are authoritative, and readiness fails closed
+for any route/config/digest mismatch.
 
 ## Canonical wide daily layer (2026-08-20)
 

@@ -117,6 +117,126 @@ class GrowthSignal(Base):
     )
 
 
+class GrowthSignalSourceEvidence(Base):
+    __tablename__ = "growth_signal_source_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "signal_id", "field_name", name="uq_growth_signal_source_evidence_field"
+        ),
+        CheckConstraint(
+            "field_name IN ('listing_permalink','recipient_name','recipient_email',"
+            "'recipient_role','property_type','location','plot_size_sqm',"
+            "'recipient_organization_name',"
+            "'recipient_office_name')",
+            name="ck_growth_signal_source_evidence_field",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evidence_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    signal_id: Mapped[str] = mapped_column(String(120), index=True)
+    field_name: Mapped[str] = mapped_column(String(80), index=True)
+    observed_value: Mapped[str] = mapped_column(Text)
+    source_snippet: Mapped[str] = mapped_column(Text)
+    snippet_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    source_url: Mapped[str] = mapped_column(String(1500))
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GrowthLandCanarySlot(Base):
+    __tablename__ = "growth_land_canary_slots"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope_local_date",
+            "slot_number",
+            name="uq_growth_land_canary_scope_slot",
+        ),
+        CheckConstraint("slot_number BETWEEN 1 AND 3", name="ck_growth_land_canary_slot"),
+        CheckConstraint(
+            "status IN ('available','claimed','sent','consumed')",
+            name="ck_growth_land_canary_slot_status",
+        ),
+        CheckConstraint(
+            "(status = 'available' AND outreach_id IS NULL AND claimed_at IS NULL "
+            "AND sent_at IS NULL) OR "
+            "(status = 'claimed' AND outreach_id IS NOT NULL AND claimed_at IS NOT NULL "
+            "AND sent_at IS NULL) OR "
+            "(status IN ('sent','consumed') AND outreach_id IS NOT NULL "
+            "AND claimed_at IS NOT NULL AND sent_at IS NOT NULL)",
+            name="ck_growth_land_canary_state_fields",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope_local_date: Mapped[date] = mapped_column(Date, index=True)
+    slot_number: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="available", index=True)
+    outreach_id: Mapped[str | None] = mapped_column(String(120), unique=True, index=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(500), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class GrowthLandCanaryState(Base):
+    __tablename__ = "growth_land_canary_state"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_growth_land_canary_state_singleton"),
+        CheckConstraint(
+            "status IN ('pending','completed','released')",
+            name="ck_growth_land_canary_state_status",
+        ),
+        CheckConstraint(
+            "(status != 'released' AND released_by IS NULL AND released_at IS NULL) OR "
+            "(status = 'released' AND released_by IS NOT NULL AND released_at IS NOT NULL)",
+            name="ck_growth_land_canary_release_fields",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope_local_date: Mapped[date] = mapped_column(Date, index=True)
+    max_total: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    released_by: Mapped[str | None] = mapped_column(String(255))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class GrowthPublicLandListingCursor(Base):
+    __tablename__ = "growth_public_land_listing_cursors"
+    __table_args__ = (
+        UniqueConstraint(
+            "route_key",
+            "listing_url_sha256",
+            name="uq_growth_public_land_cursor_route_url",
+        ),
+        CheckConstraint(
+            "status IN ('pending','retryable','examined')",
+            name="ck_growth_public_land_cursor_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_key: Mapped[str] = mapped_column(String(500), index=True)
+    listing_url: Mapped[str] = mapped_column(String(1500))
+    listing_url_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    last_result: Mapped[str | None] = mapped_column(String(120), index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    examined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class OutreachMessage(Base):
     __tablename__ = "growth_outreach_messages"
     __table_args__ = (

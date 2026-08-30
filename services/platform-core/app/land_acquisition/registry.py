@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 class LandRegistryError(ValueError):
@@ -36,6 +37,24 @@ def is_named_portal_host(host: str) -> bool:
     return any(_host_matches(host, domain) for domain in NAMED_PORTAL_DOMAINS)
 
 
+def same_named_portal_binding(left_host: str, right_host: str) -> bool:
+    """Return true only when both hosts belong to the same managed portal."""
+
+    try:
+        registry = PortalRegistry.load()
+    except LandRegistryError:
+        return False
+    left = registry.for_host(left_host)
+    right = registry.for_host(right_host)
+    return bool(
+        left
+        and right
+        and left.key == right.key
+        and left.discovery_mode == "public_html"
+        and left.permits("discover")
+    )
+
+
 def _default_path() -> Path:
     configured = os.getenv("LAND_ACQUISITION_PORTAL_REGISTRY_FILE", "").strip()
     if configured:
@@ -50,6 +69,7 @@ def _default_path() -> Path:
 class Portal:
     key: str
     domains: tuple[str, ...]
+    category_url: str | None
     discovery_mode: str
     publish_mode: str
     discovery_enabled: bool
@@ -99,6 +119,7 @@ class PortalRegistry:
             portal = Portal(
                 key=key,
                 domains=domains,
+                category_url=str(item.get("category_url") or "").strip() or None,
                 discovery_mode=str(item.get("discovery_mode") or "manual"),
                 publish_mode=str(item.get("publish_mode") or "manual"),
                 discovery_enabled=item.get("discovery_enabled") is True,
@@ -124,6 +145,19 @@ class PortalRegistry:
                 and not portal.respect_robots_txt
             ):
                 raise LandRegistryError(f"robots.txt enforcement is required: {key}")
+            if portal.category_url:
+                parsed_category = urlparse(portal.category_url)
+                if (
+                    parsed_category.scheme != "https"
+                    or not parsed_category.hostname
+                    or parsed_category.username is not None
+                    or parsed_category.password is not None
+                    or not any(
+                        _host_matches(parsed_category.hostname, domain)
+                        for domain in portal.domains
+                    )
+                ):
+                    raise LandRegistryError(f"Invalid public category URL: {key}")
             if portal.publish_enabled and (
                 portal.publish_mode != "licensed_api" or not portal.adapter_module
             ):

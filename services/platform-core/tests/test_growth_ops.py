@@ -42,13 +42,35 @@ class FakeRegistry:
         "ivs": {"daily_at": "08:00", "max_raw_signals_per_run": 500},
     }
     brands = {"imperial": {}}
+    sources = {
+        "construction-etdr": {
+            "enabled": True,
+            "motor": "construction",
+            "bucket": "etdr",
+            "kind": "json",
+            "fetch_mode": "scheduled",
+        },
+        "construction_public_land_html": {
+            "enabled": True,
+            "motor": "construction",
+            "bucket": "property_development",
+            "kind": "public_land_listing_html",
+            "fetch_mode": "ingest_only",
+            "route_set_sha256": (
+                "f8f86c9a28160e1f2d919bf5f86bde7d6765bcea30945b17bba9a4364f478a1f"
+            ),
+        },
+    }
 
     def validate_signal_source(self, *, source_id: str, motor_key: str, source_bucket: str) -> None:
-        if (source_id, motor_key, source_bucket) != (
-            "construction-etdr",
-            "construction",
-            "etdr",
-        ):
+        if (source_id, motor_key, source_bucket) not in {
+            ("construction-etdr", "construction", "etdr"),
+            (
+                "construction_public_land_html",
+                "construction",
+                "property_development",
+            ),
+        }:
             raise GrowthRegistryError("source mismatch")
 
     def brand_for(self, signal_type: str, requested: str | None = None) -> str:
@@ -153,6 +175,47 @@ def _signal(**changes) -> GrowthSignalIn:
     }
     payload.update(changes)
     return GrowthSignalIn.model_validate(payload)
+
+
+def _public_land_signal(**changes) -> GrowthSignalIn:
+    changes.setdefault("source_id", "construction_public_land_html")
+    changes.setdefault("source_bucket", "property_development")
+    changes.setdefault("plot_size_sqm", 605)
+    if changes.get("recipient_role") == "listing_agent":
+        changes.setdefault("recipient_office_name", "Független Minta Iroda")
+    return _signal(**changes)
+
+
+def _public_land_source_evidence(data: GrowthSignalIn) -> list[dict[str, object]]:
+    values = {
+        "listing_permalink": str(data.public_contact_url or ""),
+        "recipient_name": str(data.recipient_name or ""),
+        "recipient_email": str(data.recipient_email or ""),
+        "recipient_role": data.recipient_role,
+        "property_type": "Építési telek",
+        "location": str(data.location or ""),
+        "plot_size_sqm": str(data.plot_size_sqm or ""),
+    }
+    if data.recipient_role == "listing_agent":
+        values.update(
+            {
+                "recipient_organization_name": str(
+                    data.recipient_organization_name or ""
+                ),
+                "recipient_office_name": str(data.recipient_office_name or ""),
+            }
+        )
+    return [
+        {
+            "field_name": field_name,
+            "observed_value": value,
+            "source_snippet": f"synthetic:{field_name}:{value}",
+            "source_url": data.evidence_url,
+            "snapshot_sha256": data.source_payload_hash,
+            "fetched_at": data.detected_at,
+        }
+        for field_name, value in values.items()
+    ]
 
 
 @pytest.mark.parametrize(
@@ -563,6 +626,11 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
 
     monkeypatch.setattr(service, "SMTPEmailAdapter", AcceptedUnverifiedAdapter)
     monkeypatch.setattr(service, "_trip_runtime_kill_switch", fake_trip)
+    monkeypatch.setattr(
+        service,
+        "_authoritative_send_readiness_reason",
+        lambda *_args, **_kwargs: None,
+    )
 
     first = service.dispatch_outreach(db, message)
     second = service.dispatch_outreach(db, message)
@@ -794,35 +862,37 @@ def test_public_building_plot_listing_auto_releases_single_initial_message(
     subject_type,
     recipient_email_type,
 ):
+    data = _public_land_signal(
+        external_key=f"LAND-AUTO-RELEASE-{recipient_role}",
+        signal_type="residential_building_plot",
+        company_name="Minta Hirdető",
+        company_registration_id=None,
+        recipient_organization_name=(
+            "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
+        ),
+        subject_type=subject_type,
+        recipient_role=recipient_role,
+        recipient_type=recipient_type,
+        recipient_name="Minta Hirdető",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email=f"{recipient_role}@example.test",
+        recipient_email_type=recipient_email_type,
+        contact_basis="public_property_listing",
+        public_contact_url=(
+            f"https://property-listing.example.test/AUTO-{recipient_role}"
+        ),
+        location="Sülysáp",
+        plot_size_sqm=605,
+        evidence_url=f"https://property-listing.example.test/AUTO-{recipient_role}",
+    )
     result = service.ingest_signal(
         db,
-        _signal(
-            external_key=f"LAND-AUTO-RELEASE-{recipient_role}",
-            signal_type="residential_building_plot",
-            company_name="Minta Hirdető",
-            company_registration_id=None,
-            recipient_organization_name=(
-                "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
-            ),
-            subject_type=subject_type,
-            recipient_role=recipient_role,
-            recipient_type=recipient_type,
-            recipient_name="Minta Hirdető",
-            sender_company_name=None,
-            reference_names=[],
-            reference_names_verified=False,
-            recipient_classification_verified=True,
-            exclusion_screening_verified=True,
-            recipient_email=f"{recipient_role}@example.test",
-            recipient_email_type=recipient_email_type,
-            contact_basis="public_property_listing",
-            public_contact_url=(
-                f"https://property-listing.example.test/AUTO-{recipient_role}"
-            ),
-            location="Sülysáp",
-            plot_size_sqm=605,
-            evidence_url=f"https://property-listing.example.test/AUTO-{recipient_role}",
-        ),
+        data,
+        source_evidence=_public_land_source_evidence(data),
     )
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
@@ -868,29 +938,31 @@ def test_public_building_plot_owner_vs_agent_mismatch_fails_closed():
 def test_public_building_plot_uses_only_the_canonical_registry_template(
     db, growth_runtime
 ):
+    data = _public_land_signal(
+        external_key="LAND-CANONICAL-AGENT",
+        signal_type="residential_building_plot",
+        company_name="Minta Értékesítő",
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Minta Értékesítő",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email="ertekesito@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property-listing.example.test/LAND-003",
+        evidence_url="https://property-listing.example.test/LAND-003",
+    )
     result = service.ingest_signal(
         db,
-        _signal(
-            external_key="LAND-CANONICAL-AGENT",
-            signal_type="residential_building_plot",
-            company_name="Minta Értékesítő",
-            company_registration_id=None,
-            recipient_organization_name="Független Ingatlaniroda",
-            subject_type="organization",
-            recipient_role="listing_agent",
-            recipient_type="real_estate_agent",
-            recipient_name="Minta Értékesítő",
-            sender_company_name=None,
-            reference_names=[],
-            reference_names_verified=False,
-            recipient_classification_verified=True,
-            exclusion_screening_verified=True,
-            recipient_email="ertekesito@example.test",
-            recipient_email_type="role",
-            contact_basis="public_property_listing",
-            public_contact_url="https://property-listing.example.test/LAND-003",
-            evidence_url="https://property-listing.example.test/LAND-003",
-        ),
+        data,
+        source_evidence=_public_land_source_evidence(data),
     )
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
@@ -911,27 +983,29 @@ def test_land_auto_release_failure_cannot_leave_a_partial_queued_message(
         raise GrowthRegistryError("IMPERIAL_RELEASE_HMAC_KEY is not configured")
 
     monkeypatch.setattr(service, "_release_digest", fail_release)
+    data = _public_land_signal(
+        external_key="LAND-RELEASE-FAIL-NO-PARTIAL",
+        signal_type="residential_building_plot",
+        company_name="Minta Értékesítő",
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Minta Értékesítő",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_email="release-fail@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property.example.test/release-fail",
+        evidence_url="https://property.example.test/release-fail",
+    )
     result = service.ingest_signal(
         db,
-        _signal(
-            external_key="LAND-RELEASE-FAIL-NO-PARTIAL",
-            signal_type="residential_building_plot",
-            company_name="Minta Értékesítő",
-            company_registration_id=None,
-            recipient_organization_name="Független Ingatlaniroda",
-            subject_type="organization",
-            recipient_role="listing_agent",
-            recipient_type="real_estate_agent",
-            recipient_name="Minta Értékesítő",
-            sender_company_name=None,
-            reference_names=[],
-            reference_names_verified=False,
-            recipient_email="release-fail@example.test",
-            recipient_email_type="role",
-            contact_basis="public_property_listing",
-            public_contact_url="https://property.example.test/release-fail",
-            evidence_url="https://property.example.test/release-fail",
-        ),
+        data,
+        source_evidence=_public_land_source_evidence(data),
     )
 
     assert result.status == "blocked"
@@ -945,27 +1019,29 @@ def test_land_copy_assertion_failure_cannot_leave_a_partial_queued_message(
         raise ValueError("forced_copy_integrity_failure")
 
     monkeypatch.setattr(service, "assert_outreach_copy", fail_copy)
+    data = _public_land_signal(
+        external_key="LAND-COPY-FAIL-NO-PARTIAL",
+        signal_type="residential_building_plot",
+        company_name="Minta Értékesítő",
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Minta Értékesítő",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_email="copy-fail@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property.example.test/copy-fail",
+        evidence_url="https://property.example.test/copy-fail",
+    )
     result = service.ingest_signal(
         db,
-        _signal(
-            external_key="LAND-COPY-FAIL-NO-PARTIAL",
-            signal_type="residential_building_plot",
-            company_name="Minta Értékesítő",
-            company_registration_id=None,
-            recipient_organization_name="Független Ingatlaniroda",
-            subject_type="organization",
-            recipient_role="listing_agent",
-            recipient_type="real_estate_agent",
-            recipient_name="Minta Értékesítő",
-            sender_company_name=None,
-            reference_names=[],
-            reference_names_verified=False,
-            recipient_email="copy-fail@example.test",
-            recipient_email_type="role",
-            contact_basis="public_property_listing",
-            public_contact_url="https://property.example.test/copy-fail",
-            evidence_url="https://property.example.test/copy-fail",
-        ),
+        data,
+        source_evidence=_public_land_source_evidence(data),
     )
 
     assert result.status == "blocked"

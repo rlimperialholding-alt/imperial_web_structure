@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +30,8 @@ class GrowthSettings:
     outreach_send_end_local: str
     outreach_max_per_hour: int
     outreach_max_per_day: int
+    land_outreach_production_canary_max_total: int
+    land_outreach_production_canary_local_date: str
     canonical_wide_enabled: bool
     canonical_daily_at: str
     canonical_manifest_file: str
@@ -59,6 +62,15 @@ class GrowthSettings:
     deepseek_output_usd_per_million: float
 
 
+def _land_canary_max_total_setting() -> int:
+    try:
+        return int(os.getenv("LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL", "3"))
+    except (TypeError, ValueError) as exc:
+        raise GrowthRegistryError(
+            "land_outreach_production_canary_cap_invalid"
+        ) from exc
+
+
 def settings() -> GrowthSettings:
     return GrowthSettings(
         enabled=os.getenv("GROWTH_OPS_ENABLED", "false").lower() == "true",
@@ -84,6 +96,12 @@ def settings() -> GrowthSettings:
         outreach_max_per_day=max(
             1, min(1_000, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "50")))
         ),
+        land_outreach_production_canary_max_total=(
+            _land_canary_max_total_setting()
+        ),
+        land_outreach_production_canary_local_date=os.getenv(
+            "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE", "2026-08-31"
+        ).strip(),
         canonical_wide_enabled=os.getenv("CANONICAL_GROWTH_ENABLED", "false").lower()
         == "true",
         canonical_daily_at=os.getenv("CANONICAL_GROWTH_DAILY_AT", "05:30"),
@@ -222,7 +240,7 @@ def writes_unlocked() -> bool:
     environment = os.getenv("ENVIRONMENT", "development").lower()
     allowed = {"ALLOW_STAGING_WRITES"}
     if environment == "production":
-        allowed = {"ALLOW_APPROVED_CANARY", "ALLOW_APPROVED_WRITES"}
+        allowed = {"ALLOW_APPROVED_WRITES"}
     return value in allowed
 
 
@@ -313,6 +331,25 @@ class GrowthRegistry:
             buckets[motor].add(bucket)
             if not source.get("enabled"):
                 continue
+            fetch_mode = str(source.get("fetch_mode") or "scheduled")
+            if fetch_mode == "ingest_only":
+                if (
+                    source_id != "construction_public_land_html"
+                    or motor != "construction"
+                    or bucket != "property_development"
+                    or source.get("kind") != "public_land_listing_html"
+                    or not re.fullmatch(
+                        r"[0-9a-f]{64}", str(source.get("route_set_sha256") or "")
+                    )
+                ):
+                    raise GrowthRegistryError(
+                        f"Invalid managed ingest-only source binding: {source_id}"
+                    )
+                # This source is an aggregate identity for evidence ingested by
+                # the exact seven-route managed lane. A single source URL cannot
+                # truthfully attest that route set; its digest, exact DB/config
+                # readback and fresh per-request robots gates are authoritative.
+                continue
             parsed = urlparse(str(source.get("url") or ""))
             if parsed.scheme != "https" or not parsed.hostname:
                 raise GrowthRegistryError(f"Enabled source must use HTTPS: {source_id}")
@@ -375,7 +412,9 @@ class GrowthRegistry:
         return [
             (source_id, dict(source))
             for source_id, source in sorted(self.sources.items())
-            if source.get("motor") == motor_key and source.get("enabled")
+            if source.get("motor") == motor_key
+            and source.get("enabled")
+            and str(source.get("fetch_mode") or "scheduled") != "ingest_only"
         ]
 
     def validate_signal_source(self, *, source_id: str, motor_key: str, source_bucket: str) -> None:
@@ -388,12 +427,24 @@ class GrowthRegistry:
             )
 
     def readiness(self) -> dict[str, Any]:
+        scheduled_sources = sum(
+            bool(source.get("enabled"))
+            and str(source.get("fetch_mode") or "scheduled") != "ingest_only"
+            for source in self.sources.values()
+        )
+        ingest_only_sources = sum(
+            bool(source.get("enabled"))
+            and str(source.get("fetch_mode") or "scheduled") == "ingest_only"
+            for source in self.sources.values()
+        )
         return {
             "version": self.version,
             "writes_unlocked": writes_unlocked(),
             "motors": sorted(self.motors),
             "brands": sorted(self.brands),
-            "enabled_sources": sum(bool(source.get("enabled")) for source in self.sources.values()),
+            "enabled_sources": scheduled_sources + ingest_only_sources,
+            "scheduled_enabled_sources": scheduled_sources,
+            "ingest_only_enabled_sources": ingest_only_sources,
             "ready": True,
         }
 

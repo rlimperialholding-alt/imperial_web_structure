@@ -11,6 +11,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from email import policy
 from email.message import EmailMessage
@@ -411,6 +412,7 @@ class EmailDeliveryError(RuntimeError):
         retry_safe: bool,
         authentication_failure: bool = False,
         accepted_but_unverified: bool = False,
+        transport_attempted: bool = False,
         provider_message_id: str | None = None,
         detail: dict[str, Any] | None = None,
     ) -> None:
@@ -419,6 +421,7 @@ class EmailDeliveryError(RuntimeError):
         self.retry_safe = retry_safe
         self.authentication_failure = authentication_failure
         self.accepted_but_unverified = accepted_but_unverified
+        self.transport_attempted = transport_attempted
         self.provider_message_id = provider_message_id
         self.detail = dict(detail or {})
 
@@ -473,6 +476,7 @@ class SMTPEmailAdapter:
         message: EmailMessage,
         message_id: str,
         reconcile_only: bool = False,
+        pre_send_guard: Callable[[], None] | None = None,
     ) -> EmailReceipt:
         token_body = urllib.parse.urlencode(
             {
@@ -685,6 +689,8 @@ class SMTPEmailAdapter:
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).rstrip(b"=").decode("ascii")
         send_body = json.dumps({"raw": raw}, separators=(",", ":")).encode()
+        if pre_send_guard is not None:
+            pre_send_guard()
         try:
             with urllib.request.urlopen(
                 urllib.request.Request(
@@ -704,12 +710,14 @@ class SMTPEmailAdapter:
                 f"gmail_api_http_{exc.code}",
                 retry_safe=False,
                 authentication_failure=authentication_failure,
+                transport_attempted=True,
             ) from exc
         except (OSError, urllib.error.URLError) as exc:
             raise EmailDeliveryError(
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 detail={
                     "reason": f"gmail_send_transport_ambiguous:{type(exc).__name__}"
                 },
@@ -721,6 +729,7 @@ class SMTPEmailAdapter:
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 detail={"reason": "gmail_send_response_invalid"},
             ) from exc
         if not isinstance(sent, dict):
@@ -728,6 +737,7 @@ class SMTPEmailAdapter:
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 detail={"reason": "gmail_send_response_not_an_object"},
             )
         provider_id = str(sent.get("id") or "")
@@ -736,6 +746,7 @@ class SMTPEmailAdapter:
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 detail={"reason": "gmail_api_message_id_missing"},
             )
 
@@ -764,6 +775,7 @@ class SMTPEmailAdapter:
                 retry_safe=False,
                 authentication_failure=exc.code in {400, 401, 403},
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 provider_message_id=provider_id,
                 detail={
                     "reason": f"gmail_readback_http_{exc.code}",
@@ -775,6 +787,7 @@ class SMTPEmailAdapter:
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 provider_message_id=provider_id,
                 detail={"reason": str(exc), "provider_message_id": provider_id},
             ) from exc
@@ -807,6 +820,7 @@ class SMTPEmailAdapter:
         body_html: str | None = None,
         reply_to: str | None = None,
         attachments: list[tuple[str, bytes, str]] | None = None,
+        pre_send_guard: Callable[[], None] | None = None,
     ) -> EmailReceipt:
         if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
             _assert_customer_facing_outbound_allowed(
@@ -858,6 +872,7 @@ class SMTPEmailAdapter:
                 message=message,
                 message_id=message_id,
                 reconcile_only=reconcile_only,
+                pre_send_guard=pre_send_guard,
             )
         if reconcile_only:
             raise EmailDeliveryError(
@@ -888,6 +903,8 @@ class SMTPEmailAdapter:
             raise EmailDeliveryError(type(exc).__name__, retry_safe=True) from exc
         try:
             with client:
+                if pre_send_guard is not None:
+                    pre_send_guard()
                 refused = client.send_message(
                     message,
                     from_addr=self.binding.sender_email,
@@ -895,10 +912,14 @@ class SMTPEmailAdapter:
                 )
         except (OSError, smtplib.SMTPException) as exc:
             raise EmailDeliveryError(
-                f"ambiguous_delivery:{type(exc).__name__}", retry_safe=False
+                f"ambiguous_delivery:{type(exc).__name__}",
+                retry_safe=False,
+                transport_attempted=True,
             ) from exc
         if refused:
-            raise EmailDeliveryError("recipient_refused", retry_safe=False)
+            raise EmailDeliveryError(
+                "recipient_refused", retry_safe=False, transport_attempted=True
+            )
         response_hash = hashlib.sha256(f"accepted:{to_email}:{message_id}".encode()).hexdigest()
         return EmailReceipt(
             provider_message_id=message_id,
