@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 from time import perf_counter
+from typing import Iterator
 
+import pytest
 from sqlalchemy import select
 
 from app.models import HouseDesignRevision
@@ -21,6 +24,35 @@ from app.services.regulatory_compliance import evaluate_rules
 def _p95(samples: list[float]) -> float:
     ordered = sorted(samples)
     return ordered[math.ceil(len(ordered) * 0.95) - 1]
+
+
+@contextlib.contextmanager
+def _tracer_suspended(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Suspend the active coverage tracer while the timing samples run.
+
+    The p95 samples measure the production path itself: under the full
+    coverage suite, the per-line tracer adds scheduler-visible overhead and
+    transient stalls that are instrumentation cost, not production cost.
+    The production calls still execute in full inside the suspended window
+    -- revision, audit and DB semantics included -- and the unchanged 250 ms
+    threshold still applies to them, so the measurement is neither skipped
+    nor relaxed. The suspension uses the supported public ``stop``/``start``
+    API of the running coverage instance, exposed through pytest-cov's own
+    ``cov`` fixture; without pytest-cov (the plain unit suite) nothing is
+    suspended and the samples are taken with the same semantics as before.
+    """
+    try:
+        cov = request.getfixturevalue("cov")
+    except pytest.FixtureLookupError:
+        cov = None
+    if cov is None or not hasattr(cov, "stop"):
+        yield
+        return
+    cov.stop()
+    try:
+        yield
+    finally:
+        cov.start()
 
 
 def _geometry_with_200_rooms():
@@ -62,14 +94,17 @@ def _performance_rule(index: int):
     }
 
 
-def test_editor_command_p95_is_below_250_ms_with_200_objects():
+def test_editor_command_p95_is_below_250_ms_with_200_objects(
+    request: pytest.FixtureRequest,
+):
     geometry = _geometry_with_200_rooms()
     apply_command(geometry, "set_north", {"northAngleDeg": 1})
     samples = []
-    for angle in range(2, 32):
-        started = perf_counter()
-        apply_command(geometry, "set_north", {"northAngleDeg": angle})
-        samples.append(perf_counter() - started)
+    with _tracer_suspended(request):
+        for angle in range(2, 32):
+            started = perf_counter()
+            apply_command(geometry, "set_north", {"northAngleDeg": angle})
+            samples.append(perf_counter() - started)
     p95 = _p95(samples)
     assert p95 < 0.250, {
         "p95_ms": round(p95 * 1_000, 3),
@@ -77,7 +112,9 @@ def test_editor_command_p95_is_below_250_ms_with_200_objects():
     }
 
 
-def test_editor_service_p95_includes_revision_audit_and_db_with_200_objects(db):
+def test_editor_service_p95_includes_revision_audit_and_db_with_200_objects(
+    db, request: pytest.FixtureRequest
+):
     actor = ActorScope("perf-customer", "imperial-holding", frozenset({"imperial"}))
     design = create_session(
         db,
@@ -102,20 +139,21 @@ def test_editor_service_p95_includes_revision_audit_and_db_with_200_objects(db):
     db.commit()
     design = session_detail(db, design["sessionId"], actor)
     samples = []
-    for angle in range(30):
-        current = design["revision"]
-        started = perf_counter()
-        design = apply_session_command(
-            db,
-            session_id=design["sessionId"],
-            actor=actor,
-            base_revision_id=current["revisionId"],
-            base_canonical_sha256=current["canonicalSha256"],
-            command_id=f"perf-editor-{angle:02d}",
-            command_type="set_north",
-            payload={"northAngleDeg": angle},
-        )
-        samples.append(perf_counter() - started)
+    with _tracer_suspended(request):
+        for angle in range(30):
+            current = design["revision"]
+            started = perf_counter()
+            design = apply_session_command(
+                db,
+                session_id=design["sessionId"],
+                actor=actor,
+                base_revision_id=current["revisionId"],
+                base_canonical_sha256=current["canonicalSha256"],
+                command_id=f"perf-editor-{angle:02d}",
+                command_type="set_north",
+                payload={"northAngleDeg": angle},
+            )
+            samples.append(perf_counter() - started)
     p95 = _p95(samples)
     assert p95 < 0.250, {
         "p95_ms": round(p95 * 1_000, 3),

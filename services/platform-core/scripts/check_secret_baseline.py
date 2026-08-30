@@ -30,13 +30,22 @@ Tracked-file contract (canonical and cross-platform):
   as scanned or scanner-exempt (the pinned scanner's own filename filters,
   imported so they can never drift, plus not-UTF-8 content) and exempt
   files are reported by path; the driver's stderr accounting (one
-  ``Checking file:`` line per opened file) is parsed, and a requested file
-  absent from it fails closed with status 2. Each chunk carries a synthetic
+  ``Checking file:`` line per opened file) is parsed, sentinel probes are
+  excluded from it by basename prefix (path-independent on either separator
+  style), and the remaining accounted set must equal the requested set
+  exactly: a requested file absent from it fails closed with status 2, and
+  an accounted file outside the requested set fails closed with status 2
+  as well. Each chunk carries a synthetic
   sentinel probe whose known fingerprint must appear in that chunk's
   output -- on the exact line number this module's own scanner-compatible
   line model predicts for separator-bearing content, so U+2028/U+2029 line
   identity is verified live against the pinned driver on every scan run,
-  not only by tests. Any git/driver error, missing candidate, malformed
+  not only by tests. Probes are scratch files written to a per-run,
+  per-process private directory under the git-ignored runtime tree, so no
+  parallel or earlier scan of any other process can enter a run's bounded
+  input set; they are removed with the run whatever its outcome (success,
+  assertion, exception or timeout). Any git/driver error, missing
+  candidate, malformed
   output, duplicate or ambiguous path, lost chunk coverage, missing sentinel
   detection or driver output outside the canonical set fails closed with
   status 2. The scanner version is pinned and verified.
@@ -67,7 +76,12 @@ Audited-set contract:
   tracked file versions at the audited anchor commit (the commit that last
   modified the baseline) with the same pinned, forced-UTF-8, per-line
   driver, through a dedicated seam (``_run_audited_driver``), with temp
-  copies under the git-ignored runtime directory, always removed. A
+  copies under the git-ignored runtime directory, always removed. Within
+  one command the same unchanged input is never scanned twice: an addition
+  file whose live working-tree bytes equal its audited-commit bytes takes
+  its audited identities from the already-run live scan (the deterministic
+  scan of exactly those bytes) instead of being re-scanned; only
+  byte-different content is re-scanned. A
   baseline that is untracked, uncommitted or outside the reconciled root
   fails closed (status 2), and a file absent at the audited commit has no
   audited state -- every finding in it fails closed unless structurally
@@ -123,13 +137,14 @@ import json
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -140,7 +155,24 @@ _REGULAR_MODES = {"100644", "100755"}
 # index entries and are never candidates; every other mode fails closed.
 _KNOWN_INDEX_MODES = _REGULAR_MODES | {"120000", "160000"}
 _SCAN_CHUNK_SIZE = 100
-_SCAN_WORKERS = 2
+# Chunk-driver work-sharing is bounded and auditable by construction: each
+# chunk runs its own pinned driver subprocess (the public ``scan.scan_file``
+# path, one serial scan per file, no pool inside the driver), the thread pool
+# only ever holds this many concurrent subprocesses, and every driver has no
+# children of its own -- no nested process-pool explosion and no orphan child
+# can occur under pytest/Windows. The sentinel probes and the per-file
+# ``Checking file:`` accounting keep every chunk's coverage fail-closed.
+# Worker selection is CPU-bounded (review LOW): never more than the
+# documented 4-driver cap, never more drivers than available cores, and
+# never zero on a host that reports no CPU count -- so a scan running inside
+# the official test suites never over-allocates CPU and never starves
+# pytest or the other probes.
+_SCAN_WORKERS = min(4, max(1, os.cpu_count() or 1))
+# A single candidate this large or larger always forms its own chunk (see
+# ``_solo_split_chunks``): the pinned driver scans one file at a time inside
+# a chunk, so one many-megabyte file serializes its chunk neighbours and
+# decides the whole bounded scan wall time by itself.
+_SOLO_CHUNK_MIN_BYTES = 512 * 1024
 # The scanner pinned by requirements-dev.txt; a different version may ship
 # different detectors or entropy limits, silently changing every fingerprint,
 # so a mismatch fails closed instead of producing a delta.
@@ -173,6 +205,13 @@ _UNMATCHED_AUDIT_RELATIVE_PATH = (
 _AUDIT_MAX_ROWS = 25
 _AUDIT_MAX_HASHES_PER_ROW = 5
 _PROBE_PREFIX = ".secrets-scan-probe-"
+# Sentinel probes are scratch files: they live under the git-ignored runtime
+# directory in a per-run, per-process subdirectory, never at the repository
+# root. A scan run therefore never sees another run's or another process's
+# probe on disk, a killed process can only leave an ignored remnant inside
+# its own private directory, and the whole run directory is removed with the
+# scan whatever its outcome (success, assertion, exception or timeout).
+_PROBE_RELATIVE_DIR = ("services", "platform-core", "runtime", "secret-scan-probes")
 _CHECKING_FILE_PREFIX = "Checking file: "
 # The audited-state scan writes temporary copies of the audited file versions
 # under the git-ignored runtime directory (sibling of the audit artifact), so
@@ -541,7 +580,8 @@ def _run_driver_scan(files: list[str], repo_root: Path) -> subprocess.CompletedP
     raise ScanFailure("scan driver retry loop exhausted.")  # pragma: no cover
 
 
-def _probe_filename(chunk_index: int) -> str:
+def _probe_basename(chunk_index: int) -> str:
+    """The sentinel probe basename for a chunk: prefix, chunk index, process id."""
     return f"{_PROBE_PREFIX}{chunk_index}-{os.getpid()}.txt"
 
 
@@ -570,13 +610,27 @@ def _expected_probe_fingerprint() -> tuple[str, str, int]:
     )
 
 
+def _is_probe_name(path: str) -> bool:
+    """Path-independent sentinel-probe identification by basename prefix.
+
+    Probes live under the per-run nested runtime directory, so their full
+    path never starts with the prefix; only the basename does, on either
+    separator style. The probe runtime tree is git-ignored, so no tracked
+    candidate can carry the prefix -- the basename test can only exempt this
+    run's own sentinel scratch files from the accounted set.
+    """
+    return PurePosixPath(_normalize(path)).name.startswith(_PROBE_PREFIX)
+
+
 def _accounted_files(stderr: bytes) -> set[str]:
     """Parse the scanner's own per-file accounting from its INFO log.
 
     The pinned scanner logs ``Checking file: <path>`` for every file it
     actually opens; a file that never appears here was never scanned --
-    whatever the reason -- and the caller fails closed. Non-UTF-8 stderr
-    cannot prove coverage and fails closed here too.
+    whatever the reason -- and the caller fails closed. Sentinel probes are
+    excluded by basename prefix, path-independently, so the accounted set is
+    exactly the requested files on the success path. Non-UTF-8 stderr cannot
+    prove coverage and fails closed here too.
     """
     try:
         text = stderr.decode("utf-8")
@@ -587,8 +641,61 @@ def _accounted_files(stderr: bytes) -> set[str]:
         marker = line.find(_CHECKING_FILE_PREFIX)
         if marker == -1:
             continue
-        accounted.add(_normalize(line[marker + len(_CHECKING_FILE_PREFIX) :].strip()))
+        name = _normalize(line[marker + len(_CHECKING_FILE_PREFIX) :].strip())
+        if _is_probe_name(name):
+            continue
+        accounted.add(name)
     return accounted
+
+
+def _candidate_size(repo_root: Path, path: str) -> int:
+    """Byte size of a candidate; 0 when unreadable (a packing hint only)."""
+    try:
+        return (repo_root / _normalize(path)).stat().st_size
+    except OSError:
+        return 0
+
+
+def _chunk_cost(chunk: list[str], repo_root: Path) -> int:
+    """The estimated scan cost of a chunk: its largest file's byte size.
+
+    Used only for the deterministic submission order of the bounded chunk
+    pool; it never influences which files are scanned or any fail-closed
+    condition."""
+    largest = 0
+    for path in chunk:
+        size = _candidate_size(repo_root, path)
+        if size > largest:
+            largest = size
+    return largest
+
+
+def _solo_split_chunks(chunks: list[list[str]], repo_root: Path) -> list[list[str]]:
+    """Give every oversized candidate its own chunk, deterministically.
+
+    The pinned driver scans one file at a time inside a chunk, so a single
+    many-megabyte file serializes the rest of its chunk and decides the
+    whole bounded scan wall time by itself. Splitting such files into solo
+    chunks lets the other workers absorb their chunk neighbours while the
+    oversized file scans alone. Which file belongs to which chunk stays the
+    consecutive sorted split -- only the packing changes, so nothing about
+    what is scanned, the per-chunk sentinel probes or the exact-set
+    accounting is affected. Relative order is preserved throughout, so the
+    result is deterministic on every host.
+    """
+    result: list[list[str]] = []
+    for chunk in chunks:
+        solo: list[str] = []
+        rest: list[str] = []
+        for path in chunk:
+            if _candidate_size(repo_root, path) >= _SOLO_CHUNK_MIN_BYTES:
+                solo.append(path)
+            else:
+                rest.append(path)
+        result.extend([path] for path in solo)
+        if rest:
+            result.append(rest)
+    return result
 
 
 def _scan_file_set(
@@ -601,14 +708,21 @@ def _scan_file_set(
     Shared by the live and audited-state scans, so the audited state has
     exactly the live-scan strength. Every requested path is passed exactly
     once; output outside the requested set fails closed. Per-file coverage
-    is proven: the driver stderr carries the scanner's ``Checking file:``
-    line per opened file, and a requested file absent from it fails closed.
-    Each chunk carries a sentinel probe whose known fingerprint must appear
-    in the chunk output on the exact line this module's scanner-compatible
-    line model predicts for U+2028/U+2029-bearing content -- the live
-    scanner-versus-classifier line-identity parity check. Raises ScanFailure
-    on driver errors, malformed output, lost coverage, missing probe
-    detection or probe write/delete errors.
+    is proven as an exact set: the driver stderr carries the scanner's
+    ``Checking file:`` line per opened file, sentinel probes are excluded
+    from that set by basename prefix (path-independently), and the remaining
+    accounted set must equal the requested set in both directions -- a
+    requested file absent from it fails closed, and an accounted file
+    outside the requested set fails closed too. Oversized candidates ride
+    solo chunks (``_solo_split_chunks``) so one many-megabyte file never
+    serializes its neighbours; the packing change alters nothing about what
+    is scanned. Each chunk carries a sentinel probe whose known fingerprint
+    must appear in the chunk output on the exact line this module's
+    scanner-compatible line model predicts for U+2028/U+2029-bearing
+    content -- the live scanner-versus-classifier line-identity parity
+    check. Raises ScanFailure on driver errors, malformed output, lost
+    coverage, exact-set mismatch, missing probe detection or probe
+    write/delete errors.
     """
     if not files:
         raise ScanFailure("no candidate files to scan.")
@@ -616,15 +730,39 @@ def _scan_file_set(
     chunks = [
         files[index : index + _SCAN_CHUNK_SIZE] for index in range(0, len(files), _SCAN_CHUNK_SIZE)
     ]
+    chunks = _solo_split_chunks(chunks, repo_root)
     if sum(len(chunk) for chunk in chunks) != len(files):
         raise ScanFailure("candidate chunking lost files (incomplete coverage).")
+    # Deterministic submission scheduling: the most expensive chunk starts
+    # first, so a single many-line file can never land late in a worker
+    # queue and serialize the whole bounded official time frame. Only the
+    # *submission order* changes -- which file belongs to which chunk stays
+    # exactly the consecutive sorted split, and Python's stable sort keeps
+    # the original index order for equal-cost chunks -- and the caller's
+    # exact-set, per-chunk coverage and merge are order-insensitive, so this
+    # changes nothing about what is scanned or about any fail-closed
+    # condition.
+    chunks.sort(key=lambda chunk: -_chunk_cost(chunk, repo_root))
     expected_type, expected_hash, expected_line = _expected_probe_fingerprint()
+    # Per-run, per-process probe isolation: a fresh private directory under
+    # the git-ignored runtime tree, so no parallel or earlier scan of any
+    # other process can ever place a probe file into this run's input.
+    run_dir = repo_root.joinpath(
+        *_PROBE_RELATIVE_DIR, f"{os.getpid()}-{secrets.token_hex(4)}"
+    )
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ScanFailure("sentinel probe run directory could not be created.") from exc
+
+    def _probe_relative_name(chunk_index: int) -> str:
+        return "/".join((*_PROBE_RELATIVE_DIR, run_dir.name, _probe_basename(chunk_index)))
 
     def _run_chunk(
         chunk_index: int, chunk: list[str]
     ) -> tuple[str, subprocess.CompletedProcess[bytes]]:
-        probe_name = _probe_filename(chunk_index)
-        probe_path = repo_root / probe_name
+        probe_name = _probe_relative_name(chunk_index)
+        probe_path = repo_root / _normalize(probe_name)
         try:
             try:
                 probe_path.write_text(_probe_text(), encoding="utf-8")
@@ -637,8 +775,15 @@ def _scan_file_set(
             except OSError as exc:
                 raise ScanFailure(f"sentinel probe could not be removed: {probe_name}.") from exc
 
-    with ThreadPoolExecutor(max_workers=_SCAN_WORKERS) as pool:
-        completed = list(pool.map(lambda pair: _run_chunk(*pair), enumerate(chunks)))
+    try:
+        with ThreadPoolExecutor(max_workers=_SCAN_WORKERS) as pool:
+            completed = list(pool.map(lambda pair: _run_chunk(*pair), enumerate(chunks)))
+    finally:
+        # The whole private probe directory disappears with the scan,
+        # whatever its outcome; leftovers from a hard-killed run therefore
+        # stay confined to that run's own ignored directory, never the
+        # repository root or any other run's bounded input set.
+        shutil.rmtree(run_dir, ignore_errors=True)
     requested = {_normalize(path) for path in files}
     merged: dict[str, list[dict[str, Any]]] = {}
     accounted: set[str] = set()
@@ -689,6 +834,13 @@ def _scan_file_set(
         raise ScanFailure(
             "scanner did not account for requested file(s): " + ", ".join(sorted(missing)) + "."
         )
+    extra = accounted - requested
+    if extra:
+        raise ScanFailure(
+            "scanner accounted for file(s) outside the requested set: "
+            + ", ".join(sorted(extra))
+            + "."
+        )
     return {"results": merged}
 
 
@@ -711,6 +863,7 @@ def _audited_occurrence_identities(
     repo_root: Path,
     anchor: str,
     addition_paths: list[str],
+    live_results: dict[str, Any] | None = None,
 ) -> set[tuple[str, str, str, int]]:
     """Per-line occurrence identities of the addition files at the audited commit.
 
@@ -722,9 +875,49 @@ def _audited_occurrence_identities(
     basename (so the driver's filename filters classify them identically)
     and are always removed; any write/scan/cleanup failure fails closed. A
     path absent at the audited commit contributes no audited state.
+
+    Within one command the same unchanged input is never scanned twice:
+    when the live working-tree bytes of an addition file equal the bytes at
+    the audited commit, the pinned driver would re-derive exactly the live
+    findings (same deterministic public path, same bytes), so the audited
+    identities of that file are taken from ``live_results`` -- the already
+    run live scan -- instead of re-scanning. Only byte-different content is
+    re-scanned from a temp copy. This is an exact substitution, not a
+    weakening: the live scan itself is the canonical scan of exactly those
+    bytes, and its per-file coverage is already proven fail-closed.
     """
     if not addition_paths:
         return set()
+    identities: set[tuple[str, str, str, int]] = set()
+    live = live_results if live_results is not None else {}
+    to_scan: list[str] = []
+    for path in sorted(addition_paths):
+        content = _audited_file_bytes(repo_root, anchor, path)
+        if content is None:
+            continue
+        try:
+            live_bytes = _read_candidate_bytes(repo_root / _normalize(path))
+        except OSError as exc:
+            raise ScanFailure(f"tracked candidate file cannot be read: {path}.") from exc
+        if live_bytes == content:
+            for finding in live.get(path, []):
+                line_number = _normalized_line_number(finding)
+                if line_number is None:
+                    # Auditált előfordulás használható sor nélkül sosem
+                    # egyeztethet -- a hívó fail-closed marad.
+                    continue
+                identities.add(
+                    (
+                        path,
+                        str(finding.get("type", "")),
+                        str(finding.get("hashed_secret", "")),
+                        line_number,
+                    )
+                )
+            continue
+        to_scan.append(path)
+    if not to_scan:
+        return identities
     temp_root = repo_root.joinpath(*_HISTORICAL_SCAN_RELATIVE_DIR)
     try:
         temp_root.mkdir(parents=True, exist_ok=True)
@@ -733,7 +926,7 @@ def _audited_occurrence_identities(
     written: list[Path] = []
     mapping: dict[str, str] = {}
     try:
-        for index, path in enumerate(sorted(addition_paths)):
+        for index, path in enumerate(sorted(to_scan)):
             content = _audited_file_bytes(repo_root, anchor, path)
             if content is None:
                 continue
@@ -744,11 +937,12 @@ def _audited_occurrence_identities(
                 raise ScanFailure(f"audited-state temp copy could not be written: {path}.") from exc
             written.append(temp_path)
             mapping[_normalize(str(temp_path))] = path
-        if not written:
-            return set()
-        scanned = _scan_file_set(
-            [_normalize(str(path)) for path in written], repo_root, _run_audited_driver
-        )
+        if written:
+            scanned = _scan_file_set(
+                [_normalize(str(path)) for path in written], repo_root, _run_audited_driver
+            )
+        else:
+            scanned = {"results": {}}
     finally:
         for temp_path in written:
             try:
@@ -757,7 +951,6 @@ def _audited_occurrence_identities(
                 raise ScanFailure(
                     f"audited-state temp copy could not be removed: {temp_path.name}."
                 ) from exc
-    identities: set[tuple[str, str, str, int]] = set()
     for filename, findings in scanned.get("results", {}).items():
         original = mapping.get(_normalize(str(filename)))
         if original is None:
@@ -1258,7 +1451,9 @@ def reconcile_tracked_secrets(
         )
         if additions:
             addition_paths = sorted({filename for filename, _, _, _ in additions})
-            audited_state = _audited_occurrence_identities(root, audited_anchor, addition_paths)
+            audited_state = _audited_occurrence_identities(
+                root, audited_anchor, addition_paths, current.get("results", {})
+            )
         resolved, remaining = _split_additions(
             additions, observed, audited_state, audited_line_digests, live_line_digests
         )

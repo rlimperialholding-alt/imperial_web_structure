@@ -130,17 +130,21 @@ def _driver_fake(
 
     def _fake(files: list[str], repo_root: Path) -> subprocess.CompletedProcess[bytes]:
         results = dict(payload or {})
+        # Probes are identified by basename: they live in the per-run
+        # runtime subdirectory, so their full path no longer starts with
+        # the prefix, exactly like the module's own detection contract.
+        probe_names = [
+            name
+            for name in files
+            if Path(name).name.startswith(check_secret_baseline._PROBE_PREFIX)
+        ]
         if include_probe:
-            probe_name = next(
-                (name for name in files if name.startswith(check_secret_baseline._PROBE_PREFIX)),
-                None,
-            )
-            if probe_name is not None:
+            for probe_name in probe_names:
                 results[probe_name] = [_expected_probe_entry()]
         accounted = [
             f"[scan]\tINFO\t{check_secret_baseline._CHECKING_FILE_PREFIX}{name}"
             for name in files
-            if not name.startswith(check_secret_baseline._PROBE_PREFIX)
+            if Path(name).name not in {Path(probe).name for probe in probe_names}
             and name not in (skip_accounting or set())
         ]
         stdout = json.dumps({"results": results}).encode("utf-8")
@@ -607,19 +611,43 @@ def test_missing_sentinel_probe_fails_closed(
 def test_live_scan_feeds_exactly_the_bounded_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The exact bounded set: every requested path is fed exactly once, in
+    bounded chunks, and every chunk carries exactly this process's own
+    sentinel probe -- a parallel or earlier scan's probe file can never
+    enter the exact-set input. The set comparison is order-insensitive,
+    because chunk completion order on the worker pool is not a security
+    property; the exact-set and per-chunk coverage accounting are enforced
+    fail-closed inside ``_scan_file_set`` itself."""
     fed: list[list[str]] = []
     files = [f"services/platform-core/f{f:04d}.py" for f in range(250)]
     probe_prefix = check_secret_baseline._PROBE_PREFIX
 
     def _recording_driver(chunk: list[str], repo_root: Path) -> subprocess.CompletedProcess[bytes]:
-        fed.append([name for name in chunk if not name.startswith(probe_prefix)])
+        fed.append(list(chunk))
         return _driver_fake()(chunk, repo_root)
 
     monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _recording_driver)
     result = check_secret_baseline._live_scan(files, check_secret_baseline.REPO_ROOT)
     assert result == {"results": {}}
-    assert [path for chunk in fed for path in chunk] == files
+    fed_paths = sorted(
+        path
+        for chunk in fed
+        for path in chunk
+        if not Path(path).name.startswith(probe_prefix)
+    )
+    assert fed_paths == files
     assert all(len(chunk) < len(files) for chunk in fed)
+    # Probe isolation: exactly one probe per chunk, and the probe set is
+    # exactly this process's own per-chunk basenames.
+    expected_probes = {
+        check_secret_baseline._probe_basename(index) for index in range(len(fed))
+    }
+    seen_probes: set[str] = set()
+    for chunk in fed:
+        probes = [path for path in chunk if Path(path).name.startswith(probe_prefix)]
+        assert len(probes) == 1
+        seen_probes.add(Path(probes[0]).name)
+    assert seen_probes == expected_probes
 
 
 def test_reconcile_has_no_snapshot_or_environment_seam(
@@ -685,6 +713,9 @@ def test_probe_write_error_fails_closed_and_leaves_no_probe_file(
     assert status == 2
     assert "sentinel probe could not be written" in message
     assert list(repo.glob(check_secret_baseline._PROBE_PREFIX + "*")) == []
+    # The failed run leaves no probe remnant in its private runtime tree either.
+    probe_root = repo.joinpath(*check_secret_baseline._PROBE_RELATIVE_DIR)
+    assert not probe_root.exists() or list(probe_root.iterdir()) == []
 
 
 def test_probe_delete_error_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -794,6 +825,9 @@ def test_real_probe_run_leaves_no_scratch_file(tmp_path: Path) -> None:
     result = check_secret_baseline._live_scan(["tracked.py"], repo)
     assert "tracked.py" in result["results"]
     assert list(repo.glob(check_secret_baseline._PROBE_PREFIX + "*")) == []
+    # A sikeres scan a privát probe-könyvtárat is nyom nélkül hagyja.
+    probe_root = repo.joinpath(*check_secret_baseline._PROBE_RELATIVE_DIR)
+    assert not probe_root.exists() or list(probe_root.iterdir()) == []
 
 
 def test_scanner_exempt_candidates_are_accounted_deterministically(
@@ -2047,6 +2081,192 @@ def test_live_scan_smoke_runs_the_real_scanner_on_a_trivial_repository(
     assert all(row["hashes"] == [fingerprint] for row in rows)
     assert all(row["classification"] == "unclassified" for row in rows)
     assert _SYNTHETIC_VALUE not in audit.read_text(encoding="utf-8")
+
+
+def test_scan_driver_preserves_logger_state_and_accounting_on_success_and_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review 1 MEDIUM direct regression: the scan driver must never corrupt
+    the pinned scanner logger state, neither on the success path nor on the
+    exception path, and the per-file ``Checking file:`` accounting must
+    survive both. Importing the driver mutates nothing; ``main`` raises the
+    level for the accounting and restores the exact previous level in a
+    ``finally``. Records are captured through an explicitly attached
+    ``logging.Handler`` on the real pinned logger (the supported capture
+    mechanism), never through root propagation -- so the test cannot
+    silently pass or fail on the logger's ``propagate`` setting."""
+    import io
+    import logging
+
+    from detect_secrets.core import log as scanner_log
+    from detect_secrets.core import scan as scan_module
+
+    repo = _init_repo(tmp_path / "logger-repo")
+    (repo / "first.py").write_text("# synthetic\n", encoding="utf-8")
+    (repo / "second.py").write_text("# synthetic\n", encoding="utf-8")
+    paths = ["first.py", "second.py"]
+    level_before = scanner_log.log.level
+    propagate_before = scanner_log.log.propagate
+    monkeypatch.chdir(repo)
+
+    captured: list[logging.LogRecord] = []
+
+    class _CaptureHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            captured.append(record)
+
+    def _handler_state() -> list[tuple[str, int, int]]:
+        """Exact handler state: class, level and object identity -- so a
+        replaced or re-leveled handler can never compare equal."""
+        return [(type(h).__name__, h.level, id(h)) for h in scanner_log.log.handlers]
+
+    def _accounted_messages() -> list[str]:
+        return [
+            record.getMessage()
+            for record in captured
+            if record.getMessage().startswith(check_secret_baseline._CHECKING_FILE_PREFIX)
+        ]
+
+    handlers_before = _handler_state()
+    capture_handler = _CaptureHandler(level=logging.DEBUG)
+    scanner_log.log.addHandler(capture_handler)
+    handlers_with_capture = _handler_state()
+    try:
+        # Success path: both files scanned in-process; the pinned logger
+        # state is exactly what it was before, and every file is accounted
+        # exactly once on the scanner's own INFO channel.
+        monkeypatch.setattr(sys, "stdin", io.StringIO("\n".join(paths) + "\n"))
+        assert _detect_secrets_scan_driver.main() == 0
+        assert scanner_log.log.level == level_before
+        assert _handler_state() == handlers_with_capture
+        assert scanner_log.log.propagate == propagate_before
+        success_accounting = _accounted_messages()
+        assert success_accounting.count(
+            f"{check_secret_baseline._CHECKING_FILE_PREFIX}first.py"
+        ) == 1
+        assert success_accounting.count(
+            f"{check_secret_baseline._CHECKING_FILE_PREFIX}second.py"
+        ) == 1
+        assert len(success_accounting) == len(paths)
+
+        # Exception path: a scanner crash mid-run propagates (the caller fails
+        # closed) and must leave the logger state unchanged too; the accounting
+        # line of the file scanned before the crash stays intact.
+        captured.clear()
+        original_scan_file = scan_module.scan_file
+        calls = {"count": 0}
+
+        def _exploding_scan_file(filename: str):
+            if calls["count"] >= 1:
+                raise RuntimeError("synthetic scanner failure")
+            calls["count"] += 1
+            yield from original_scan_file(filename)
+
+        monkeypatch.setattr(scan_module, "scan_file", _exploding_scan_file)
+        monkeypatch.setattr(sys, "stdin", io.StringIO("\n".join(paths) + "\n"))
+        with pytest.raises(RuntimeError):
+            _detect_secrets_scan_driver.main()
+        assert scanner_log.log.level == level_before
+        assert _handler_state() == handlers_with_capture
+        assert scanner_log.log.propagate == propagate_before
+        assert (
+            f"{check_secret_baseline._CHECKING_FILE_PREFIX}first.py" in _accounted_messages()
+        )
+    finally:
+        scanner_log.log.removeHandler(capture_handler)
+        assert _handler_state() == handlers_before
+
+
+def test_accounted_files_excludes_nested_probe_paths_by_basename() -> None:
+    """Review HIGH direct regression: probe exclusion is basename-based and
+    path-independent. The nested per-run runtime-directory probe path no
+    longer starts with the prefix; the legacy repo-root form, the nested
+    POSIX form and the nested Windows-separator form must all be excluded
+    from the accounted set, while a non-probe file is accounted at any
+    depth on either separator style."""
+    prefix = check_secret_baseline._CHECKING_FILE_PREFIX
+    stderr = (
+        f"[scan]\tINFO\t{prefix}tracked/deep/file.py\n"
+        f"[scan]\tINFO\t{prefix}.secrets-scan-probe-0-1234.txt\n"
+        f"[scan]\tINFO\t{prefix}"
+        "services/platform-core/runtime/secret-scan-probes/1234-ab/"
+        ".secrets-scan-probe-1-1234.txt\n"
+        f"[scan]\tINFO\t{prefix}"
+        "services\\platform-core\\runtime\\secret-scan-probes\\1234-ab\\"
+        ".secrets-scan-probe-2-1234.txt\n"
+        f"[scan]\tINFO\t{prefix}deep\\nested\\nonprobe.py\n"
+    ).encode("utf-8")
+    accounted = check_secret_baseline._accounted_files(stderr)
+    assert accounted == {"tracked/deep/file.py", "deep/nested/nonprobe.py"}
+
+
+def test_exact_requested_accounted_set_with_nested_probe_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exact requested/accounted equality on the success path: the nested
+    sentinel probe rides in the chunk input and its Windows-separator
+    accounting line is excluded by basename, so the accounted set equals the
+    requested set exactly and the reconciliation passes."""
+    repo, baseline = _tracked_repo(tmp_path)
+
+    def _nested_probe_accounting(
+        files: list[str], repo_root: Path
+    ) -> subprocess.CompletedProcess[bytes]:
+        completed = _driver_fake()(files, repo_root)
+        probe_names = [
+            name
+            for name in files
+            if Path(name).name.startswith(check_secret_baseline._PROBE_PREFIX)
+        ]
+        windows_probe_lines = (
+            f"[scan]\tINFO\t{check_secret_baseline._CHECKING_FILE_PREFIX}"
+            + name.replace("/", "\\")
+            + "\n"
+            for name in probe_names
+        )
+        stderr = completed.stderr + "".join(windows_probe_lines).encode("utf-8")
+        return subprocess.CompletedProcess(
+            args=completed.args,
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=stderr,
+        )
+
+    monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _nested_probe_accounting)
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 0, message
+
+
+def test_accounted_file_outside_requested_set_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The error direction of the exact set: an accounting entry for a file
+    outside the requested set (even a Windows-separator path) fails closed
+    with status 2 instead of being silently tolerated."""
+    repo, baseline = _tracked_repo(tmp_path)
+
+    def _extra_accounting(
+        files: list[str], repo_root: Path
+    ) -> subprocess.CompletedProcess[bytes]:
+        completed = _driver_fake()(files, repo_root)
+        extra = (
+            f"[scan]\tINFO\t{check_secret_baseline._CHECKING_FILE_PREFIX}"
+            "evil\\outside.py\n"
+        )
+        stderr = completed.stderr + extra.encode("utf-8")
+        return subprocess.CompletedProcess(
+            args=completed.args,
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=stderr,
+        )
+
+    monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _extra_accounting)
+    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    assert status == 2
+    assert "outside the requested set" in message
+    assert "evil/outside.py" in message
 
 
 @pytest.mark.parametrize(
