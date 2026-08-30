@@ -210,25 +210,35 @@ def ensure_public_html_land_routes(db: Session, *, dry_run: bool = True) -> dict
                 setattr(existing, key, value)
             existing.updated_at = utcnow()
     disabled_duplicates: list[dict[str, str]] = []
-    if not dry_run:
-        managed_keys = {plan["route_key"] for plan in plans}
-        for row in db.scalars(select(SourceCoverageRoute)).all():
-            if row.route_key in managed_keys or not row.enabled:
-                continue
-            portal = registry.for_host(urlparse(row.route_url).hostname or "")
-            if (
-                portal
-                and portal.key in {plan["portal"] for plan in plans}
-                and row.category == "residential_building_plot"
-                and row.source_type == "public_html"
-            ):
+    managed_keys = {plan["route_key"] for plan in plans}
+    managed_portals = {plan["portal"] for plan in plans}
+    for row in db.scalars(select(SourceCoverageRoute)).all():
+        if row.route_key in managed_keys or not row.enabled:
+            continue
+        portal = registry.for_host(urlparse(row.route_url).hostname or "")
+        unexpected_managed_namespace = row.route_key.startswith(PUBLIC_LAND_ROUTE_PREFIX)
+        duplicate_public_land_route = (
+            row.category == "residential_building_plot"
+            and row.source_type == "public_html"
+        )
+        if unexpected_managed_namespace or duplicate_public_land_route:
+            disabled_duplicates.append(
+                {
+                    "route_key": row.route_key,
+                    "portal": portal.key if portal and portal.key in managed_portals else "unknown",
+                    "reason": (
+                        "unexpected_managed_route"
+                        if unexpected_managed_namespace
+                        else "duplicate_public_land_route"
+                    ),
+                }
+            )
+            if not dry_run:
                 row.enabled = False
                 row.catalog_status = "retired"
                 row.notes = "Superseded by exact managed public-land route set."
                 row.updated_at = utcnow()
-                disabled_duplicates.append(
-                    {"route_key": row.route_key, "portal": portal.key}
-                )
+    if not dry_run:
         db.commit()
 
     readback: list[dict[str, Any]] = []
@@ -1024,6 +1034,14 @@ def public_land_route_readiness(
             )
         )
     )
+    expected_route_keys = {
+        f"{PUBLIC_LAND_ROUTE_PREFIX}{portal.key}" for portal in portals
+    }
+    unexpected_active_routes = sorted(
+        row.route_key
+        for row in rows
+        if row.enabled and row.route_key not in expected_route_keys
+    )
     details: list[dict[str, Any]] = []
     for portal in portals:
         plan = _managed_public_land_route_plan(
@@ -1075,10 +1093,15 @@ def public_land_route_readiness(
             }
         )
     return {
-        "ready": len(details) == 7 and all(item["ready"] for item in details),
+        "ready": (
+            len(details) == 7
+            and all(item["ready"] for item in details)
+            and not unexpected_active_routes
+        ),
         "route_set_sha256": route_set_sha256,
         "expected": 7,
         "ready_count": sum(bool(item["ready"]) for item in details),
+        "unexpected_active_routes": unexpected_active_routes,
         "routes": details,
     }
 

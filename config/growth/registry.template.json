@@ -22,7 +22,7 @@
     "construction_fitout_change": {"enabled": false, "motor": "construction", "bucket": "fitout_change"},
     "construction_property_development": {"enabled": false, "motor": "construction", "bucket": "property_development"},
     "construction_public_land_html": {
-      "enabled": false,
+      "enabled": true,
       "kind": "public_land_listing_html",
       "fetch_mode": "ingest_only",
       "motor": "construction",

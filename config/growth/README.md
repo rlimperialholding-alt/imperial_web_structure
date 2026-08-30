@@ -1,15 +1,32 @@
 # Growth operations registry
 
-`registry.template.json` is intentionally non-runnable. Copy it to `registry.json` only on the
-Hetzner deployment host, replace every placeholder, add current source-policy evidence, and
-store each SMTP credential JSON below `/opt/imperial-intelligence/secrets/growth` with mode
-`0600`. Never commit the resulting registry or secret files.
+`registry.template.json` is intentionally non-runnable. It documents the exact enabled public-land
+aggregate binding, but its placeholder brands and senders must never replace the active Hetzner
+registry. Use `scripts/ensure_public_land_registry_binding.py` against the existing production
+`registry.json`; the command is a dry run unless `--apply` is supplied, and an apply creates a
+verified backup plus atomic read-back. Store each credential JSON below
+`/opt/imperial-intelligence/secrets/growth` with mode `0600`. Never commit the resulting registry,
+backup, or secret files.
+
+The long-running `platform-core` and `growth-ops-worker` mounts stay read-only. Run the updater
+from a one-off release-image container with only the growth registry directory temporarily mounted
+read-write; first omit `--apply`, verify the reported hashes/action, then repeat with `--apply`:
+
+```text
+python scripts/ensure_public_land_registry_binding.py
+python scripts/ensure_public_land_registry_binding.py --apply
+```
+
+The JSON result contains no registry or credential content. A successful apply reports the sibling
+backup path, its SHA-256, the new file SHA-256, and the exact route-set SHA-256.
 
 Production remains fail-closed until all of the following are true:
 
 - the five brand senders match verified `tm_sending_domains` rows with SPF, DKIM and DMARC
   status `pass`;
-- every enabled signal source uses HTTPS and has non-expired policy evidence;
+- every enabled scheduled JSON/RSS or official-company source uses HTTPS and has
+  non-expired policy evidence; the public-land aggregate instead requires its exact
+  digest-bound 7/7 route readback and fresh per-request HTTPS/robots evidence;
 - `GROWTH_OPS_BASE_URL` is the public HTTPS control-center URL;
 - the production kill-switch file contains exactly `ALLOW_APPROVED_WRITES`;
 - `/api/internal/growth-ops/readiness` returns HTTP 200.
@@ -22,10 +39,19 @@ The public land HTML pipeline has one exact managed source binding:
 `construction_public_land_html`, with `kind=public_land_listing_html`,
 `fetch_mode=ingest_only`, motor `construction`, bucket `property_development`, and route-set
 SHA-256 `f8f86c9a28160e1f2d919bf5f86bde7d6765bcea30945b17bba9a4364f478a1f`. It is excluded
-from scheduled JSON/RSS fetches. The template stays disabled and non-runnable. This aggregate
-binding intentionally has no single URL or policy-evidence URL: the exact digest-bound 7/7 route
+from scheduled JSON/RSS fetches. The template contains this enabled binding but remains
+non-runnable as a whole. This aggregate binding intentionally has no single URL or policy-evidence
+URL: the exact digest-bound 7/7 route
 readback plus fresh per-request HTTPS/robots checks are authoritative, and readiness fails closed
 for any route/config/digest mismatch.
+
+`official_company_html` is an ingest-only source kind for exact, individually enumerated
+Hungarian architect-office bindings. It is never returned to the scheduled JSON/RSS fetcher.
+Each enabled binding must match the mounted OWNER_APPROVED/CANONICAL real-estate source
+registry bytes, exact official HTTPS context/contact URLs, public role address, verified public
+organization names, fresh evidence and its deterministic binding hash. The kind is deliberately
+restricted to `architect_office`; expanding it to referral partners or other recipient classes
+requires a separately authorized schema change and source artifact.
 
 ## Canonical wide daily layer (2026-08-20)
 

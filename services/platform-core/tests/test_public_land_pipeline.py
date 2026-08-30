@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -48,10 +48,12 @@ class _Registry:
             "bucket": "etdr",
             "kind": "json",
             "fetch_mode": "scheduled",
-        }
+        },
     }
 
-    def validate_signal_source(self, *, source_id: str, motor_key: str, source_bucket: str):
+    def validate_signal_source(
+        self, *, source_id: str, motor_key: str, source_bucket: str, **_: object
+    ):
         assert (source_id, motor_key, source_bucket) == (
             "construction_public_land_html",
             "construction",
@@ -79,7 +81,7 @@ class _Registry:
 
 
 @pytest.fixture
-def land_runtime(db, monkeypatch):
+def land_runtime(db, monkeypatch, tmp_path):
     registry = _Registry()
     canonical_path = (
         Path(__file__).resolve().parents[3]
@@ -90,6 +92,12 @@ def land_runtime(db, monkeypatch):
     monkeypatch.setenv("CANONICAL_FIRST_CONTACT_REGISTRY_FILE", str(canonical_path))
     monkeypatch.setattr(service.GrowthRegistry, "load", classmethod(lambda cls: registry))
     monkeypatch.setattr(service, "writes_unlocked", lambda: True)
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda *_args: True)
+    monkeypatch.setattr(
+        service,
+        "_outreach_transport_capacity_reserved",
+        lambda _db, _row, *_args: True,
+    )
     monkeypatch.setattr(
         service,
         "settings",
@@ -104,6 +112,7 @@ def land_runtime(db, monkeypatch):
             outreach_max_per_day=50,
             land_outreach_production_canary_max_total=3,
             land_outreach_production_canary_local_date="2026-08-31",
+            runtime_kill_switch_file=str(tmp_path / "runtime-growth-kill-switch"),
         ),
     )
     db.add(
@@ -141,6 +150,19 @@ def land_runtime(db, monkeypatch):
     ensure_public_html_land_routes(db, dry_run=False)
     db.commit()
     return registry
+
+
+def _claim_for_dispatch(db, outreach: OutreachMessage | None = None) -> OutreachMessage:
+    row = outreach or db.scalar(select(OutreachMessage))
+    assert row is not None
+    now = datetime.now(UTC)
+    row.status = "claimed"
+    row.claimed_by = "growth-test-worker"
+    row.claimed_at = now
+    row.lease_expires_at = now.replace(microsecond=0) + timedelta(minutes=5)
+    row.attempt_count = max(1, row.attempt_count)
+    db.commit()
+    return row
 
 
 def _route() -> SourceCoverageRoute:
@@ -300,9 +322,7 @@ def _ingatlannet_html(*, owner_email: str = "owner@example.test") -> str:
                         "address": "Érd",
                         "plotSize": 850,
                         "areaSize": "850.0",
-                        "description": {
-                            "aboutTheProperty": "Szintetikus építési telek leírás."
-                        },
+                        "description": {"aboutTheProperty": "Szintetikus építési telek leírás."},
                     },
                     "ownerData": {
                         "id": 77,
@@ -326,9 +346,7 @@ def _ingatlannet_html(*, owner_email: str = "owner@example.test") -> str:
     """
 
 
-def test_exact_owner_listing_queues_once_and_persists_field_evidence(
-    db, land_runtime
-):
+def test_exact_owner_listing_queues_once_and_persists_field_evidence(db, land_runtime):
     html = _owner_html()
     page = _page("https://ingatlan.com/35500001", html)
     route = _route()
@@ -363,9 +381,7 @@ def test_exact_owner_listing_queues_once_and_persists_field_evidence(
     )
 
 
-def test_land_initial_messages_have_isolated_unsubscribe_tokens(
-    db, land_runtime
-):
+def test_land_initial_messages_have_isolated_unsubscribe_tokens(db, land_runtime):
     pages = [
         _page(
             "https://ingatlan.com/35500901",
@@ -392,17 +408,15 @@ def test_land_initial_messages_have_isolated_unsubscribe_tokens(
     messages = list(db.scalars(select(OutreachMessage).order_by(OutreachMessage.id)))
     assert len(messages) == 2
     unsubscribe_urls = [
-        json.loads(row.receipt_json)["canonical_template"]["render_input"][
-            "unsubscribe_url"
-        ]
+        json.loads(row.receipt_json)["canonical_template"]["render_input"]["unsubscribe_url"]
         for row in messages
     ]
     unsubscribe_tokens = [url.rsplit("/", 1)[-1] for url in unsubscribe_urls]
     assert len(set(unsubscribe_urls)) == 2
     assert len({row.unsubscribe_token_hash for row in messages}) == 2
-    assert {
-        hashlib.sha256(token.encode()).hexdigest() for token in unsubscribe_tokens
-    } == {row.unsubscribe_token_hash for row in messages}
+    assert {hashlib.sha256(token.encode()).hexdigest() for token in unsubscribe_tokens} == {
+        row.unsubscribe_token_hash for row in messages
+    }
 
     service.unsubscribe(db, unsubscribe_tokens[0])
     db.refresh(messages[0])
@@ -422,9 +436,7 @@ def test_sent_land_message_never_schedules_a_followup(db, land_runtime):
         db,
         route=_route(),
         attempt=_attempt(),
-        listing_pages=[
-            _page("https://ingatlan.com/35500903", _owner_html())
-        ],
+        listing_pages=[_page("https://ingatlan.com/35500903", _owner_html())],
     )
     outreach = db.scalar(select(OutreachMessage))
     outreach.status = "sent"
@@ -467,9 +479,7 @@ def test_listing_agent_url_and_manifest_tamper_invalidate_release_before_provide
     assert service._release_matches(outreach) is True
 
     if tamper_target == "listing_url":
-        metadata["render_input"]["listing_url"] = (
-            "https://ingatlan.com/35500904-tampered"
-        )
+        metadata["render_input"]["listing_url"] = "https://ingatlan.com/35500904-tampered"
     else:
         metadata["source_evidence_manifest_sha256"] = "f" * 64
     outreach.receipt_json = json.dumps(
@@ -592,9 +602,7 @@ def test_ingatlannet_next_data_adapter_binds_owner_and_rendered_listing():
     ("html", "reason"),
     [
         (
-            _owner_html().replace(
-                '<a href="mailto:kovacs.peter@example.test">E-mail</a>', ""
-            ),
+            _owner_html().replace('<a href="mailto:kovacs.peter@example.test">E-mail</a>', ""),
             "recipient_email_missing",
         ),
         (_owner_html(role="Kapcsolattartó"), "recipient_role_missing"),
@@ -632,12 +640,16 @@ def test_contact_binding_accepts_visible_labeled_email_but_rejects_footer_mailto
     assert accepted.signal is not None
     assert accepted.signal.recipient_email == "kovacs.peter@example.test"
 
-    footer_only = _owner_html().replace(
-        '<a href="mailto:kovacs.peter@example.test">E-mail</a>',
-        "",
-    ).replace(
-        "</body>",
-        '<footer><a href="mailto:support@example.test">Support</a></footer></body>',
+    footer_only = (
+        _owner_html()
+        .replace(
+            '<a href="mailto:kovacs.peter@example.test">E-mail</a>',
+            "",
+        )
+        .replace(
+            "</body>",
+            '<footer><a href="mailto:support@example.test">Support</a></footer></body>',
+        )
     )
     rejected = public_land.listing_signal_decision(
         route=_route(),
@@ -661,9 +673,7 @@ def test_contact_binding_accepts_visible_labeled_email_but_rejects_footer_mailto
         "agent_affiliation_sibling",
     ],
 )
-def test_broad_ancestor_never_cross_binds_recipient_contact_evidence(
-    db, land_runtime, layout
-):
+def test_broad_ancestor_never_cross_binds_recipient_contact_evidence(db, land_runtime, layout):
     if layout == "footer":
         listing = _owner_html().replace(
             '<a href="mailto:kovacs.peter@example.test">E-mail</a>',
@@ -853,16 +863,12 @@ def test_blocked_agent_is_not_stored_or_queued(db, land_runtime):
 
     assert result["qualified"] == 1 and result["queued"] == 0
     assert result["decisions"][0]["status"] == "blocked"
-    assert result["decisions"][0]["reasons"] == [
-        "land_agent_gdn_network_hard_gate"
-    ]
+    assert result["decisions"][0]["reasons"] == ["land_agent_gdn_network_hard_gate"]
     assert not db.scalars(select(GrowthSignal)).all()
     assert not db.scalars(select(OutreachMessage)).all()
 
 
-def test_direct_public_land_ingest_requires_complete_url_bound_evidence(
-    db, land_runtime
-):
+def test_direct_public_land_ingest_requires_complete_url_bound_evidence(db, land_runtime):
     html = _owner_html()
     attempt = _attempt()
     decision = public_land.listing_signal_decision(
@@ -920,7 +926,7 @@ def test_evidence_manifest_tamper_blocks_before_provider(db, land_runtime, monke
         ),
     )
 
-    outreach = service.dispatch_outreach(db, db.scalar(select(OutreachMessage)))
+    outreach = service.dispatch_outreach(db, _claim_for_dispatch(db))
 
     assert outreach.status == "blocked"
     assert outreach.last_error == "public_land_source_evidence_manifest_mismatch"
@@ -953,9 +959,7 @@ def test_dynamic_html_hash_change_passes_exact_live_fields_and_is_audited(
     assert revalidation.rejection_reason is None
     assert revalidation.audit_evidence["response_sha256"] == dynamic_hash
     assert revalidation.audit_evidence["status"] == "passed"
-    assert {
-        item["field_name"] for item in revalidation.audit_evidence["critical_fields"]
-    } == {
+    assert {item["field_name"] for item in revalidation.audit_evidence["critical_fields"]} == {
         "listing_permalink",
         "recipient_name",
         "recipient_email",
@@ -966,9 +970,7 @@ def test_dynamic_html_hash_change_passes_exact_live_fields_and_is_audited(
     }
 
 
-def test_successful_dispatch_persists_attested_live_receipt(
-    db, land_runtime, monkeypatch
-):
+def test_successful_dispatch_persists_attested_live_receipt(db, land_runtime, monkeypatch):
     html = _owner_html()
     page = _page("https://ingatlan.com/35500123", html)
     public_land.process_public_land_listings(
@@ -1000,7 +1002,7 @@ def test_successful_dispatch_persists_attested_live_receipt(
         )
 
     monkeypatch.setattr(service.SMTPEmailAdapter, "send", safe_send)
-    outreach = service.dispatch_outreach(db, db.scalar(select(OutreachMessage)))
+    outreach = service.dispatch_outreach(db, _claim_for_dispatch(db))
     receipt = json.loads(outreach.receipt_json)
 
     assert outreach.status == "sent"
@@ -1036,16 +1038,14 @@ def test_live_refetch_change_blocks_dispatch_before_smtp(db, land_runtime, monke
         ),
     )
 
-    result = service.dispatch_outreach(db, outreach)
+    result = service.dispatch_outreach(db, _claim_for_dispatch(db, outreach))
 
     assert result.status == "blocked"
     assert result.last_error == "public_land_live_evidence_changed:plot_size_sqm"
     assert signal.status == "blocked"
 
 
-def test_live_refetch_unavailable_blocks_dispatch_before_smtp(
-    db, land_runtime, monkeypatch
-):
+def test_live_refetch_unavailable_blocks_dispatch_before_smtp(db, land_runtime, monkeypatch):
     html = _owner_html()
     page = _page("https://ingatlan.com/35500006", html)
     public_land.process_public_land_listings(
@@ -1069,13 +1069,10 @@ def test_live_refetch_unavailable_blocks_dispatch_before_smtp(
         ),
     )
 
-    result = service.dispatch_outreach(db, outreach)
+    result = service.dispatch_outreach(db, _claim_for_dispatch(db, outreach))
 
     assert result.status == "blocked"
-    assert (
-        result.last_error
-        == "public_land_live_listing_unavailable:listing_unavailable"
-    )
+    assert result.last_error == "public_land_live_listing_unavailable:listing_unavailable"
     assert signal.status == "blocked"
 
 
@@ -1124,15 +1121,16 @@ def test_live_refetch_requires_complete_persisted_evidence(db, land_runtime, mon
     )
 
 
-def test_production_writes_require_only_exact_approved_writes_token(
-    tmp_path, monkeypatch
-):
+def test_production_writes_require_only_exact_approved_writes_token(tmp_path, monkeypatch):
     gate = tmp_path / "growth-kill-switch"
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setattr(
         growth_registry,
         "settings",
-        lambda: SimpleNamespace(kill_switch_file=str(gate)),
+        lambda: SimpleNamespace(
+            kill_switch_file=str(gate),
+            runtime_kill_switch_file=str(tmp_path / "runtime-growth-kill-switch"),
+        ),
     )
 
     gate.write_text("ALLOW_APPROVED_CANARY\n", encoding="utf-8")
@@ -1155,9 +1153,7 @@ def test_invalid_canary_cap_configuration_fails_closed(monkeypatch, configured_c
         service._land_canary_limit()
 
 
-def test_land_canary_stops_at_three_without_changing_normal_rate_limits(
-    db, land_runtime
-):
+def test_land_canary_stops_at_three_without_changing_normal_rate_limits(db, land_runtime):
     canary_now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
     _set_canary_pending(db)
     for index in range(3):
@@ -1171,22 +1167,21 @@ def test_land_canary_stops_at_three_without_changing_normal_rate_limits(
         )
         db.commit()
 
-    with pytest.raises(
-        GrowthRegistryError, match="land_outreach_production_canary_cap_reached"
-    ):
+    with pytest.raises(GrowthRegistryError, match="land_outreach_production_canary_cap_reached"):
         service._claim_land_canary_slot(db, "OUT-CANARY-4", now=canary_now)
 
-    assert db.scalar(
-        select(func.count())
-        .select_from(GrowthLandCanarySlot)
-        .where(GrowthLandCanarySlot.status == "sent")
-    ) == 3
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(GrowthLandCanarySlot)
+            .where(GrowthLandCanarySlot.status == "sent")
+        )
+        == 3
+    )
     assert service._outreach_send_capacity(db) == 5
 
 
-def test_canary_wrong_date_and_ambiguous_slots_stay_closed(
-    db, land_runtime
-):
+def test_canary_wrong_date_and_ambiguous_slots_stay_closed(db, land_runtime):
     _set_canary_pending(db)
     september_first = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
     with pytest.raises(
@@ -1226,9 +1221,7 @@ def test_canary_wrong_date_and_ambiguous_slots_stay_closed(
         service._land_canary_scope(db, september_first)
 
 
-def test_canary_release_requires_three_verified_sends_and_next_budapest_day(
-    db, land_runtime
-):
+def test_canary_release_requires_three_verified_sends_and_next_budapest_day(db, land_runtime):
     pages = [
         _page(
             f"https://ingatlan.com/{35500160 + index}",
@@ -1252,9 +1245,7 @@ def test_canary_release_requires_three_verified_sends_and_next_budapest_day(
     sent_at = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
     messages = list(db.scalars(select(OutreachMessage).order_by(OutreachMessage.id)))
     slots = list(
-        db.scalars(
-            select(GrowthLandCanarySlot).order_by(GrowthLandCanarySlot.slot_number)
-        )
+        db.scalars(select(GrowthLandCanarySlot).order_by(GrowthLandCanarySlot.slot_number))
     )
     for index, (slot, outreach) in enumerate(zip(slots, messages, strict=True), start=1):
         provider_message_id = f"SYNTHETIC-CANARY-{index}"
@@ -1301,6 +1292,8 @@ def test_canary_release_requires_three_verified_sends_and_next_budapest_day(
             now=datetime(2026, 9, 1, 8, 0, tzinfo=UTC),
         )
     messages[0].receipt_json = original_receipt
+    messages[0].status = "delivered"
+    messages[1].status = "responded"
     db.flush()
 
     with pytest.raises(
@@ -1330,9 +1323,7 @@ def test_canary_release_requires_three_verified_sends_and_next_budapest_day(
 
 def test_canary_missing_slot_fails_closed(db, land_runtime):
     _set_canary_pending(db)
-    slot = db.scalar(
-        select(GrowthLandCanarySlot).where(GrowthLandCanarySlot.slot_number == 3)
-    )
+    slot = db.scalar(select(GrowthLandCanarySlot).where(GrowthLandCanarySlot.slot_number == 3))
     db.delete(slot)
     db.commit()
 
@@ -1358,6 +1349,7 @@ def test_canary_backfill_ignores_non_land_growth_delivery(db, land_runtime):
     )
     signal = db.scalar(select(GrowthSignal))
     outreach = db.scalar(select(OutreachMessage))
+    assert outreach is not None
     signal.signal_type = "synthetic_non_land"
     signal.contact_basis = "public_business_contact"
     outreach.status = "sent"
@@ -1370,9 +1362,7 @@ def test_canary_backfill_ignores_non_land_growth_delivery(db, land_runtime):
         now=datetime(2026, 8, 31, 8, 0, tzinfo=UTC),
     )
     slots = list(
-        db.scalars(
-            select(GrowthLandCanarySlot).order_by(GrowthLandCanarySlot.slot_number)
-        )
+        db.scalars(select(GrowthLandCanarySlot).order_by(GrowthLandCanarySlot.slot_number))
     )
 
     assert [slot.status for slot in slots] == ["claimed", "available", "available"]
@@ -1409,24 +1399,20 @@ def test_crash_after_provider_guard_leaves_durable_claimed_canary_slot(
         raise SystemExit("synthetic crash after POST boundary")
 
     monkeypatch.setattr(service.SMTPEmailAdapter, "send", crash_after_guard)
-    outreach = db.scalar(select(OutreachMessage))
+    outreach = _claim_for_dispatch(db)
     with pytest.raises(SystemExit, match="synthetic crash"):
         service.dispatch_outreach(db, outreach)
     db.expire_all()
 
     slot = db.scalar(
-        select(GrowthLandCanarySlot).where(
-            GrowthLandCanarySlot.outreach_id == outreach.outreach_id
-        )
+        select(GrowthLandCanarySlot).where(GrowthLandCanarySlot.outreach_id == outreach.outreach_id)
     )
     assert slot is not None
     assert slot.status == "claimed"
     assert slot.claimed_at is not None and slot.sent_at is None
 
 
-def test_transport_attempted_unknown_consumes_canary_slot(
-    db, land_runtime, monkeypatch
-):
+def test_transport_attempted_unknown_consumes_canary_slot(db, land_runtime, monkeypatch):
     _set_canary_pending(db)
     monkeypatch.setattr(
         service,
@@ -1458,20 +1444,16 @@ def test_transport_attempted_unknown_consumes_canary_slot(
         )
 
     monkeypatch.setattr(service.SMTPEmailAdapter, "send", ambiguous_transport)
-    outreach = service.dispatch_outreach(db, db.scalar(select(OutreachMessage)))
+    outreach = service.dispatch_outreach(db, _claim_for_dispatch(db))
     slot = db.scalar(
-        select(GrowthLandCanarySlot).where(
-            GrowthLandCanarySlot.outreach_id == outreach.outreach_id
-        )
+        select(GrowthLandCanarySlot).where(GrowthLandCanarySlot.outreach_id == outreach.outreach_id)
     )
 
     assert outreach.status == "claimed"
     assert slot is not None and slot.status == "consumed"
 
 
-def test_fourth_canary_message_remains_retryable_without_provider(
-    db, land_runtime, monkeypatch
-):
+def test_fourth_canary_message_remains_retryable_without_provider(db, land_runtime, monkeypatch):
     _set_canary_pending(db)
     monkeypatch.setattr(
         service,
@@ -1513,10 +1495,26 @@ def test_fourth_canary_message_remains_retryable_without_provider(
         ),
     )
 
-    outreach = service.dispatch_outreach(db, db.scalar(select(OutreachMessage)))
+    outreach = service.dispatch_outreach(db, _claim_for_dispatch(db))
 
     assert outreach.status == "queued"
     assert outreach.last_error == "land_outreach_production_canary_cap_reached"
+
+
+def test_growth_registry_template_carries_exact_enabled_public_land_binding():
+    template_path = (
+        Path(__file__).resolve().parents[3] / "config" / "growth" / "registry.template.json"
+    )
+    payload = json.loads(template_path.read_text(encoding="utf-8"))
+
+    assert payload["sources"]["construction_public_land_html"] == {
+        "enabled": True,
+        "kind": "public_land_listing_html",
+        "fetch_mode": "ingest_only",
+        "motor": "construction",
+        "bucket": "property_development",
+        "route_set_sha256": managed_public_land_route_set_sha256(),
+    }
 
 
 def test_public_land_route_ensure_is_dry_run_idempotent_and_readable(db):
@@ -1558,15 +1556,61 @@ def test_public_land_route_ensure_is_dry_run_idempotent_and_readable(db):
     assert db.scalar(select(func.count()).select_from(SourceCoverageRoute)) == 8
     revision = db.scalar(select(SourceCatalogRevision))
     assert revision.route_count == 1
-    assert db.scalar(
-        select(func.count())
-        .select_from(SourceCoverageRoute)
-        .where(SourceCoverageRoute.catalog_sha256 == "c" * 64)
-    ) == 1
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(SourceCoverageRoute)
+            .where(SourceCoverageRoute.catalog_sha256 == "c" * 64)
+        )
+        == 1
+    )
     route_state = public_land_route_readiness(db)
     assert route_state["ready"] is True
     assert route_state["ready_count"] == 7
     assert route_state["route_set_sha256"] == managed_public_land_route_set_sha256()
+
+
+def test_public_land_route_ensure_plans_and_retires_unexpected_managed_route(db):
+    ensure_public_html_land_routes(db, dry_run=False)
+    unexpected = SourceCoverageRoute(
+        route_key="LAND-PUBLIC-HTML:unexpected",
+        route_id="LAND-PUBLIC-UNEXPECTED",
+        catalog_sha256="e" * 64,
+        motor="construction",
+        category="residential_building_plot",
+        source_name="unexpected",
+        source_type="public_html",
+        route_url="https://example.com/elado-telek",
+        catalog_status="active",
+        source_row_sha256="f" * 64,
+        source_record_json="{}",
+        enabled=True,
+    )
+    db.add(unexpected)
+    db.commit()
+
+    before = public_land_route_readiness(db)
+    dry_run = ensure_public_html_land_routes(db, dry_run=True)
+
+    assert before["ready"] is False
+    assert before["unexpected_active_routes"] == [unexpected.route_key]
+    assert dry_run["disabled_duplicates"] == [
+        {
+            "route_key": unexpected.route_key,
+            "portal": "unknown",
+            "reason": "unexpected_managed_route",
+        }
+    ]
+    db.refresh(unexpected)
+    assert unexpected.enabled is True
+
+    applied = ensure_public_html_land_routes(db, dry_run=False)
+    db.refresh(unexpected)
+
+    assert applied["readback_pass"] is True
+    assert unexpected.enabled is False
+    assert unexpected.catalog_status == "retired"
+    assert public_land_route_readiness(db)["ready"] is True
 
 
 @pytest.mark.parametrize(
@@ -1614,9 +1658,7 @@ def test_public_land_route_readiness_requires_exact_seven_bindings(db, mutation)
         first.source_row_sha256 = "0" * 64
     elif mutation == "wrong_source_record":
         first.source_record_json = '{"tampered":true}'
-        first.source_row_sha256 = hashlib.sha256(
-            first.source_record_json.encode()
-        ).hexdigest()
+        first.source_row_sha256 = hashlib.sha256(first.source_record_json.encode()).hexdigest()
     elif mutation == "wrong_motor":
         first.motor = "tampered-motor"
     else:
@@ -1630,14 +1672,74 @@ def test_public_land_route_readiness_requires_exact_seven_bindings(db, mutation)
     assert any(not item["ready"] for item in state["routes"])
 
 
-def test_public_land_send_readiness_needs_no_json_or_rss_source(
-    db, land_runtime
+@pytest.mark.parametrize("mutation", ["unexpected_route_key", "wrong_route_digest"])
+def test_managed_scanner_refuses_non_exact_route_set(
+    db, land_runtime, monkeypatch, mutation
 ):
+    if mutation == "unexpected_route_key":
+        db.add(
+            SourceCoverageRoute(
+                route_key="LAND-PUBLIC-HTML:aaa-unexpected",
+                route_id="LAND-PUBLIC-AAA-UNEXPECTED",
+                catalog_sha256=managed_public_land_route_set_sha256(),
+                motor="construction",
+                category="residential_building_plot",
+                source_name="unexpected",
+                source_type="public_html",
+                route_url="https://example.com/elado-telek",
+                catalog_status="active",
+                source_row_sha256="f" * 64,
+                source_record_json="{}",
+                enabled=True,
+            )
+        )
+    else:
+        route = db.scalar(
+            select(SourceCoverageRoute).where(
+                SourceCoverageRoute.route_key == "LAND-PUBLIC-HTML:dh"
+            )
+        )
+        assert route is not None
+        route.catalog_sha256 = "0" * 64
+    db.commit()
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            timezone="Europe/Budapest",
+            canonical_daily_at="05:30",
+            canonical_route_batch_size=0,
+            canonical_processing_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "active_revision",
+        lambda _db: SimpleNamespace(catalog_sha256="c" * 64),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_fetch",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("no managed route may be fetched before exact route readback")
+        ),
+    )
+
+    result = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 30, 6, 0, tzinfo=UTC),
+    )
+
+    assert result["land_public_lane"]["attempted"] == 0
+    assert result["land_public_lane"]["route_readiness"]["ready"] is False
+
+
+def test_public_land_send_readiness_needs_no_json_or_rss_source(db, land_runtime):
     ensure_public_html_land_routes(db, dry_run=False)
     source = dict(_Registry.sources["construction_public_land_html"])
-    land_only_registry = SimpleNamespace(
-        sources={"construction_public_land_html": source}
-    )
+    land_only_registry = SimpleNamespace(sources={"construction_public_land_html": source})
     state = service._outbound_send_readiness_state(db, land_only_registry)
 
     assert state["ready"] is True
@@ -1653,14 +1755,10 @@ def test_public_land_send_readiness_needs_no_json_or_rss_source(
         listing_pages=[_page("https://ingatlan.com/35500140", html)],
     )
     signal = db.scalar(select(GrowthSignal))
-    assert service._authoritative_send_readiness_reason(
-        db, land_only_registry, signal
-    ) is None
+    assert service._authoritative_send_readiness_reason(db, land_only_registry, signal) is None
     signal.signal_type = "synthetic_non_land"
     assert (
-        service._authoritative_send_readiness_reason(
-            db, land_only_registry, signal
-        )
+        service._authoritative_send_readiness_reason(db, land_only_registry, signal)
         == "growth_scheduled_source_missing"
     )
 
@@ -1673,9 +1771,7 @@ def test_preclaim_readiness_failure_preserves_queue_and_attempt_budget(
         db,
         route=_route(),
         attempt=_attempt(),
-        listing_pages=[
-            _page("https://ingatlan.com/35500141", _owner_html())
-        ],
+        listing_pages=[_page("https://ingatlan.com/35500141", _owner_html())],
     )
     outreach = db.scalar(select(OutreachMessage))
     assert outreach is not None
@@ -1689,9 +1785,7 @@ def test_preclaim_readiness_failure_preserves_queue_and_attempt_budget(
         db.delete(managed_route)
     else:
         sender = db.scalar(
-            select(MailSendingDomain).where(
-                MailSendingDomain.domain_key == "imperial-test"
-            )
+            select(MailSendingDomain).where(MailSendingDomain.domain_key == "imperial-test")
         )
         assert sender is not None
         sender.active = False
@@ -1704,7 +1798,7 @@ def test_preclaim_readiness_failure_preserves_queue_and_attempt_budget(
         raise AssertionError("provider must not run when pre-claim readiness fails")
 
     monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db: 1)
+    monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db, _now=None: 1)
     monkeypatch.setattr(service.SMTPEmailAdapter, "send", fail_if_called)
 
     assert service.dispatch_batch(db, limit=1) == 0
@@ -1727,14 +1821,10 @@ def test_preclaim_readiness_failure_preserves_queue_and_attempt_budget(
         ("duplicate", "managed_land_source_binding_not_unique"),
     ],
 )
-def test_managed_ingest_only_source_binding_is_exact(
-    db, land_runtime, source_mutation, reason
-):
+def test_managed_ingest_only_source_binding_is_exact(db, land_runtime, source_mutation, reason):
     ensure_public_html_land_routes(db, dry_run=False)
     sources = {
-        "construction_public_land_html": dict(
-            _Registry.sources["construction_public_land_html"]
-        )
+        "construction_public_land_html": dict(_Registry.sources["construction_public_land_html"])
     }
     if source_mutation == "missing":
         sources = {}
@@ -1750,17 +1840,13 @@ def test_managed_ingest_only_source_binding_is_exact(
             "enabled": True,
         }
 
-    state = service._outbound_send_readiness_state(
-        db, SimpleNamespace(sources=sources)
-    )
+    state = service._outbound_send_readiness_state(db, SimpleNamespace(sources=sources))
 
     assert state["ready"] is False
     assert state["reason"] == reason
 
 
-def test_public_portal_listing_discovery_is_same_host_and_bounded(
-    tmp_path, monkeypatch
-):
+def test_public_portal_listing_discovery_is_same_host_and_bounded(tmp_path, monkeypatch):
     registry_path = tmp_path / "portals.json"
     registry_path.write_text(
         json.dumps(
@@ -1920,9 +2006,7 @@ def test_listing_redirect_and_non_identity_encoding_fail_closed(monkeypatch):
             "source_ip": "93.184.216.34",
         },
     )
-    result = catalog.fetch_public_land_listing_url(
-        "https://ingatlan.com/35500151"
-    )
+    result = catalog.fetch_public_land_listing_url("https://ingatlan.com/35500151")
     assert result["status"] == "blocked"
     assert result["error_type"] == "blocked_page"
 
@@ -1933,9 +2017,7 @@ def test_listing_redirect_and_non_identity_encoding_fail_closed(monkeypatch):
             catalog.UnsafeRouteError("response_compression_forbidden")
         ),
     )
-    compressed = catalog.fetch_public_land_listing_url(
-        "https://ingatlan.com/35500152"
-    )
+    compressed = catalog.fetch_public_land_listing_url("https://ingatlan.com/35500152")
     assert compressed == {
         "status": "blocked",
         "error_type": "response_compression_forbidden",
@@ -2094,8 +2176,7 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
     cursors = list(
         db.scalars(
             select(GrowthPublicLandListingCursor).where(
-                GrowthPublicLandListingCursor.route_key
-                == "LAND-PUBLIC-HTML:ingatlan_com"
+                GrowthPublicLandListingCursor.route_key == "LAND-PUBLIC-HTML:ingatlan_com"
             )
         )
     )

@@ -1,0 +1,20 @@
+x-growth-production-environment: &growth-production-environment
+  ENVIRONMENT: "production"
+  GROWTH_OPS_ENABLED: "true"
+  CANONICAL_GROWTH_ENABLED: "true"
+  CANONICAL_ROUTE_SCANNING_ENABLED: "true"
+  CANONICAL_PROCESSING_ENABLED: "true"
+  CANONICAL_GROWTH_DAILY_AT: "05:30"
+  GROWTH_OPS_TIMEZONE: "Europe/Budapest"
+  GROWTH_OPS_OUTREACH_SEND_START_LOCAL: "08:00"
+  GROWTH_OPS_OUTREACH_SEND_END_LOCAL: "18:00"
+  GROWTH_OPS_OUTREACH_MAX_PER_HOUR: "5"
+  GROWTH_OPS_OUTREACH_MAX_PER_DAY: "50"
+  LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL: "3"
+  LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE: "2026-08-31"
+
+services:
+  platform-core:
+    environment: *growth-production-environment
+  growth-ops-worker:
+    environment: *growth-production-environment

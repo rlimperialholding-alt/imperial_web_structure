@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from secrets import token_urlsafe
+from threading import Event
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, func, or_, select
+from publicsuffix2 import get_sld
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -24,7 +28,7 @@ from ..global_email_guard import (
     finalize_global_recipient_delivery,
 )
 from ..land_acquisition.registry import LandRegistryError
-from ..models import MailSendingDomain, MailSuppression
+from ..models import AuditLog, MailSendingDomain, MailSuppression
 from .canonical_policy import (
     LAND_AGENT_HARD_GATE_REASONS,
     assert_outreach_copy,
@@ -45,6 +49,13 @@ from .models import (
     GrowthWorkerHeartbeat,
     OutreachMessage,
 )
+from .official_source import (
+    OFFICIAL_SOURCE_MAX_RESPONSE_BYTES,
+    OfficialSourceEvidenceError,
+    fetch_official_source_evidence,
+    is_public_unicast_address,
+    normalize_official_source_marker,
+)
 from .registry import BrandBinding, GrowthRegistry, GrowthRegistryError, settings, writes_unlocked
 from .schemas import GrowthSignalIn, GrowthSignalReceipt, OutreachEventIn, OutreachReleaseIn
 
@@ -52,6 +63,17 @@ LAND_RECIPIENT_TYPES_BY_ROLE = {
     "listing_agent": "real_estate_agent",
     "property_owner": "land_owner",
 }
+
+OUTREACH_CAPACITY_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_252
+_PROCESS_EMERGENCY_SEND_STOP = Event()
+
+
+@dataclass(frozen=True)
+class OfficialSourceBindingProofTarget:
+    signal_id: str
+    outreach_id: str
+    source_id: str
+    binding_sha256: str
 
 
 def utcnow() -> datetime:
@@ -64,6 +86,17 @@ def canonical_json(value: Any) -> str:
 
 def sha(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
+
+
+def _official_source_receipt_hmac(payload: dict[str, Any]) -> str:
+    key = platform_settings.imperial_release_hmac_key
+    if len(key) < 32:
+        raise OfficialSourceEvidenceError("official_source_receipt_hmac_key_missing")
+    return hmac.new(
+        key.encode(),
+        canonical_json(payload).encode(),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def _aware(value: datetime) -> datetime:
@@ -204,9 +237,7 @@ def _source_evidence_manifest_sha256(evidence: list[dict[str, Any]]) -> str:
     return sha(manifest)
 
 
-def _persisted_source_evidence_manifest_sha256(
-    db: Session, signal_id: str
-) -> str:
+def _persisted_source_evidence_manifest_sha256(db: Session, signal_id: str) -> str:
     rows = list(
         db.scalars(
             select(GrowthSignalSourceEvidence).where(
@@ -292,9 +323,7 @@ def _land_canary_limit() -> int:
     return limit
 
 
-def _land_canary_scope(
-    db: Session, now: datetime | None = None
-) -> tuple[int, date, bool]:
+def _land_canary_scope(db: Session, now: datetime | None = None) -> tuple[int, date, bool]:
     limit = _land_canary_limit()
     raw_date = str(
         getattr(settings(), "land_outreach_production_canary_local_date", "") or ""
@@ -332,9 +361,7 @@ def _valid_land_canary_slot(row: GrowthLandCanarySlot) -> bool:
     return False
 
 
-def _claim_land_canary_slot(
-    db: Session, outreach_id: str, *, now: datetime | None = None
-) -> bool:
+def _claim_land_canary_slot(db: Session, outreach_id: str, *, now: datetime | None = None) -> bool:
     limit, scope_date, active = _land_canary_scope(db, now)
     if not active:
         return False
@@ -354,9 +381,9 @@ def _claim_land_canary_slot(
         raise GrowthRegistryError("land_outreach_production_canary_slots_invalid")
     zone = ZoneInfo(settings().timezone)
     day_start = datetime.combine(scope_date, time.min, tzinfo=zone).astimezone(UTC)
-    day_end = (
-        datetime.combine(scope_date, time.min, tzinfo=zone) + timedelta(days=1)
-    ).astimezone(UTC)
+    day_end = (datetime.combine(scope_date, time.min, tzinfo=zone) + timedelta(days=1)).astimezone(
+        UTC
+    )
     # Backfill provider-accepted messages from the scoped day before any claim.
     historical = list(
         db.scalars(
@@ -382,7 +409,7 @@ def _claim_land_canary_slot(
         for value in db.scalars(
             select(GrowthLandCanarySlot.outreach_id).where(
                 GrowthLandCanarySlot.scope_local_date == scope_date,
-                GrowthLandCanarySlot.outreach_id.is_not(None)
+                GrowthLandCanarySlot.outreach_id.is_not(None),
             )
         )
         if value
@@ -495,12 +522,7 @@ def _finish_land_canary_slot(
 
 
 def _gmail_sent_mime_verified(row: OutreachMessage) -> bool:
-    if (
-        row.status != "sent"
-        or not row.sent_at
-        or not row.provider_message_id
-        or not row.receipt_json
-    ):
+    if not row.sent_at or not row.provider_message_id or not row.receipt_json:
         return False
     try:
         receipt = json.loads(row.receipt_json)
@@ -540,9 +562,7 @@ def release_land_canary(
     if not actor:
         raise GrowthRegistryError("land_outreach_production_canary_releaser_missing")
     state = db.scalar(
-        select(GrowthLandCanaryState)
-        .where(GrowthLandCanaryState.id == 1)
-        .with_for_update()
+        select(GrowthLandCanaryState).where(GrowthLandCanaryState.id == 1).with_for_update()
     )
     if state is None or state.status != "completed":
         raise GrowthRegistryError("land_outreach_production_canary_not_completed")
@@ -555,11 +575,7 @@ def release_land_canary(
         zone = ZoneInfo(settings().timezone)
     except (ValueError, ZoneInfoNotFoundError) as exc:
         raise GrowthRegistryError("land_outreach_production_canary_date_invalid") from exc
-    if (
-        limit <= 0
-        or state.scope_local_date != configured_date
-        or state.max_total != limit
-    ):
+    if limit <= 0 or state.scope_local_date != configured_date or state.max_total != limit:
         raise GrowthRegistryError("land_outreach_production_canary_state_invalid")
     slots = list(
         db.scalars(
@@ -576,15 +592,11 @@ def release_land_canary(
         len(slots) != state.max_total
         or [slot.slot_number for slot in slots] != list(range(1, state.max_total + 1))
         or any(
-            slot.status != "sent"
-            or not slot.outreach_id
-            or not slot.provider_message_id
+            slot.status != "sent" or not slot.outreach_id or not slot.provider_message_id
             for slot in slots
         )
     ):
-        raise GrowthRegistryError(
-            "land_outreach_production_canary_verified_delivery_required"
-        )
+        raise GrowthRegistryError("land_outreach_production_canary_verified_delivery_required")
     verified_outreach_ids: list[str] = []
     for slot in slots:
         row = db.scalar(
@@ -597,9 +609,7 @@ def release_land_canary(
             or row.provider_message_id != slot.provider_message_id
             or not _gmail_sent_mime_verified(row)
         ):
-            raise GrowthRegistryError(
-                "land_outreach_production_canary_verified_delivery_required"
-            )
+            raise GrowthRegistryError("land_outreach_production_canary_verified_delivery_required")
         verified_outreach_ids.append(row.outreach_id)
     release_at = now or utcnow()
     local_date = release_at.astimezone(zone).date()
@@ -645,10 +655,7 @@ def _authoritative_send_readiness_reason(
     state = _outbound_send_readiness_state(db, registry)
     if not state["ready"]:
         return str(state["reason"])
-    if (
-        not _public_land_signal(signal)
-        and int(state.get("scheduled_enabled_sources") or 0) <= 0
-    ):
+    if not _public_land_signal(signal) and int(state.get("scheduled_enabled_sources") or 0) <= 0:
         return "growth_scheduled_source_missing"
     if state.get("canary_active") and not _public_land_signal(signal):
         return "land_outreach_production_canary_public_land_only"
@@ -667,10 +674,22 @@ def _outbound_send_readiness_state(
         "managed_land_routes": {"ready": False},
         "land_canary": {"ready": False},
     }
+    if _PROCESS_EMERGENCY_SEND_STOP.is_set():
+        detail["reason"] = "growth_process_emergency_stop_no_send"
+        return detail
     if not writes_unlocked():
         detail["reason"] = "growth_writes_locked"
         return detail
     try:
+        paused_motors = [
+            motor_key
+            for motor_key in sorted(GrowthRegistry.REQUIRED_MOTORS)
+            if not _control_enabled(db, motor_key)
+        ]
+        if paused_motors:
+            detail["reason"] = "growth_controls_paused_no_send"
+            detail["paused_motors"] = paused_motors
+            return detail
         db.execute(select(func.count()).select_from(GrowthSignalSourceEvidence))
         db.execute(select(func.count()).select_from(GrowthPublicLandListingCursor))
         db.execute(select(func.count()).select_from(GrowthLandCanaryState))
@@ -787,9 +806,7 @@ def _assert_public_land_evidence_manifest(
         raise GrowthRegistryError("public_land_source_evidence_manifest_mismatch")
 
 
-def _attest_live_listing_evidence(
-    row: OutreachMessage, evidence: dict[str, Any]
-) -> dict[str, Any]:
+def _attest_live_listing_evidence(row: OutreachMessage, evidence: dict[str, Any]) -> dict[str, Any]:
     key = platform_settings.imperial_release_hmac_key
     if len(key) < 32:
         raise GrowthRegistryError("IMPERIAL_RELEASE_HMAC_KEY is not configured")
@@ -811,14 +828,8 @@ def _assert_live_listing_evidence_attestation(
     row: OutreachMessage, evidence: dict[str, Any]
 ) -> None:
     supplied = str(evidence.get("attestation_hmac_sha256") or "")
-    unsigned = {
-        key: value
-        for key, value in evidence.items()
-        if key != "attestation_hmac_sha256"
-    }
-    expected = _attest_live_listing_evidence(row, unsigned)[
-        "attestation_hmac_sha256"
-    ]
+    unsigned = {key: value for key, value in evidence.items() if key != "attestation_hmac_sha256"}
+    expected = _attest_live_listing_evidence(row, unsigned)["attestation_hmac_sha256"]
     try:
         fetched_at = datetime.fromisoformat(str(unsigned.get("fetched_at") or ""))
     except ValueError as exc:
@@ -1003,8 +1014,7 @@ def _verified_sender(db: Session, binding: BrandBinding) -> MailSendingDomain:
             raise GrowthRegistryError("Gmail OAuth sender binding is incomplete")
         scopes = str(binding.secret.get("scope") or "").split()
         if not any(
-            scope.endswith("/gmail.compose") or scope.endswith("/gmail.send")
-            for scope in scopes
+            scope.endswith("/gmail.compose") or scope.endswith("/gmail.send") for scope in scopes
         ) or not any(
             scope.endswith(("/gmail.readonly", "/gmail.modify", "/mail.google.com"))
             for scope in scopes
@@ -1017,8 +1027,7 @@ def _verified_sender(db: Session, binding: BrandBinding) -> MailSendingDomain:
         if (
             not isinstance(evidence, dict)
             or evidence.get("verification_method") != "gmail_oauth_profile"
-            or str(evidence.get("profile_email") or "").strip().lower()
-            != binding.sender_email
+            or str(evidence.get("profile_email") or "").strip().lower() != binding.sender_email
             or row.verified_at is None
         ):
             raise GrowthRegistryError("Gmail OAuth sender profile is not verified")
@@ -1158,9 +1167,7 @@ def _queue_message(
     if data is not None and _is_public_land_listing_contact(data):
         if not source_evidence_manifest_sha256:
             raise GrowthRegistryError("public_land_source_evidence_manifest_missing")
-        canonical_metadata["source_evidence_manifest_sha256"] = (
-            source_evidence_manifest_sha256
-        )
+        canonical_metadata["source_evidence_manifest_sha256"] = source_evidence_manifest_sha256
     body_html = str(canonical_metadata["body_html"])
     key = sha({"signal_id": signal.signal_id, "brand_id": binding.brand_id, "step": step})
     payload_hash = _outreach_payload_sha256(
@@ -1273,6 +1280,17 @@ def ingest_signal(
         source_id=data.source_id,
         motor_key=data.motor_key,
         source_bucket=data.source_bucket,
+        recipient_type=data.recipient_type,
+        recipient_email=data.recipient_email,
+        recipient_email_type=data.recipient_email_type,
+        contact_basis=data.contact_basis,
+        recipient_name=data.recipient_name,
+        company_name=data.company_name,
+        recipient_organization_name=data.recipient_organization_name,
+        evidence_url=data.evidence_url,
+        public_contact_url=data.public_contact_url,
+        source_payload_hash=data.source_payload_hash,
+        detected_at=data.detected_at,
     )
     brand_id = registry.brand_for(data.signal_type, data.brand_id)
     dedupe_hash = _signal_dedupe(data, brand_id)
@@ -1390,6 +1408,22 @@ def ingest_signal(
             else:
                 row.status = "suppressed" if "suppressed" in str(exc) else "blocked"
             row.rejection_reasons_json = canonical_json(sorted(set(reasons)))
+    registry_sources = getattr(registry, "sources", {})
+    source = registry_sources.get(row.source_id) if isinstance(registry_sources, dict) else None
+    if (
+        outreach is not None
+        and row.status == "queued"
+        and isinstance(source, dict)
+        and source.get("kind") == GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
+    ):
+        _record_official_source_binding_proof(
+            db,
+            outreach,
+            row,
+            source,
+            actor="growth-ops",
+            proof_origin="signal_ingest",
+        )
     audit(
         db,
         actor="growth-ops",
@@ -1576,14 +1610,15 @@ def _release_expired_claims(db: Session) -> None:
                     "retry_safe": False,
                 },
             )
-            _trip_runtime_kill_switch()
+            _require_runtime_kill_switch(
+                db, reason="worker_lease_expired_delivery_ambiguous"
+            )
         # A worker may have died after Gmail accepted the POST but before the
         # provider id/readback could be committed. Gmail search is useful for
         # later recovery, but is not a safe automatic retry boundary because
         # SENT search visibility can lag. Keep every ambiguous claim held.
         row.status = "claimed"
         row.claimed_by = None
-        row.claimed_at = None
         row.lease_expires_at = None
         row.last_error = "delivery_ambiguous_pending_verification"
 
@@ -1593,9 +1628,7 @@ def _preclaim_outreach_readiness_reason(
     registry: GrowthRegistry,
     row: OutreachMessage,
 ) -> str | None:
-    signal = db.scalar(
-        select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id)
-    )
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
     if signal is None:
         return "growth_signal_missing"
     reason = _authoritative_send_readiness_reason(db, registry, signal)
@@ -1611,9 +1644,205 @@ def _preclaim_outreach_readiness_reason(
     return None
 
 
+def _recipient_root_domain(email: str) -> str:
+    value = str(email or "").strip()
+    local_part, separator, domain = value.rpartition("@")
+    domain = domain.strip().rstrip(".").casefold()
+    if not separator or not local_part or not domain or ".." in domain:
+        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send")
+    try:
+        ascii_domain = domain.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send") from exc
+    labels = ascii_domain.split(".")
+    if any(not label or len(label) > 63 for label in labels):
+        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send")
+    root_domain = get_sld(ascii_domain, strict=False)
+    if not root_domain:
+        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send")
+    return str(root_domain).casefold()
+
+
+def _outreach_period_bounds(
+    now: datetime | None = None,
+) -> tuple[datetime, datetime, datetime, datetime]:
+    config = settings()
+    try:
+        zone = ZoneInfo(config.timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise GrowthRegistryError("Configured growth timezone is unavailable") from exc
+    local_now = (now or utcnow()).astimezone(zone)
+    day_start = datetime.combine(local_now.date(), time.min, tzinfo=zone).astimezone(UTC)
+    next_day = datetime.combine(
+        local_now.date() + timedelta(days=1), time.min, tzinfo=zone
+    ).astimezone(UTC)
+    hour_start = local_now.replace(minute=0, second=0, microsecond=0).astimezone(UTC)
+    next_hour = (
+        local_now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    ).astimezone(UTC)
+    return day_start, next_day, hour_start, next_hour
+
+
+def _lock_outreach_claim_capacity(db: Session) -> None:
+    dialect = db.get_bind().dialect.name
+    if dialect == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": OUTREACH_CAPACITY_ADVISORY_LOCK_KEY},
+        )
+    elif dialect == "sqlite":
+        db.commit()
+        db.execute(text("BEGIN IMMEDIATE"))
+
+
+@dataclass(frozen=True)
+class OutreachCapacityUsage:
+    hourly_verified: int
+    daily_verified: int
+    hourly_claimed: int
+    daily_claimed: int
+    hourly_queued: int
+    daily_queued: int
+    daily_domain_reservations: dict[str, int]
+
+
+def _outreach_capacity_usage(db: Session, now: datetime | None = None) -> OutreachCapacityUsage:
+    day_start, next_day, hour_start, next_hour = _outreach_period_bounds(now)
+    sent_rows = db.scalars(
+        select(OutreachMessage).where(
+            OutreachMessage.sent_at >= day_start,
+            OutreachMessage.sent_at < next_day,
+        )
+    ).all()
+    verified_rows = [row for row in sent_rows if _gmail_sent_mime_verified(row)]
+    claimed_rows = [
+        row
+        for row in db.scalars(
+            select(OutreachMessage).where(OutreachMessage.status == "claimed")
+        ).all()
+        if (reservation_at := _claimed_reservation_at(row)) is not None
+        and day_start <= reservation_at < next_day
+    ]
+    queued_rows = db.scalars(
+        select(OutreachMessage).where(
+            OutreachMessage.status == "queued",
+            OutreachMessage.available_at >= day_start,
+            OutreachMessage.available_at < next_day,
+        )
+    ).all()
+    domain_usage: dict[str, int] = {}
+    # A queued row is not yet a transport reservation. Counting every queued
+    # address here would make 11 same-domain candidates block all 11 instead
+    # of allowing the first ten under the transaction lock.
+    for row in [*verified_rows, *claimed_rows]:
+        try:
+            root_domain = _recipient_root_domain(row.recipient_email)
+        except GrowthRegistryError:
+            continue
+        domain_usage[root_domain] = domain_usage.get(root_domain, 0) + 1
+    return OutreachCapacityUsage(
+        hourly_verified=sum(hour_start <= _aware(row.sent_at) < next_hour for row in verified_rows),
+        daily_verified=len(verified_rows),
+        hourly_claimed=sum(
+            hour_start <= _claimed_reservation_at(row) < next_hour for row in claimed_rows
+        ),
+        daily_claimed=len(claimed_rows),
+        hourly_queued=sum(
+            hour_start <= _aware(row.available_at) < next_hour for row in queued_rows
+        ),
+        daily_queued=len(queued_rows),
+        daily_domain_reservations=domain_usage,
+    )
+
+
+def _outreach_root_domain_capacity_available(
+    db: Session, candidate: OutreachMessage, now: datetime | None = None
+) -> bool:
+    try:
+        root_domain = _recipient_root_domain(candidate.recipient_email)
+    except GrowthRegistryError:
+        return False
+    usage = _outreach_capacity_usage(db, now)
+    config = settings()
+    hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
+    daily_limit = int(getattr(config, "outreach_max_per_day", 50))
+    root_limit = min(
+        10,
+        max(
+            1,
+            int(
+                getattr(
+                    config,
+                    "outreach_max_per_recipient_root_domain_per_day",
+                    10,
+                )
+            ),
+        ),
+    )
+    return bool(
+        usage.hourly_verified
+        + usage.hourly_claimed
+        + 1
+        <= hourly_limit
+        and usage.daily_verified
+        + usage.daily_claimed
+        + 1
+        <= daily_limit
+        and usage.daily_domain_reservations.get(root_domain, 0) + 1 <= root_limit
+    )
+
+
+def _outreach_transport_capacity_reserved(
+    db: Session, row: OutreachMessage, now: datetime | None = None
+) -> bool:
+    if row.status != "claimed":
+        return False
+    day_start, next_day, hour_start, next_hour = _outreach_period_bounds(now)
+    usage = _outreach_capacity_usage(db, now)
+    config = settings()
+    hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
+    daily_limit = int(getattr(config, "outreach_max_per_day", 50))
+    root_limit = min(
+        10,
+        max(
+            1,
+            int(
+                getattr(
+                    config,
+                    "outreach_max_per_recipient_root_domain_per_day",
+                    10,
+                )
+            ),
+        ),
+    )
+    try:
+        root_domain = _recipient_root_domain(row.recipient_email)
+    except GrowthRegistryError:
+        return False
+    claimed_at = _aware(row.claimed_at) if row.claimed_at else None
+    already_hourly_reserved = bool(claimed_at and hour_start <= claimed_at < next_hour)
+    already_daily_reserved = bool(claimed_at and day_start <= claimed_at < next_day)
+    return bool(
+        usage.hourly_verified
+        + usage.hourly_claimed
+        + (0 if already_hourly_reserved else 1)
+        <= hourly_limit
+        and usage.daily_verified
+        + usage.daily_claimed
+        + (0 if already_daily_reserved else 1)
+        <= daily_limit
+        and usage.daily_domain_reservations.get(root_domain, 0)
+        + (0 if already_daily_reserved else 1)
+        <= root_limit
+    )
+
+
 def claim_outreach(db: Session) -> OutreachMessage | None:
+    if not _outreach_sending_window_open():
+        return None
     _release_expired_claims(db)
     now = utcnow()
+    _lock_outreach_claim_capacity(db)
     try:
         registry = GrowthRegistry.load()
     except GrowthRegistryError:
@@ -1623,9 +1852,12 @@ def claim_outreach(db: Session) -> OutreachMessage | None:
     if readiness_state.get("ready") is not True:
         db.commit()
         return None
+    if _outreach_send_capacity(db, now) <= 0:
+        db.commit()
+        return None
     query = (
         select(OutreachMessage)
-        .join(GrowthSignal, GrowthSignal.signal_id == OutreachMessage.signal_id)
+        .outerjoin(GrowthSignal, GrowthSignal.signal_id == OutreachMessage.signal_id)
         .where(
             OutreachMessage.status == "queued",
             OutreachMessage.available_at <= now,
@@ -1643,11 +1875,18 @@ def claim_outreach(db: Session) -> OutreachMessage | None:
             GrowthSignal.public_contact_url.is_not(None),
             GrowthSignal.public_contact_url == GrowthSignal.evidence_url,
         )
-    row = db.scalar(
-        query
-        .order_by(OutreachMessage.available_at, OutreachMessage.id)
-        .limit(1)
-        .with_for_update(skip_locked=True)
+    candidates = db.scalars(
+        query.order_by(OutreachMessage.available_at, OutreachMessage.id).with_for_update(
+            skip_locked=True
+        )
+    ).all()
+    row = next(
+        (
+            candidate
+            for candidate in candidates
+            if _outreach_root_domain_capacity_available(db, candidate, now)
+        ),
+        None,
     )
     if not row:
         db.commit()
@@ -1880,10 +2119,52 @@ def _release_matches(row: OutreachMessage) -> bool:
 
 def _trip_runtime_kill_switch() -> bool:
     try:
-        Path("/app/runtime/growth-kill-switch").write_text("KILLED\n", encoding="utf-8")
+        Path(settings().runtime_kill_switch_file).write_text("KILLED\n", encoding="utf-8")
     except OSError:
         return False
     return True
+
+
+def _persist_database_emergency_stop(db: Session, *, reason: str) -> None:
+    changed_at = utcnow()
+    for motor_key in sorted(GrowthRegistry.REQUIRED_MOTORS):
+        key = f"motor:{motor_key}"
+        row = db.get(GrowthControlState, key)
+        if row is None:
+            row = GrowthControlState(key=key)
+            db.add(row)
+        row.enabled = False
+        row.reason = reason
+        row.changed_by = "growth-worker-emergency-stop"
+        row.changed_at = changed_at
+    audit(
+        db,
+        actor="growth-worker-emergency-stop",
+        action="growth_runtime_kill_switch_persist_failed",
+        entity_type="growth_control",
+        entity_id="all-motors",
+        after={"reason": reason, "writes_disabled": True},
+    )
+    db.commit()
+
+
+def _require_runtime_kill_switch(db: Session, *, reason: str) -> None:
+    if _trip_runtime_kill_switch():
+        return
+    try:
+        _persist_database_emergency_stop(db, reason=reason)
+    except Exception as exc:
+        _PROCESS_EMERGENCY_SEND_STOP.set()
+        try:
+            db.rollback()
+        except Exception:
+            # The process-local latch is authoritative when both durable
+            # emergency stops and even transaction cleanup are unavailable.
+            pass
+        raise RuntimeError(
+            "runtime_kill_switch_and_database_emergency_stop_failed"
+        ) from exc
+    raise GrowthRegistryError("runtime_kill_switch_persist_failed_emergency_db_stop")
 
 
 def _delivery_verification_pending(row: OutreachMessage) -> bool:
@@ -1897,11 +2178,883 @@ def _delivery_verification_pending(row: OutreachMessage) -> bool:
     return isinstance(verification, dict) and verification.get("status") == ("pending_verification")
 
 
+def _delivery_acceptance_ambiguous(row: OutreachMessage) -> bool:
+    if row.status != "claimed":
+        return False
+    try:
+        receipt = json.loads(row.receipt_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        receipt = {}
+    return bool(
+        row.provider_message_id
+        or receipt.get("accepted") is True
+        or _delivery_verification_pending(row)
+    )
+
+
+def _claimed_reservation_at(row: OutreachMessage) -> datetime | None:
+    if row.claimed_at is not None:
+        return _aware(row.claimed_at)
+    if not _delivery_acceptance_ambiguous(row):
+        return None
+    # Older ambiguous rows cleared claimed_at. updated_at is the persisted
+    # acceptance/containment boundary for those rows; never make them retryable
+    # merely because the original claim timestamp is missing.
+    fallback = row.updated_at or row.available_at or row.created_at
+    return _aware(fallback) if fallback is not None else None
+
+
+def _release_untransported_claim(
+    db: Session, row: OutreachMessage, *, reason: str
+) -> OutreachMessage:
+    if (
+        row.status == "claimed"
+        and row.claimed_by == settings().worker_id
+        and row.provider_message_id is None
+        and not _delivery_verification_pending(row)
+    ):
+        row.status = "queued"
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+        row.attempt_count = max(0, row.attempt_count - 1)
+        row.last_error = reason
+        db.commit()
+    return row
+
+
+def _official_source_validation_values(
+    signal: GrowthSignal,
+    canonical_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    render_input = canonical_metadata.get("render_input")
+    if not isinstance(render_input, dict):
+        raise OfficialSourceEvidenceError("official_source_canonical_input_missing")
+    return {
+        "source_id": signal.source_id,
+        "motor_key": signal.motor_key,
+        "source_bucket": signal.source_bucket,
+        "recipient_type": render_input.get("recipient_type"),
+        "recipient_email": signal.recipient_email,
+        "recipient_email_type": signal.recipient_email_type,
+        "contact_basis": signal.contact_basis,
+        "recipient_name": render_input.get("recipient_name"),
+        "company_name": signal.company_name,
+        "recipient_organization_name": signal.recipient_organization_name,
+        "evidence_url": signal.evidence_url,
+        "public_contact_url": signal.public_contact_url,
+        "source_payload_hash": signal.source_payload_hash,
+    }
+
+
+def _official_source_provenance_proven(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+) -> bool:
+    return _official_source_binding_proof_audit(db, row, signal) is not None
+
+
+def _official_source_binding_proof_payload(
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    source: dict[str, Any],
+    *,
+    actor: str,
+    proof_origin: str,
+) -> dict[str, Any]:
+    return {
+        "signal_id": signal.signal_id,
+        "source_id": signal.source_id,
+        "source_kind": source.get("kind"),
+        "source_fetch_mode": source.get("fetch_mode"),
+        "source_enabled": source.get("enabled"),
+        "binding_sha256": source.get("binding_sha256"),
+        "signal_source_payload_hash": signal.source_payload_hash,
+        "recipient_email": signal.recipient_email,
+        "outreach_id": row.outreach_id,
+        "payload_sha256": row.payload_sha256,
+        "canonical_metadata_sha256": _canonical_metadata_sha256(_canonical_metadata(row)),
+        "proof_actor": actor,
+        "proof_origin": proof_origin,
+        "attestation_scheme": ("HMAC-SHA256:IMPERIAL_RELEASE_HMAC_KEY:official-source-binding:v1"),
+        "email_sent": False,
+    }
+
+
+def _official_source_binding_proof_audit(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+) -> AuditLog | None:
+    trusted = _trusted_official_source_binding_proof_audit(db, row, signal)
+    if trusted is None:
+        return None
+    proof, payload = trusted
+    if (
+        payload.get("source_id") == signal.source_id
+        and payload.get("binding_sha256") == signal.source_payload_hash
+        and payload.get("signal_source_payload_hash") == signal.source_payload_hash
+        and payload.get("recipient_email") == signal.recipient_email
+        and payload.get("payload_sha256") == row.payload_sha256
+        and payload.get("canonical_metadata_sha256")
+        == _canonical_metadata_sha256(_canonical_metadata(row))
+    ):
+        return proof
+    return None
+
+
+def _trusted_official_source_binding_proof_audit(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+) -> tuple[AuditLog, dict[str, Any]] | None:
+    if row.signal_id != signal.signal_id or row.status not in {"queued", "claimed"}:
+        return None
+    signal_bound = db.scalars(
+        select(AuditLog)
+        .where(
+            AuditLog.entity_id == signal.signal_id,
+            AuditLog.action == "growth_official_source_signal_bound",
+        )
+        .order_by(AuditLog.id.desc())
+        .limit(20)
+    ).all()
+    for proof in signal_bound:
+        try:
+            payload = json.loads(proof.after_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        proof_hmac = str(payload.pop("binding_proof_hmac_sha256", ""))
+        proof_origin = payload.get("proof_origin")
+        expected_actor = {
+            "signal_ingest": "growth-ops",
+            "locked_one_time_migration": "codex-owner-authorized-automation",
+        }.get(str(proof_origin or ""))
+        if (
+            proof.entity_type == "growth_signal"
+            and proof.before_json is None
+            and expected_actor is not None
+            and proof.actor == expected_actor
+            and payload.get("proof_actor") == expected_actor
+            and payload.get("attestation_scheme")
+            == "HMAC-SHA256:IMPERIAL_RELEASE_HMAC_KEY:official-source-binding:v1"
+            and re.fullmatch(r"[0-9a-f]{64}", proof_hmac)
+            and hmac.compare_digest(
+                proof_hmac,
+                _official_source_receipt_hmac(payload),
+            )
+            and payload.get("signal_id") == signal.signal_id
+            and payload.get("source_kind") == GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
+            and payload.get("source_fetch_mode") == GrowthRegistry.OFFICIAL_COMPANY_FETCH_MODE
+            and payload.get("source_enabled") is True
+            and payload.get("outreach_id") == row.outreach_id
+            and payload.get("email_sent") is False
+        ):
+            return proof, payload
+    return None
+
+
+def _record_official_source_binding_proof(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    source: dict[str, Any],
+    *,
+    actor: str,
+    proof_origin: str,
+) -> AuditLog:
+    existing = _official_source_binding_proof_audit(db, row, signal)
+    if existing is not None:
+        return existing
+    if _trusted_official_source_binding_proof_audit(db, row, signal) is not None:
+        raise OfficialSourceEvidenceError("official_source_binding_proof_conflict")
+    payload = _official_source_binding_proof_payload(
+        row,
+        signal,
+        source,
+        actor=actor,
+        proof_origin=proof_origin,
+    )
+    audit(
+        db,
+        actor=actor,
+        action="growth_official_source_signal_bound",
+        entity_type="growth_signal",
+        entity_id=signal.signal_id,
+        after={
+            **payload,
+            "binding_proof_hmac_sha256": _official_source_receipt_hmac(payload),
+        },
+    )
+    db.flush()
+    recorded = _official_source_binding_proof_audit(db, row, signal)
+    if recorded is None:
+        raise OfficialSourceEvidenceError("official_source_binding_proof_write_failed")
+    return recorded
+
+
+def migrate_official_source_binding_proofs_locked(
+    db: Session,
+    *,
+    targets: tuple[OfficialSourceBindingProofTarget, ...],
+    migration_id: str,
+    expected_registry_version: str,
+    expected_registry_sha256: str,
+    expected_authority_registry_id: str,
+    expected_authority_registry_version: int,
+    expected_authority_registry_sha256: str,
+) -> list[int]:
+    """Atomically attest pre-existing official rows while the runtime is locked."""
+
+    actor = "codex-owner-authorized-automation"
+    config = settings()
+    runtime_marker = Path(config.runtime_kill_switch_file)
+    managed_gate = Path(config.kill_switch_file)
+    if not runtime_marker.is_file() or not managed_gate.is_file() or writes_unlocked():
+        raise OfficialSourceEvidenceError("official_source_binding_migration_requires_runtime_lock")
+    if (
+        not targets
+        or len({target.signal_id for target in targets}) != len(targets)
+        or len({target.outreach_id for target in targets}) != len(targets)
+        or len({target.source_id for target in targets}) != len(targets)
+    ):
+        raise OfficialSourceEvidenceError("official_source_binding_migration_targets_invalid")
+    registry_path = Path(config.registry_file)
+    try:
+        registry_sha256 = hashlib.sha256(registry_path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise OfficialSourceEvidenceError(
+            "official_source_binding_migration_registry_unreadable"
+        ) from exc
+    if not hmac.compare_digest(registry_sha256, expected_registry_sha256):
+        raise OfficialSourceEvidenceError(
+            "official_source_binding_migration_registry_hash_mismatch"
+        )
+
+    try:
+        registry = GrowthRegistry.load()
+        if registry.version != expected_registry_version:
+            raise OfficialSourceEvidenceError(
+                "official_source_binding_migration_registry_version_mismatch"
+            )
+        validated: list[
+            tuple[
+                OfficialSourceBindingProofTarget,
+                OutreachMessage,
+                GrowthSignal,
+                dict[str, Any],
+            ]
+        ] = []
+        for target in targets:
+            row = db.scalar(
+                select(OutreachMessage)
+                .where(OutreachMessage.outreach_id == target.outreach_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if row is None:
+                raise OfficialSourceEvidenceError(
+                    "official_source_binding_migration_outreach_missing"
+                )
+            signal = db.scalar(
+                select(GrowthSignal)
+                .where(GrowthSignal.signal_id == target.signal_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if (
+                signal is None
+                or row.signal_id != target.signal_id
+                or signal.source_id != target.source_id
+                or row.status != "queued"
+                or signal.status != "queued"
+                or row.sequence_step != 0
+                or row.claimed_by is not None
+                or row.claimed_at is not None
+                or row.lease_expires_at is not None
+                or row.provider_message_id is not None
+                or row.sent_at is not None
+                or _delivery_verification_pending(row)
+            ):
+                raise OfficialSourceEvidenceError(
+                    "official_source_binding_migration_row_state_invalid"
+                )
+            source = _current_official_source(signal, registry)
+            authority = source.get("authority")
+            if (
+                source.get("binding_sha256") != target.binding_sha256
+                or signal.source_payload_hash != target.binding_sha256
+                or not isinstance(authority, dict)
+                or authority.get("registry_id") != expected_authority_registry_id
+                or authority.get("version") != expected_authority_registry_version
+                or authority.get("sha256") != expected_authority_registry_sha256
+            ):
+                raise OfficialSourceEvidenceError(
+                    "official_source_binding_migration_source_mismatch"
+                )
+            _assert_official_source_recipient_binding(row, signal, source)
+            metadata, _body_html = _assert_canonical_payload(row)
+            _assert_current_canonical_screening(signal, metadata)
+            if not _payload_matches(row) or not _release_matches(row):
+                raise OfficialSourceEvidenceError(
+                    "official_source_binding_migration_payload_release_invalid"
+                )
+            registry.validate_signal_source(
+                **{
+                    **_official_source_validation_values(signal, metadata),
+                    "source_payload_hash": target.binding_sha256,
+                },
+                detected_at=utcnow(),
+            )
+            validated.append((target, row, signal, source))
+
+        if (
+            not runtime_marker.is_file()
+            or writes_unlocked()
+            or hashlib.sha256(registry_path.read_bytes()).hexdigest() != expected_registry_sha256
+        ):
+            raise OfficialSourceEvidenceError(
+                "official_source_binding_migration_precommit_state_changed"
+            )
+        proof_ids: list[int] = []
+        for _target, row, signal, source in validated:
+            proof = _record_official_source_binding_proof(
+                db,
+                row,
+                signal,
+                source,
+                actor=actor,
+                proof_origin="locked_one_time_migration",
+            )
+            proof_ids.append(proof.id)
+        completion_payload = {
+            "migration_id": migration_id,
+            "registry_version": expected_registry_version,
+            "registry_sha256": expected_registry_sha256,
+            "authority_registry_id": expected_authority_registry_id,
+            "authority_registry_version": expected_authority_registry_version,
+            "authority_registry_sha256": expected_authority_registry_sha256,
+            "runtime_kill_switch_file": str(runtime_marker),
+            "runtime_kill_switch_present": True,
+            "managed_owner_gate_file": str(managed_gate),
+            "managed_owner_gate_present": True,
+            "targets": [
+                {
+                    "signal_id": target.signal_id,
+                    "outreach_id": target.outreach_id,
+                    "source_id": target.source_id,
+                    "binding_sha256": target.binding_sha256,
+                    "proof_audit_id": proof_id,
+                }
+                for (target, _row, _signal, _source), proof_id in zip(
+                    validated,
+                    proof_ids,
+                    strict=True,
+                )
+            ],
+            "email_sent": False,
+        }
+        existing_completion = db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "growth_official_source_binding_proof_migration_completed",
+                AuditLog.entity_type == "growth_source_binding_migration",
+                AuditLog.entity_id == migration_id,
+            )
+        ).all()
+        if existing_completion:
+            if len(existing_completion) != 1:
+                raise OfficialSourceEvidenceError(
+                    "official_source_binding_migration_audit_not_unique"
+                )
+            try:
+                existing_payload = json.loads(existing_completion[0].after_json or "{}")
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise OfficialSourceEvidenceError(
+                    "official_source_binding_migration_audit_unreadable"
+                ) from exc
+            existing_hmac = str(existing_payload.pop("migration_hmac_sha256", ""))
+            if (
+                existing_completion[0].actor != actor
+                or existing_completion[0].before_json is not None
+                or existing_payload != completion_payload
+                or not re.fullmatch(r"[0-9a-f]{64}", existing_hmac)
+                or not hmac.compare_digest(
+                    existing_hmac,
+                    _official_source_receipt_hmac(existing_payload),
+                )
+            ):
+                raise OfficialSourceEvidenceError(
+                    "official_source_binding_migration_audit_mismatch"
+                )
+        else:
+            audit(
+                db,
+                actor=actor,
+                action="growth_official_source_binding_proof_migration_completed",
+                entity_type="growth_source_binding_migration",
+                entity_id=migration_id,
+                after={
+                    **completion_payload,
+                    "migration_hmac_sha256": _official_source_receipt_hmac(completion_payload),
+                },
+            )
+        if not runtime_marker.is_file() or writes_unlocked():
+            raise OfficialSourceEvidenceError("official_source_binding_migration_lock_lost")
+        db.commit()
+        return proof_ids
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _official_source_required(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    registry: GrowthRegistry,
+) -> bool:
+    sources = getattr(registry, "sources", {})
+    source = sources.get(signal.source_id) if isinstance(sources, dict) else None
+    current_kind_official = bool(
+        isinstance(source, dict)
+        and source.get("kind") == GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
+    )
+    return bool(
+        current_kind_official
+        or _trusted_official_source_binding_proof_audit(db, row, signal) is not None
+    )
+
+
+def _assert_official_source_provenance_consistent(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+) -> None:
+    if (
+        _trusted_official_source_binding_proof_audit(db, row, signal) is not None
+        and _official_source_binding_proof_audit(db, row, signal) is None
+    ):
+        raise OfficialSourceEvidenceError("official_source_provenance_binding_changed")
+
+
+def _current_official_source(
+    signal: GrowthSignal,
+    registry: GrowthRegistry,
+) -> dict[str, Any]:
+    sources = getattr(registry, "sources", {})
+    source = sources.get(signal.source_id) if isinstance(sources, dict) else None
+    if (
+        not isinstance(source, dict)
+        or source.get("enabled") is not True
+        or source.get("kind") != GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
+        or source.get("fetch_mode") != GrowthRegistry.OFFICIAL_COMPANY_FETCH_MODE
+    ):
+        raise OfficialSourceEvidenceError("official_source_binding_missing_or_disabled")
+    return source
+
+
+def _official_source_entry(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    registry: GrowthRegistry,
+) -> dict[str, Any] | None:
+    if not _official_source_required(db, row, signal, registry):
+        return None
+    source = _current_official_source(signal, registry)
+    _assert_official_source_provenance_consistent(db, row, signal)
+    return source
+
+
+def _assert_official_source_recipient_binding(
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    source: dict[str, Any],
+) -> None:
+    binding = source.get("recipient_binding")
+    expected_email = (
+        str(binding.get("recipient_email") or "").strip().casefold()
+        if isinstance(binding, dict)
+        else ""
+    )
+    if (
+        not expected_email
+        or str(signal.recipient_email or "").strip().casefold() != expected_email
+        or row.recipient_email.strip().casefold() != expected_email
+    ):
+        raise OfficialSourceEvidenceError("official_source_recipient_binding_mismatch")
+
+
+def _refresh_official_source_evidence(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    registry: GrowthRegistry,
+    canonical_metadata: dict[str, Any],
+) -> bool:
+    payload_before = row.payload_sha256
+    release_before = row.release_token_hash
+    detected_before = _aware(signal.detected_at).astimezone(UTC)
+    source_payload_hash_before = signal.source_payload_hash
+    last_seen_before = signal.last_seen_at
+    dedupe_hash_before = signal.dedupe_hash
+    try:
+        source = _official_source_entry(db, row, signal, registry)
+        if source is None:
+            return False
+        _assert_official_source_recipient_binding(row, signal, source)
+        validation_values = _official_source_validation_values(signal, canonical_metadata)
+        screening_before = _current_canonical_screening_values(
+            signal, canonical_metadata["render_input"]
+        )
+        # Validate every static identity/URL binding before network I/O while
+        # intentionally substituting the current managed binding and clock.
+        # This accepts a policy-evidence-only registry revision for the live
+        # receipt without mutating the signal's dedupe-bound identity; every
+        # recipient and URL field must still match before network I/O.
+        registry.validate_signal_source(
+            **{
+                **validation_values,
+                "source_payload_hash": source.get("binding_sha256"),
+            },
+            detected_at=utcnow(),
+        )
+        evidence = fetch_official_source_evidence(
+            signal.source_id,
+            source,
+            expected_recipient_name=str(validation_values["recipient_name"] or ""),
+            expected_organization_names=[
+                str(value)
+                for value in (
+                    signal.company_name,
+                    signal.recipient_organization_name,
+                )
+                if value
+            ],
+        )
+
+        # The managed registry is a mounted artifact and may change during a
+        # slow fetch. Re-read and require the exact same immutable binding.
+        current_registry = GrowthRegistry.load()
+        current_source = current_registry.sources.get(signal.source_id)
+        if (
+            not isinstance(current_source, dict)
+            or current_source.get("binding_sha256") != evidence.binding_sha256
+            or current_source.get("binding_sha256") != source.get("binding_sha256")
+        ):
+            raise OfficialSourceEvidenceError("official_source_registry_changed_during_fetch")
+        _assert_official_source_recipient_binding(row, signal, current_source)
+
+        current_values = _official_source_validation_values(signal, canonical_metadata)
+        current_registry.validate_signal_source(
+            **{
+                **current_values,
+                "source_payload_hash": evidence.binding_sha256,
+            },
+            detected_at=evidence.observed_at,
+        )
+        if (
+            _current_canonical_screening_values(signal, canonical_metadata["render_input"])
+            != screening_before
+        ):
+            raise OfficialSourceEvidenceError("official_source_screening_binding_changed")
+        if (
+            _aware(signal.detected_at).astimezone(UTC) != detected_before
+            or signal.source_payload_hash != source_payload_hash_before
+            or signal.last_seen_at != last_seen_before
+            or signal.dedupe_hash != dedupe_hash_before
+            or row.payload_sha256 != payload_before
+            or row.release_token_hash != release_before
+            or not _payload_matches(row)
+            or not _release_matches(row)
+        ):
+            raise OfficialSourceEvidenceError("official_source_outreach_binding_changed")
+        receipt_payload = {
+            **evidence.audit_payload(),
+            "outreach_id": row.outreach_id,
+            "payload_sha256": row.payload_sha256,
+            "signal_detected_at": detected_before.isoformat(),
+            "signal_source_payload_hash": source_payload_hash_before,
+            "signal_dedupe_hash": dedupe_hash_before,
+            "recipient_email": signal.recipient_email,
+            "release_token_sha256": hashlib.sha256(
+                str(row.release_token_hash or "").encode()
+            ).hexdigest(),
+            "screening_binding_unchanged": True,
+            "signal_identity_unchanged": True,
+            "payload_and_release_unchanged": True,
+            "attestation_scheme": "HMAC-SHA256:IMPERIAL_RELEASE_HMAC_KEY:v1",
+            "email_sent": False,
+        }
+        audit(
+            db,
+            actor="growth-worker",
+            action="growth_official_source_evidence_refreshed",
+            entity_type="growth_signal",
+            entity_id=signal.signal_id,
+            before={
+                "detected_at": detected_before.isoformat(),
+                "source_payload_hash": validation_values["source_payload_hash"],
+                "outreach_id": row.outreach_id,
+                "payload_sha256": payload_before,
+            },
+            after={
+                **receipt_payload,
+                "receipt_hmac_sha256": _official_source_receipt_hmac(receipt_payload),
+            },
+        )
+        db.flush()
+        return True
+    except Exception as exc:
+        reason = str(exc)
+        audit(
+            db,
+            actor="growth-worker",
+            action="growth_official_source_evidence_refresh_failed",
+            entity_type="growth_signal",
+            entity_id=signal.signal_id,
+            after={
+                "outreach_id": row.outreach_id,
+                "source_id": signal.source_id,
+                "reason": reason,
+                "error_type": type(exc).__name__,
+                "provider_claimed": False,
+                "email_sent": False,
+            },
+        )
+        if isinstance(exc, OfficialSourceEvidenceError):
+            raise
+        if isinstance(exc, GrowthRegistryError):
+            raise OfficialSourceEvidenceError(str(exc)) from exc
+        raise OfficialSourceEvidenceError("official_source_live_check_failed") from exc
+
+
+def _assert_official_source_evidence_fresh(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    *,
+    official_required: bool,
+    registry: GrowthRegistry | None = None,
+) -> None:
+    if not official_required:
+        return
+    current_registry = registry or GrowthRegistry.load()
+    source = _current_official_source(signal, current_registry)
+    _assert_official_source_provenance_consistent(db, row, signal)
+    _assert_official_source_recipient_binding(row, signal, source)
+    metadata = _canonical_metadata(row)
+    latest = db.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.action == "growth_official_source_evidence_refreshed",
+            AuditLog.entity_id == signal.signal_id,
+        )
+        .order_by(AuditLog.id.desc())
+        .limit(1)
+    )
+    try:
+        receipt = json.loads(latest.after_json or "{}") if latest else {}
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise OfficialSourceEvidenceError("official_source_evidence_receipt_unreadable") from exc
+    receipt_hmac = str(receipt.pop("receipt_hmac_sha256", ""))
+    if (
+        receipt.get("attestation_scheme") != "HMAC-SHA256:IMPERIAL_RELEASE_HMAC_KEY:v1"
+        or not re.fullmatch(r"[0-9a-f]{64}", receipt_hmac)
+        or not hmac.compare_digest(
+            receipt_hmac,
+            _official_source_receipt_hmac(receipt),
+        )
+    ):
+        raise OfficialSourceEvidenceError("official_source_evidence_receipt_attestation_failed")
+    try:
+        observed_at = datetime.fromisoformat(
+            str(receipt.get("observed_at") or "").replace("Z", "+00:00")
+        )
+        if observed_at.tzinfo is None:
+            raise ValueError("timezone missing")
+        observed_at = observed_at.astimezone(UTC)
+    except ValueError as exc:
+        raise OfficialSourceEvidenceError("official_source_evidence_receipt_mismatch") from exc
+    pages = receipt.get("pages")
+    policy_evidence = source.get("policy_evidence")
+    if not isinstance(policy_evidence, dict):
+        raise OfficialSourceEvidenceError("official_source_evidence_receipt_mismatch")
+    expected_requested_urls = {
+        str(source.get("context_evidence_url") or ""),
+        str(source.get("public_contact_url") or ""),
+    }
+    expected_final_urls = {
+        requested: (
+            str(policy_evidence.get("final_url") or "")
+            if requested == str(policy_evidence.get("evidence_url") or "")
+            else requested
+        )
+        for requested in expected_requested_urls
+    }
+    render_input = metadata.get("render_input")
+    if not isinstance(render_input, dict):
+        raise OfficialSourceEvidenceError("official_source_canonical_input_missing")
+    expected_recipient_marker = normalize_official_source_marker(
+        str(render_input.get("recipient_name") or "")
+    )
+    expected_organization_markers = {
+        normalize_official_source_marker(str(value))
+        for value in (signal.company_name, signal.recipient_organization_name)
+        if value
+    }
+    expected_email = str(signal.recipient_email or "").strip().casefold()
+
+    def valid_page(page: Any) -> bool:
+        if not isinstance(page, dict):
+            return False
+        try:
+            source_ip = ipaddress.ip_address(str(page.get("source_ip") or ""))
+            content_bytes = int(page.get("content_bytes"))
+        except (TypeError, ValueError):
+            return False
+        content_type = str(page.get("content_type") or "")
+        requested_url = str(page.get("requested_url") or "")
+        return bool(
+            is_public_unicast_address(source_ip)
+            and 0 < content_bytes <= OFFICIAL_SOURCE_MAX_RESPONSE_BYTES
+            and content_type.split(";", 1)[0].strip().casefold() == "text/html"
+            and page.get("http_status") == 200
+            and page.get("final_url") == expected_final_urls.get(requested_url)
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(page.get("content_sha256") or ""),
+            )
+        )
+
+    if (
+        receipt.get("outreach_id") != row.outreach_id
+        or receipt.get("source_id") != signal.source_id
+        or receipt.get("binding_sha256") != source.get("binding_sha256")
+        or receipt.get("observed_at") != observed_at.isoformat()
+        or receipt.get("payload_sha256") != row.payload_sha256
+        or receipt.get("signal_detected_at")
+        != _aware(signal.detected_at).astimezone(UTC).isoformat()
+        or receipt.get("signal_source_payload_hash") != signal.source_payload_hash
+        or receipt.get("signal_dedupe_hash") != signal.dedupe_hash
+        or receipt.get("recipient_email") != signal.recipient_email
+        or receipt.get("matched_email") != expected_email
+        or receipt.get("matched_recipient_marker") != expected_recipient_marker
+        or receipt.get("matched_organization_marker") not in expected_organization_markers
+        or receipt.get("signal_identity_unchanged") is not True
+        or receipt.get("payload_and_release_unchanged") is not True
+        or receipt.get("release_token_sha256")
+        != hashlib.sha256(str(row.release_token_hash or "").encode()).hexdigest()
+        or not isinstance(pages, list)
+        or not pages
+        or len(pages) != len(expected_requested_urls)
+        or {str(page.get("requested_url") or "") for page in pages} != expected_requested_urls
+        or any(not valid_page(page) for page in pages)
+    ):
+        raise OfficialSourceEvidenceError("official_source_evidence_receipt_mismatch")
+    current_registry.validate_signal_source(
+        **{
+            **_official_source_validation_values(signal, metadata),
+            "source_payload_hash": source.get("binding_sha256"),
+        },
+        detected_at=observed_at,
+    )
+    if not _payload_matches(row) or not _release_matches(row):
+        raise OfficialSourceEvidenceError("official_source_outreach_binding_changed")
+    _assert_current_canonical_screening(signal, metadata)
+
+
+def _assert_outreach_pre_send_guard(
+    db: Session,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    *,
+    official_required: bool,
+) -> None:
+    locked_row = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.id == row.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_row is None or locked_row.outreach_id != row.outreach_id:
+        raise GrowthRegistryError("outreach_pre_send_state_invalid_no_send")
+    locked_signal = db.scalar(
+        select(GrowthSignal)
+        .where(GrowthSignal.id == signal.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_signal is None or locked_signal.signal_id != locked_row.signal_id:
+        raise GrowthRegistryError("outreach_pre_send_state_invalid_no_send")
+    if not _outreach_sending_window_open():
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+    if not _outreach_transport_capacity_reserved(db, locked_row):
+        raise GrowthRegistryError("outreach_transport_capacity_not_reserved_no_send")
+    if (
+        not writes_unlocked()
+        or locked_row.status != "claimed"
+        or locked_row.claimed_by != settings().worker_id
+        or locked_row.lease_expires_at is None
+        or _aware(locked_row.lease_expires_at) <= utcnow()
+        or locked_row.provider_message_id is not None
+        or _delivery_verification_pending(locked_row)
+    ):
+        raise GrowthRegistryError("outreach_pre_send_state_invalid_no_send")
+    try:
+        _assert_official_source_evidence_fresh(
+            db,
+            locked_row,
+            locked_signal,
+            official_required=official_required,
+        )
+    except GrowthRegistryError as exc:
+        audit(
+            db,
+            actor="growth-worker",
+            action="growth_official_source_evidence_pre_send_failed",
+            entity_type="growth_signal",
+            entity_id=locked_signal.signal_id,
+            after={
+                "outreach_id": locked_row.outreach_id,
+                "source_id": locked_signal.source_id,
+                "reason": str(exc),
+                "error_type": type(exc).__name__,
+                "global_guard_claimed": True,
+                "provider_transport_called": False,
+                "email_sent": False,
+            },
+        )
+        db.flush()
+        raise
+
+
 def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
+    if row.status != "claimed":
+        return row
     if _delivery_verification_pending(row):
         return row
+    locked_row = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.id == row.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_row is None or locked_row.status != "claimed":
+        return locked_row or row
+    row = locked_row
+    if _delivery_verification_pending(row):
+        return row
+    if row.claimed_by != settings().worker_id:
+        return row
+    if row.lease_expires_at is None or _aware(row.lease_expires_at) <= utcnow():
+        return _release_untransported_claim(db, row, reason="outreach_claim_lease_expired_no_send")
     signal = db.scalar(
-        select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id).with_for_update()
+        select(GrowthSignal)
+        .where(GrowthSignal.signal_id == row.signal_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     hard_gate_reason = _land_agent_gate_reason(signal) if signal else None
     if hard_gate_reason:
@@ -1922,11 +3075,20 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         )
         db.commit()
         return row
-    registry = GrowthRegistry.load()
+    if not _outreach_sending_window_open():
+        return _release_untransported_claim(
+            db, row, reason="outreach_sending_window_closed_no_send"
+        )
+    if not _outreach_transport_capacity_reserved(db, row):
+        return _release_untransported_claim(
+            db, row, reason="outreach_transport_capacity_not_reserved_no_send"
+        )
     global_guard = None
     land_canary_claimed = False
     live_listing_evidence: dict[str, Any] | None = None
+    official_required = False
     try:
+        registry = GrowthRegistry.load()
         if not signal:
             raise GrowthRegistryError("Signal record is missing")
         if not writes_unlocked() or not _control_enabled(db, row.motor_key):
@@ -1958,6 +3120,20 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         readiness_reason = _authoritative_send_readiness_reason(db, registry, signal)
         if readiness_reason:
             raise GrowthRegistryError(readiness_reason)
+        official_required = _refresh_official_source_evidence(
+            db,
+            row,
+            signal,
+            registry,
+            canonical_metadata,
+        )
+        if official_required:
+            _assert_official_source_evidence_fresh(
+                db,
+                row,
+                signal,
+                official_required=True,
+            )
         if _public_land_signal(signal):
             from .public_land import live_listing_revalidation
 
@@ -1995,19 +3171,39 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             raise GrowthRegistryError(f"global_recipient_guard_no_send:{global_guard.decision}")
 
         def immediate_pre_send_guard() -> None:
-            immediate_reason = _authoritative_send_readiness_reason(
-                db, registry, signal
+            _assert_outreach_pre_send_guard(
+                db,
+                row,
+                signal,
+                official_required=official_required,
             )
+            immediate_registry = GrowthRegistry.load()
+            immediate_reason = _authoritative_send_readiness_reason(db, immediate_registry, signal)
             if immediate_reason:
                 raise GrowthRegistryError(immediate_reason)
-            immediate_binding = registry.brand_binding(row.brand_id)
+            immediate_binding = immediate_registry.brand_binding(row.brand_id)
             _verified_sender(db, immediate_binding)
             if immediate_binding.sender_email != row.sender_email:
                 raise GrowthRegistryError("brand_sender_changed_after_queue")
+            immediate_official_required = _official_source_required(
+                db, row, signal, immediate_registry
+            )
+            if immediate_official_required:
+                _assert_official_source_evidence_fresh(
+                    db,
+                    row,
+                    signal,
+                    official_required=True,
+                    registry=immediate_registry,
+                )
             _assert_public_land_evidence_manifest(db, signal, canonical_metadata)
             if live_listing_evidence is not None:
                 _assert_live_listing_evidence_attestation(row, live_listing_evidence)
 
+        if not _outreach_sending_window_open():
+            raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+        if not _outreach_transport_capacity_reserved(db, row):
+            raise GrowthRegistryError("outreach_transport_capacity_not_reserved_no_send")
         receipt = SMTPEmailAdapter(binding).send(
             to_email=row.recipient_email,
             subject=row.subject,
@@ -2139,7 +3335,6 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             row.provider_message_id = exc.provider_message_id
             row.receipt_json = canonical_json(pending_receipt)
             row.claimed_by = None
-            row.claimed_at = None
             row.lease_expires_at = None
             audit(
                 db,
@@ -2154,14 +3349,18 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                     "detail": exc.detail,
                 },
             )
-            _trip_runtime_kill_switch()
+            _require_runtime_kill_switch(
+                db, reason="provider_delivery_pending_verification"
+            )
             db.commit()
             return row
         recipient_hard_gate = _is_recipient_hard_gate_error(exc)
         retryable_canary = str(exc).startswith("land_outreach_production_canary_")
         row.last_error = (
             str(exc)
-            if recipient_hard_gate or retryable_canary
+            if recipient_hard_gate
+            or retryable_canary
+            or isinstance(exc, OfficialSourceEvidenceError)
             else type(exc).__name__
         )
         row.claimed_by = None
@@ -2188,9 +3387,59 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             row.available_at = utcnow() + timedelta(minutes=2 ** min(row.attempt_count, 8))
         authentication_failure = isinstance(exc, EmailDeliveryError) and exc.authentication_failure
         if authentication_failure or "payload_hash" in str(exc):
-            _trip_runtime_kill_switch()
+            _require_runtime_kill_switch(
+                db,
+                reason=(
+                    "provider_authentication_failure"
+                    if authentication_failure
+                    else "outreach_payload_hash_failure"
+                ),
+            )
     db.commit()
     return row
+
+
+def _contain_unexpected_dispatch_exception(
+    db: Session, row: OutreachMessage, exc: Exception
+) -> None:
+    # The exception boundary may be after bytes reached the provider. Roll back
+    # uncommitted mutations, then hold only this row as delivery-ambiguous. It
+    # remains a quota reservation and is never automatically retried.
+    row_id = row.id
+    db.rollback()
+    held = db.scalar(select(OutreachMessage).where(OutreachMessage.id == row_id).with_for_update())
+    if held is None or held.status != "claimed":
+        db.commit()
+        return
+    try:
+        receipt = json.loads(held.receipt_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        receipt = {}
+    receipt["delivery_verification"] = {
+        "status": "pending_verification",
+        "retry_safe": False,
+        "provider_message_id": held.provider_message_id,
+        "detail": {"reason": "unexpected_dispatch_exception_isolated"},
+    }
+    held.receipt_json = canonical_json(receipt)
+    held.last_error = f"unexpected_dispatch_exception:{type(exc).__name__}"
+    held.claimed_by = None
+    held.claimed_at = held.claimed_at or utcnow()
+    held.lease_expires_at = None
+    audit(
+        db,
+        actor="growth-worker",
+        action="growth_outreach_unexpected_dispatch_exception_isolated",
+        entity_type="growth_outreach",
+        entity_id=held.outreach_id,
+        after={
+            "error_type": type(exc).__name__,
+            "provider_message_id": held.provider_message_id,
+            "retry_safe": False,
+            "batch_continued": True,
+        },
+    )
+    db.commit()
 
 
 def dispatch_batch(db: Session, *, limit: int = 20) -> int:
@@ -2204,7 +3453,19 @@ def dispatch_batch(db: Session, *, limit: int = 20) -> int:
         row = claim_outreach(db)
         if not row:
             break
-        result = dispatch_outreach(db, row)
+        try:
+            result = dispatch_outreach(db, row)
+        except Exception as exc:
+            try:
+                _contain_unexpected_dispatch_exception(db, row, exc)
+            except Exception:
+                # If containment itself cannot be committed, stop the batch.
+                # The transaction is rolled back and no later item is touched.
+                db.rollback()
+                return sent
+            if _PROCESS_EMERGENCY_SEND_STOP.is_set():
+                return sent
+            continue
         sent += result.status == "sent"
     return sent
 
@@ -2213,9 +3474,7 @@ def _outreach_sending_window_open(now: datetime | None = None) -> bool:
     config = settings()
     try:
         zone = ZoneInfo(config.timezone)
-        start = time.fromisoformat(
-            getattr(config, "outreach_send_start_local", "08:00")
-        )
+        start = time.fromisoformat(getattr(config, "outreach_send_start_local", "08:00"))
         end = time.fromisoformat(getattr(config, "outreach_send_end_local", "18:00"))
     except (ValueError, ZoneInfoNotFoundError) as exc:
         raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
@@ -2227,45 +3486,21 @@ def _outreach_sending_window_open(now: datetime | None = None) -> bool:
 
 def _outreach_send_capacity(db: Session, now: datetime | None = None) -> int:
     config = settings()
-    try:
-        zone = ZoneInfo(config.timezone)
-    except ZoneInfoNotFoundError as exc:
-        raise GrowthRegistryError("Configured growth timezone is unavailable") from exc
-    local_now = (now or utcnow()).astimezone(zone)
-    day_start = datetime.combine(local_now.date(), time.min, tzinfo=zone).astimezone(UTC)
-    next_day = datetime.combine(
-        local_now.date() + timedelta(days=1), time.min, tzinfo=zone
-    ).astimezone(UTC)
-    hour_start = local_now.replace(minute=0, second=0, microsecond=0).astimezone(UTC)
-    next_local_hour = local_now.replace(minute=0, second=0, microsecond=0) + timedelta(
-        hours=1
-    )
-    next_hour = next_local_hour.astimezone(UTC)
-    hourly_sent = (
-        db.scalar(
-            select(func.count())
-            .select_from(OutreachMessage)
-            .where(
-                OutreachMessage.sent_at >= hour_start,
-                OutreachMessage.sent_at < next_hour,
-            )
-        )
-        or 0
-    )
-    daily_sent = (
-        db.scalar(
-            select(func.count())
-            .select_from(OutreachMessage)
-            .where(
-                OutreachMessage.sent_at >= day_start,
-                OutreachMessage.sent_at < next_day,
-            )
-        )
-        or 0
-    )
+    usage = _outreach_capacity_usage(db, now)
     hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
     daily_limit = int(getattr(config, "outreach_max_per_day", 50))
-    return max(0, min(hourly_limit - hourly_sent, daily_limit - daily_sent))
+    if (
+        usage.hourly_verified + usage.hourly_claimed > hourly_limit
+        or usage.daily_verified + usage.daily_claimed > daily_limit
+    ):
+        return 0
+    return max(
+        0,
+        min(
+            hourly_limit - usage.hourly_verified - usage.hourly_claimed,
+            daily_limit - usage.daily_verified - usage.daily_claimed,
+        ),
+    )
 
 
 def schedule_followups(db: Session) -> int:
@@ -2369,9 +3604,7 @@ def run_once(db: Session) -> dict[str, Any]:
     # Process already approved outreach before the slower discovery and content
     # pipelines. An unrelated source, content, or publishing failure must not
     # prevent the mail worker from serving its independently guarded queue.
-    early_sent = (
-        dispatch_batch(db) if settings().enabled and writes_unlocked() else 0
-    )
+    early_sent = dispatch_batch(db) if settings().enabled and writes_unlocked() else 0
     wide_run = run_due_wide(db)
     route_scan = scan_due_routes(db)
     question_answers = generate_question_radar_answers(db)
@@ -2428,11 +3661,7 @@ def run_once(db: Session) -> dict[str, Any]:
             if content_ok and land_ready
             else [
                 *([] if content_ok else ["daily_content_not_complete"]),
-                *(
-                    []
-                    if land_ready
-                    else land_readiness_detail.get("blocking_reasons", [])
-                ),
+                *([] if land_ready else land_readiness_detail.get("blocking_reasons", [])),
                 *[
                     f"unresolved_brand:{brand}"
                     for brand in content_factory.get("unresolved_brands", [])
@@ -2444,7 +3673,78 @@ def run_once(db: Session) -> dict[str, Any]:
     return result
 
 
-def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
+def _degraded_worker_is_non_send_critical(hb: GrowthWorkerHeartbeat) -> bool:
+    try:
+        detail = json.loads(hb.detail_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return False
+    blockers = detail.get("blocking_errors") if isinstance(detail, dict) else None
+    if not isinstance(blockers, list) or not blockers:
+        return False
+    allowed = {"daily_content_not_complete", "unrelated_content_not_complete"}
+    return all(
+        isinstance(blocker, str)
+        and (blocker in allowed or blocker.startswith("unresolved_brand:"))
+        for blocker in blockers
+    )
+
+
+def _production_daily_automation_state(config: Any) -> dict[str, Any]:
+    expected = {
+        "growth_ops_enabled": True,
+        "canonical_growth_enabled": True,
+        "canonical_route_scanning_enabled": True,
+        "canonical_processing_enabled": True,
+        "timezone": "Europe/Budapest",
+        "daily_at": "05:30",
+        "outreach_send_start_local": "08:00",
+        "outreach_send_end_local": "18:00",
+        "outreach_max_per_hour": 5,
+        "outreach_max_per_day": 50,
+    }
+    actual = {
+        "growth_ops_enabled": getattr(config, "enabled", False) is True,
+        "canonical_growth_enabled": (
+            getattr(config, "canonical_wide_enabled", False) is True
+        ),
+        "canonical_route_scanning_enabled": (
+            getattr(config, "canonical_route_scanning_enabled", False) is True
+        ),
+        "canonical_processing_enabled": (
+            getattr(config, "canonical_processing_enabled", False) is True
+        ),
+        "timezone": str(getattr(config, "timezone", "")),
+        "daily_at": str(getattr(config, "canonical_daily_at", "")),
+        "outreach_send_start_local": str(
+            getattr(config, "outreach_send_start_local", "")
+        ),
+        "outreach_send_end_local": str(
+            getattr(config, "outreach_send_end_local", "")
+        ),
+        "outreach_max_per_hour": getattr(config, "outreach_max_per_hour", None),
+        "outreach_max_per_day": getattr(config, "outreach_max_per_day", None),
+    }
+    mismatches = {
+        key: {"expected": expected_value, "actual": actual[key]}
+        for key, expected_value in expected.items()
+        if actual[key] != expected_value
+    }
+    return {
+        "ready": not mismatches,
+        "expected": expected,
+        "actual": actual,
+        "mismatches": mismatches,
+    }
+
+
+def readiness(
+    db: Session,
+    *,
+    require_enabled: bool = True,
+    live_provider_preflight: bool = True,
+) -> tuple[bool, dict[str, Any]]:
+    config = settings()
+    automation_state = _production_daily_automation_state(config)
     registry: GrowthRegistry | None = None
     try:
         db.execute(select(func.count()).select_from(GrowthSignal))
@@ -2460,22 +3760,39 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
             try:
                 binding = registry.brand_binding(brand_id)
                 _verified_sender(db, binding)
-                SMTPEmailAdapter(binding).preflight(delivery_scope="external_customer")
-                sender_states.append({"brand_id": brand_id, "ready": True})
+                live_sender = (
+                    SMTPEmailAdapter(binding).live_preflight(
+                        delivery_scope="external_customer"
+                    )
+                    if live_provider_preflight
+                    else {"live_preflight": "not_requested_for_platform_health"}
+                )
+                sender_states.append(
+                    {"brand_id": brand_id, "ready": True, **live_sender}
+                )
             except GrowthRegistryError as exc:
                 sender_states.append({"brand_id": brand_id, "ready": False, "reason": str(exc)})
     except GrowthRegistryError as exc:
         registry_state = {"ready": False, "error": str(exc), "enabled_sources": 0}
         sender_states = []
-    hb = db.get(GrowthWorkerHeartbeat, settings().worker_id) if database_ok else None
-    heartbeat_ok = bool(
+    hb = db.get(GrowthWorkerHeartbeat, config.worker_id) if database_ok else None
+    heartbeat_fresh = bool(
         hb
         and hb.heartbeat_at
         and (utcnow() - _aware(hb.heartbeat_at)).total_seconds()
-        <= max(120, settings().poll_seconds * 4)
-        and hb.status in {"healthy", "working"}
+        <= max(120, config.poll_seconds * 4)
     )
-    required = settings().enabled
+    # Only explicitly enumerated, non-send-critical content degradation may
+    # coexist with serving outreach. Unknown/route/sender degradation is closed.
+    heartbeat_serving = bool(
+        hb
+        and (
+            hb.status in {"healthy", "working"}
+            or (hb.status == "degraded" and _degraded_worker_is_non_send_critical(hb))
+        )
+    )
+    heartbeat_ok = heartbeat_fresh and heartbeat_serving
+    required = config.enabled
     senders_ok = bool(sender_states) and all(state["ready"] for state in sender_states)
     sources_ok = int(registry_state.get("enabled_sources", 0)) > 0
     if database_ok and registry is not None:
@@ -2498,10 +3815,14 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
         if database_ok
         else 0
     )
-    ready = database_ok and (
-        not required
-        or (
-            registry_state.get("ready")
+    ready = bool(
+        database_ok
+        and (
+            not required
+            and not require_enabled
+            or required
+            and automation_state["ready"]
+            and registry_state.get("ready")
             and senders_ok
             and sources_ok
             and outbound_state.get("ready") is True
@@ -2511,11 +3832,20 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
     )
     return ready, {
         "enabled": required,
+        "live_provider_preflight_required": live_provider_preflight,
+        "daily_automation": automation_state,
         "database": "ok" if database_ok else "failed",
         "registry": registry_state,
         "outbound_send_readiness": outbound_state,
         "senders": sender_states,
-        "worker_heartbeat": "ok" if heartbeat_ok else "stale_or_missing",
+        "worker_heartbeat": (
+            "degraded_sla"
+            if heartbeat_ok and hb and hb.status == "degraded"
+            else "ok"
+            if heartbeat_ok
+            else "stale_or_missing"
+        ),
+        "worker_status": hb.status if hb else "missing",
         "writes_unlocked": writes_unlocked(),
         "construction_daily_raw_review": {
             "actual": int(construction_raw_today),

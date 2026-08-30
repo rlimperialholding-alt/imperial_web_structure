@@ -1224,21 +1224,31 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         if len(selected) >= allowance:
             break
     land_run_id = f"LAND-PUBLIC-{local_now.strftime('%Y%m%d')}-V1"
-    managed_routes = list(
-        db.scalars(
-            select(SourceCoverageRoute)
-            .where(
-                SourceCoverageRoute.enabled.is_(True),
-                SourceCoverageRoute.route_key.like(
-                    f"{LAND_PUBLIC_HTML_ROUTE_PREFIX}%"
-                ),
-                SourceCoverageRoute.category == "residential_building_plot",
-                SourceCoverageRoute.source_type == "public_html",
-                SourceCoverageRoute.catalog_status == "active",
+    from ..land_acquisition.service import public_land_route_readiness
+
+    managed_route_state = public_land_route_readiness(db)
+    expected_managed_route_keys = [
+        str(item["route_key"]) for item in managed_route_state.get("routes", [])
+    ]
+    managed_routes = (
+        list(
+            db.scalars(
+                select(SourceCoverageRoute)
+                .where(
+                    SourceCoverageRoute.enabled.is_(True),
+                    SourceCoverageRoute.route_key.in_(expected_managed_route_keys),
+                    SourceCoverageRoute.catalog_sha256
+                    == managed_route_state.get("route_set_sha256"),
+                    SourceCoverageRoute.category == "residential_building_plot",
+                    SourceCoverageRoute.source_type == "public_html",
+                    SourceCoverageRoute.catalog_status == "active",
+                )
+                .order_by(SourceCoverageRoute.route_key)
+                .limit(7)
             )
-            .order_by(SourceCoverageRoute.route_key)
-            .limit(7)
         )
+        if managed_route_state.get("ready") is True
+        else []
     )
     managed_selected: list[SourceCoverageRoute] = []
     pending_by_route: dict[str, list[str]] = {}
@@ -1467,6 +1477,7 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         "outcomes": outcomes,
         "land_public_lane": {
             "run_id": land_run_id,
+            "route_readiness": managed_route_state,
             "started_at": (
                 min(item[0] for item in fetched).isoformat() if managed_selected else None
             ),

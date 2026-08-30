@@ -13,6 +13,7 @@ from app.growth_ops.canonical_policy import LAND_AGENT_HARD_GATE_GDN
 from app.growth_ops.catalog import _fetch
 from app.growth_ops.models import GrowthSignal, OutreachMessage
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
+from app.growth_ops.registry import settings as growth_settings
 from app.growth_ops.schemas import GrowthSignalIn
 from app.growth_ops.service import (
     _queue_message,
@@ -866,7 +867,7 @@ def test_dispatch_blocks_legacy_queued_gdn_agent_before_registry_or_smtp(db):
         idempotency_key="2" * 64,
         payload_sha256="3" * 64,
         status="claimed",
-        claimed_by="legacy-worker",
+        claimed_by=growth_settings().worker_id,
         claimed_at=datetime.now(UTC),
         lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
     )

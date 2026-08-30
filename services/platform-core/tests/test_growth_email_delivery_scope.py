@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import re
 import stat
@@ -54,7 +55,9 @@ def _oauth_binding(*, scope: str | None = None) -> BrandBinding:
 
 class _HTTPResponse:
     def __init__(self, value):
-        self.value = value if isinstance(value, bytes) else json.dumps(value).encode()
+        self.value = (
+            value if isinstance(value, (bytes, BaseException)) else json.dumps(value).encode()
+        )
 
     def __enter__(self):
         return self
@@ -63,6 +66,8 @@ class _HTTPResponse:
         return False
 
     def read(self, _limit):
+        if isinstance(self.value, BaseException):
+            raise self.value
         return self.value
 
 
@@ -77,7 +82,16 @@ class _FakeGmail:
         assert timeout == 30
         url = request.full_url
         if url == "https://oauth2.googleapis.com/token":
-            return _HTTPResponse({"access_token": "access-token"})
+            return _HTTPResponse(
+                {
+                    "access_token": "access-token",
+                    "token_type": "Bearer",
+                    "scope": (
+                        "https://www.googleapis.com/auth/gmail.compose "
+                        "https://www.googleapis.com/auth/gmail.readonly"
+                    ),
+                }
+            )
         if url == "https://gmail.googleapis.com/gmail/v1/users/me/profile":
             return _HTTPResponse({"emailAddress": "info@imperialholding.hu"})
         if "/users/me/messages?" in url:
@@ -90,34 +104,42 @@ class _FakeGmail:
                 raise OSError("connection reset after request write")
             payload = json.loads(request.data)
             self.sent_raw = payload["raw"]
+            if self.readback_mode == "incomplete_read":
+                return _HTTPResponse(http.client.IncompleteRead(b"partial"))
+            if self.readback_mode == "invalid_utf8":
+                return _HTTPResponse(b"\xff")
             return _HTTPResponse({"id": self.provider_id})
         if url.endswith(f"/messages/{self.provider_id}?format=raw"):
             assert self.sent_raw is not None
+            if self.readback_mode == "readback_incomplete":
+                return _HTTPResponse(http.client.IncompleteRead(b"partial"))
+            if self.readback_mode == "readback_invalid_utf8":
+                return _HTTPResponse(b"\xff")
             labels = [] if self.readback_mode == "missing_sent" else ["SENT"]
             readback_raw = self.sent_raw
             if self.readback_mode == "mismatched_body":
-                raw = base64.urlsafe_b64decode(
-                    readback_raw + "=" * (-len(readback_raw) % 4)
-                )
+                raw = base64.urlsafe_b64decode(readback_raw + "=" * (-len(readback_raw) % 4))
                 raw = raw.replace(b"Imperial Holding offer.", b"Imperial Holding other.")
                 readback_raw = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
             elif self.readback_mode == "unexpected_cc":
-                raw = base64.urlsafe_b64decode(
-                    readback_raw + "=" * (-len(readback_raw) % 4)
-                )
+                raw = base64.urlsafe_b64decode(readback_raw + "=" * (-len(readback_raw) % 4))
                 separator = b"\r\n\r\n" if b"\r\n\r\n" in raw else b"\n\n"
                 raw = raw.replace(
                     separator,
-                    separator[: len(separator) // 2]
-                    + b"Cc: attacker@example.test"
-                    + separator,
+                    separator[: len(separator) // 2] + b"Cc: attacker@example.test" + separator,
                     1,
                 )
                 readback_raw = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-            return _HTTPResponse(
-                {"id": self.provider_id, "labelIds": labels, "raw": readback_raw}
-            )
+            return _HTTPResponse({"id": self.provider_id, "labelIds": labels, "raw": readback_raw})
         raise AssertionError(f"unexpected URL: {url}")
+
+
+@pytest.fixture(autouse=True)
+def external_transport_window_open(monkeypatch):
+    monkeypatch.setattr(
+        "app.growth_ops.email._assert_external_transport_window_open",
+        lambda: None,
+    )
 
 
 @pytest.fixture
@@ -151,6 +173,7 @@ def _payload(**changes):
         "subject": "együttműködés",
         "body_text": "Az Imperial Holding ajánlata.",
         "idempotency_key": "a" * 64,
+        "pre_send_guard": lambda: None,
     }
     payload.update(changes)
     return payload
@@ -166,9 +189,7 @@ def test_unknown_delivery_scope_fails_closed():
         GrowthRegistryError,
         match="outbound_delivery_scope_unknown_no_send",
     ):
-        SMTPEmailAdapter(_binding()).send(
-            **_payload(delivery_scope="unspecified")
-        )
+        SMTPEmailAdapter(_binding()).send(**_payload(delivery_scope="unspecified"))
 
 
 def test_external_customer_rejects_attachments_before_transport(smtp_transport):
@@ -296,9 +317,7 @@ def test_external_header_and_obfuscated_brand_gates_run_before_transport(
     smtp_transport,
 ):
     with pytest.raises(GrowthRegistryError, match=re.escape(error)):
-        SMTPEmailAdapter(_binding()).send(
-            **_payload(delivery_scope="external_customer", **changes)
-        )
+        SMTPEmailAdapter(_binding()).send(**_payload(delivery_scope="external_customer", **changes))
 
     assert smtp_transport == []
 
@@ -312,9 +331,7 @@ def test_external_header_and_obfuscated_brand_gates_run_before_transport(
 )
 def test_external_address_headers_require_one_exact_addr_spec(changes, smtp_transport):
     with pytest.raises(GrowthRegistryError, match="canonical_addr_spec_no_send"):
-        SMTPEmailAdapter(_binding()).send(
-            **_payload(delivery_scope="external_customer", **changes)
-        )
+        SMTPEmailAdapter(_binding()).send(**_payload(delivery_scope="external_customer", **changes))
     assert smtp_transport == []
 
 
@@ -323,9 +340,9 @@ def test_external_sender_requires_one_exact_addr_spec(smtp_transport):
         GrowthRegistryError,
         match="sender_email_must_be_one_canonical_addr_spec_no_send",
     ):
-        SMTPEmailAdapter(
-            _binding(sender_email="Imperial <info@imperialholding.hu>")
-        ).send(**_payload(delivery_scope="external_customer"))
+        SMTPEmailAdapter(_binding(sender_email="Imperial <info@imperialholding.hu>")).send(
+            **_payload(delivery_scope="external_customer")
+        )
     assert smtp_transport == []
 
 
@@ -339,9 +356,7 @@ def test_external_gmail_requires_read_scope_before_network(monkeypatch):
 
     monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", fail_if_called)
     with pytest.raises(GrowthRegistryError, match="Gmail read OAuth scope is required"):
-        SMTPEmailAdapter(
-            _oauth_binding(scope="https://www.googleapis.com/auth/gmail.send")
-        ).send(
+        SMTPEmailAdapter(_oauth_binding(scope="https://www.googleapis.com/auth/gmail.send")).send(
             **_payload(
                 delivery_scope="external_customer",
                 body_text="Imperial Holding offer.",
@@ -372,6 +387,117 @@ def test_external_gmail_exact_sent_readback_roundtrip(monkeypatch):
     assert receipt.detail["oauth_profile_email"] == "info@imperialholding.hu"
 
 
+def test_external_gmail_rechecks_guard_immediately_before_send_post(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    guard_calls = 0
+
+    def window_closed_at_post_boundary():
+        nonlocal guard_calls
+        guard_calls += 1
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_sending_window_closed_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                pre_send_guard=window_closed_at_post_boundary,
+            )
+        )
+
+    assert guard_calls == 1
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_authoritative_window_guard_runs_before_send_post(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    window_calls = 0
+
+    def closed_window():
+        nonlocal window_calls
+        window_calls += 1
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+
+    monkeypatch.setattr(
+        "app.growth_ops.email._assert_external_transport_window_open",
+        closed_window,
+    )
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_sending_window_closed_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+            )
+        )
+
+    assert window_calls == 1
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_rechecks_authoritative_clock_after_capacity_guard(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    events = []
+
+    def boundary_window():
+        events.append("window")
+        if events == ["window", "capacity", "window"]:
+            raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+
+    def capacity_guard():
+        events.append("capacity")
+
+    monkeypatch.setattr(
+        "app.growth_ops.email._assert_external_transport_window_open",
+        boundary_window,
+    )
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_sending_window_closed_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                pre_send_guard=capacity_guard,
+            )
+        )
+
+    assert events == ["window", "capacity", "window"]
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_requires_immediate_pre_send_guard(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="external_customer_pre_send_guard_required_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                pre_send_guard=None,
+            )
+        )
+
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
 def test_external_gmail_profile_sender_mismatch_stops_before_send(monkeypatch):
     gmail = _FakeGmail()
 
@@ -382,9 +508,7 @@ def test_external_gmail_profile_sender_mismatch_stops_before_send(monkeypatch):
             return _HTTPResponse({"emailAddress": "other@imperialholding.hu"})
         return gmail.urlopen(request, timeout)
 
-    monkeypatch.setattr(
-        "app.growth_ops.email.urllib.request.urlopen", mismatched_profile
-    )
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", mismatched_profile)
 
     with pytest.raises(
         EmailDeliveryError,
@@ -398,6 +522,80 @@ def test_external_gmail_profile_sender_mismatch_stops_before_send(monkeypatch):
         )
 
     assert gmail.post_count == 0
+
+
+def test_external_gmail_live_preflight_refreshes_and_matches_profile(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    detail = SMTPEmailAdapter(_oauth_binding()).live_preflight(
+        delivery_scope="external_customer"
+    )
+
+    assert detail == {
+        "provider": "gmail_api",
+        "profile_email": "info@imperialholding.hu",
+        "granted_scope_verified": "gmail_send_or_compose+gmail_read",
+    }
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_live_preflight_rejects_profile_mismatch(monkeypatch):
+    gmail = _FakeGmail()
+
+    def mismatched_profile(request, timeout):
+        if request.full_url == "https://oauth2.googleapis.com/token":
+            return _FakeGmail().urlopen(request, timeout)
+        if request.full_url == "https://gmail.googleapis.com/gmail/v1/users/me/profile":
+            return _HTTPResponse({"emailAddress": "other@imperialholding.hu"})
+        return gmail.urlopen(request, timeout)
+
+    monkeypatch.setattr(
+        "app.growth_ops.email.urllib.request.urlopen", mismatched_profile
+    )
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="gmail_live_preflight_sender_mismatch_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).live_preflight(
+            delivery_scope="external_customer"
+        )
+
+    assert gmail.post_count == 0
+
+
+def test_external_gmail_live_preflight_rejects_missing_actual_read_scope(monkeypatch):
+    profile_calls = 0
+
+    def insufficient_grant(request, timeout):
+        nonlocal profile_calls
+        assert timeout == 30
+        if request.full_url == "https://oauth2.googleapis.com/token":
+            return _HTTPResponse(
+                {
+                    "access_token": "access-token",
+                    "token_type": "Bearer",
+                    "scope": "https://www.googleapis.com/auth/gmail.compose",
+                }
+            )
+        profile_calls += 1
+        return _HTTPResponse({"emailAddress": "info@imperialholding.hu"})
+
+    monkeypatch.setattr(
+        "app.growth_ops.email.urllib.request.urlopen", insufficient_grant
+    )
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="gmail_live_preflight_granted_read_scope_missing_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).live_preflight(
+            delivery_scope="external_customer"
+        )
+
+    assert profile_calls == 0
 
 
 def test_external_gmail_existing_exact_sent_is_reused_without_second_post(monkeypatch):
@@ -483,6 +681,81 @@ def test_external_gmail_post_transport_ambiguity_is_held_and_never_retry_safe(
     assert raised.value.accepted_but_unverified is True
     assert raised.value.provider_message_id is None
     assert raised.value.retry_safe is False
+
+
+@pytest.mark.parametrize("readback_mode", ["incomplete_read", "invalid_utf8"])
+def test_external_gmail_post_response_protocol_errors_are_ambiguous(
+    readback_mode,
+    monkeypatch,
+):
+    gmail = _FakeGmail(readback_mode=readback_mode)
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(EmailDeliveryError, match="accepted_but_unverified") as raised:
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                reply_to="info@imperialholding.hu",
+            )
+        )
+
+    assert gmail.post_count == 1
+    assert raised.value.accepted_but_unverified is True
+    assert raised.value.transport_attempted is True
+    assert raised.value.retry_safe is False
+
+
+@pytest.mark.parametrize(
+    "readback_mode", ["readback_incomplete", "readback_invalid_utf8"]
+)
+def test_external_gmail_post_readback_protocol_errors_are_ambiguous(
+    readback_mode,
+    monkeypatch,
+):
+    gmail = _FakeGmail(readback_mode=readback_mode)
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(EmailDeliveryError, match="accepted_but_unverified") as raised:
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                reply_to="info@imperialholding.hu",
+            )
+        )
+
+    assert gmail.post_count == 1
+    assert raised.value.accepted_but_unverified is True
+    assert raised.value.transport_attempted is True
+    assert raised.value.provider_message_id == gmail.provider_id
+    assert raised.value.retry_safe is False
+
+
+@pytest.mark.parametrize(
+    "readback_mode", ["readback_incomplete", "readback_invalid_utf8"]
+)
+def test_external_gmail_existing_readback_protocol_errors_do_not_second_post(
+    readback_mode,
+    monkeypatch,
+):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    adapter = SMTPEmailAdapter(_oauth_binding())
+    payload = _payload(
+        delivery_scope="external_customer",
+        body_text="Imperial Holding offer.",
+        reply_to="info@imperialholding.hu",
+    )
+    adapter.send(**payload)
+    gmail.readback_mode = readback_mode
+
+    with pytest.raises(EmailDeliveryError) as raised:
+        adapter.send(**payload)
+
+    assert gmail.post_count == 1
+    assert raised.value.retry_safe is False
+    assert raised.value.transport_attempted is False
 
 
 def test_external_gmail_pre_send_search_failure_does_not_claim_acceptance(monkeypatch):
