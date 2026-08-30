@@ -1,3 +1,349 @@
+﻿function Get-ADASReviewModelContextWindow {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ReviewerModel,
+        [string]$ModelMetadataPath = ''
+    )
+    # Task55 — reliable local context-window lookup for the actual requested
+    # reviewer model slug. Reads ONLY the profile codex models capability
+    # manifest (a JSON of model capability fields); no key, token, credential
+    # or personal data is ever read or returned. Unknown/missing/invalid
+    # metadata => valid=false with a named reason; callers must fail closed or
+    # use the documented safe fallback cap, never assume infinity.
+    # Default metadata path: <profile root>\codex-home\models.json, resolved
+    # from the module directory ($PSScriptRoot of the installed profile module).
+    $invalid = [pscustomobject]@{
+        requestedModel = $ReviewerModel; contextWindow = [int64]0; maxContextWindow = [int64]0;
+        effectivePercent = [int]0; effectiveWindow = [int64]0; sourcePath = ''; valid = $false; reason = ''
+    }
+    if ([string]::IsNullOrWhiteSpace($ReviewerModel)) {
+        $invalid.reason = 'reviewer-model-not-specified'
+        return $invalid
+    }
+    $path = $ModelMetadataPath
+    if ([string]::IsNullOrWhiteSpace($path)) {
+        $profileRoot = Split-Path -Parent $PSScriptRoot
+        $path = Join-Path $profileRoot 'codex-home\models.json'
+    }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        $invalid.reason = 'metadata-file-not-found'
+        $invalid.sourcePath = $path
+        return $invalid
+    }
+    try {
+        $raw = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8)
+        $manifest = $raw | ConvertFrom-Json
+    }
+    catch {
+        $invalid.reason = 'metadata-json-invalid'
+        $invalid.sourcePath = $path
+        return $invalid
+    }
+    $models = @(Get-ADASObjectPropertyInternal $manifest 'models' @())
+    $match = $null
+    foreach ($model in $models) {
+        if ([string](Get-ADASObjectPropertyInternal $model 'slug' '') -eq $ReviewerModel) { $match = $model; break }
+    }
+    if ($null -eq $match) {
+        $invalid.reason = 'model-slug-not-found'
+        $invalid.sourcePath = $path
+        return $invalid
+    }
+    $contextWindow = [int64]0
+    if (-not [int64]::TryParse([string](Get-ADASObjectPropertyInternal $match 'context_window' ''), [ref]$contextWindow)) {
+        $invalid.reason = 'context-window-not-numeric'
+        $invalid.sourcePath = $path
+        return $invalid
+    }
+    # Sanity range: positive and at most 256M tokens (2^28); anything else is metadata corruption.
+    if ($contextWindow -le 0 -or $contextWindow -gt 268435456) {
+        $invalid.reason = 'context-window-out-of-range'
+        $invalid.sourcePath = $path
+        return $invalid
+    }
+    $maxWindow = $contextWindow
+    $maxParsed = [int64]0
+    if ([int64]::TryParse([string](Get-ADASObjectPropertyInternal $match 'max_context_window' ''), [ref]$maxParsed) -and $maxParsed -gt 0 -and $maxParsed -lt $maxWindow) {
+        $maxWindow = $maxParsed
+    }
+    $percent = [int]0
+    $hasPercent = $false
+    $percentValue = Get-ADASObjectPropertyInternal $match 'effective_context_window_percent' $null
+    if ($null -ne $percentValue) {
+        if ([int]::TryParse([string]$percentValue, [ref]$percent) -and $percent -gt 0 -and $percent -le 100) { $hasPercent = $true }
+        else { $percent = [int]0 }
+    }
+    $effectiveWindow = $maxWindow
+    if ($hasPercent) { $effectiveWindow = [int64][Math]::Floor([double]$maxWindow * [double]$percent / 100.0) }
+    return [pscustomobject]@{
+        requestedModel = $ReviewerModel
+        contextWindow = $contextWindow
+        maxContextWindow = $maxWindow
+        effectivePercent = $(if ($hasPercent) { $percent } else { [int]0 })
+        effectiveWindow = $effectiveWindow
+        sourcePath = $path
+        valid = $true
+        reason = ''
+    }
+}
+
+function Get-ADASReviewDiffBudget {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ReviewerModel,
+        [string]$ModelMetadataPath = '',
+        [int64]$MaxOutputTokens = 24000,
+        [int64]$PromptReserveTokens = 65536,
+        [int64]$SafetyReserveTokens = 32768,
+        [int64]$FallbackBudgetCharacters = 350000
+    )
+    # Task55 — conservative, auditable diff-input budget derived from the
+    # configured reviewer context window. Formula (all values recorded):
+    #   budgetTokens = effectiveContextWindow - MaxOutputTokens - PromptReserveTokens - SafetyReserveTokens
+    #   budgetBytes  = budgetTokens
+    #   budgetCharacters = budgetTokens (chars <= bytes; recorded for audit)
+    # Reserve contract:
+    #   - MaxOutputTokens 24,000: the request max_tokens output cap, which also
+    #     consumes context window;
+    #   - PromptReserveTokens 65,536: system instruction, task text, compact gate
+    #     summary, compact risk profile, section framing and the JSON envelope;
+    #   - SafetyReserveTokens 32,768: tokenizer variance and JSON escaping
+    #     inflation (a git diff is prefixed text lines; inflation stays far below
+    #     the reserve even at the budget boundary).
+    # Hard token guarantee: the provider uses a byte-level tokenizer, so token
+    # count <= byte count; requiring byteCount <= budgetTokens therefore bounds
+    # the prompt inside the effective window together with the reserves.
+    # Unknown/missing/invalid metadata => explicit safe fallback cap of 350,000
+    # characters/bytes (the documented legacy cap), budgetSource='fallback-cap'
+    # with a named fallbackReason — fail-closed, never infinity, never silent.
+    $window = Get-ADASReviewModelContextWindow -ReviewerModel $ReviewerModel -ModelMetadataPath $ModelMetadataPath
+    if (-not [bool]$window.valid) {
+        return [pscustomobject]@{
+            requestedModel = $ReviewerModel
+            contextWindow = [int64]0
+            effectiveWindow = [int64]0
+            outputReserveTokens = [int64]$MaxOutputTokens
+            promptReserveTokens = [int64]$PromptReserveTokens
+            safetyReserveTokens = [int64]$SafetyReserveTokens
+            budgetTokens = [int64]0
+            budgetBytes = [int64]$FallbackBudgetCharacters
+            budgetCharacters = [int64]$FallbackBudgetCharacters
+            budgetSource = 'fallback-cap'
+            fallbackReason = [string]$window.reason
+            metadataPath = [string]$window.sourcePath
+            modelMetadataValid = $false
+        }
+    }
+    $budgetTokens = [int64]$window.effectiveWindow - [int64]$MaxOutputTokens - [int64]$PromptReserveTokens - [int64]$SafetyReserveTokens
+    if ($budgetTokens -le 0) {
+        return [pscustomobject]@{
+            requestedModel = $ReviewerModel
+            contextWindow = [int64]$window.contextWindow
+            effectiveWindow = [int64]$window.effectiveWindow
+            outputReserveTokens = [int64]$MaxOutputTokens
+            promptReserveTokens = [int64]$PromptReserveTokens
+            safetyReserveTokens = [int64]$SafetyReserveTokens
+            budgetTokens = [int64]0
+            budgetBytes = [int64]$FallbackBudgetCharacters
+            budgetCharacters = [int64]$FallbackBudgetCharacters
+            budgetSource = 'fallback-cap'
+            fallbackReason = 'context-window-too-small-for-reserves'
+            metadataPath = [string]$window.sourcePath
+            modelMetadataValid = $true
+        }
+    }
+    return [pscustomobject]@{
+        requestedModel = $ReviewerModel
+        contextWindow = [int64]$window.contextWindow
+        effectiveWindow = [int64]$window.effectiveWindow
+        outputReserveTokens = [int64]$MaxOutputTokens
+        promptReserveTokens = [int64]$PromptReserveTokens
+        safetyReserveTokens = [int64]$SafetyReserveTokens
+        budgetTokens = $budgetTokens
+        budgetBytes = $budgetTokens
+        budgetCharacters = $budgetTokens
+        budgetSource = 'context-window'
+        fallbackReason = ''
+        metadataPath = [string]$window.sourcePath
+        modelMetadataValid = $true
+    }
+}
+
+function Get-ADASDiffAcquisitionMeta {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$DiffText,
+        [int64]$MaxCharacters = 0,
+        [string[]]$ReviewerModel = @(),
+        [string]$ModelMetadataPath = ''
+    )
+    # Task55 — full-diff acquisition metadata plus the conservative,
+    # context-derived input budget. NEVER truncates: when the diff exceeds the
+    # budget the result fails closed (budgetExceeded=true, truncated=true,
+    # text='') while the exact character/byte/line/file counts and the full
+    # sha256 stay available for the audit record. No terminal sentinel is ever
+    # appended; the Task54 review-side sentinel detection remains as
+    # defense-in-depth for legacy artifacts.
+    # Budget source precedence:
+    #   1. explicit -MaxCharacters > 0 => legacy-compatible character cap
+    #      (back-compat/testing only), budgetSource='explicit-parameter';
+    #   2. otherwise the context-derived budget of the requested reviewer
+    #      model(s); with multiple slugs the MINIMUM budget wins (conservative).
+    # Comparison is on UTF-8 bytes: byteCount > budgetBytes => exceeded.
+    $characterCount = $DiffText.Length
+    $byteCount = [int64][Text.Encoding]::UTF8.GetByteCount($DiffText)
+    $lineCount = ([regex]::Matches($DiffText, "`n")).Count
+    if ($characterCount -gt 0 -and -not $DiffText.EndsWith("`n")) { $lineCount++ }
+    $fileCount = ([regex]::Matches($DiffText, '(?m)^diff --git ')).Count
+    $sha256 = Get-ADASSha256Text $DiffText
+    $budgetSource = ''
+    $budgetTokens = [int64]0
+    $budgetBytes = [int64]0
+    $budgetCharacters = [int64]0
+    $contextWindow = [int64]0
+    $effectiveWindow = [int64]0
+    $fallbackReason = ''
+    $metadataPath = ''
+    $perModel = New-Object 'System.Collections.Generic.List[object]'
+    if ($MaxCharacters -gt 0) {
+        $budgetSource = 'explicit-parameter'
+        $budgetTokens = [int64]0
+        $budgetBytes = [int64]$MaxCharacters
+        $budgetCharacters = [int64]$MaxCharacters
+    }
+    else {
+        $slugs = @($ReviewerModel | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($slugs.Count -eq 0) { $slugs = @('') }
+        foreach ($slug in $slugs) {
+            $entry = Get-ADASReviewDiffBudget -ReviewerModel $slug -ModelMetadataPath $ModelMetadataPath
+            $perModel.Add($entry)
+            if ($budgetBytes -le 0 -or [int64]$entry.budgetBytes -lt $budgetBytes) {
+                $budgetTokens = [int64]$entry.budgetTokens
+                $budgetBytes = [int64]$entry.budgetBytes
+                $budgetCharacters = [int64]$entry.budgetCharacters
+                $budgetSource = [string]$entry.budgetSource
+                $contextWindow = [int64]$entry.contextWindow
+                $effectiveWindow = [int64]$entry.effectiveWindow
+                $fallbackReason = [string]$entry.fallbackReason
+                $metadataPath = [string]$entry.metadataPath
+            }
+        }
+        if ($slugs.Count -gt 1) { $budgetSource = $budgetSource + '-min-over-models' }
+    }
+    $budgetExceeded = ($byteCount -gt $budgetBytes)
+    return [pscustomobject]@{
+        text = $(if ($budgetExceeded) { '' } else { $DiffText })
+        truncated = $budgetExceeded
+        budgetExceeded = $budgetExceeded
+        characterCount = [int64]$characterCount
+        byteCount = $byteCount
+        lineCount = [int64]$lineCount
+        fileCount = [int64]$fileCount
+        sha256 = $sha256
+        budgetSource = $budgetSource
+        budgetTokens = $budgetTokens
+        budgetBytes = $budgetBytes
+        budgetCharacters = $budgetCharacters
+        contextWindow = $contextWindow
+        effectiveWindow = $effectiveWindow
+        fallbackReason = $fallbackReason
+        metadataPath = $metadataPath
+        requestedModels = @($perModel | ForEach-Object { [string]$_.requestedModel })
+        perModelBudgets = @($perModel | ForEach-Object { $_ })
+    }
+}
+
+function New-ADASDiffBudgetExceededResult {
+    param(
+        [Parameter(Mandatory = $true)][string]$RequestedModel,
+        [Parameter(Mandatory = $true)][int64]$DiffCharacterCount,
+        [Parameter(Mandatory = $true)][int64]$DiffByteCount,
+        [Parameter(Mandatory = $true)][string]$DiffSha256,
+        [Parameter(Mandatory = $true)][int64]$BudgetCharacters,
+        [Parameter(Mandatory = $true)][int64]$BudgetBytes,
+        [string]$BudgetSource = '',
+        [string]$OutputPath = ''
+    )
+    # Task55 — fail-closed structured diff-budget-exceeded review result,
+    # produced BEFORE any provider request. Carries the exact size/budget/hash
+    # metadata (no diff content, no secrets) and a BLOCKED provider attestation
+    # so the gate assembly records the review as unavailable without any
+    # provider attempt. Half-done segment aggregation is never produced: this
+    # result replaces the whole review fail-closed.
+    $evidenceText = "a teljes diff ($DiffCharacterCount karakter, $DiffByteCount bájt, sha256=$DiffSha256) meghaladja a reviewer input budgetet ($BudgetCharacters karakter, $BudgetBytes bájt, forrás: $(if ($BudgetSource) { $BudgetSource } else { 'ismeretlen' })); csonkítás nem történt, provider request nem indult"
+    $providerMeta = [pscustomobject]@{
+        schemaVersion = '1.0'; status = 'BLOCKED'; provider = 'DeepSeek'; endpointFamily = 'https://api.deepseek.com';
+        requestedModel = $RequestedModel; actualModel = '';
+        providerRequestId = $null; requestIdentifier = ''; requestIdentifierType = 'request_id';
+        inputTokens = 0; outputTokens = 0; totalTokens = 0;
+        fallbackAllowed = $false; fallbackObserved = $false;
+        observedAt = (Get-Date).ToUniversalTime().ToString('o'); secretMaterialRecorded = $false
+    }
+    $result = [pscustomobject]@{
+        verdict = 'BLOCKED'
+        confidence = 0
+        summary = 'A teljes diff meghaladja a konfigurált reviewer context windowból származtatott konzervatív input budgetet; a review csonkítás és provider request nélkül fail-closed.'
+        findings = @(@{ severity = 'HIGH'; category = 'diff-budget-exceeded'; file = $null; line = $null; evidence = $evidenceText; requiredFix = 'A változtatást kisebb, review-zható egységekre kell bontani, vagy a reviewer model konfigurációját felül kell vizsgálni.' })
+        missingEvidence = @('independent-review')
+        businessRisks = @()
+        _adasDiffBudget = [pscustomobject]@{
+            schemaVersion = '1.0'
+            diffSha256 = $DiffSha256
+            diffCharacterCount = $DiffCharacterCount
+            diffByteCount = $DiffByteCount
+            budgetCharacters = $BudgetCharacters
+            budgetBytes = $BudgetBytes
+            budgetSource = $BudgetSource
+            budgetExceeded = $true
+            truncationPerformed = $false
+            sentinelAppended = $false
+            secretMaterialRecorded = $false
+        }
+        _adasProvider = $providerMeta
+        _adasAttempts = @()
+    }
+    if ($OutputPath) { Write-ADASJson -Path $OutputPath -Value $result }
+    return $result
+}
+
+function Get-ADASDiffText {
+    param(
+        [Parameter(Mandatory = $true)][string]$GitPath,
+        [Parameter(Mandatory = $true)][string]$WorktreePath,
+        [Parameter(Mandatory = $true)][string]$BeforeCommit,
+        [Parameter(Mandatory = $true)][string]$AfterCommit,
+        [int64]$MaxCharacters = 0,
+        [string[]]$ReviewerModel = @(),
+        [string]$ModelMetadataPath = '',
+        [ref]$Truncated
+    )
+    # Task55 — structured diff-acquisition entry point (replaces the legacy
+    # 350,000-character truncating Get-ADASDiffText). The diff is captured
+    # byte-faithfully: git writes it to a temp file with --output=<path> and
+    # the bytes are decoded as UTF-8, so the acquisition text is exactly the
+    # git output (no console-encoding loss, no trailing-string surgery).
+    # No truncation and no terminal sentinel are ever applied: an over-budget
+    # diff fails closed in the returned metadata (budgetExceeded=true,
+    # text=''), and the legacy [ref]$Truncated out-flag now reports exactly
+    # that fail-closed budget state.
+    $tempFile = Join-Path ([IO.Path]::GetTempPath()) ("adas-diff-" + [Guid]::NewGuid().ToString('N') + ".diff")
+    try {
+        & $GitPath -C $WorktreePath diff --no-ext-diff --unified=5 "$BeforeCommit..$AfterCommit" --output=$tempFile
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            throw "Git diff parancs sikertelen ($exitCode): $BeforeCommit..$AfterCommit"
+        }
+        if (-not (Test-Path -LiteralPath $tempFile -PathType Leaf)) {
+            throw 'A git diff nem állított elő kimeneti fájlt.'
+        }
+        $bytes = [IO.File]::ReadAllBytes($tempFile)
+        $text = [Text.Encoding]::UTF8.GetString($bytes)
+    }
+    finally {
+        Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+    }
+    $meta = Get-ADASDiffAcquisitionMeta -DiffText $text -MaxCharacters $MaxCharacters -ReviewerModel @($ReviewerModel) -ModelMetadataPath $ModelMetadataPath
+    if ($null -ne $Truncated) { $Truncated.Value = [bool]$meta.budgetExceeded }
+    return $meta
+}
+
 function New-ADASReviewAttemptRecord {
     param(
         [Parameter(Mandatory = $true)][int]$Attempt,

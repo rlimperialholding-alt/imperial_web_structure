@@ -1,12 +1,21 @@
 # One-shot provenance extraction used ONLY by Task53 author to create the
 # canonical tracked unit from the Task52 live profile block (byte-exact).
 # Not part of the runtime tooling; kept for reviewability of the extraction.
+# Task55 guard: the canonical source now carries TWO sections (acquisition +
+# review); this Task53 one-shot tool must never overwrite it, so it refuses to
+# run when the target already contains the Task55 acquisition section.
 [CmdletBinding()]
 param(
     [string]$ModulePath = 'C:/Users/user/AppData/Local/ImperialAI/projects/imperial-intelligence-r2/pro/bin/Imperial-ADAS.psm1',
     [string]$TargetPath = 'C:/Users/user/Documents/.imperial-ai-worktrees/imperial-intelligence-r2/scripts/adas-review-transport/Imperial-ADAS-ReviewTransport.ps1'
 )
 $ErrorActionPreference = 'Stop'
+if (Test-Path -LiteralPath $TargetPath -PathType Leaf) {
+    $existing = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($TargetPath))
+    if ($existing.Contains('function Get-ADASReviewModelContextWindow {')) {
+        throw 'Task55 guard: the target already carries the Task55 acquisition section; this Task53 one-shot extraction must not overwrite the two-section canonical source.'
+    }
+}
 $bytes = [IO.File]::ReadAllBytes($ModulePath)
 $text = [Text.Encoding]::UTF8.GetString($bytes)
 $startMarker = 'function New-ADASReviewAttemptRecord {'

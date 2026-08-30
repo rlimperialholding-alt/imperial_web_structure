@@ -5,36 +5,53 @@ independent-review control-plane unit into the live profile module
 (pro\bin\Imperial-ADAS.psm1, outside the git worktree).
 
 The canonical tracked source is
-scripts/adas-review-transport/Imperial-ADAS-ReviewTransport.ps1. This
-installer inserts exactly that source into the named function/helper block
-(New-ADASReviewAttemptRecord .. Invoke-ADASIndependentReview) of the
-profile module and proves byte/normalized-hash equality afterwards.
-Nothing else in the profile may change.
+scripts/adas-review-transport/Imperial-ADAS-ReviewTransport.ps1. It carries
+TWO canonical sections in one file:
+
+  * Section A (Task55, diff acquisition): Get-ADASReviewModelContextWindow,
+    Get-ADASReviewDiffBudget, Get-ADASDiffAcquisitionMeta,
+    New-ADASDiffBudgetExceededResult, Get-ADASDiffText. This section
+    REPLACES the legacy truncating Get-ADASDiffText region of the profile
+    module; its successor in document order must be exactly
+    `Get-ADASImpactMap`.
+  * Section B (Task52-Task54, independent review): the eight canonical
+    functions New-ADASReviewAttemptRecord .. Invoke-ADASIndependentReview;
+    its successor must be exactly `Get-ADASProofManifest`.
+
+This installer inserts exactly those two sections into the two named regions
+of the profile module in ONE atomic swap and proves byte/normalized-hash
+equality afterwards. Nothing else in the profile may change.
 
 Guarantees, in order:
 
-  1. Boundary discipline: the block is located structurally with the
-     PowerShell AST, never by regex guessing. It spans the eight canonical
-     functions (New-ADASReviewAttemptRecord .. Invoke-ADASIndependentReview)
-     in canonical order, and the successor function that follows it in
-     document order must be exactly `Get-ADASProofManifest`. A legacy
-     profile without the new block is located by its standalone
-     `Invoke-ADASIndependentReview` region with the same successor check.
-     Duplication, reordering, or successor drift fails closed; only the
-     named block can ever be modified.
-  2. Pre-sync proof: module SHA-256, size, ACL (icacls), a timestamped
-     backup copy whose hash must equal the before-hash, and prefix/suffix
-     SHA-256 of the untouched regions.
-  3. Atomic replace: the new content is written to a temp file in the
-     module directory and swapped in with [IO.File]::Replace (Windows
-     ReplaceFile), so readers never observe a partially written module.
-  4. Post-sync proof: the installed block is extracted back and must match
-     the canonical tracked source byte-identically or by normalized
-     (CRLF-insensitive) SHA-256; the prefix/suffix hashes must equal the
-     pre-sync values; the module must parse with 0 PowerShell parser
+  1. Boundary discipline: both regions are located structurally with the
+     PowerShell AST, never by regex guessing. Section A spans the five
+     canonical acquisition functions in canonical order (a legacy profile
+     region is located by its standalone `Get-ADASDiffText`), successor
+     `Get-ADASImpactMap`. Section B spans the eight canonical review
+     functions in canonical order (a legacy profile without the new block is
+     located by its standalone `Invoke-ADASIndependentReview` region),
+     successor `Get-ADASProofManifest`. Duplication, reordering, overlap or
+     successor drift fails closed; only the two named regions can ever be
+     modified.
+  2. Canonical discipline: the canonical source must parse with 0 errors and
+     contain EXACTLY the 13 canonical functions (5 + 8) in canonical order;
+     section A = file start .. start of New-ADASReviewAttemptRecord, section
+     B = that start .. file end.
+  3. Pre-sync proof: module SHA-256, size, ACL (icacls), a timestamped
+     backup copy whose hash must equal the before-hash, and prefix/middle/
+     suffix SHA-256 of the untouched regions (prefix before section A, the
+     region between the two sections, and the suffix after section B).
+  4. Atomic replace: the new content is written to a temp file in the module
+     directory and swapped in with [IO.File]::Replace (Windows ReplaceFile),
+     so readers never observe a partially written module.
+  5. Post-sync proof: both installed sections are extracted back and must
+     match the canonical sections byte-identically or by normalized
+     (CRLF-insensitive) SHA-256; the prefix/middle/suffix hashes must equal
+     the pre-sync values; the module must parse with 0 PowerShell parser
      errors. Any mismatch restores the backup (fail-closed rollback) and
      exits nonzero.
-  5. Idempotent: when the installed block already equals the canonical
+  6. Idempotent: when both installed sections already equal the canonical
      source, the sync records a `noop-identical` proof and changes nothing.
 
 The installer never reads, copies or logs any key file, request body,
@@ -74,7 +91,17 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$EXPECTED_SUCCESSOR = 'Get-ADASProofManifest'
+$EXPECTED_SUCCESSOR_A = 'Get-ADASImpactMap'
+$EXPECTED_SUCCESSOR_B = 'Get-ADASProofManifest'
+$CANONICAL_FUNCTIONS_A = @(
+    'Get-ADASReviewModelContextWindow', 'Get-ADASReviewDiffBudget', 'Get-ADASDiffAcquisitionMeta',
+    'New-ADASDiffBudgetExceededResult', 'Get-ADASDiffText'
+)
+$CANONICAL_FUNCTIONS_B = @(
+    'New-ADASReviewAttemptRecord', 'Get-ADASReviewGateCompact', 'Get-ADASReviewDiffSections',
+    'Invoke-ADASDeepSeekCompletion', 'Test-ADASReviewContract', 'ConvertTo-ADASReviewContractObject',
+    'New-ADASReviewUnavailableResult', 'Invoke-ADASIndependentReview'
+)
 
 function Get-AdasSyncSha256Text {
     param([AllowEmptyString()][string]$Text)
@@ -102,18 +129,72 @@ function Get-AdasSyncAclSummary {
     return @($lines | ForEach-Object { [string]$_ })
 }
 
-function Find-AdasSyncBlock {
+function Find-AdasSyncRegionA {
     param([Parameter(Mandatory = $true)][string]$ModuleText)
-    # Structural (AST) block location, never regex guessing: the block is the
-    # region from the first helper function through the named function, up to
-    # the successor function that follows it in document order. The successor
-    # must be exactly the expected profile function, and the block must contain
-    # the eight canonical functions in canonical order; any drift fails closed.
+    # Structural (AST) acquisition-region location, never regex guessing. The region
+    # is the canonical section A (the five acquisition functions, ending with
+    # Get-ADASDiffText) or the legacy single Get-ADASDiffText function, up to the
+    # successor function that follows it in document order. The successor must be
+    # exactly Get-ADASImpactMap; any drift fails closed.
     $tokens = $null
     $errors = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseInput($ModuleText, [ref]$tokens, [ref]$errors)
     if ($errors.Count -ne 0) {
-        throw "INSTALL-FAIL-CLOSED: module has $($errors.Count) parser error(s); the block cannot be located safely."
+        throw "INSTALL-FAIL-CLOSED: module has $($errors.Count) parser error(s); region A cannot be located safely."
+    }
+    $functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
+    $diffTextIndex = -1
+    for ($i = 0; $i -lt $functions.Count; $i++) {
+        if ([string]$functions[$i].Name -eq 'Get-ADASDiffText') { $diffTextIndex = $i; break }
+    }
+    if ($diffTextIndex -lt 0) {
+        throw 'INSTALL-FAIL-CLOSED: Get-ADASDiffText does not exist in the module; profile structure drifted, refusing to modify anything.'
+    }
+    $startIndex = -1
+    $mode = ''
+    if ($diffTextIndex -ge $CANONICAL_FUNCTIONS_A.Count - 1 -and [string]$functions[$diffTextIndex - ($CANONICAL_FUNCTIONS_A.Count - 1)].Name -eq 'Get-ADASReviewModelContextWindow') {
+        # Canonical section A already installed: verify the exact five-name sequence.
+        for ($i = 0; $i -lt $CANONICAL_FUNCTIONS_A.Count; $i++) {
+            $actualName = [string]$functions[$diffTextIndex - ($CANONICAL_FUNCTIONS_A.Count - 1) + $i].Name
+            if ($actualName -ne $CANONICAL_FUNCTIONS_A[$i]) {
+                throw "INSTALL-FAIL-CLOSED: region A function #$($i + 1) is '$actualName', expected '$($CANONICAL_FUNCTIONS_A[$i])'; profile structure drifted."
+            }
+        }
+        $mode = 'task55-acquisition-block'
+        $startIndex = $diffTextIndex - ($CANONICAL_FUNCTIONS_A.Count - 1)
+    }
+    else {
+        $mode = 'legacy-acquisition-block'
+        $startIndex = $diffTextIndex
+    }
+    $successorIndex = $diffTextIndex + 1
+    if ($successorIndex -ge $functions.Count) {
+        throw 'INSTALL-FAIL-CLOSED: no successor function after region A; profile structure drifted.'
+    }
+    $successor = [string]$functions[$successorIndex].Name
+    if ($successor -ne $EXPECTED_SUCCESSOR_A) {
+        throw "INSTALL-FAIL-CLOSED: region A successor function is '$successor', expected '$EXPECTED_SUCCESSOR_A'; profile structure drifted."
+    }
+    $start = [int]$functions[$startIndex].Extent.StartOffset
+    $end = [int]$functions[$successorIndex].Extent.StartOffset
+    if ($end -le $start) {
+        throw 'INSTALL-FAIL-CLOSED: region A boundaries are not ordered; profile structure drifted.'
+    }
+    return [pscustomobject]@{ mode = $mode; start = $start; end = $end; successor = $successor }
+}
+
+function Find-AdasSyncRegionB {
+    param([Parameter(Mandatory = $true)][string]$ModuleText)
+    # Structural (AST) review-region location, never regex guessing: the region
+    # from the first review helper function through the named function, up to the
+    # successor function that follows it in document order. The successor must be
+    # exactly Get-ADASProofManifest, and the region must contain the eight
+    # canonical review functions in canonical order; any drift fails closed.
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($ModuleText, [ref]$tokens, [ref]$errors)
+    if ($errors.Count -ne 0) {
+        throw "INSTALL-FAIL-CLOSED: module has $($errors.Count) parser error(s); region B cannot be located safely."
     }
     $functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
     $firstIndex = -1
@@ -129,13 +210,10 @@ function Find-AdasSyncBlock {
         if ($namedIndex -lt 0) {
             throw 'INSTALL-FAIL-CLOSED: block start helper exists but the named function Invoke-ADASIndependentReview does not follow it; profile structure drifted.'
         }
-        $expected = @('New-ADASReviewAttemptRecord', 'Get-ADASReviewGateCompact', 'Get-ADASReviewDiffSections',
-            'Invoke-ADASDeepSeekCompletion', 'Test-ADASReviewContract', 'ConvertTo-ADASReviewContractObject',
-            'New-ADASReviewUnavailableResult', 'Invoke-ADASIndependentReview')
-        for ($i = 0; $i -lt $expected.Count; $i++) {
+        for ($i = 0; $i -lt $CANONICAL_FUNCTIONS_B.Count; $i++) {
             $actualName = [string]$functions[$firstIndex + $i].Name
-            if ($actualName -ne $expected[$i]) {
-                throw "INSTALL-FAIL-CLOSED: block function #$($i + 1) is '$actualName', expected '$($expected[$i])'; profile structure drifted."
+            if ($actualName -ne $CANONICAL_FUNCTIONS_B[$i]) {
+                throw "INSTALL-FAIL-CLOSED: region B function #$($i + 1) is '$actualName', expected '$($CANONICAL_FUNCTIONS_B[$i])'; profile structure drifted."
             }
         }
         $successorIndex = $namedIndex + 1
@@ -146,25 +224,64 @@ function Find-AdasSyncBlock {
             if ([string]$functions[$i].Name -eq 'Invoke-ADASIndependentReview') { $namedIndex = $i; break }
         }
         if ($namedIndex -lt 0) {
-            throw 'INSTALL-FAIL-CLOSED: neither the canonical block nor the legacy Invoke-ADASIndependentReview function exists; profile structure drifted, refusing to modify anything.'
+            throw 'INSTALL-FAIL-CLOSED: neither the canonical review block nor the legacy Invoke-ADASIndependentReview function exists; profile structure drifted, refusing to modify anything.'
         }
         $mode = 'legacy-block'
         $firstIndex = $namedIndex
         $successorIndex = $namedIndex + 1
     }
     if ($successorIndex -ge $functions.Count) {
-        throw 'INSTALL-FAIL-CLOSED: no successor function after the block; profile structure drifted.'
+        throw 'INSTALL-FAIL-CLOSED: no successor function after region B; profile structure drifted.'
     }
     $successor = [string]$functions[$successorIndex].Name
-    if ($successor -ne $EXPECTED_SUCCESSOR) {
-        throw "INSTALL-FAIL-CLOSED: successor function is '$successor', expected '$EXPECTED_SUCCESSOR'; profile structure drifted."
+    if ($successor -ne $EXPECTED_SUCCESSOR_B) {
+        throw "INSTALL-FAIL-CLOSED: region B successor function is '$successor', expected '$EXPECTED_SUCCESSOR_B'; profile structure drifted."
     }
     $start = [int]$functions[$firstIndex].Extent.StartOffset
     $end = [int]$functions[$successorIndex].Extent.StartOffset
     if ($end -le $start) {
-        throw 'INSTALL-FAIL-CLOSED: block boundaries are not ordered; profile structure drifted.'
+        throw 'INSTALL-FAIL-CLOSED: region B boundaries are not ordered; profile structure drifted.'
     }
     return [pscustomobject]@{ mode = $mode; start = $start; end = $end; successor = $successor }
+}
+
+function Split-AdasCanonicalSections {
+    param([Parameter(Mandatory = $true)][string]$CanonicalText)
+    # Canonical discipline: the source must contain EXACTLY the 13 canonical
+    # functions (5 acquisition + 8 review) in canonical order. Section A = file
+    # start .. start of New-ADASReviewAttemptRecord; section B = that start ..
+    # file end. Any extra/missing/reordered function fails closed.
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($CanonicalText, [ref]$tokens, [ref]$errors)
+    if ($errors.Count -ne 0) {
+        throw "INSTALL-FAIL-CLOSED: canonical source has $($errors.Count) parser error(s); refusing to sync a broken unit."
+    }
+    $functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
+    $expectedAll = @($CANONICAL_FUNCTIONS_A) + @($CANONICAL_FUNCTIONS_B)
+    if ($functions.Count -ne $expectedAll.Count) {
+        throw "INSTALL-FAIL-CLOSED: canonical source has $($functions.Count) functions, expected exactly $($expectedAll.Count)."
+    }
+    for ($i = 0; $i -lt $expectedAll.Count; $i++) {
+        $actualName = [string]$functions[$i].Name
+        if ($actualName -ne $expectedAll[$i]) {
+            throw "INSTALL-FAIL-CLOSED: canonical function #$($i + 1) is '$actualName', expected '$($expectedAll[$i])'."
+        }
+    }
+    $sectionBStart = [int]$functions[$CANONICAL_FUNCTIONS_A.Count].Extent.StartOffset
+    if ($sectionBStart -le 0) {
+        throw 'INSTALL-FAIL-CLOSED: canonical section boundaries are not ordered.'
+    }
+    $sectionA = $CanonicalText.Substring(0, $sectionBStart)
+    $sectionB = $CanonicalText.Substring($sectionBStart)
+    return [pscustomobject]@{
+        sectionA = $sectionA
+        sectionB = $sectionB
+        sectionARawHash = Get-AdasSyncSha256Text $sectionA
+        sectionBRawHash = Get-AdasSyncSha256Text $sectionB
+        sectionANormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $sectionA)
+        sectionBNormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $sectionB)
+    }
 }
 
 function Write-AdasSyncProof {
@@ -208,17 +325,12 @@ try {
     }
 
     # --- Canonical source must itself be structurally sound before any sync ---
-    $canonicalTokens = $null
-    $canonicalErrors = $null
-    [System.Management.Automation.Language.Parser]::ParseFile($canonicalPath, [ref]$canonicalTokens, [ref]$canonicalErrors) | Out-Null
-    if ($canonicalErrors.Count -ne 0) {
-        throw "INSTALL-FAIL-CLOSED: canonical source has $($canonicalErrors.Count) parser error(s); refusing to sync a broken unit."
-    }
     $canonicalBytes = [IO.File]::ReadAllBytes($canonicalPath)
     $canonicalText = [Text.Encoding]::UTF8.GetString($canonicalBytes)
     $canonicalText = $canonicalText -replace "^\uFEFF", ''
     $canonicalRawHash = Get-AdasSyncSha256File $canonicalPath
     $canonicalNormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $canonicalText)
+    $sections = Split-AdasCanonicalSections -CanonicalText $canonicalText
 
     # --- Module before-state ---
     $moduleBytes = [IO.File]::ReadAllBytes($modulePath)
@@ -229,20 +341,31 @@ try {
     $moduleText = [Text.Encoding]::UTF8.GetString($moduleBytes)
     $moduleText = $moduleText -replace "^\uFEFF", ''
 
-    $boundaries = Find-AdasSyncBlock -ModuleText $moduleText
-    $start = [int]$boundaries.start
-    $end = [int]$boundaries.end
-    $prefixText = $moduleText.Substring(0, $start)
-    $suffixText = $moduleText.Substring($end)
-    $prefixHash = Get-AdasSyncSha256Text $prefixText
-    $suffixHash = Get-AdasSyncSha256Text $suffixText
-    $installedBlockText = $moduleText.Substring($start, $end - $start)
-    $installedBlockRawHash = Get-AdasSyncSha256Text $installedBlockText
-    $installedBlockNormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $installedBlockText)
+    $boundariesA = Find-AdasSyncRegionA -ModuleText $moduleText
+    $boundariesB = Find-AdasSyncRegionB -ModuleText $moduleText
+    if ([int]$boundariesB.start -lt [int]$boundariesA.end) {
+        throw "INSTALL-FAIL-CLOSED: region B starts before region A ends (A end $($boundariesA.end), B start $($boundariesB.start)); regions overlap or are out of order."
+    }
+    $startA = [int]$boundariesA.start
+    $endA = [int]$boundariesA.end
+    $startB = [int]$boundariesB.start
+    $endB = [int]$boundariesB.end
+    $prefixAText = $moduleText.Substring(0, $startA)
+    $middleText = $moduleText.Substring($endA, $startB - $endA)
+    $suffixBText = $moduleText.Substring($endB)
+    $prefixAHash = Get-AdasSyncSha256Text $prefixAText
+    $middleHash = Get-AdasSyncSha256Text $middleText
+    $suffixBHash = Get-AdasSyncSha256Text $suffixBText
+    $installedRegionAText = $moduleText.Substring($startA, $endA - $startA)
+    $installedRegionBText = $moduleText.Substring($startB, $endB - $startB)
+    $installedRegionARawHash = Get-AdasSyncSha256Text $installedRegionAText
+    $installedRegionANormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $installedRegionAText)
+    $installedRegionBRawHash = Get-AdasSyncSha256Text $installedRegionBText
+    $installedRegionBNormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $installedRegionBText)
 
-    $newModuleText = $prefixText + $canonicalText + $suffixText
+    $newModuleText = $prefixAText + $sections.sectionA + $middleText + $sections.sectionB + $suffixBText
     $byteEqual = ($newModuleText -ceq $moduleText)
-    $action = if ($byteEqual) { 'noop-identical' } else { 'replace-block' }
+    $action = if ($byteEqual) { 'noop-identical' } else { 'replace-both-regions' }
 
     # --- Planned content must parse (fail-closed posture; -SkipParseVerify opts out) ---
     $plannedParseErrors = 0
@@ -259,25 +382,50 @@ try {
     $backupName = "Imperial-ADAS.psm1.pre-sync-$($moduleBeforeHash.Substring(0, 8))-$stamp.bak"
     $backupPath = Join-Path $backupDir $backupName
 
-    $proof.mode = [string]$boundaries.mode
-    $proof.successor = [string]$boundaries.successor
+    $proof.mode = [string]$boundariesB.mode
+    $proof.successor = [string]$boundariesB.successor
     $proof.action = $action
     $proof.moduleBeforeHash = $moduleBeforeHash
     $proof.moduleBeforeSize = $moduleBeforeSize
     $proof.moduleBeforeAcl = @($moduleBeforeAcl)
-    $proof.prefixHash = $prefixHash
-    $proof.suffixHash = $suffixHash
-    $proof.canonicalRawSha256 = $canonicalRawHash
-    $proof.canonicalNormalizedSha256 = $canonicalNormalizedHash
-    $proof.installedBlockRawSha256 = $installedBlockRawHash
-    $proof.installedBlockNormalizedSha256 = $installedBlockNormalizedHash
+    $proof.prefixAHash = $prefixAHash
+    $proof.middleHash = $middleHash
+    $proof.suffixBHash = $suffixBHash
+    $proof.canonical = [ordered]@{
+        rawSha256 = $canonicalRawHash
+        normalizedSha256 = $canonicalNormalizedHash
+        sectionARawSha256 = [string]$sections.sectionARawHash
+        sectionANormalizedSha256 = [string]$sections.sectionANormalizedHash
+        sectionBRawSha256 = [string]$sections.sectionBRawHash
+        sectionBNormalizedSha256 = [string]$sections.sectionBNormalizedHash
+        sectionACharacterCount = $sections.sectionA.Length
+        sectionBCharacterCount = $sections.sectionB.Length
+    }
+    $proof.regionA = [ordered]@{
+        mode = [string]$boundariesA.mode
+        successor = [string]$boundariesA.successor
+        installedRawSha256 = $installedRegionARawHash
+        installedNormalizedSha256 = $installedRegionANormalizedHash
+        extractedRawSha256 = $null
+        extractedNormalizedSha256 = $null
+        blockByteEqual = $null
+        blockNormalizedEqual = $null
+    }
+    $proof.regionB = [ordered]@{
+        mode = [string]$boundariesB.mode
+        successor = [string]$boundariesB.successor
+        installedRawSha256 = $installedRegionBRawHash
+        installedNormalizedSha256 = $installedRegionBNormalizedHash
+        extractedRawSha256 = $null
+        extractedNormalizedSha256 = $null
+        blockByteEqual = $null
+        blockNormalizedEqual = $null
+    }
     $proof.plannedParseErrors = $plannedParseErrors
     $proof.backupPath = $backupPath
     $proof.backupHash = $null
     $proof.moduleAfterHash = $null
-    $proof.blockByteEqual = $null
-    $proof.blockNormalizedEqual = $null
-    $proof.prefixSuffixPreserved = $null
+    $proof.prefixMiddleSuffixPreserved = $null
     $proof.syncedParseErrors = $null
     $proof.rollbackPerformed = $false
 
@@ -285,7 +433,7 @@ try {
         $proof.result = 'dry-run-plan'
         $proof.moduleAfterHash = $moduleBeforeHash
         Write-AdasSyncProof -Proof $proof -Path $proofPath
-        Write-Output "DRY-RUN OK: action=$action mode=$($boundaries.mode); no file was modified. proof=$proofPath"
+        Write-Output "DRY-RUN OK: action=$action modeA=$($boundariesA.mode) modeB=$($boundariesB.mode); no file was modified. proof=$proofPath"
         exit 0
     }
 
@@ -302,12 +450,14 @@ try {
     if ($action -eq 'noop-identical') {
         $proof.result = 'synced-noop-identical'
         $proof.moduleAfterHash = $moduleBeforeHash
-        $proof.blockByteEqual = $true
-        $proof.blockNormalizedEqual = $true
-        $proof.prefixSuffixPreserved = $true
+        $proof.regionA.blockByteEqual = $true
+        $proof.regionA.blockNormalizedEqual = $true
+        $proof.regionB.blockByteEqual = $true
+        $proof.regionB.blockNormalizedEqual = $true
+        $proof.prefixMiddleSuffixPreserved = $true
         $proof.syncedParseErrors = $plannedParseErrors
         Write-AdasSyncProof -Proof $proof -Path $proofPath
-        Write-Output "SYNC OK (noop-identical): installed block already equals the canonical source. proof=$proofPath"
+        Write-Output "SYNC OK (noop-identical): installed sections already equal the canonical source. proof=$proofPath"
         exit 0
     }
 
@@ -339,18 +489,28 @@ try {
         $afterBytes = [IO.File]::ReadAllBytes($modulePath)
         $afterText = [Text.Encoding]::UTF8.GetString($afterBytes)
         $afterText = $afterText -replace "^\uFEFF", ''
-        $afterBoundaries = Find-AdasSyncBlock -ModuleText $afterText
-        if ([string]$afterBoundaries.mode -ne 'task52-block') {
-            throw "INSTALL-FAIL-CLOSED: post-sync block mode is '$($afterBoundaries.mode)', expected 'task52-block'."
+        $afterBoundariesA = Find-AdasSyncRegionA -ModuleText $afterText
+        $afterBoundariesB = Find-AdasSyncRegionB -ModuleText $afterText
+        if ([string]$afterBoundariesA.mode -ne 'task55-acquisition-block') {
+            throw "INSTALL-FAIL-CLOSED: post-sync region A mode is '$($afterBoundariesA.mode)', expected 'task55-acquisition-block'."
         }
-        $afterBlock = $afterText.Substring([int]$afterBoundaries.start, [int]$afterBoundaries.end - [int]$afterBoundaries.start)
-        $afterPrefix = $afterText.Substring(0, [int]$afterBoundaries.start)
-        $afterSuffix = $afterText.Substring([int]$afterBoundaries.end)
-        $afterBlockRawHash = Get-AdasSyncSha256Text $afterBlock
-        $afterBlockNormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $afterBlock)
-        $blockByteEqual = ($afterBlockRawHash -eq $canonicalRawHash)
-        $blockNormalizedEqual = ($afterBlockNormalizedHash -eq $canonicalNormalizedHash)
-        $prefixSuffixPreserved = ((Get-AdasSyncSha256Text $afterPrefix) -eq $prefixHash -and (Get-AdasSyncSha256Text $afterSuffix) -eq $suffixHash)
+        if ([string]$afterBoundariesB.mode -ne 'task52-block') {
+            throw "INSTALL-FAIL-CLOSED: post-sync region B mode is '$($afterBoundariesB.mode)', expected 'task52-block'."
+        }
+        $afterRegionA = $afterText.Substring([int]$afterBoundariesA.start, [int]$afterBoundariesA.end - [int]$afterBoundariesA.start)
+        $afterRegionB = $afterText.Substring([int]$afterBoundariesB.start, [int]$afterBoundariesB.end - [int]$afterBoundariesB.start)
+        $afterPrefixA = $afterText.Substring(0, [int]$afterBoundariesA.start)
+        $afterMiddle = $afterText.Substring([int]$afterBoundariesA.end, [int]$afterBoundariesB.start - [int]$afterBoundariesA.end)
+        $afterSuffixB = $afterText.Substring([int]$afterBoundariesB.end)
+        $afterRegionARawHash = Get-AdasSyncSha256Text $afterRegionA
+        $afterRegionANormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $afterRegionA)
+        $afterRegionBRawHash = Get-AdasSyncSha256Text $afterRegionB
+        $afterRegionBNormalizedHash = Get-AdasSyncSha256Text (Get-AdasSyncNormalizedText $afterRegionB)
+        $regionAByteEqual = ($afterRegionARawHash -eq [string]$sections.sectionARawHash)
+        $regionANormalizedEqual = ($afterRegionANormalizedHash -eq [string]$sections.sectionANormalizedHash)
+        $regionBByteEqual = ($afterRegionBRawHash -eq [string]$sections.sectionBRawHash)
+        $regionBNormalizedEqual = ($afterRegionBNormalizedHash -eq [string]$sections.sectionBNormalizedHash)
+        $prefixMiddleSuffixPreserved = ((Get-AdasSyncSha256Text $afterPrefixA) -eq $prefixAHash -and (Get-AdasSyncSha256Text $afterMiddle) -eq $middleHash -and (Get-AdasSyncSha256Text $afterSuffixB) -eq $suffixBHash)
         $syncedParseErrors = 0
         if (-not $SkipParseVerify) {
             $tokens = $null
@@ -358,11 +518,14 @@ try {
             [System.Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$tokens, [ref]$errors) | Out-Null
             $syncedParseErrors = $errors.Count
         }
-        if (-not $blockNormalizedEqual) {
-            throw "INSTALL-FAIL-CLOSED: extracted installed block normalized hash $afterBlockNormalizedHash != canonical $canonicalNormalizedHash."
+        if (-not $regionANormalizedEqual) {
+            throw "INSTALL-FAIL-CLOSED: extracted installed region A normalized hash $afterRegionANormalizedHash != canonical $($sections.sectionANormalizedHash)."
         }
-        if (-not $prefixSuffixPreserved) {
-            throw "INSTALL-FAIL-CLOSED: prefix/suffix hashes changed during sync; only the named block may change."
+        if (-not $regionBNormalizedEqual) {
+            throw "INSTALL-FAIL-CLOSED: extracted installed region B normalized hash $afterRegionBNormalizedHash != canonical $($sections.sectionBNormalizedHash)."
+        }
+        if (-not $prefixMiddleSuffixPreserved) {
+            throw 'INSTALL-FAIL-CLOSED: prefix/middle/suffix hashes changed during sync; only the two named regions may change.'
         }
         if ($syncedParseErrors -ne 0) {
             throw "INSTALL-FAIL-CLOSED: synced module has $syncedParseErrors parser error(s)."
@@ -370,14 +533,18 @@ try {
         $moduleAfterHash = Get-AdasSyncSha256File $modulePath
         $proof.result = 'synced-ok'
         $proof.moduleAfterHash = $moduleAfterHash
-        $proof.blockByteEqual = [bool]$blockByteEqual
-        $proof.blockNormalizedEqual = [bool]$blockNormalizedEqual
-        $proof.prefixSuffixPreserved = [bool]$prefixSuffixPreserved
+        $proof.regionA.extractedRawSha256 = $afterRegionARawHash
+        $proof.regionA.extractedNormalizedSha256 = $afterRegionANormalizedHash
+        $proof.regionA.blockByteEqual = [bool]$regionAByteEqual
+        $proof.regionA.blockNormalizedEqual = [bool]$regionANormalizedEqual
+        $proof.regionB.extractedRawSha256 = $afterRegionBRawHash
+        $proof.regionB.extractedNormalizedSha256 = $afterRegionBNormalizedHash
+        $proof.regionB.blockByteEqual = [bool]$regionBByteEqual
+        $proof.regionB.blockNormalizedEqual = [bool]$regionBNormalizedEqual
+        $proof.prefixMiddleSuffixPreserved = [bool]$prefixMiddleSuffixPreserved
         $proof.syncedParseErrors = $syncedParseErrors
-        $proof.installedBlockRawSha256 = $afterBlockRawHash
-        $proof.installedBlockNormalizedSha256 = $afterBlockNormalizedHash
         Write-AdasSyncProof -Proof $proof -Path $proofPath
-        Write-Output "SYNC OK: mode=$($boundaries.mode) action=$action byteEqual=$blockByteEqual normalizedEqual=$blockNormalizedEqual prefixSuffixPreserved=$prefixSuffixPreserved parseErrors=$syncedParseErrors. proof=$proofPath"
+        Write-Output "SYNC OK: action=$action modeA=$($boundariesA.mode) modeB=$($boundariesB.mode) regionAByteEqual=$regionAByteEqual regionANormalizedEqual=$regionANormalizedEqual regionBByteEqual=$regionBByteEqual regionBNormalizedEqual=$regionBNormalizedEqual prefixMiddleSuffixPreserved=$prefixMiddleSuffixPreserved parseErrors=$syncedParseErrors. proof=$proofPath"
         exit 0
     }
     catch {
