@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import http.client
 import json
 import re
 import smtplib
@@ -11,16 +12,20 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, time
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import formatdate
 from html.parser import HTMLParser
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .canonical_policy import ACTIVE_CONTENT_BRANDS
 from .registry import BrandBinding, GrowthRegistryError
+from .registry import settings as growth_settings
 
 HARD_BLOCKED_RECIPIENT_DOMAINS = {
     "leier.hu",
@@ -89,10 +94,9 @@ ACTIVE_CONTENT_BRAND_TERM_KEYS = {
     "BauShield": "bau-shield",
 }
 
-if (
-    set(ACTIVE_CONTENT_BRAND_TERM_KEYS) != set(ACTIVE_CONTENT_BRANDS)
-    or set(ACTIVE_CONTENT_BRAND_TERM_KEYS.values()) != set(BRAND_IDENTITY_TERMS)
-):
+if set(ACTIVE_CONTENT_BRAND_TERM_KEYS) != set(ACTIVE_CONTENT_BRANDS) or set(
+    ACTIVE_CONTENT_BRAND_TERM_KEYS.values()
+) != set(BRAND_IDENTITY_TERMS):
     raise RuntimeError("customer-facing brand identity inventory is incomplete")
 
 DELIVERY_SCOPE_EXTERNAL_CUSTOMER = "external_customer"
@@ -153,8 +157,7 @@ def _canonical_addr_spec(value: str, *, field: str) -> str:
         or domain.startswith(".")
         or domain.endswith(".")
         or any(
-            not label or label.startswith("-") or label.endswith("-")
-            for label in domain.split(".")
+            not label or label.startswith("-") or label.endswith("-") for label in domain.split(".")
         )
     ):
         raise GrowthRegistryError(f"{field}_must_be_one_canonical_addr_spec_no_send")
@@ -183,8 +186,7 @@ def _assert_recipient_not_hard_blocked(to_email: str) -> None:
         or "leier" in to_email.casefold()
         or recipient_domain in HARD_BLOCKED_RECIPIENT_DOMAINS
         or any(
-            recipient_domain.endswith(f".{blocked}")
-            for blocked in HARD_BLOCKED_RECIPIENT_DOMAINS
+            recipient_domain.endswith(f".{blocked}") for blocked in HARD_BLOCKED_RECIPIENT_DOMAINS
         )
     ):
         raise GrowthRegistryError(
@@ -253,8 +255,7 @@ def _assert_customer_facing_outbound_allowed(
     content_normalized = f" {_normalize_customer_facing(content_visible)} "
     own_identity_terms = BRAND_IDENTITY_TERMS[sender_brand]
     if not any(
-        f" {_normalize_customer_facing(term)} " in content_normalized
-        for term in own_identity_terms
+        f" {_normalize_customer_facing(term)} " in content_normalized for term in own_identity_terms
     ):
         raise GrowthRegistryError("outbound_required_brand_identity_missing_no_send")
 
@@ -279,6 +280,21 @@ def _assert_internal_outbound_allowed(
         raise GrowthRegistryError("internal_recipient_domain_no_send")
     if reply_to and _email_domain(reply_to) != INTERNAL_EMAIL_DOMAIN:
         raise GrowthRegistryError("internal_reply_to_domain_no_send")
+
+
+def _assert_external_transport_window_open() -> None:
+    config = growth_settings()
+    try:
+        zone = ZoneInfo(config.timezone)
+        start = time.fromisoformat(config.outreach_send_start_local)
+        end = time.fromisoformat(config.outreach_send_end_local)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
+    if start >= end:
+        raise GrowthRegistryError("Outreach sending window must start before it ends")
+    local_time = datetime.now(zone).time().replace(tzinfo=None)
+    if not start <= local_time < end:
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
 
 
 def _single_header(message: EmailMessage, name: str) -> str:
@@ -397,9 +413,7 @@ def _verified_gmail_resource(
 
 
 def _deterministic_message_id(*, idempotency_key: str, sender_domain: str) -> str:
-    digest = hashlib.sha256(
-        f"{idempotency_key}\0{sender_domain.lower()}".encode()
-    ).hexdigest()
+    digest = hashlib.sha256(f"{idempotency_key}\0{sender_domain.lower()}".encode()).hexdigest()
     return f"<imperial-{digest}@{sender_domain.lower()}>"
 
 
@@ -411,6 +425,7 @@ class EmailDeliveryError(RuntimeError):
         retry_safe: bool,
         authentication_failure: bool = False,
         accepted_but_unverified: bool = False,
+        transport_attempted: bool = False,
         provider_message_id: str | None = None,
         detail: dict[str, Any] | None = None,
     ) -> None:
@@ -419,6 +434,7 @@ class EmailDeliveryError(RuntimeError):
         self.retry_safe = retry_safe
         self.authentication_failure = authentication_failure
         self.accepted_but_unverified = accepted_but_unverified
+        self.transport_attempted = transport_attempted
         self.provider_message_id = provider_message_id
         self.detail = dict(detail or {})
 
@@ -438,9 +454,8 @@ class SMTPEmailAdapter:
         self.secret = binding.secret
 
     def preflight(self, *, delivery_scope: str | None = None) -> None:
-        if (
-            delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER
-            and not GMAIL_OAUTH_FIELDS.issubset(self.secret)
+        if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER and not GMAIL_OAUTH_FIELDS.issubset(
+            self.secret
         ):
             raise GrowthRegistryError("external_customer_gmail_oauth_required_no_send")
         if GMAIL_OAUTH_FIELDS.issubset(self.secret):
@@ -466,6 +481,88 @@ class SMTPEmailAdapter:
         if not self.secret.get("use_ssl") and not self.secret.get("starttls"):
             raise GrowthRegistryError("Encrypted SMTP transport is required")
 
+    def live_preflight(self, *, delivery_scope: str) -> dict[str, str]:
+        """Verify the external Gmail identity without creating a message."""
+        self.preflight(delivery_scope=delivery_scope)
+        if delivery_scope != DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
+            return {"provider": "smtp"}
+        token_body = urllib.parse.urlencode(
+            {
+                "client_id": self.secret["client_id"],
+                "client_secret": self.secret["client_secret"],
+                "refresh_token": self.secret["refresh_token"],
+                "grant_type": "refresh_token",
+            }
+        ).encode()
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    "https://oauth2.googleapis.com/token",
+                    data=token_body,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                ),
+                timeout=30,
+            ) as response:
+                token_payload = json.loads(response.read(1_000_000))
+            if not isinstance(token_payload, dict):
+                raise ValueError("token response is not an object")
+            access_token = str(token_payload.get("access_token") or "")
+            if not access_token:
+                raise ValueError("access token is missing")
+            if str(token_payload.get("token_type") or "").casefold() != "bearer":
+                raise GrowthRegistryError(
+                    "gmail_live_preflight_token_type_invalid_no_send"
+                )
+            granted_scopes = str(token_payload.get("scope") or "").split()
+            if not any(
+                scope.endswith("/gmail.compose") or scope.endswith("/gmail.send")
+                for scope in granted_scopes
+            ):
+                raise GrowthRegistryError(
+                    "gmail_live_preflight_granted_send_scope_missing_no_send"
+                )
+            if not any(
+                scope.endswith(GMAIL_READ_SCOPE_SUFFIXES) for scope in granted_scopes
+            ):
+                raise GrowthRegistryError(
+                    "gmail_live_preflight_granted_read_scope_missing_no_send"
+                )
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                ),
+                timeout=30,
+            ) as response:
+                profile = json.loads(response.read(1_000_000))
+            if not isinstance(profile, dict):
+                raise ValueError("profile response is not an object")
+        except GrowthRegistryError:
+            raise
+        except urllib.error.HTTPError as exc:
+            raise GrowthRegistryError(
+                f"gmail_live_preflight_http_{exc.code}_no_send"
+            ) from exc
+        except (
+            OSError,
+            urllib.error.URLError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            ValueError,
+        ) as exc:
+            raise GrowthRegistryError(
+                f"gmail_live_preflight_{type(exc).__name__}_no_send"
+            ) from exc
+        profile_email = str(profile.get("emailAddress") or "").strip().lower()
+        if profile_email != self.binding.sender_email:
+            raise GrowthRegistryError("gmail_live_preflight_sender_mismatch_no_send")
+        return {
+            "provider": "gmail_api",
+            "profile_email": profile_email,
+            "granted_scope_verified": "gmail_send_or_compose+gmail_read",
+        }
+
     def _send_gmail_api(
         self,
         *,
@@ -473,6 +570,7 @@ class SMTPEmailAdapter:
         message: EmailMessage,
         message_id: str,
         reconcile_only: bool = False,
+        pre_send_guard: Callable[[], None] | None = None,
     ) -> EmailReceipt:
         token_body = urllib.parse.urlencode(
             {
@@ -508,7 +606,13 @@ class SMTPEmailAdapter:
                 retry_safe=exc.code >= 500 or exc.code == 429,
                 authentication_failure=authentication_failure,
             ) from exc
-        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        except (
+            OSError,
+            urllib.error.URLError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ) as exc:
             raise EmailDeliveryError(
                 f"gmail_oauth_pre_send:{type(exc).__name__}", retry_safe=True
             ) from exc
@@ -541,7 +645,13 @@ class SMTPEmailAdapter:
                 retry_safe=exc.code >= 500 or exc.code == 429,
                 authentication_failure=exc.code in {400, 401, 403},
             ) from exc
-        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        except (
+            OSError,
+            urllib.error.URLError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ) as exc:
             raise EmailDeliveryError(
                 f"gmail_oauth_profile_pre_send:{type(exc).__name__}",
                 retry_safe=True,
@@ -553,11 +663,13 @@ class SMTPEmailAdapter:
             candidate_ids: list[str] = []
             strong_candidate_ids: list[str] = []
             escaped_subject = str(message["Subject"]).replace('"', "")
-            for query_index, query in enumerate((
-                f"in:sent rfc822msgid:{message_id}",
-                f'in:sent "{idempotency_key}"',
-                f'in:sent to:{to_email} subject:"{escaped_subject}"',
-            )):
+            for query_index, query in enumerate(
+                (
+                    f"in:sent rfc822msgid:{message_id}",
+                    f'in:sent "{idempotency_key}"',
+                    f'in:sent to:{to_email} subject:"{escaped_subject}"',
+                )
+            ):
                 search_url = (
                     "https://gmail.googleapis.com/gmail/v1/users/me/messages?"
                     + urllib.parse.urlencode({"q": query, "maxResults": 10})
@@ -630,9 +742,7 @@ class SMTPEmailAdapter:
                 )
             if strong_candidate_ids:
                 existing_provider_id = strong_candidate_ids[0]
-                raise _GmailReadbackError(
-                    "gmail_existing_delivery_identity_payload_mismatch"
-                )
+                raise _GmailReadbackError("gmail_existing_delivery_identity_payload_mismatch")
             existing_provider_id = None
             if reconcile_only:
                 raise EmailDeliveryError(
@@ -663,7 +773,9 @@ class SMTPEmailAdapter:
         except (
             OSError,
             urllib.error.URLError,
+            http.client.HTTPException,
             json.JSONDecodeError,
+            UnicodeDecodeError,
             _GmailReadbackError,
         ) as exc:
             if existing_provider_id is None:
@@ -685,6 +797,14 @@ class SMTPEmailAdapter:
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).rstrip(b"=").decode("ascii")
         send_body = json.dumps({"raw": raw}, separators=(",", ":")).encode()
+        _assert_external_transport_window_open()
+        if pre_send_guard is None:
+            raise GrowthRegistryError("external_customer_pre_send_guard_required_no_send")
+        pre_send_guard()
+        # Capacity verification may perform database work. Re-read the
+        # authoritative clock after it so the window check is the final local
+        # operation before the Gmail transport POST.
+        _assert_external_transport_window_open()
         try:
             with urllib.request.urlopen(
                 urllib.request.Request(
@@ -704,23 +824,24 @@ class SMTPEmailAdapter:
                 f"gmail_api_http_{exc.code}",
                 retry_safe=False,
                 authentication_failure=authentication_failure,
+                transport_attempted=True,
             ) from exc
-        except (OSError, urllib.error.URLError) as exc:
+        except (OSError, urllib.error.URLError, http.client.HTTPException) as exc:
             raise EmailDeliveryError(
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
-                detail={
-                    "reason": f"gmail_send_transport_ambiguous:{type(exc).__name__}"
-                },
+                transport_attempted=True,
+                detail={"reason": f"gmail_send_transport_ambiguous:{type(exc).__name__}"},
             ) from exc
         try:
             sent = json.loads(sent_response)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise EmailDeliveryError(
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 detail={"reason": "gmail_send_response_invalid"},
             ) from exc
         if not isinstance(sent, dict):
@@ -728,6 +849,7 @@ class SMTPEmailAdapter:
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 detail={"reason": "gmail_send_response_not_an_object"},
             )
         provider_id = str(sent.get("id") or "")
@@ -736,6 +858,7 @@ class SMTPEmailAdapter:
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 detail={"reason": "gmail_api_message_id_missing"},
             )
 
@@ -764,17 +887,26 @@ class SMTPEmailAdapter:
                 retry_safe=False,
                 authentication_failure=exc.code in {400, 401, 403},
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 provider_message_id=provider_id,
                 detail={
                     "reason": f"gmail_readback_http_{exc.code}",
                     "provider_message_id": provider_id,
                 },
             ) from exc
-        except (OSError, urllib.error.URLError, json.JSONDecodeError, _GmailReadbackError) as exc:
+        except (
+            OSError,
+            urllib.error.URLError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            _GmailReadbackError,
+        ) as exc:
             raise EmailDeliveryError(
                 "accepted_but_unverified",
                 retry_safe=False,
                 accepted_but_unverified=True,
+                transport_attempted=True,
                 provider_message_id=provider_id,
                 detail={"reason": str(exc), "provider_message_id": provider_id},
             ) from exc
@@ -807,6 +939,7 @@ class SMTPEmailAdapter:
         body_html: str | None = None,
         reply_to: str | None = None,
         attachments: list[tuple[str, bytes, str]] | None = None,
+        pre_send_guard: Callable[[], None] | None = None,
     ) -> EmailReceipt:
         if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
             _assert_customer_facing_outbound_allowed(
@@ -858,6 +991,7 @@ class SMTPEmailAdapter:
                 message=message,
                 message_id=message_id,
                 reconcile_only=reconcile_only,
+                pre_send_guard=pre_send_guard,
             )
         if reconcile_only:
             raise EmailDeliveryError(
@@ -888,6 +1022,14 @@ class SMTPEmailAdapter:
             raise EmailDeliveryError(type(exc).__name__, retry_safe=True) from exc
         try:
             with client:
+                if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
+                    _assert_external_transport_window_open()
+                    if pre_send_guard is None:
+                        raise GrowthRegistryError(
+                            "external_customer_pre_send_guard_required_no_send"
+                        )
+                    pre_send_guard()
+                    _assert_external_transport_window_open()
                 refused = client.send_message(
                     message,
                     from_addr=self.binding.sender_email,
@@ -895,10 +1037,14 @@ class SMTPEmailAdapter:
                 )
         except (OSError, smtplib.SMTPException) as exc:
             raise EmailDeliveryError(
-                f"ambiguous_delivery:{type(exc).__name__}", retry_safe=False
+                f"ambiguous_delivery:{type(exc).__name__}",
+                retry_safe=False,
+                transport_attempted=True,
             ) from exc
         if refused:
-            raise EmailDeliveryError("recipient_refused", retry_safe=False)
+            raise EmailDeliveryError(
+                "recipient_refused", retry_safe=False, transport_attempted=True
+            )
         response_hash = hashlib.sha256(f"accepted:{to_email}:{message_id}".encode()).hexdigest()
         return EmailReceipt(
             provider_message_id=message_id,

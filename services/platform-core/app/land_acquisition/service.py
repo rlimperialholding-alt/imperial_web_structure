@@ -11,7 +11,11 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..growth_ops.models import GrowthSignal, OutreachMessage, SourceCoverageRoute
+from ..growth_ops.models import (
+    GrowthSignal,
+    OutreachMessage,
+    SourceCoverageRoute,
+)
 from ..models import (
     BuildConfigCase,
     BuildConfigGate,
@@ -40,6 +44,8 @@ from .schemas import (
 )
 
 CORE_AUTHORITY_SCOPES = {"advertising", "media_use", "pricing", "withdrawal"}
+PUBLIC_LAND_ROUTE_VERSION = "2026-08-30-public-listing-outreach-v1"
+PUBLIC_LAND_ROUTE_PREFIX = "LAND-PUBLIC-HTML:"
 
 
 def utcnow() -> datetime:
@@ -61,6 +67,214 @@ def _sha(value: Any) -> str:
 
 def _id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:20].upper()}"
+
+
+def managed_public_land_route_set_sha256(
+    registry: PortalRegistry | None = None,
+) -> str:
+    loaded = registry or PortalRegistry.load()
+    routes = sorted(
+        [
+            {
+                "portal_key": portal.key,
+                "category_url": portal.category_url,
+                "policy_version": PUBLIC_LAND_ROUTE_VERSION,
+            }
+            for portal in loaded.portals.values()
+            if portal.permits("discover")
+            and portal.discovery_mode == "public_html"
+        ],
+        key=lambda item: item["portal_key"],
+    )
+    if len(routes) != 7 or any(not item["category_url"] for item in routes):
+        raise LandRegistryError("Seven complete public land category routes are required")
+    return _sha(routes)
+
+
+def _managed_public_land_route_plan(
+    portal: Portal,
+    *,
+    route_set_sha256: str,
+) -> dict[str, Any]:
+    route_key = f"{PUBLIC_LAND_ROUTE_PREFIX}{portal.key}"
+    route_id = f"LAND-PUBLIC-{portal.key.upper()}"
+    source_record = {
+        "RouteKey": route_key,
+        "RouteID": route_id,
+        "Motor": "Imperial Bautica Prefab",
+        "Katalógusrész": "land-public-html",
+        "Ország": "HU",
+        "Márkailleszkedés": "Imperial",
+        "Kategória": "residential_building_plot",
+        "Forrás neve": portal.key,
+        "Forrástípus": "public_html",
+        "Keresési jel/kifejezés": "eladó építési telek",
+        "Útvonal URL": portal.category_url,
+        "Alap URL": f"https://{portal.domains[0]}",
+        "Útvonalmód": "direct",
+        "Prioritás": "P1",
+        "Validáció": "robots+same-site+public-html",
+        "Katalógusstátusz": "active",
+        "Katalógus frissítése": PUBLIC_LAND_ROUTE_VERSION,
+        "Managed route-set SHA-256": route_set_sha256,
+    }
+    canonical_record = _json(source_record)
+    return {
+        "portal": portal.key,
+        "route_key": route_key,
+        "route_id": route_id,
+        "route_url": portal.category_url,
+        "desired": {
+            "catalog_sha256": route_set_sha256,
+            "motor": "Imperial Bautica Prefab",
+            "catalog_part": "land-public-html",
+            "country": "HU",
+            "brand_fit": "Imperial",
+            "category": "residential_building_plot",
+            "source_name": portal.key,
+            "source_type": "public_html",
+            "search_signal": "eladó építési telek",
+            "route_url": portal.category_url,
+            "base_url": f"https://{portal.domains[0]}",
+            "route_mode": "direct",
+            "priority": "P1",
+            "validation": "robots+same-site+public-html",
+            "catalog_status": "active",
+            "source_updated_value": PUBLIC_LAND_ROUTE_VERSION,
+            "notes": "Named portal public HTML only; publication remains disabled.",
+            "source_row_sha256": _sha(canonical_record),
+            "source_record_json": canonical_record,
+            "enabled": True,
+        },
+    }
+
+
+def ensure_public_html_land_routes(db: Session, *, dry_run: bool = True) -> dict[str, Any]:
+    """Idempotently plan or upsert the seven registered public land category routes."""
+
+    registry = PortalRegistry.load()
+    portals = sorted(
+        (
+            portal
+            for portal in registry.portals.values()
+            if portal.permits("discover") and portal.discovery_mode == "public_html"
+        ),
+        key=lambda portal: portal.key,
+    )
+    if len(portals) != 7 or any(not portal.category_url for portal in portals):
+        raise LandRegistryError("Seven complete public land category routes are required")
+    route_set_sha256 = managed_public_land_route_set_sha256(registry)
+
+    plans: list[dict[str, Any]] = []
+    for portal in portals:
+        plan = _managed_public_land_route_plan(
+            portal,
+            route_set_sha256=route_set_sha256,
+        )
+        route_key = plan["route_key"]
+        route_id = plan["route_id"]
+        desired = plan["desired"]
+        existing = db.scalar(
+            select(SourceCoverageRoute).where(SourceCoverageRoute.route_key == route_key)
+        )
+        conflicting_id = db.scalar(
+            select(SourceCoverageRoute).where(SourceCoverageRoute.route_id == route_id)
+        )
+        if conflicting_id and (not existing or conflicting_id.id != existing.id):
+            raise LandRegistryError(f"Conflicting managed land route ID: {route_id}")
+        changed_fields = sorted(
+            key
+            for key, value in desired.items()
+            if existing is None or getattr(existing, key) != value
+        )
+        action = "create" if existing is None else "update" if changed_fields else "unchanged"
+        plan.update(
+            {
+                "action": action,
+                "changed_fields": changed_fields,
+            }
+        )
+        plans.append(plan)
+        if dry_run:
+            continue
+        if existing is None:
+            existing = SourceCoverageRoute(
+                route_key=route_key,
+                route_id=route_id,
+                created_at=utcnow(),
+                **desired,
+            )
+            db.add(existing)
+        else:
+            for key, value in desired.items():
+                setattr(existing, key, value)
+            existing.updated_at = utcnow()
+    disabled_duplicates: list[dict[str, str]] = []
+    managed_keys = {plan["route_key"] for plan in plans}
+    managed_portals = {plan["portal"] for plan in plans}
+    for row in db.scalars(select(SourceCoverageRoute)).all():
+        if row.route_key in managed_keys or not row.enabled:
+            continue
+        portal = registry.for_host(urlparse(row.route_url).hostname or "")
+        unexpected_managed_namespace = row.route_key.startswith(PUBLIC_LAND_ROUTE_PREFIX)
+        duplicate_public_land_route = (
+            row.category == "residential_building_plot"
+            and row.source_type == "public_html"
+        )
+        if unexpected_managed_namespace or duplicate_public_land_route:
+            disabled_duplicates.append(
+                {
+                    "route_key": row.route_key,
+                    "portal": portal.key if portal and portal.key in managed_portals else "unknown",
+                    "reason": (
+                        "unexpected_managed_route"
+                        if unexpected_managed_namespace
+                        else "duplicate_public_land_route"
+                    ),
+                }
+            )
+            if not dry_run:
+                row.enabled = False
+                row.catalog_status = "retired"
+                row.notes = "Superseded by exact managed public-land route set."
+                row.updated_at = utcnow()
+    if not dry_run:
+        db.commit()
+
+    readback: list[dict[str, Any]] = []
+    for plan in plans:
+        row = db.scalar(
+            select(SourceCoverageRoute).where(
+                SourceCoverageRoute.route_key == plan["route_key"]
+            )
+        )
+        matches = bool(
+            row
+            and row.route_id == plan["route_id"]
+            and all(getattr(row, key) == value for key, value in plan["desired"].items())
+        )
+        readback.append(
+            {
+                "portal": plan["portal"],
+                "route_key": plan["route_key"],
+                "route_url": plan["route_url"],
+                "matches": matches,
+            }
+        )
+    return {
+        "dry_run": dry_run,
+        "catalog_sha256": route_set_sha256,
+        "planned": len(plans),
+        "create": sum(plan["action"] == "create" for plan in plans),
+        "update": sum(plan["action"] == "update" for plan in plans),
+        "unchanged": sum(plan["action"] == "unchanged" for plan in plans),
+        "plans": [
+            {key: value for key, value in plan.items() if key != "desired"} for plan in plans
+        ],
+        "disabled_duplicates": disabled_duplicates,
+        "readback": readback,
+        "readback_pass": (not dry_run and all(item["matches"] for item in readback)),
+    }
 
 
 def _opportunity(db: Session, opportunity_id: str) -> LandOpportunity:
@@ -796,6 +1010,102 @@ def set_listing_active(
     return opportunity
 
 
+def public_land_route_readiness(
+    db: Session, registry: PortalRegistry | None = None
+) -> dict[str, Any]:
+    loaded = registry or PortalRegistry.load()
+    route_set_sha256 = managed_public_land_route_set_sha256(loaded)
+    portals = sorted(
+        (
+            portal
+            for portal in loaded.portals.values()
+            if portal.permits("discover") and portal.discovery_mode == "public_html"
+        ),
+        key=lambda portal: portal.key,
+    )
+    rows = list(
+        db.scalars(
+            select(SourceCoverageRoute).where(
+                (SourceCoverageRoute.route_key.like(f"{PUBLIC_LAND_ROUTE_PREFIX}%"))
+                | (
+                    (SourceCoverageRoute.source_type == "public_html")
+                    & (SourceCoverageRoute.category == "residential_building_plot")
+                )
+            )
+        )
+    )
+    expected_route_keys = {
+        f"{PUBLIC_LAND_ROUTE_PREFIX}{portal.key}" for portal in portals
+    }
+    unexpected_active_routes = sorted(
+        row.route_key
+        for row in rows
+        if row.enabled and row.route_key not in expected_route_keys
+    )
+    details: list[dict[str, Any]] = []
+    for portal in portals:
+        plan = _managed_public_land_route_plan(
+            portal,
+            route_set_sha256=route_set_sha256,
+        )
+        route_key = plan["route_key"]
+        route_id = plan["route_id"]
+        candidates = [
+            row
+            for row in rows
+            if row.route_key == route_key
+            or row.route_id == route_id
+            or (
+                row.source_type == "public_html"
+                and row.category == "residential_building_plot"
+                and (
+                    bound := loaded.for_host(urlparse(row.route_url).hostname or "")
+                )
+                is not None
+                and bound.key == portal.key
+            )
+        ]
+        active_candidates = [row for row in candidates if row.enabled]
+        exact = next((row for row in candidates if row.route_key == route_key), None)
+        mismatches: dict[str, Any] = {}
+        expected = {"route_id": route_id, **plan["desired"]}
+        if exact is not None:
+            mismatches = {
+                field: {"expected": value, "actual": getattr(exact, field)}
+                for field, value in expected.items()
+                if getattr(exact, field) != value
+            }
+        issues: list[str] = []
+        if exact is None:
+            issues.append("missing")
+        if len(active_candidates) != 1:
+            issues.append("duplicate" if len(active_candidates) > 1 else "inactive")
+        if mismatches:
+            issues.append("mismatch")
+        details.append(
+            {
+                "portal": portal.key,
+                "route_key": route_key,
+                "ready": not issues,
+                "issues": issues,
+                "mismatches": mismatches,
+                "active_candidates": [row.route_key for row in active_candidates],
+            }
+        )
+    return {
+        "ready": (
+            len(details) == 7
+            and all(item["ready"] for item in details)
+            and not unexpected_active_routes
+        ),
+        "route_set_sha256": route_set_sha256,
+        "expected": 7,
+        "ready_count": sum(bool(item["ready"]) for item in details),
+        "unexpected_active_routes": unexpected_active_routes,
+        "routes": details,
+    }
+
+
 def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
     try:
         db.execute(select(func.count()).select_from(LandOpportunity))
@@ -816,43 +1126,27 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
             for portal in loaded_registry.portals.values()
             if portal.adapter_module and (portal.discovery_enabled or portal.publish_enabled)
         }
+        route_readiness = public_land_route_readiness(db, loaded_registry)
         public_html_route_counts = {
-            key: 0 for key in registry.get("public_html_enabled", [])
+            item["portal"]: len(item["active_candidates"])
+            for item in route_readiness["routes"]
         }
-        if public_html_route_counts:
-            route_urls = db.scalars(
-                select(SourceCoverageRoute.route_url).where(SourceCoverageRoute.enabled.is_(True))
-            ).all()
-            for route_url in route_urls:
-                host = (urlparse(route_url).hostname or "").casefold()
-                portal = loaded_registry.for_host(host)
-                if (
-                    portal
-                    and portal.key in public_html_route_counts
-                    and portal.discovery_mode == "public_html"
-                    and portal.permits("discover")
-                ):
-                    public_html_route_counts[portal.key] += 1
         registry_state: dict[str, Any] = {
             "status": "ok",
             **registry,
             "adapters": adapters,
             "public_html_route_counts": public_html_route_counts,
+            "public_html_route_readiness": route_readiness,
         }
     except LandRegistryError as exc:
         registry_state = {"status": "failed", "error": str(exc)}
     adapters_ready = all(
         bool(value.get("ready")) for value in registry_state.get("adapters", {}).values()
     )
-    live_public_html = any(
-        int(count) > 0
-        for count in registry_state.get("public_html_route_counts", {}).values()
+    live_public_html = bool(
+        registry_state.get("public_html_route_readiness", {}).get("ready")
     )
-    live_adapter_discovery = any(
-        bool(value.get("ready")) and bool(value.get("discovery_enabled"))
-        for value in registry_state.get("adapters", {}).values()
-    )
-    live_discovery = live_public_html or live_adapter_discovery
+    live_discovery = live_public_html
     ready = (
         database == "ok"
         and registry_state.get("status") == "ok"
@@ -864,7 +1158,20 @@ def readiness(db: Session) -> tuple[bool, dict[str, Any]]:
         "registry": registry_state,
         "live_external_writes": bool(registry_state.get("publishing_enabled")),
         "live_discovery": live_discovery,
-        "blocking_reasons": [] if live_discovery else ["no_public_html_land_routes_configured"],
+        "blocking_reasons": (
+            []
+            if live_discovery
+            else [
+                "no_public_html_land_routes_configured",
+                *[
+                    f"public_land_route:{item['portal']}:{','.join(item['issues'])}"
+                    for item in registry_state.get(
+                        "public_html_route_readiness", {}
+                    ).get("routes", [])
+                    if not item.get("ready")
+                ],
+            ]
+        ),
         "safety": {
             "public_html_discovery": "robots_enforced_no_captcha_bypass",
             "natural_person_email_without_consent": "blocked_by_growth_ops",

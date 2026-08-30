@@ -126,6 +126,8 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
             .where(
                 SourceCoverageAttempt.started_at >= start_utc,
                 SourceCoverageAttempt.run_id == row.run_id,
+                SourceCoverageAttempt.catalog_sha256
+                == (catalog.catalog_sha256 if catalog else ""),
             )
         )
         or 0

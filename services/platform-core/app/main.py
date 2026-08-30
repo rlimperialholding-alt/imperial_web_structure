@@ -1355,7 +1355,11 @@ def partner_auth_or_redirect(request: Request, db: Session):
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
     publishing_ready, publishing = autonomous_publishing_readiness(db)
-    growth_ready, growth = growth_ops_readiness(db)
+    growth_ready, growth = growth_ops_readiness(
+        db,
+        require_enabled=False,
+        live_provider_preflight=False,
+    )
     ready = publishing_ready and growth_ready
     return {
         "status": "ok" if ready else "degraded",
@@ -3430,7 +3434,11 @@ def health_ready(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1"))
         publishing_ready, publishing = autonomous_publishing_readiness(db)
-        growth_ready, growth = growth_ops_readiness(db)
+        growth_ready, growth = growth_ops_readiness(
+            db,
+            require_enabled=False,
+            live_provider_preflight=False,
+        )
         if not publishing_ready or not growth_ready:
             return JSONResponse(
                 {

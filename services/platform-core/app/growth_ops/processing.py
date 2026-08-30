@@ -719,7 +719,10 @@ def _specific_listing_permalink(value: object) -> bool:
     if path.endswith(".htm") and any(character.isdigit() for character in parts[-1]):
         return True
     return (
-        any(part in {"ingatlan", "ingatlanok"} for part in parts[:-1])
+        (
+            any(part in {"ingatlan", "ingatlanok"} for part in parts[:-1])
+            or bool(re.search(r"\d{5,}", parts[-1]))
+        )
         and parts[-1] not in _GENERIC_PATH_PARTS
         and (len(parts[-1]) >= 8 or any(character.isdigit() for character in parts[-1]))
     )

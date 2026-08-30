@@ -8,11 +8,28 @@ on:
     branches:
       - agent/canonical-growth-25494-deepseek-v1
     paths:
+      - "config/growth/**"
       - "config/land-acquisition/**"
       - "services/platform-core/app/land_acquisition/**"
       - "services/platform-core/app/growth_ops/**"
+      - "services/platform-core/app/main.py"
       - "services/platform-core/alembic/versions/**"
       - "services/platform-core/tests/test_land_acquisition.py"
+      - "services/platform-core/tests/test_canonical_growth_wide.py"
+      - "services/platform-core/tests/test_growth_catalog.py"
+      - "services/platform-core/tests/test_growth_email_delivery_scope.py"
+      - "services/platform-core/tests/test_growth_official_source_dispatch_gate.py"
+      - "services/platform-core/tests/test_growth_official_source_http_gate.py"
+      - "services/platform-core/tests/test_growth_ops.py"
+      - "services/platform-core/tests/test_growth_outreach_transport_caps.py"
+      - "services/platform-core/tests/test_growth_runtime_hotfixes.py"
+      - "services/platform-core/tests/test_growth_source_bindings.py"
+      - "services/platform-core/tests/test_public_land_pipeline.py"
+      - "services/platform-core/scripts/ensure_public_land_routes.py"
+      - "services/platform-core/scripts/ensure_public_land_registry_binding.py"
+      - "services/platform-core/tests/test_ensure_public_land_registry_binding.py"
+      - "docker-compose.yml"
+      - "deploy/remote-test/docker-compose.growth-readiness.yml"
       - ".github/workflows/land-acquisition-ci.yml"
 
 permissions:
@@ -43,21 +60,41 @@ jobs:
       - name: Lint changed safety surface
         run: >-
           ruff check app/land_acquisition app/growth_ops/catalog.py
-          app/growth_ops/processing.py app/growth_ops/service.py
+          app/growth_ops/email.py app/growth_ops/models.py
+          app/growth_ops/processing.py app/growth_ops/public_land.py
+          app/growth_ops/registry.py app/growth_ops/service.py
+          app/growth_ops/wide_service.py
+          scripts/ensure_public_land_routes.py
+          scripts/ensure_public_land_registry_binding.py
+          tests/test_ensure_public_land_registry_binding.py tests/test_growth_catalog.py
+          tests/test_growth_email_delivery_scope.py
+          tests/test_growth_official_source_dispatch_gate.py
+          tests/test_growth_official_source_http_gate.py
+          tests/test_growth_outreach_transport_caps.py
+          tests/test_growth_runtime_hotfixes.py tests/test_growth_source_bindings.py
+          tests/test_canonical_growth_wide.py tests/test_growth_ops.py
           tests/test_land_acquisition.py
+          tests/test_public_land_pipeline.py
           alembic/versions/20260825_0077_land_acquisition.py
           alembic/versions/20260825_0078_land_recipient_roles.py
           alembic/versions/20260825_0079_growth_outreach_html.py
           alembic/versions/20260825_0080_land_agent_affiliation_gate.py
           alembic/versions/20260828_0086_land_owner_template_fields.py
+          alembic/versions/20260830_0087_land_public_listing_evidence.py
       - name: Run land and Growth Ops regression tests
         run: >-
           pytest -q tests/test_land_acquisition.py tests/test_growth_ops.py
           tests/test_canonical_growth_wide.py tests/test_growth_catalog.py
-          tests/test_growth_processing_pipeline.py
+          tests/test_growth_processing_pipeline.py tests/test_public_land_pipeline.py
+          tests/test_ensure_public_land_registry_binding.py
+          tests/test_growth_email_delivery_scope.py
+          tests/test_growth_official_source_dispatch_gate.py
+          tests/test_growth_official_source_http_gate.py
+          tests/test_growth_outreach_transport_caps.py
+          tests/test_growth_runtime_hotfixes.py tests/test_growth_source_bindings.py
       - name: Prove full migration chain
         env:
           DATABASE_URL: sqlite:////tmp/imperial-land-migration-ci.sqlite
         run: |
           alembic upgrade head
-          test "$(alembic current 2>/dev/null | head -1)" = "20260828_0086 (head)"
+          test "$(alembic current 2>/dev/null | head -1)" = "20260830_0087 (head)"

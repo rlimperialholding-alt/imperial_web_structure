@@ -174,7 +174,7 @@ def test_scanner_uses_db_catalog_and_records_real_attempt(db, tmp_path, monkeypa
     monkeypatch.setattr(
         catalog,
         "_fetch",
-        lambda _route: {
+        lambda _route, **_kwargs: {
             "status": "succeeded",
             "http_status": 200,
             "response_sha256": "a" * 64,

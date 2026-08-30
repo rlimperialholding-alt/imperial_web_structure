@@ -25,7 +25,12 @@ from app.growth_ops.canonical_policy import (
 )
 from app.growth_ops.connectors import SourceBatch, _timestamp
 from app.growth_ops.email import EmailDeliveryError, SMTPEmailAdapter
-from app.growth_ops.models import GrowthRun, GrowthSignal, OutreachMessage
+from app.growth_ops.models import (
+    GrowthRun,
+    GrowthSignal,
+    GrowthWorkerHeartbeat,
+    OutreachMessage,
+)
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn, OutreachReleaseIn
 from app.models import MailSendingDomain, MailSuppression
@@ -42,13 +47,40 @@ class FakeRegistry:
         "ivs": {"daily_at": "08:00", "max_raw_signals_per_run": 500},
     }
     brands = {"imperial": {}}
+    sources = {
+        "construction-etdr": {
+            "enabled": True,
+            "motor": "construction",
+            "bucket": "etdr",
+            "kind": "json",
+            "fetch_mode": "scheduled",
+        },
+        "construction_public_land_html": {
+            "enabled": True,
+            "motor": "construction",
+            "bucket": "property_development",
+            "kind": "public_land_listing_html",
+            "fetch_mode": "ingest_only",
+            "route_set_sha256": (
+                "f8f86c9a28160e1f2d919bf5f86bde7d6765bcea30945b17bba9a4364f478a1f"
+            ),
+        },
+    }
 
-    def validate_signal_source(self, *, source_id: str, motor_key: str, source_bucket: str) -> None:
-        if (source_id, motor_key, source_bucket) != (
-            "construction-etdr",
-            "construction",
-            "etdr",
-        ):
+    def readiness(self) -> dict[str, object]:
+        return {"ready": True, "enabled_sources": 1, "version": "test-v1"}
+
+    def validate_signal_source(
+        self, *, source_id: str, motor_key: str, source_bucket: str, **_: object
+    ) -> None:
+        if (source_id, motor_key, source_bucket) not in {
+            ("construction-etdr", "construction", "etdr"),
+            (
+                "construction_public_land_html",
+                "construction",
+                "property_development",
+            ),
+        }:
             raise GrowthRegistryError("source mismatch")
 
     def brand_for(self, signal_type: str, requested: str | None = None) -> str:
@@ -104,6 +136,14 @@ def growth_runtime(monkeypatch, db):
             poll_seconds=30,
             enabled=True,
             timezone="Europe/Budapest",
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            canonical_processing_enabled=True,
+            canonical_daily_at="05:30",
+            outreach_send_start_local="08:00",
+            outreach_send_end_local="18:00",
+            outreach_max_per_hour=5,
+            outreach_max_per_day=50,
         ),
     )
     db.add(
@@ -155,6 +195,45 @@ def _signal(**changes) -> GrowthSignalIn:
     return GrowthSignalIn.model_validate(payload)
 
 
+def _public_land_signal(**changes) -> GrowthSignalIn:
+    changes.setdefault("source_id", "construction_public_land_html")
+    changes.setdefault("source_bucket", "property_development")
+    changes.setdefault("plot_size_sqm", 605)
+    if changes.get("recipient_role") == "listing_agent":
+        changes.setdefault("recipient_office_name", "Független Minta Iroda")
+    return _signal(**changes)
+
+
+def _public_land_source_evidence(data: GrowthSignalIn) -> list[dict[str, object]]:
+    values = {
+        "listing_permalink": str(data.public_contact_url or ""),
+        "recipient_name": str(data.recipient_name or ""),
+        "recipient_email": str(data.recipient_email or ""),
+        "recipient_role": data.recipient_role,
+        "property_type": "Építési telek",
+        "location": str(data.location or ""),
+        "plot_size_sqm": str(data.plot_size_sqm or ""),
+    }
+    if data.recipient_role == "listing_agent":
+        values.update(
+            {
+                "recipient_organization_name": str(data.recipient_organization_name or ""),
+                "recipient_office_name": str(data.recipient_office_name or ""),
+            }
+        )
+    return [
+        {
+            "field_name": field_name,
+            "observed_value": value,
+            "source_snippet": f"synthetic:{field_name}:{value}",
+            "source_url": data.evidence_url,
+            "snapshot_sha256": data.source_payload_hash,
+            "fetched_at": data.detected_at,
+        }
+        for field_name, value in values.items()
+    ]
+
+
 @pytest.mark.parametrize(
     ("hour", "minute", "expected"),
     [(7, 59, False), (8, 0, True), (17, 59, True), (18, 0, False)],
@@ -167,9 +246,7 @@ def test_outreach_sending_window_is_enforced_in_budapest_time(
     assert service._outreach_sending_window_open(local_now.astimezone(UTC)) is expected
 
 
-def test_dispatch_batch_does_not_claim_outside_sending_window(
-    db, growth_runtime, monkeypatch
-):
+def test_dispatch_batch_does_not_claim_outside_sending_window(db, growth_runtime, monkeypatch):
     monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: False)
 
     def unexpected_claim(_db):
@@ -180,34 +257,28 @@ def test_dispatch_batch_does_not_claim_outside_sending_window(
     assert service.dispatch_batch(db) == 0
 
 
-def test_outreach_send_capacity_enforces_hourly_and_daily_limits(growth_runtime):
-    class ScalarSequence:
-        def __init__(self, values):
-            self.values = iter(values)
-
-        def scalar(self, _query):
-            return next(self.values)
-
+def test_outreach_send_capacity_enforces_hourly_and_daily_limits(db, growth_runtime, monkeypatch):
     local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: service.OutreachCapacityUsage(2, 47, 0, 0, 0, 0, {}),
+    )
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 3
 
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([2, 47]), local_now.astimezone(UTC)
-        )
-        == 3
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: service.OutreachCapacityUsage(5, 12, 0, 0, 0, 0, {}),
     )
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([5, 12]), local_now.astimezone(UTC)
-        )
-        == 0
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
+
+    monkeypatch.setattr(
+        service,
+        "_outreach_capacity_usage",
+        lambda _db, _now=None: service.OutreachCapacityUsage(1, 50, 0, 0, 0, 0, {}),
     )
-    assert (
-        service._outreach_send_capacity(
-            ScalarSequence([1, 50]), local_now.astimezone(UTC)
-        )
-        == 0
-    )
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 
 
 def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
@@ -228,6 +299,281 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
         service.run_once(db)
 
     assert events == ["mail", "wide"]
+
+
+def test_readiness_accepts_fresh_non_send_critical_degraded_worker_as_serving(
+    db, growth_runtime, monkeypatch
+):
+    monkeypatch.setattr(
+        service,
+        "_outbound_send_readiness_state",
+        lambda *_args, **_kwargs: {
+            "ready": True,
+            "scheduled_enabled_sources": 1,
+        },
+    )
+    monkeypatch.setattr(
+        service.SMTPEmailAdapter,
+        "live_preflight",
+        lambda *_args, **_kwargs: {
+            "provider": "gmail_api",
+            "profile_email": "info@imperialholding.test",
+        },
+    )
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id="growth-test-worker",
+            status="degraded",
+            detail_json='{"blocking_errors":["unrelated_content_not_complete"]}',
+            heartbeat_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is True
+    assert payload["worker_heartbeat"] == "degraded_sla"
+    assert payload["worker_status"] == "degraded"
+
+
+def test_platform_health_readiness_skips_external_provider_preflight(
+    db, growth_runtime, monkeypatch
+):
+    monkeypatch.setattr(
+        service,
+        "_outbound_send_readiness_state",
+        lambda *_args, **_kwargs: {"ready": True},
+    )
+    monkeypatch.setattr(
+        service.SMTPEmailAdapter,
+        "live_preflight",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Docker health must not perform external Gmail requests")
+        ),
+    )
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id=service.settings().worker_id,
+            status="healthy",
+            detail_json="{}",
+            heartbeat_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(
+        db,
+        require_enabled=False,
+        live_provider_preflight=False,
+    )
+
+    assert ready is True
+    assert payload["live_provider_preflight_required"] is False
+    assert payload["senders"] == [
+        {
+            "brand_id": "imperial",
+            "ready": True,
+            "live_preflight": "not_requested_for_platform_health",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    [
+        ("enabled", False),
+        ("canonical_wide_enabled", False),
+        ("canonical_route_scanning_enabled", False),
+        ("canonical_processing_enabled", False),
+        ("timezone", "UTC"),
+        ("canonical_daily_at", "08:00"),
+        ("outreach_send_start_local", "07:00"),
+        ("outreach_send_end_local", "19:00"),
+        ("outreach_max_per_hour", 6),
+        ("outreach_max_per_day", 51),
+    ],
+)
+def test_production_daily_automation_contract_fails_closed_on_config_drift(
+    growth_runtime, field, invalid
+):
+    config = service.settings()
+    values = vars(config).copy()
+    values[field] = invalid
+
+    state = service._production_daily_automation_state(SimpleNamespace(**values))
+
+    assert state["ready"] is False
+    expected_key = {
+        "enabled": "growth_ops_enabled",
+        "canonical_wide_enabled": "canonical_growth_enabled",
+        "canonical_route_scanning_enabled": "canonical_route_scanning_enabled",
+        "canonical_processing_enabled": "canonical_processing_enabled",
+        "canonical_daily_at": "daily_at",
+    }.get(field, field)
+    assert expected_key in state["mismatches"]
+
+
+def test_growth_readiness_is_not_ready_when_growth_ops_is_disabled(
+    db, growth_runtime, monkeypatch
+):
+    config = service.settings()
+    monkeypatch.setattr(
+        service,
+        "settings",
+        lambda: SimpleNamespace(**{**vars(config), "enabled": False}),
+    )
+    monkeypatch.setattr(
+        service,
+        "_outbound_send_readiness_state",
+        lambda *_args, **_kwargs: {"ready": True},
+    )
+    monkeypatch.setattr(
+        service.SMTPEmailAdapter,
+        "live_preflight",
+        lambda *_args, **_kwargs: {
+            "provider": "gmail_api",
+            "profile_email": "info@imperialholding.test",
+        },
+    )
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id=config.worker_id,
+            status="healthy",
+            detail_json="{}",
+            heartbeat_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is False
+    assert payload["enabled"] is False
+    assert payload["daily_automation"]["ready"] is False
+    assert "growth_ops_enabled" in payload["daily_automation"]["mismatches"]
+
+
+def test_readiness_rejects_fresh_send_critical_degraded_worker(
+    db, growth_runtime, monkeypatch
+):
+    monkeypatch.setattr(
+        service,
+        "_outbound_send_readiness_state",
+        lambda *_args, **_kwargs: {
+            "ready": True,
+            "scheduled_enabled_sources": 1,
+        },
+    )
+    monkeypatch.setattr(
+        service.SMTPEmailAdapter,
+        "live_preflight",
+        lambda *_args, **_kwargs: {
+            "provider": "gmail_api",
+            "profile_email": "info@imperialholding.test",
+        },
+    )
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id="growth-test-worker",
+            status="degraded",
+            detail_json='{"blocking_errors":["public_land_route_readiness_no_send"]}',
+            heartbeat_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is False
+    assert payload["worker_heartbeat"] == "stale_or_missing"
+    assert payload["worker_status"] == "degraded"
+
+
+def test_readiness_rejects_stale_degraded_worker(db, growth_runtime):
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id="growth-test-worker",
+            status="degraded",
+            heartbeat_at=datetime.now(UTC) - timedelta(seconds=121),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is False
+    assert payload["worker_heartbeat"] == "stale_or_missing"
+    assert payload["worker_status"] == "degraded"
+
+
+@pytest.mark.parametrize("status", ["starting", "stopped", "failed"])
+def test_readiness_rejects_fresh_non_serving_worker_state(db, growth_runtime, status):
+    db.add(
+        GrowthWorkerHeartbeat(
+            worker_id="growth-test-worker",
+            status=status,
+            heartbeat_at=datetime.now(UTC),
+        )
+    )
+    db.commit()
+
+    ready, payload = service.readiness(db)
+
+    assert ready is False
+    assert payload["worker_heartbeat"] == "stale_or_missing"
+    assert payload["worker_status"] == status
+
+
+def test_internal_growth_routes_reject_unauthenticated_requests(client):
+    readiness_response = client.get("/api/internal/growth-ops/readiness")
+    ingest_response = client.post("/api/internal/growth-ops/signals", json={})
+
+    assert readiness_response.status_code == 401
+    assert readiness_response.json() == {"detail": "invalid internal token"}
+    assert ingest_response.status_code == 401
+    assert ingest_response.json() == {"detail": "invalid internal token"}
+
+
+def test_growth_production_compose_contract_enables_core_and_worker_exactly():
+    override = (
+        Path(__file__).resolve().parents[3]
+        / "deploy"
+        / "remote-test"
+        / "docker-compose.growth-readiness.yml"
+    )
+
+    expected_environment = {
+        "ENVIRONMENT": "production",
+        "GROWTH_OPS_ENABLED": "true",
+        "CANONICAL_GROWTH_ENABLED": "true",
+        "CANONICAL_ROUTE_SCANNING_ENABLED": "true",
+        "CANONICAL_PROCESSING_ENABLED": "true",
+        "CANONICAL_GROWTH_DAILY_AT": "05:30",
+        "GROWTH_OPS_TIMEZONE": "Europe/Budapest",
+        "GROWTH_OPS_OUTREACH_SEND_START_LOCAL": "08:00",
+        "GROWTH_OPS_OUTREACH_SEND_END_LOCAL": "18:00",
+        "GROWTH_OPS_OUTREACH_MAX_PER_HOUR": "5",
+        "GROWTH_OPS_OUTREACH_MAX_PER_DAY": "50",
+        "LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL": "3",
+        "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE": "2026-08-31",
+    }
+    text = override.read_text(encoding="utf-8")
+    for key, value in expected_environment.items():
+        assert f'  {key}: "{value}"' in text
+    assert "  platform-core:\n    environment: *growth-production-environment" in text
+    assert "  growth-ops-worker:\n    environment: *growth-production-environment" in text
+
+    root_compose = Path(__file__).resolve().parents[3] / "docker-compose.yml"
+    root_text = root_compose.read_text(encoding="utf-8")
+    assert (
+        "LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL: "
+        "${LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL:-3}"
+    ) in root_text
+    assert (
+        "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE: "
+        "${LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE:-2026-08-31}"
+    ) in root_text
 
 
 def test_verified_business_role_signal_queues_once(db, growth_runtime):
@@ -338,12 +684,8 @@ def test_queued_payload_is_bound_to_the_canonical_registry(db, growth_runtime):
     assert service._canonical_metadata_sha256(metadata)
 
 
-def test_canonical_metadata_tampering_invalidates_payload_and_release(
-    db, growth_runtime
-):
-    result = service.ingest_signal(
-        db, _signal(external_key="ETDR-CANONICAL-METADATA-TAMPER")
-    )
+def test_canonical_metadata_tampering_invalidates_payload_and_release(db, growth_runtime):
+    result = service.ingest_signal(db, _signal(external_key="ETDR-CANONICAL-METADATA-TAMPER"))
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
@@ -360,9 +702,7 @@ def test_canonical_metadata_tampering_invalidates_payload_and_release(
     assert service._release_matches(message)
 
     receipt = json.loads(message.receipt_json)
-    receipt["canonical_template"]["render_input"]["screening_values"][0] = (
-        "Tampered recipient"
-    )
+    receipt["canonical_template"]["render_input"]["screening_values"][0] = "Tampered recipient"
     message.receipt_json = service.canonical_json(receipt)
 
     assert not service._payload_matches(message)
@@ -391,9 +731,7 @@ def test_operational_delivery_binding_tampering_invalidates_payload_and_release(
     replacement,
     error,
 ):
-    result = service.ingest_signal(
-        db, _signal(external_key=f"ETDR-OPERATIONAL-TAMPER-{field}")
-    )
+    result = service.ingest_signal(db, _signal(external_key=f"ETDR-OPERATIONAL-TAMPER-{field}"))
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
@@ -419,15 +757,11 @@ def test_operational_delivery_binding_tampering_invalidates_payload_and_release(
 
 
 def test_release_rejects_current_signal_leier_affiliation(db, growth_runtime):
-    result = service.ingest_signal(
-        db, _signal(external_key="ETDR-CURRENT-LEIER-RELEASE")
-    )
+    result = service.ingest_signal(db, _signal(external_key="ETDR-CURRENT-LEIER-RELEASE"))
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
-    signal = db.scalar(
-        select(GrowthSignal).where(GrowthSignal.signal_id == result.signal_id)
-    )
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == result.signal_id))
     assert message is not None and signal is not None
     signal.recipient_organization_name = "Leier Hungária"
 
@@ -447,15 +781,11 @@ def test_release_rejects_current_signal_leier_affiliation(db, growth_runtime):
 
 
 def test_release_rejects_current_signal_screening_drift(db, growth_runtime):
-    result = service.ingest_signal(
-        db, _signal(external_key="ETDR-CURRENT-SCREENING-DRIFT")
-    )
+    result = service.ingest_signal(db, _signal(external_key="ETDR-CURRENT-SCREENING-DRIFT"))
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
-    signal = db.scalar(
-        select(GrowthSignal).where(GrowthSignal.signal_id == result.signal_id)
-    )
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == result.signal_id))
     assert message is not None and signal is not None
     signal.summary = "The current screening facts changed after the message was queued."
 
@@ -474,16 +804,12 @@ def test_release_rejects_current_signal_screening_drift(db, growth_runtime):
         )
 
 
-def test_dispatch_blocks_current_signal_leier_affiliation(db, growth_runtime):
-    result = service.ingest_signal(
-        db, _signal(external_key="ETDR-CURRENT-LEIER-DISPATCH")
-    )
+def test_dispatch_blocks_current_signal_leier_affiliation(db, growth_runtime, monkeypatch):
+    result = service.ingest_signal(db, _signal(external_key="ETDR-CURRENT-LEIER-DISPATCH"))
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
-    signal = db.scalar(
-        select(GrowthSignal).where(GrowthSignal.signal_id == result.signal_id)
-    )
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == result.signal_id))
     assert message is not None and signal is not None
     service.release_outreach(
         db,
@@ -496,16 +822,17 @@ def test_dispatch_blocks_current_signal_leier_affiliation(db, growth_runtime):
     )
     signal.recipient_organization_name = "Leier Hungária"
     message.status = "claimed"
+    message.claimed_by = service.settings().worker_id
+    message.claimed_at = datetime.now(UTC)
+    message.lease_expires_at = message.claimed_at + timedelta(minutes=5)
     message.attempt_count = 1
     db.commit()
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
 
     dispatched = service.dispatch_outreach(db, message)
 
     assert dispatched.status == "blocked"
-    assert (
-        dispatched.last_error
-        == "canonical_hard_gate_blocked:BLOCK_LEIER_INCIDENT_CONTAINMENT"
-    )
+    assert dispatched.last_error == "canonical_hard_gate_blocked:BLOCK_LEIER_INCIDENT_CONTAINMENT"
     assert signal.status == "blocked"
 
 
@@ -514,9 +841,7 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
     growth_runtime,
     monkeypatch,
 ):
-    result = service.ingest_signal(
-        db, _signal(external_key="ETDR-GMAIL-PENDING-VERIFICATION")
-    )
+    result = service.ingest_signal(db, _signal(external_key="ETDR-GMAIL-PENDING-VERIFICATION"))
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
@@ -563,6 +888,12 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
 
     monkeypatch.setattr(service, "SMTPEmailAdapter", AcceptedUnverifiedAdapter)
     monkeypatch.setattr(service, "_trip_runtime_kill_switch", fake_trip)
+    monkeypatch.setattr(
+        service,
+        "_authoritative_send_readiness_reason",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
 
     first = service.dispatch_outreach(db, message)
     second = service.dispatch_outreach(db, message)
@@ -628,9 +959,7 @@ def test_expired_claim_is_held_pending_verification_and_never_requeued(
     assert kill_switch_trips == 1
 
 
-def test_verified_referral_partner_queues_only_the_canonical_locked_template(
-    db, growth_runtime
-):
+def test_verified_referral_partner_queues_only_the_canonical_locked_template(db, growth_runtime):
     result = service.ingest_signal(
         db,
         _signal(
@@ -794,35 +1123,35 @@ def test_public_building_plot_listing_auto_releases_single_initial_message(
     subject_type,
     recipient_email_type,
 ):
+    data = _public_land_signal(
+        external_key=f"LAND-AUTO-RELEASE-{recipient_role}",
+        signal_type="residential_building_plot",
+        company_name="Minta Hirdető",
+        company_registration_id=None,
+        recipient_organization_name=(
+            "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
+        ),
+        subject_type=subject_type,
+        recipient_role=recipient_role,
+        recipient_type=recipient_type,
+        recipient_name="Minta Hirdető",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email=f"{recipient_role}@example.test",
+        recipient_email_type=recipient_email_type,
+        contact_basis="public_property_listing",
+        public_contact_url=(f"https://property-listing.example.test/AUTO-{recipient_role}"),
+        location="Sülysáp",
+        plot_size_sqm=605,
+        evidence_url=f"https://property-listing.example.test/AUTO-{recipient_role}",
+    )
     result = service.ingest_signal(
         db,
-        _signal(
-            external_key=f"LAND-AUTO-RELEASE-{recipient_role}",
-            signal_type="residential_building_plot",
-            company_name="Minta Hirdető",
-            company_registration_id=None,
-            recipient_organization_name=(
-                "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
-            ),
-            subject_type=subject_type,
-            recipient_role=recipient_role,
-            recipient_type=recipient_type,
-            recipient_name="Minta Hirdető",
-            sender_company_name=None,
-            reference_names=[],
-            reference_names_verified=False,
-            recipient_classification_verified=True,
-            exclusion_screening_verified=True,
-            recipient_email=f"{recipient_role}@example.test",
-            recipient_email_type=recipient_email_type,
-            contact_basis="public_property_listing",
-            public_contact_url=(
-                f"https://property-listing.example.test/AUTO-{recipient_role}"
-            ),
-            location="Sülysáp",
-            plot_size_sqm=605,
-            evidence_url=f"https://property-listing.example.test/AUTO-{recipient_role}",
-        ),
+        data,
+        source_evidence=_public_land_source_evidence(data),
     )
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
@@ -831,9 +1160,7 @@ def test_public_building_plot_listing_auto_releases_single_initial_message(
     assert result.status == "queued"
     assert message is not None
     assert message.sequence_step == 0
-    assert message.release_approved_by == (
-        "owner-policy:land-public-listing-v3:2026-08-28"
-    )
+    assert message.release_approved_by == ("owner-policy:land-public-listing-v3:2026-08-28")
     assert message.release_approved_at is not None
     assert message.release_token_hash
 
@@ -860,37 +1187,35 @@ def test_public_building_plot_owner_vs_agent_mismatch_fails_closed():
         evidence_url="https://property-listing.example.test/LAND-002",
     )
 
-    assert "land_recipient_role_type_mismatch_no_send" in service._eligibility(
-        signal, score=90
+    assert "land_recipient_role_type_mismatch_no_send" in service._eligibility(signal, score=90)
+
+
+def test_public_building_plot_uses_only_the_canonical_registry_template(db, growth_runtime):
+    data = _public_land_signal(
+        external_key="LAND-CANONICAL-AGENT",
+        signal_type="residential_building_plot",
+        company_name="Minta Értékesítő",
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Minta Értékesítő",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email="ertekesito@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property-listing.example.test/LAND-003",
+        evidence_url="https://property-listing.example.test/LAND-003",
     )
-
-
-def test_public_building_plot_uses_only_the_canonical_registry_template(
-    db, growth_runtime
-):
     result = service.ingest_signal(
         db,
-        _signal(
-            external_key="LAND-CANONICAL-AGENT",
-            signal_type="residential_building_plot",
-            company_name="Minta Értékesítő",
-            company_registration_id=None,
-            recipient_organization_name="Független Ingatlaniroda",
-            subject_type="organization",
-            recipient_role="listing_agent",
-            recipient_type="real_estate_agent",
-            recipient_name="Minta Értékesítő",
-            sender_company_name=None,
-            reference_names=[],
-            reference_names_verified=False,
-            recipient_classification_verified=True,
-            exclusion_screening_verified=True,
-            recipient_email="ertekesito@example.test",
-            recipient_email_type="role",
-            contact_basis="public_property_listing",
-            public_contact_url="https://property-listing.example.test/LAND-003",
-            evidence_url="https://property-listing.example.test/LAND-003",
-        ),
+        data,
+        source_evidence=_public_land_source_evidence(data),
     )
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
@@ -911,27 +1236,29 @@ def test_land_auto_release_failure_cannot_leave_a_partial_queued_message(
         raise GrowthRegistryError("IMPERIAL_RELEASE_HMAC_KEY is not configured")
 
     monkeypatch.setattr(service, "_release_digest", fail_release)
+    data = _public_land_signal(
+        external_key="LAND-RELEASE-FAIL-NO-PARTIAL",
+        signal_type="residential_building_plot",
+        company_name="Minta Értékesítő",
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Minta Értékesítő",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_email="release-fail@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property.example.test/release-fail",
+        evidence_url="https://property.example.test/release-fail",
+    )
     result = service.ingest_signal(
         db,
-        _signal(
-            external_key="LAND-RELEASE-FAIL-NO-PARTIAL",
-            signal_type="residential_building_plot",
-            company_name="Minta Értékesítő",
-            company_registration_id=None,
-            recipient_organization_name="Független Ingatlaniroda",
-            subject_type="organization",
-            recipient_role="listing_agent",
-            recipient_type="real_estate_agent",
-            recipient_name="Minta Értékesítő",
-            sender_company_name=None,
-            reference_names=[],
-            reference_names_verified=False,
-            recipient_email="release-fail@example.test",
-            recipient_email_type="role",
-            contact_basis="public_property_listing",
-            public_contact_url="https://property.example.test/release-fail",
-            evidence_url="https://property.example.test/release-fail",
-        ),
+        data,
+        source_evidence=_public_land_source_evidence(data),
     )
 
     assert result.status == "blocked"
@@ -945,27 +1272,29 @@ def test_land_copy_assertion_failure_cannot_leave_a_partial_queued_message(
         raise ValueError("forced_copy_integrity_failure")
 
     monkeypatch.setattr(service, "assert_outreach_copy", fail_copy)
+    data = _public_land_signal(
+        external_key="LAND-COPY-FAIL-NO-PARTIAL",
+        signal_type="residential_building_plot",
+        company_name="Minta Értékesítő",
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Minta Értékesítő",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_email="copy-fail@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url="https://property.example.test/copy-fail",
+        evidence_url="https://property.example.test/copy-fail",
+    )
     result = service.ingest_signal(
         db,
-        _signal(
-            external_key="LAND-COPY-FAIL-NO-PARTIAL",
-            signal_type="residential_building_plot",
-            company_name="Minta Értékesítő",
-            company_registration_id=None,
-            recipient_organization_name="Független Ingatlaniroda",
-            subject_type="organization",
-            recipient_role="listing_agent",
-            recipient_type="real_estate_agent",
-            recipient_name="Minta Értékesítő",
-            sender_company_name=None,
-            reference_names=[],
-            reference_names_verified=False,
-            recipient_email="copy-fail@example.test",
-            recipient_email_type="role",
-            contact_basis="public_property_listing",
-            public_contact_url="https://property.example.test/copy-fail",
-            evidence_url="https://property.example.test/copy-fail",
-        ),
+        data,
+        source_evidence=_public_land_source_evidence(data),
     )
 
     assert result.status == "blocked"
@@ -1126,9 +1455,7 @@ def test_land_agent_gdn_gate_blocks_before_storage(db, growth_runtime):
     assert not db.scalars(select(GrowthSignal)).all()
 
 
-def test_motor_skips_blocked_agent_and_continues_same_source_batch(
-    db, growth_runtime, monkeypatch
-):
+def test_motor_skips_blocked_agent_and_continues_same_source_batch(db, growth_runtime, monkeypatch):
     blocked = _signal(
         external_key="LAND-GDN-BATCH",
         signal_type="residential_building_plot",
@@ -1173,15 +1500,11 @@ def test_motor_skips_canonical_leier_gate_and_continues_same_source_batch(
         external_key="ETDR-SAFE-AFTER-GATE",
         evidence_url="https://source.test/etdr/SAFE-AFTER-GATE",
     )
-    growth_runtime.sources_for = lambda motor_key: [
-        ("construction-etdr", {"enabled": True})
-    ]
+    growth_runtime.sources_for = lambda motor_key: [("construction-etdr", {"enabled": True})]
     monkeypatch.setattr(
         service,
         "fetch_source",
-        lambda *_args, **_kwargs: SourceBatch(
-            signals=[blocked, accepted], raw_count=2
-        ),
+        lambda *_args, **_kwargs: SourceBatch(signals=[blocked, accepted], raw_count=2),
     )
 
     run = service.run_motor(db, "construction")
@@ -1218,9 +1541,7 @@ def test_new_duplicate_leier_affiliation_blocks_the_existing_released_outreach(
         service.ingest_signal(db, newly_blocked)
 
     db.refresh(outreach)
-    signal = db.scalar(
-        select(GrowthSignal).where(GrowthSignal.signal_id == outreach.signal_id)
-    )
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == outreach.signal_id))
     assert outreach.status == "blocked"
     assert "BLOCK_LEIER_INCIDENT_CONTAINMENT" in str(outreach.last_error)
     assert signal is not None and signal.status == "blocked"
@@ -1236,9 +1557,7 @@ def test_new_duplicate_leier_affiliation_blocks_the_existing_released_outreach(
     db.close()
     with SessionLocal() as fresh_db:
         durable = fresh_db.scalar(
-            select(OutreachMessage).where(
-                OutreachMessage.outreach_id == outreach.outreach_id
-            )
+            select(OutreachMessage).where(OutreachMessage.outreach_id == outreach.outreach_id)
         )
         assert durable is not None and durable.status == "blocked"
 
@@ -1256,6 +1575,8 @@ def test_global_suppression_prevents_queue(db, growth_runtime):
 def test_invalid_source_binding_fails_closed(db, growth_runtime):
     with pytest.raises(GrowthRegistryError, match="source mismatch"):
         service.ingest_signal(db, _signal(source_bucket="public_request"))
+    assert not db.scalars(select(GrowthSignal)).all()
+    assert not db.scalars(select(OutreachMessage)).all()
 
 
 def test_daily_schedule_runs_once_after_budapest_0800(growth_runtime):
@@ -1328,18 +1649,14 @@ def test_smtp_adapter_sends_internal_html_as_multipart_alternative(monkeypatch):
         to_email="partner@imperialholding.hu",
         subject="ház eladásában kérnék segítséget",
         body_text="Az Imperial Holding 2,5% jutalékot fizet.",
-        body_html=(
-            "<p>Az Imperial Holding <strong>2,5% jutalékot fizet.</strong></p>"
-        ),
+        body_html=("<p>Az Imperial Holding <strong>2,5% jutalékot fizet.</strong></p>"),
         idempotency_key="a" * 64,
     )
 
     message = sent["message"]
     assert message.get_content_type() == "multipart/alternative"
     assert "2,5% jutalékot fizet." in message.get_body(("plain",)).get_content()
-    assert "<strong>2,5% jutalékot fizet.</strong>" in message.get_body(
-        ("html",)
-    ).get_content()
+    assert "<strong>2,5% jutalékot fizet.</strong>" in message.get_body(("html",)).get_content()
 
 
 @pytest.mark.parametrize(

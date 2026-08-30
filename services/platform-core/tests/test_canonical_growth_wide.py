@@ -14,7 +14,6 @@ from app.growth_ops import deepseek as deepseek_service
 from app.growth_ops import service, wide_service
 from app.growth_ops.canonical_policy import (
     ACTIVE_CONTENT_BRANDS,
-    DailyGateResult,
     LAND_AGENT_COMMISSION_ANCHOR,
     LAND_OUTREACH_SERVICE_ANCHOR,
     LAND_OWNER_FREE_AD_ANCHOR,
@@ -22,10 +21,18 @@ from app.growth_ops.canonical_policy import (
     LAND_OWNER_REPLY_ANCHOR,
     LAND_OWNER_SERVICE_ANCHOR,
     SOURCE_LEDGER_ROUTE_COUNT,
+    DailyGateResult,
     assert_outreach_copy,
 )
 from app.growth_ops.canonical_templates import CanonicalFirstContactRegistry
-from app.growth_ops.models import CanonicalGrowthDailyRun, DailyContentObligation, GrowthSignal
+from app.growth_ops.models import (
+    CanonicalGrowthDailyRun,
+    DailyContentObligation,
+    GrowthSignal,
+    SourceCatalogRevision,
+    SourceCoverageAttempt,
+    SourceCoverageRoute,
+)
 from app.growth_ops.registry import GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn
 
@@ -173,6 +180,78 @@ def test_quality_first_daily_gate_has_no_lead_quota():
     )
 
     assert gate.passed
+
+
+def test_daily_wide_route_attempts_exclude_managed_land_route_set(
+    db, tmp_path, monkeypatch
+):
+    catalog_sha = "a" * 64
+    manifest = {
+        "spreadsheet_id": "1ddn6e2EbuafPc_S9_eb6oetBQsp4iOO9cFuMD6sQ4H4",
+        "sheet_id": 959591161,
+        "route_count": SOURCE_LEDGER_ROUTE_COUNT,
+        "modified_time": "2026-08-20T11:39:45.518Z",
+        "catalog_sha256": catalog_sha,
+    }
+    manifest_path = tmp_path / "source-ledger-manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(
+        wide_service,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_manifest_file=str(manifest_path),
+            canonical_wide_enabled=True,
+            canonical_daily_at="05:30",
+            timezone="Europe/Budapest",
+        ),
+    )
+    now = datetime(2026, 8, 20, 8, 0, tzinfo=UTC)
+    db.add(
+        SourceCatalogRevision(
+            revision_id="SCR-CANONICAL-ONLY",
+            spreadsheet_id="1ddn6e2EbuafPc_S9_eb6oetBQsp4iOO9cFuMD6sQ4H4",
+            sheet_id=959591161,
+            source_modified_time="2026-08-20T11:39:45.518Z",
+            catalog_sha256=catalog_sha,
+            route_count=SOURCE_LEDGER_ROUTE_COUNT,
+            status="active",
+            imported_at=now,
+        )
+    )
+    db.add(
+        SourceCoverageRoute(
+            route_key="CANONICAL-1",
+            route_id="CANONICAL-1",
+            catalog_sha256=catalog_sha,
+            motor="construction",
+            route_url="https://source.test/canonical",
+            source_row_sha256="b" * 64,
+            source_record_json="{}",
+            enabled=True,
+        )
+    )
+    db.commit()
+    row = wide_service.refresh_daily_run(db, now=now)
+    for attempt_id, attempt_catalog_sha, route_key in (
+        ("SCA-CANONICAL", catalog_sha, "CANONICAL-1"),
+        ("SCA-MANAGED-LAND", "f" * 64, "LAND-PUBLIC-HTML:dh"),
+    ):
+        db.add(
+            SourceCoverageAttempt(
+                attempt_id=attempt_id,
+                route_key=route_key,
+                catalog_sha256=attempt_catalog_sha,
+                run_id=row.run_id,
+                status="succeeded",
+                started_at=now,
+                completed_at=now,
+            )
+        )
+    db.commit()
+
+    refreshed = wide_service.refresh_daily_run(db, now=now)
+
+    assert refreshed.route_attempts == 1
 
 
 def test_deepseek_json_requests_disable_default_thinking(db, monkeypatch):

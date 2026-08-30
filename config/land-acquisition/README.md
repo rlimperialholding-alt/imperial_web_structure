@@ -16,8 +16,24 @@ Every live public-HTML source requires:
 5. data minimisation and the Growth Ops recipient/contact-basis gates.
 
 Public listing HTML is discovery evidence, not consent. Automated first contact may use a
-verified real-estate-office role mailbox; a natural-person agent or owner requires an explicit
-request or documented prior consent before any message is queued or dispatched.
+verified, explicitly named listing agent or property owner only through the locked one-time
+public-listing policy. Every accepted recipient field is persisted with its exact public source
+snippet, listing snapshot SHA-256 and fetch time. Immediately before dispatch the worker fetches
+the same concrete permalink again with the same HTTPS, robots.txt, identified-user-agent,
+response-size and blocked-page controls. A missing, changed, inactive or unverifiable listing is
+a hard NO_SEND.
+
+The first production canary has a separate global lifetime cap of three accepted land emails
+(`LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL`, allowed range 0..3). It does not replace or raise
+the normal 5/hour, 50/day, 30-day-recipient or global rolling-24-hour limits.
+
+The seven registered category routes can be checked without writes, then idempotently upserted
+with database readback:
+
+```bash
+python scripts/ensure_public_land_routes.py
+python scripts/ensure_public_land_routes.py --apply
+```
 
 Every live publishing adapter activation requires, outside this repository:
 

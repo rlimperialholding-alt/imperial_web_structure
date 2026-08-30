@@ -21,6 +21,14 @@
     "construction_public_request": {"enabled": false, "motor": "construction", "bucket": "public_request"},
     "construction_fitout_change": {"enabled": false, "motor": "construction", "bucket": "fitout_change"},
     "construction_property_development": {"enabled": false, "motor": "construction", "bucket": "property_development"},
+    "construction_public_land_html": {
+      "enabled": true,
+      "kind": "public_land_listing_html",
+      "fetch_mode": "ingest_only",
+      "motor": "construction",
+      "bucket": "property_development",
+      "route_set_sha256": "f8f86c9a28160e1f2d919bf5f86bde7d6765bcea30945b17bba9a4364f478a1f"
+    },
     "construction_horeca": {"enabled": false, "motor": "construction", "bucket": "horeca"},
     "construction_contractor_capacity": {"enabled": false, "motor": "construction", "bucket": "contractor_capacity"},
     "distress_liquidation": {"enabled": false, "motor": "distress", "bucket": "liquidation"},
