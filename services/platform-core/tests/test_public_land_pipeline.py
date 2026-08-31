@@ -113,7 +113,7 @@ def land_runtime(db, monkeypatch, tmp_path):
             timezone="Europe/Budapest",
             outreach_send_start_local="08:00",
             outreach_send_end_local="18:00",
-            outreach_account_rolling_24h_max=2000,
+            outreach_budapest_day_max=2000,
             outreach_send_concurrency=1,
             outreach_reputation_bootstrap_messages_per_window=100,
             outreach_reputation_max_growth_factor=1.25,
@@ -1603,6 +1603,7 @@ def test_successful_dispatch_persists_attested_live_receipt(db, land_runtime, mo
                 "readback_verified": True,
                 "readback_mime_sha256": "e" * 64,
                 "rfc_message_id": "<synthetic@example.test>",
+                "provider_internal_date": datetime.now(UTC).isoformat(),
             },
         )
 

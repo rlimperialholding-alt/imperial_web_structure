@@ -28,6 +28,7 @@ _LEGACY_OUTREACH_COUNT_CAP_ENV = (
     "GROWTH_OPS_OUTREACH_MAX_PER_HOUR",
     "GROWTH_OPS_OUTREACH_MAX_PER_DAY",
     "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
+    "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX",
 )
 
 
@@ -93,7 +94,7 @@ class GrowthSettings:
     timezone: str
     outreach_send_start_local: str
     outreach_send_end_local: str
-    outreach_account_rolling_24h_max: int
+    outreach_budapest_day_max: int
     outreach_send_concurrency: int
     outreach_reputation_bootstrap_messages_per_window: int
     outreach_reputation_max_growth_factor: float
@@ -199,12 +200,12 @@ def settings() -> GrowthSettings:
         timezone=os.getenv("GROWTH_OPS_TIMEZONE", "Europe/Budapest"),
         outreach_send_start_local=os.getenv("GROWTH_OPS_OUTREACH_SEND_START_LOCAL", "00:00"),
         outreach_send_end_local=os.getenv("GROWTH_OPS_OUTREACH_SEND_END_LOCAL", "00:00"),
-        outreach_account_rolling_24h_max=_strict_int_setting(
-            "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX",
+        outreach_budapest_day_max=_strict_int_setting(
+            "GROWTH_OPS_OUTREACH_BUDAPEST_DAY_MAX",
             "2000",
             minimum=2000,
             maximum=2000,
-            error="outreach_account_rolling_24h_max_invalid_no_send",
+            error="outreach_budapest_day_max_invalid_no_send",
         ),
         outreach_send_concurrency=_strict_int_setting(
             "GROWTH_OPS_OUTREACH_SEND_CONCURRENCY",

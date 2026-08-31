@@ -4,6 +4,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -12,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base, SessionLocal, engine
 from app.global_email_guard import GlobalEmailRecipientGuard
 from app.growth_ops import registry, service
-from app.growth_ops.email import EmailDeliveryError, GmailRolling24hUsage
+from app.growth_ops.email import EmailDeliveryError
 from app.growth_ops.models import CanonicalEmailDelivery, GrowthControlState, OutreachMessage
 from app.growth_ops.registry import GrowthRegistryError
 from app.growth_ops.registry import settings as growth_settings
@@ -119,21 +120,6 @@ def _canonical_delivery(
     )
 
 
-def _gmail_usage(
-    current: datetime,
-    provider_ids: set[str] | frozenset[str] = frozenset(),
-    *,
-    limit: int = 2000,
-) -> GmailRolling24hUsage:
-    return GmailRolling24hUsage(
-        provider_ids=frozenset(provider_ids),
-        limit=limit,
-        cutoff=current - timedelta(hours=24),
-        observed_at=current,
-        pages=1,
-    )
-
-
 def _runtime_settings(**changes):
     values = {
         "timezone": "Europe/Budapest",
@@ -141,7 +127,7 @@ def _runtime_settings(**changes):
         "lease_seconds": 300,
         "outreach_send_start_local": "00:00",
         "outreach_send_end_local": "00:00",
-        "outreach_account_rolling_24h_max": 2000,
+        "outreach_budapest_day_max": 2000,
         "outreach_send_concurrency": 1,
         "outreach_reputation_bootstrap_messages_per_window": 100,
         "outreach_reputation_max_growth_factor": 1.25,
@@ -230,14 +216,24 @@ def test_legacy_static_count_cap_environment_fails_closed(monkeypatch, name):
 
 
 @pytest.mark.parametrize("invalid", ["1", "50", "1999", "2001"])
-def test_account_rolling_24h_limit_is_exactly_2000(monkeypatch, invalid):
-    monkeypatch.setenv("GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX", "2000")
-    assert growth_settings().outreach_account_rolling_24h_max == 2000
+def test_budapest_day_first_contact_limit_is_exactly_2000(monkeypatch, invalid):
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_BUDAPEST_DAY_MAX", "2000")
+    assert growth_settings().outreach_budapest_day_max == 2000
 
-    monkeypatch.setenv("GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX", invalid)
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_BUDAPEST_DAY_MAX", invalid)
     with pytest.raises(
         GrowthRegistryError,
-        match="outreach_account_rolling_24h_max_invalid_no_send",
+        match="outreach_budapest_day_max_invalid_no_send",
+    ):
+        growth_settings()
+
+
+def test_removed_rolling_hard_quota_environment_fails_closed(monkeypatch):
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX", "2000")
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="legacy_outreach_count_cap_environment_present_no_send",
     ):
         growth_settings()
 
@@ -545,25 +541,20 @@ def test_pending_verification_row_reserves_quota_but_does_not_block_next_claim(
     db.add_all([pending, candidate])
     db.commit()
 
-    usage = _gmail_usage(current)
-    assert service._gmail_account_unmatched_reservations(db, usage) == {
-        "provider:gmail-possibly-accepted"
-    }
+    usage = service._outreach_budapest_day_usage(db, current)
+    assert usage.pending_verification_reservations == 1
+    assert usage.reservation_keys == frozenset({f"outreach:{pending.outreach_id}"})
 
     claimed = service.claim_outreach(db)
     assert claimed is not None and claimed.outreach_id == candidate.outreach_id
 
 
-def test_composite_reservations_dedupe_the_same_provider_message_id(db, monkeypatch):
+def test_internal_deliveries_and_global_guard_rows_do_not_consume_first_contact_quota(
+    db,
+    monkeypatch,
+):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    current = datetime.now(UTC)
-    claimed = _message(130, "external@example.hu", status="claimed")
-    claimed.claimed_at = current
-    claimed.provider_message_id = "gmail-shared"
-    sent = _message(131, "sent@example.net", status="sent")
-    sent.sent_at = current
-    sent.provider_message_id = "gmail-shared"
-    sent.receipt_json = _verified_gmail_receipt("gmail-shared", "b" * 64)
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
     accepted_internal = _canonical_delivery(
         1,
         status="accepted_unverified",
@@ -587,106 +578,163 @@ def test_composite_reservations_dedupe_the_same_provider_message_id(db, monkeypa
         created_at=current,
         updated_at=current,
     )
-    db.add_all([claimed, sent, accepted_internal, sent_internal, guard_sent])
+    db.add_all([accepted_internal, sent_internal, guard_sent])
     db.commit()
 
-    assert service._gmail_account_unmatched_reservations(
-        db,
-        _gmail_usage(current),
-    ) == {"provider:gmail-shared"}
-    assert service._gmail_account_unmatched_reservations(
-        db,
-        _gmail_usage(current, {"gmail-shared"}),
-    ) == set()
+    usage = service._outreach_budapest_day_usage(db, current)
+
+    assert usage.verified_first_contacts == 0
+    assert usage.effective_reserved_count == 0
+    assert usage.reservation_keys == frozenset()
 
 
-def test_global_recipient_guard_sent_row_bridges_business_row_commit_gap(db, monkeypatch):
+@pytest.mark.parametrize(
+    ("local_date", "expected_hours"),
+    [
+        (date(2026, 3, 29), 23),
+        (date(2026, 8, 31), 24),
+        (date(2026, 10, 25), 25),
+    ],
+)
+def test_budapest_day_bounds_follow_calendar_midnights_across_dst(
+    local_date,
+    expected_hours,
+):
+    zone = ZoneInfo("Europe/Budapest")
+    local_noon = datetime.combine(local_date, datetime.min.time(), tzinfo=zone) + timedelta(
+        hours=12
+    )
+
+    day_start, day_end = service._budapest_day_bounds(local_noon.astimezone(UTC))
+
+    assert day_start.astimezone(zone).date() == local_date
+    assert day_start.astimezone(zone).time() == datetime.min.time()
+    assert day_end.astimezone(zone).date() == local_date + timedelta(days=1)
+    assert day_end.astimezone(zone).time() == datetime.min.time()
+    assert (day_end - day_start).total_seconds() == expected_hours * 3600
+
+
+def test_budapest_day_usage_is_start_inclusive_end_exclusive_and_first_contact_only(
+    db,
+    monkeypatch,
+):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    current = datetime.now(UTC)
-    guard_sent = GlobalEmailRecipientGuard(
-        recipient_normalized="guard-gap@example.org",
-        identity_sha256="e" * 64,
-        message_type="growth_outreach",
-        tenant_scope="imperial",
-        status="sent",
-        sent_at=current,
-        provider_message_id="gmail-guard-gap",
-        created_at=current,
-        updated_at=current,
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
+    day_start, day_end = service._budapest_day_bounds(current)
+    rows = []
+    for index, sent_at in enumerate(
+        [
+            day_start - timedelta(microseconds=1),
+            day_start,
+            day_end - timedelta(microseconds=1),
+            day_end,
+        ],
+        start=130,
+    ):
+        rows.append(_verified_sent_message(index, status="sent", sent_at=sent_at))
+    followup = _verified_sent_message(134, status="sent", sent_at=current)
+    followup.sequence_step = 1
+    pending_at_start = _message(135, "start-pending@example.hu", status="claimed")
+    pending_at_start.claimed_at = day_start
+    pending_at_start.provider_message_id = "gmail-start-pending"
+    pending_at_start.receipt_json = json.dumps(
+        {
+            "provider": "gmail_api",
+            "accepted": True,
+            "delivery_verification": {
+                "status": "pending_verification",
+                "reserved_at": day_start.isoformat(),
+            },
+        }
     )
-    db.add(guard_sent)
+    pending_before_start = _message(136, "prior-pending@example.hu", status="claimed")
+    pending_before_start.claimed_at = day_start - timedelta(microseconds=1)
+    pending_before_start.provider_message_id = "gmail-prior-pending"
+    pending_before_start.receipt_json = json.dumps(
+        {
+            "provider": "gmail_api",
+            "accepted": True,
+            "delivery_verification": {
+                "status": "pending_verification",
+                "reserved_at": (day_start - timedelta(microseconds=1)).isoformat(),
+            },
+        }
+    )
+    db.add_all([*rows, followup, pending_at_start, pending_before_start])
     db.commit()
 
-    assert service._gmail_account_unmatched_reservations(
-        db,
-        _gmail_usage(current),
-    ) == {"provider:gmail-guard-gap"}
-    assert service._gmail_account_unmatched_reservations(
-        db,
-        _gmail_usage(current, {"gmail-guard-gap"}),
-    ) == set()
+    usage = service._outreach_budapest_day_usage(db, current)
+
+    assert usage.verified_first_contacts == 2
+    assert usage.sent_first_contacts == 2
+    assert usage.active_claim_reservations == 0
+    assert usage.pending_verification_reservations == 1
+    assert usage.reservation_keys == frozenset(
+        {f"outreach:{pending_at_start.outreach_id}"}
+    )
+    assert usage.effective_reserved_count == 3
 
 
-def test_all_local_reservation_ledgers_include_the_exact_24h_cutoff(db, monkeypatch):
+def test_accepted_unverified_uses_stable_claim_day_and_expired_plain_claim_is_ignored(
+    db,
+    monkeypatch,
+):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    current = datetime.now(UTC)
-    cutoff = current - timedelta(hours=24)
-    claimed = _message(135, "claimed-cutoff@example.hu", status="claimed")
-    claimed.claimed_at = cutoff
-    claimed.provider_message_id = "gmail-claimed-cutoff"
-    sent = _message(136, "sent-cutoff@example.net", status="delivered")
-    sent.sent_at = cutoff
-    sent.provider_message_id = "gmail-sent-cutoff"
-    sent.receipt_json = _verified_gmail_receipt("gmail-sent-cutoff", "f" * 64)
-    canonical_sending = _canonical_delivery(
-        3,
-        status="sending",
-        provider_message_id="gmail-canonical-sending-cutoff",
-        at=cutoff,
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
+    day_start, day_end = service._budapest_day_bounds(current)
+    pending = _message(137, "pending@example.hu", status="claimed")
+    pending.claimed_at = day_start - timedelta(hours=1)
+    pending.updated_at = day_end + timedelta(hours=1)
+    pending.provider_message_id = "gmail-pending"
+    pending.receipt_json = json.dumps(
+        {
+            "provider": "gmail_api",
+            "accepted": True,
+            "delivery_verification": {
+                "status": "pending_verification",
+                "reserved_at": current.isoformat(),
+            },
+        }
     )
-    canonical_sent = _canonical_delivery(
-        4,
-        status="sent",
-        provider_message_id="gmail-canonical-sent-cutoff",
-        at=cutoff,
+    prior_day_pending = _message(139, "prior-day@example.hu", status="claimed")
+    prior_day_pending.claimed_at = current
+    prior_day_pending.updated_at = current
+    prior_day_pending.provider_message_id = "gmail-prior-day"
+    prior_day_pending.receipt_json = json.dumps(
+        {
+            "provider": "gmail_api",
+            "accepted": True,
+            "delivery_verification": {
+                "status": "pending_verification",
+                "reserved_at": (day_start - timedelta(microseconds=1)).isoformat(),
+            },
+        }
     )
-    guard_sent = GlobalEmailRecipientGuard(
-        recipient_normalized="guard-cutoff@example.org",
-        identity_sha256="1" * 64,
-        message_type="growth_outreach",
-        tenant_scope="imperial",
-        status="sent",
-        sent_at=cutoff,
-        provider_message_id="gmail-guard-cutoff",
-        created_at=cutoff,
-        updated_at=cutoff,
-    )
-    db.add_all([claimed, sent, canonical_sending, canonical_sent, guard_sent])
+    expired = _message(138, "expired@example.hu", status="claimed")
+    expired.claimed_at = current
+    expired.claimed_by = "dead-worker"
+    expired.lease_expires_at = current - timedelta(seconds=1)
+    db.add_all([pending, prior_day_pending, expired])
     db.commit()
 
-    assert service._gmail_account_unmatched_reservations(
-        db,
-        _gmail_usage(current),
-    ) == {
-        "provider:gmail-claimed-cutoff",
-        "provider:gmail-sent-cutoff",
-        "provider:gmail-canonical-sending-cutoff",
-        "provider:gmail-canonical-sent-cutoff",
-        "provider:gmail-guard-cutoff",
-    }
+    usage = service._outreach_budapest_day_usage(db, current)
+
+    assert usage.pending_verification_reservations == 1
+    assert usage.active_claim_reservations == 0
+    assert usage.reservation_keys == frozenset({f"outreach:{pending.outreach_id}"})
 
 
 @pytest.mark.parametrize(
     "status",
     ["sent", "delivered", "responded", "bounced", "complained", "unsubscribed"],
 )
-def test_mime_verified_outreach_remains_a_local_24h_fallback_after_status_events(
+def test_mime_verified_first_contact_remains_in_budapest_day_after_status_events(
     db,
     monkeypatch,
     status,
 ):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    current = datetime.now(UTC)
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
     row = _message(140, "sent@example.hu", status=status)
     row.sent_at = current
     row.provider_message_id = f"gmail-{status}"
@@ -694,48 +742,142 @@ def test_mime_verified_outreach_remains_a_local_24h_fallback_after_status_events
     db.add(row)
     db.commit()
 
-    assert service._gmail_account_unmatched_reservations(
-        db,
-        _gmail_usage(current),
-    ) == {f"provider:gmail-{status}"}
+    usage = service._outreach_budapest_day_usage(db, current)
+
+    assert usage.verified_first_contacts == 1
+    assert usage.effective_reserved_count == 1
 
 
-def test_1999_gmail_sent_plus_current_reservation_is_allowed(db, monkeypatch):
+def _quota_usage(
+    current: datetime,
+    *,
+    verified: int,
+    reservation_key: str,
+) -> service.OutreachBudapestDayUsage:
+    day_start, day_end = service._budapest_day_bounds(current)
+    return service.OutreachBudapestDayUsage(
+        day_start=day_start,
+        day_end=day_end,
+        observed_at=current,
+        limit=2000,
+        sent_first_contacts=verified,
+        verified_first_contacts=verified,
+        active_claim_reservations=1,
+        pending_verification_reservations=0,
+        ready_queued=0,
+        reservation_keys=frozenset({reservation_key}),
+    )
+
+
+def test_1999_verified_first_contacts_plus_current_reservation_is_allowed(db, monkeypatch):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    current = datetime.now(UTC)
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
     row = _message(150, "current@example.hu", status="claimed")
     row.claimed_at = current
-    db.add(row)
-    db.commit()
-    usage = _gmail_usage(current, {f"gmail-{index}" for index in range(1999)})
+    key = f"outreach:{row.outreach_id}"
+    monkeypatch.setattr(
+        service,
+        "_outreach_budapest_day_usage",
+        lambda _db, _now=None: _quota_usage(current, verified=1999, reservation_key=key),
+    )
 
-    attestation = service._assert_outreach_account_quota_reserved(db, row, usage)
+    attestation = service._assert_outreach_budapest_day_quota_reserved(db, row, now=current)
 
-    assert attestation["gmail_sent_messages"] == 1999
-    assert attestation["unmatched_reservations"] == 1
+    assert attestation["verified_first_contacts"] == 1999
+    assert attestation["active_claim_reservations"] == 1
     assert attestation["effective_reserved_count"] == 2000
     assert attestation["limit"] == 2000
+    assert attestation["timezone"] == "Europe/Budapest"
 
 
-def test_2000_gmail_sent_plus_current_reservation_is_blocked(db, monkeypatch):
+def test_claimed_sent_crash_window_identity_is_not_double_counted_at_2000(
+    db,
+    monkeypatch,
+):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    current = datetime.now(UTC)
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
+    normal_sent = [
+        _verified_sent_message(
+            20_000 + index,
+            status="sent",
+            sent_at=current - timedelta(minutes=1),
+        )
+        for index in range(1998)
+    ]
+    crash_window = _verified_sent_message(
+        22_000,
+        status="claimed",
+        sent_at=current - timedelta(seconds=30),
+    )
+    crash_window.claimed_at = current - timedelta(minutes=2)
+    current_claim = _message(22_001, "current-claim@example.hu", status="claimed")
+    current_claim.claimed_at = current
+    current_claim.claimed_by = "growth-cap-test"
+    current_claim.lease_expires_at = current + timedelta(minutes=5)
+    db.add_all([*normal_sent, crash_window, current_claim])
+    db.commit()
+
+    usage = service._outreach_budapest_day_usage(db, current)
+    attestation = service._assert_outreach_budapest_day_quota_reserved(
+        db,
+        current_claim,
+        now=current,
+    )
+
+    assert usage.sent_first_contacts == 1999
+    assert usage.verified_first_contacts == 1999
+    assert usage.active_claim_reservations == 1
+    assert usage.reservation_keys == frozenset(
+        {f"outreach:{current_claim.outreach_id}"}
+    )
+    assert usage.effective_reserved_count == 2000
+    assert attestation["effective_reserved_count"] == 2000
+
+
+def test_2000_verified_first_contacts_plus_current_reservation_is_blocked(db, monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
     row = _message(151, "current@example.hu", status="claimed")
     row.claimed_at = current
-    db.add(row)
-    db.commit()
-    usage = _gmail_usage(current, {f"gmail-{index}" for index in range(2000)})
+    key = f"outreach:{row.outreach_id}"
+    monkeypatch.setattr(
+        service,
+        "_outreach_budapest_day_usage",
+        lambda _db, _now=None: _quota_usage(current, verified=2000, reservation_key=key),
+    )
 
     with pytest.raises(
         EmailDeliveryError,
-        match="gmail_account_rolling_24h_limit_reached_no_send",
+        match="outreach_budapest_day_limit_reached_no_send",
     ) as raised:
-        service._assert_outreach_account_quota_reserved(db, row, usage)
+        service._assert_outreach_budapest_day_quota_reserved(db, row, now=current)
 
     assert raised.value.retry_safe is True
-    assert raised.value.rate_limited is True
     assert raised.value.detail["effective_reserved_count"] == 2001
     assert raised.value.detail["limit"] == 2000
+
+
+def test_full_budapest_day_quota_stops_dispatch_capacity_without_mutating_queue(
+    db,
+    monkeypatch,
+):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
+    queued = _message(152, "queued@example.hu")
+    db.add(queued)
+    db.commit()
+    full_usage = _quota_usage(
+        current,
+        verified=1999,
+        reservation_key="outreach:pending-other",
+    )
+    monkeypatch.setattr(service, "_outreach_budapest_day_usage", lambda *_args: full_usage)
+    monkeypatch.setattr(service, "_outreach_capacity_usage", lambda *_args: _capacity_usage())
+
+    assert service._outreach_send_capacity(db, current) == 0
+    db.refresh(queued)
+    assert queued.status == "queued"
+    assert queued.attempt_count == 0
 
 
 def test_pacing_adapts_to_verified_previous_window_without_static_hourly_quota(monkeypatch):

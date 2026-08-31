@@ -25,10 +25,14 @@ a hard NO_SEND.
 
 An explicitly dated first-production canary may temporarily reserve one to three accepted land
 emails (`LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL`, allowed range 1..3). It is a release gate,
-not an ongoing transport quota, and is inactive when no canary date is configured. Normal account
-transport has no hourly, calendar-day or recipient-domain count cap: the sole account count ceiling
-is 2,000 Gmail SENT messages in the rolling 24-hour window. Recipient cooldown, suppression,
-deduplication, consent/contact-basis and content-verification gates remain independent safeguards.
+not an ongoing transport quota, and is inactive when no canary date is configured. Normal first-
+contact transport has no hourly limit, daily target or recipient-domain count cap. The sole count
+ceiling is 2,000 new first contacts in one Europe/Budapest calendar day. Gmail-accepted first
+contacts awaiting full MIME verification reserve a slot in the same local-day ceiling and are never
+retried automatically. Queued, claimed and pending rows are included in capacity planning, while
+only verified sends and active or pending reservations consume the hard transport ceiling.
+Recipient cooldown, suppression, deduplication, consent/contact-basis and content-verification
+gates remain independent safeguards.
 
 The seven registered category routes can be checked without writes, then idempotently upserted
 with database readback:

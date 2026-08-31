@@ -8,7 +8,7 @@ import re
 import stat
 import urllib.error
 import urllib.parse
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -201,26 +201,6 @@ class _FakeGmail:
         raise AssertionError(f"unexpected URL: {url}")
 
 
-def _quota_pages(*page_sizes: int) -> dict[str, object]:
-    pages: dict[str, object] = {}
-    next_id = 0
-    for index, page_size in enumerate(page_sizes):
-        token = "" if index == 0 else f"page-{index}"
-        payload: dict[str, object] = {
-            "messages": [
-                {"id": f"sent-{message_id}"}
-                for message_id in range(next_id, next_id + page_size)
-            ],
-            # Deliberately wrong: the adapter must enumerate IDs, not trust this hint.
-            "resultSizeEstimate": 1,
-        }
-        next_id += page_size
-        if index + 1 < len(page_sizes):
-            payload["nextPageToken"] = f"page-{index + 1}"
-        pages[token] = payload
-    return pages
-
-
 @pytest.fixture(autouse=True)
 def external_transport_window_open(monkeypatch):
     monkeypatch.setattr(
@@ -261,7 +241,7 @@ def _payload(**changes):
         "body_text": "Az Imperial Holding ajánlata.",
         "idempotency_key": "a" * 64,
         "pre_send_guard": lambda: None,
-        "account_quota_guard": lambda _usage: None,
+        "account_quota_guard": lambda: None,
         "unsubscribe_url": "https://imperialholding.hu/growth/unsubscribe/token",
     }
     payload.update(changes)
@@ -476,136 +456,54 @@ def test_external_gmail_exact_sent_readback_roundtrip(monkeypatch):
     assert receipt.detail["oauth_profile_email"] == "info@imperialholding.hu"
 
 
-def test_gmail_rolling_24h_usage_paginates_exact_ids_and_uses_fixed_bounds(
+def test_external_gmail_uses_no_rolling_sent_scan_and_calls_no_arg_quota_guard(
     monkeypatch,
 ):
-    gmail = _FakeGmail(quota_pages=_quota_pages(500, 500, 7))
+    gmail = _FakeGmail()
     monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
-    observed_at = datetime(2026, 8, 31, 8, 25, 27, tzinfo=UTC)
+    calls = []
 
-    usage = growth_email._gmail_sent_rolling_24h_usage(
-        access_token="access-token",
-        now=observed_at,
-    )
-
-    assert usage.sent_messages == 1007
-    assert usage.pages == 3
-    assert usage.observed_at == observed_at
-    assert usage.cutoff == observed_at - timedelta(hours=24)
-    assert len(gmail.quota_queries) == 3
-    expected_query = (
-        f"after:{int(usage.cutoff.timestamp()) - 1} "
-        f"before:{int(observed_at.timestamp()) + 1}"
-    )
-    assert {query["q"][0] for query in gmail.quota_queries} == {expected_query}
-    assert [query.get("pageToken", [""])[0] for query in gmail.quota_queries] == [
-        "",
-        "page-1",
-        "page-2",
-    ]
-
-
-def test_gmail_rolling_24h_usage_deduplicates_provider_ids(monkeypatch):
-    gmail = _FakeGmail(
-        quota_pages={
-            "": {
-                "messages": [{"id": "sent-1"}, {"id": "sent-2"}],
-                "nextPageToken": "next",
-                "resultSizeEstimate": 9000,
-            },
-            "next": {
-                "messages": [{"id": "sent-2"}, {"id": "sent-3"}],
-                "resultSizeEstimate": 0,
-            },
-        }
-    )
-    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
-
-    usage = growth_email._gmail_sent_rolling_24h_usage(access_token="access-token")
-
-    assert usage.provider_ids == frozenset({"sent-1", "sent-2", "sent-3"})
-    assert usage.sent_messages == 3
-    assert usage.pages == 2
-
-
-def test_external_gmail_allows_1999_provider_messages_and_current_send(monkeypatch):
-    gmail = _FakeGmail(quota_pages=_quota_pages(500, 500, 500, 499))
-    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
-    observed_usage = []
+    def daily_quota_guard():
+        assert gmail.post_count == 0
+        calls.append("daily-quota")
 
     receipt = SMTPEmailAdapter(_oauth_binding()).send(
         **_payload(
             delivery_scope="external_customer",
             body_text="Imperial Holding offer.",
-            account_quota_guard=observed_usage.append,
+            account_quota_guard=daily_quota_guard,
         )
     )
 
-    assert [usage.sent_messages for usage in observed_usage] == [1999]
-    assert observed_usage[0].headroom == 1
+    assert calls == ["daily-quota"]
+    assert gmail.quota_queries == []
     assert gmail.post_count == 1
     assert receipt.provider_message_id == gmail.provider_id
 
 
-def test_external_gmail_blocks_at_2000_provider_messages_before_post(monkeypatch):
-    gmail = _FakeGmail(quota_pages=_quota_pages(500, 500, 500, 500))
+def test_external_gmail_daily_quota_guard_failure_is_before_post(monkeypatch):
+    gmail = _FakeGmail()
     monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    def daily_quota_full():
+        raise EmailDeliveryError(
+            "outreach_budapest_day_limit_reached_no_send",
+            retry_safe=True,
+        )
 
     with pytest.raises(
         EmailDeliveryError,
-        match="gmail_account_rolling_24h_limit_reached_no_send",
-    ) as raised:
+        match="outreach_budapest_day_limit_reached_no_send",
+    ):
         SMTPEmailAdapter(_oauth_binding()).send(
             **_payload(
                 delivery_scope="external_customer",
                 body_text="Imperial Holding offer.",
+                account_quota_guard=daily_quota_full,
             )
         )
 
-    assert raised.value.retry_safe is True
-    assert raised.value.rate_limited is True
-    assert raised.value.detail["sent_messages"] == 2000
-    assert gmail.post_count == 0
-    assert gmail.sent_raw is None
-
-
-@pytest.mark.parametrize(
-    ("quota_pages", "reason"),
-    [
-        (
-            {
-                "": {"messages": [], "nextPageToken": "loop"},
-                "loop": {"messages": [], "nextPageToken": "loop"},
-            },
-            "gmail_rolling_24h_pagination_cycle",
-        ),
-        (
-            {"": {"messages": {"id": "not-a-list"}}},
-            "gmail_rolling_24h_list_result_invalid",
-        ),
-    ],
-    ids=["pagination-cycle", "malformed-page"],
-)
-def test_external_gmail_quota_pagination_failure_is_fail_closed_before_post(
-    quota_pages,
-    reason,
-    monkeypatch,
-):
-    gmail = _FakeGmail(quota_pages=quota_pages)
-    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
-
-    with pytest.raises(
-        EmailDeliveryError,
-        match="gmail_account_quota_verification_failed_no_send",
-    ) as raised:
-        SMTPEmailAdapter(_oauth_binding()).send(
-            **_payload(
-                delivery_scope="external_customer",
-                body_text="Imperial Holding offer.",
-            )
-        )
-
-    assert reason in raised.value.detail["reason"]
+    assert gmail.quota_queries == []
     assert gmail.post_count == 0
     assert gmail.sent_raw is None
 
@@ -750,7 +648,7 @@ def test_external_gmail_all_day_window_allows_1930_pre_post(monkeypatch):
             timezone="Europe/Budapest",
             outreach_send_start_local="00:00",
             outreach_send_end_local="00:00",
-            outreach_account_rolling_24h_max=2000,
+            outreach_budapest_day_max=2000,
         ),
     )
     monkeypatch.setattr(
@@ -1198,7 +1096,7 @@ def test_internal_gmail_uses_account_guard_without_external_window(monkeypatch):
         delivery_scope="internal",
         attachments=[("belso.txt", b"Prefab.hu", "text/plain")],
         pre_send_guard=lambda: None,
-        account_quota_guard=lambda _usage: None,
+        account_quota_guard=lambda: None,
     )
 
     assert receipt.provider == "gmail_api"
@@ -1221,7 +1119,7 @@ def test_internal_gmail_attachment_readback_mismatch_is_held(monkeypatch):
             delivery_scope="internal",
             attachments=[("belso.txt", b"Prefab.hu", "text/plain")],
             pre_send_guard=lambda: None,
-            account_quota_guard=lambda _usage: None,
+            account_quota_guard=lambda: None,
         )
 
     assert gmail.post_count == 1

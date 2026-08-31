@@ -23,7 +23,6 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..config import settings as platform_settings
 from ..global_email_guard import (
-    GlobalEmailRecipientGuard,
     claim_global_recipient_delivery,
     fail_global_recipient_delivery,
     finalize_global_recipient_delivery,
@@ -41,11 +40,9 @@ from .connectors import SourceError, fetch_source
 from .email import (
     GMAIL_OAUTH_FIELDS,
     EmailDeliveryError,
-    GmailRolling24hUsage,
     SMTPEmailAdapter,
 )
 from .models import (
-    CanonicalEmailDelivery,
     GrowthControlState,
     GrowthLandCanarySlot,
     GrowthLandCanaryState,
@@ -2230,6 +2227,7 @@ def _release_expired_claims(db: Session) -> None:
                 "status": "pending_verification",
                 "retry_safe": False,
                 "provider_message_id": row.provider_message_id,
+                "reserved_at": now.isoformat(),
                 "detail": {"reason": "worker_lease_expired_delivery_ambiguous"},
             }
             row.receipt_json = canonical_json(receipt)
@@ -2307,6 +2305,28 @@ class OutreachCapacityUsage:
     pending_verification: int
     ready_queued: int
     last_verified_at: datetime | None
+
+
+@dataclass(frozen=True)
+class OutreachBudapestDayUsage:
+    day_start: datetime
+    day_end: datetime
+    observed_at: datetime
+    limit: int
+    sent_first_contacts: int
+    verified_first_contacts: int
+    active_claim_reservations: int
+    pending_verification_reservations: int
+    ready_queued: int
+    reservation_keys: frozenset[str]
+
+    @property
+    def effective_reserved_count(self) -> int:
+        return self.sent_first_contacts + len(self.reservation_keys)
+
+    @property
+    def planned_count(self) -> int:
+        return self.effective_reserved_count + self.ready_queued
 
 
 @dataclass(frozen=True)
@@ -2467,7 +2487,7 @@ def _outreach_reputation_gap_seconds(
     penalty_multiplier: float = 1.0,
 ) -> float:
     config = settings()
-    absolute_limit = int(getattr(config, "outreach_account_rolling_24h_max", 2000))
+    absolute_limit = int(getattr(config, "outreach_budapest_day_max", 2000))
     bootstrap = int(
         getattr(config, "outreach_reputation_bootstrap_messages_per_window", 100)
     )
@@ -2650,138 +2670,150 @@ def _record_outreach_pacing_backoff(
     return next_at
 
 
-def _gmail_account_unmatched_reservations(
-    db: Session,
-    usage: GmailRolling24hUsage,
-) -> set[str]:
-    unmatched: set[str] = set()
+def _budapest_day_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
+    current = _aware(now or utcnow())
+    try:
+        zone = ZoneInfo("Europe/Budapest")
+    except ZoneInfoNotFoundError as exc:
+        raise GrowthRegistryError("outreach_budapest_timezone_unavailable_no_send") from exc
+    local_date = current.astimezone(zone).date()
+    day_start = datetime.combine(local_date, time.min, tzinfo=zone).astimezone(UTC)
+    day_end = datetime.combine(
+        local_date + timedelta(days=1), time.min, tzinfo=zone
+    ).astimezone(UTC)
+    return day_start, day_end
 
-    def add_unmatched(*, fallback_key: str, provider_message_id: str | None) -> None:
-        if provider_message_id and provider_message_id in usage.provider_ids:
-            return
-        # The provider ID is the account-wide identity.  Using it when it is
-        # available prevents the same Gmail delivery from being counted twice
-        # when both a business row and a canonical-delivery row reference it.
-        unmatched.add(
-            f"provider:{provider_message_id}"
-            if provider_message_id
-            else fallback_key
-        )
 
-    for reserved in db.scalars(
-        select(OutreachMessage).where(OutreachMessage.status == "claimed")
-    ):
-        reservation_at = _claimed_reservation_at(reserved)
-        if reservation_at is None or reservation_at < usage.cutoff:
-            continue
-        add_unmatched(
-            fallback_key=f"outreach:{reserved.outreach_id}",
-            provider_message_id=reserved.provider_message_id,
-        )
-    for reserved in db.scalars(
-        select(CanonicalEmailDelivery).where(
-            CanonicalEmailDelivery.status.in_(("sending", "accepted_unverified"))
-        )
-    ):
-        reservation_at = reserved.accepted_at or reserved.updated_at or reserved.created_at
-        if reservation_at is None or _aware(reservation_at) < usage.cutoff:
-            continue
-        add_unmatched(
-            fallback_key=f"canonical:{reserved.identity_sha256}",
-            provider_message_id=reserved.provider_message_id,
-        )
+def _outreach_budapest_day_usage(
+    db: Session, now: datetime | None = None
+) -> OutreachBudapestDayUsage:
+    current = _aware(now or utcnow())
+    day_start, day_end = _budapest_day_bounds(current)
+    limit = int(getattr(settings(), "outreach_budapest_day_max", 2000))
+    if limit != 2000:
+        raise GrowthRegistryError("outreach_budapest_day_max_invalid_no_send")
 
-    # SENT is normally provider-authoritative.  Keep centrally MIME-verified
-    # deliveries as a conservative fallback when a user or mailbox rule has
-    # removed the message from Gmail's SENT label before Workspace's rolling
-    # quota has expired.
-    for sent_row in db.scalars(
+    sent_rows = db.scalars(
         select(OutreachMessage).where(
-            OutreachMessage.sent_at >= usage.cutoff,
+            OutreachMessage.sequence_step == 0,
+            OutreachMessage.sent_at >= day_start,
+            OutreachMessage.sent_at < day_end,
+        )
+    ).all()
+    # A sent_at row is a conservative quota consumer even if historic data is
+    # missing readback fields. Production only writes sent_at after full Gmail
+    # SENT/MIME verification; counting every such row prevents an undercount if
+    # that invariant was violated by an older release.
+    sent_first_contacts = len(sent_rows)
+    verified_first_contacts = sum(_gmail_sent_mime_verified(row) for row in sent_rows)
+
+    reservation_keys: set[str] = set()
+    active_claims = 0
+    pending_verification = 0
+    for reserved in db.scalars(
+        select(OutreachMessage).where(
+            OutreachMessage.sequence_step == 0,
+            OutreachMessage.status == "claimed",
         )
     ):
-        if not _gmail_sent_mime_verified(sent_row):
+        # A crash can leave the business row claimed after sent_at was already
+        # durably written. That identity is already in sent_rows and must not
+        # consume a second slot as a reservation.
+        if reserved.sent_at is not None:
             continue
-        add_unmatched(
-            fallback_key=f"outreach-sent:{sent_row.outreach_id}",
-            provider_message_id=sent_row.provider_message_id,
+        is_pending = _delivery_verification_pending(reserved) or (
+            _delivery_acceptance_ambiguous(reserved)
+            and reserved.lease_expires_at is None
         )
-    for sent_delivery in db.scalars(
-        select(CanonicalEmailDelivery).where(
-            CanonicalEmailDelivery.status == "sent",
-            CanonicalEmailDelivery.verified_at >= usage.cutoff,
+        is_active = bool(
+            reserved.claimed_by
+            and reserved.lease_expires_at
+            and _aware(reserved.lease_expires_at) > current
         )
-    ):
-        add_unmatched(
-            fallback_key=f"canonical-sent:{sent_delivery.identity_sha256}",
-            provider_message_id=sent_delivery.provider_message_id,
+        if is_pending:
+            reservation_at = _claimed_reservation_at(reserved)
+            if (
+                reservation_at is None
+                or reservation_at < day_start
+                or reservation_at >= day_end
+            ):
+                continue
+        elif not is_active:
+            continue
+        reservation_keys.add(f"outreach:{reserved.outreach_id}")
+        pending_verification += int(is_pending)
+        active_claims += int(is_active and not is_pending)
+
+    ready_queued = int(
+        db.scalar(
+            select(func.count())
+            .select_from(OutreachMessage)
+            .where(
+                OutreachMessage.sequence_step == 0,
+                OutreachMessage.status == "queued",
+                OutreachMessage.available_at < day_end,
+            )
         )
-    # Global recipient-guard finalization commits before the business row is
-    # marked sent.  Include that durable transition so releasing the advisory
-    # transaction lock cannot create a short quota-undercount window while
-    # Gmail's SENT listing is still converging.
-    for guard_sent in db.scalars(
-        select(GlobalEmailRecipientGuard).where(
-            GlobalEmailRecipientGuard.status == "sent",
-            GlobalEmailRecipientGuard.sent_at >= usage.cutoff,
-        )
-    ):
-        add_unmatched(
-            fallback_key=f"guard-sent:{guard_sent.identity_sha256}",
-            provider_message_id=guard_sent.provider_message_id,
-        )
-    return unmatched
+        or 0
+    )
+    return OutreachBudapestDayUsage(
+        day_start=day_start,
+        day_end=day_end,
+        observed_at=current,
+        limit=limit,
+        sent_first_contacts=sent_first_contacts,
+        verified_first_contacts=verified_first_contacts,
+        active_claim_reservations=active_claims,
+        pending_verification_reservations=pending_verification,
+        ready_queued=ready_queued,
+        reservation_keys=frozenset(reservation_keys),
+    )
 
 
-def _assert_gmail_account_quota_reserved(
+def _assert_outreach_budapest_day_quota_reserved(
     db: Session,
+    row: OutreachMessage,
     *,
-    current_reservation_key: str,
-    usage: GmailRolling24hUsage,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
-    config_limit = int(getattr(settings(), "outreach_account_rolling_24h_max", 2000))
-    if usage.limit != config_limit:
-        raise GrowthRegistryError("outreach_account_quota_snapshot_limit_mismatch_no_send")
-    unmatched_reservations = _gmail_account_unmatched_reservations(db, usage)
-    if current_reservation_key not in unmatched_reservations:
-        raise GrowthRegistryError("outreach_account_current_reservation_missing_no_send")
-    effective = usage.sent_messages + len(unmatched_reservations)
-    if effective > usage.limit:
+    usage = _outreach_budapest_day_usage(db, now)
+    current_reservation_key = f"outreach:{row.outreach_id}"
+    if current_reservation_key not in usage.reservation_keys:
+        raise GrowthRegistryError("outreach_current_reservation_missing_no_send")
+    if usage.effective_reserved_count > usage.limit:
+        retry_after = max(60.0, (usage.day_end - usage.observed_at).total_seconds())
         raise EmailDeliveryError(
-            "gmail_account_rolling_24h_limit_reached_no_send",
+            "outreach_budapest_day_limit_reached_no_send",
             retry_safe=True,
-            rate_limited=True,
-            retry_after_seconds=900,
+            retry_after_seconds=retry_after,
             detail={
-                "gmail_sent_messages": usage.sent_messages,
-                "unmatched_reservations": len(unmatched_reservations),
-                "effective_reserved_count": effective,
+                "sent_first_contacts": usage.sent_first_contacts,
+                "verified_first_contacts": usage.verified_first_contacts,
+                "active_claim_reservations": usage.active_claim_reservations,
+                "pending_verification_reservations": (
+                    usage.pending_verification_reservations
+                ),
+                "effective_reserved_count": usage.effective_reserved_count,
                 "limit": usage.limit,
-                "retry_after_seconds": 900,
+                "day_start": usage.day_start.isoformat(),
+                "day_end": usage.day_end.isoformat(),
+                "retry_after_seconds": retry_after,
             },
         )
     return {
         "observed_at": usage.observed_at.isoformat(),
-        "cutoff": usage.cutoff.isoformat(),
-        "gmail_sent_messages": usage.sent_messages,
-        "unmatched_reservations": len(unmatched_reservations),
-        "effective_reserved_count": effective,
+        "timezone": "Europe/Budapest",
+        "day_start": usage.day_start.isoformat(),
+        "day_end": usage.day_end.isoformat(),
+        "sent_first_contacts": usage.sent_first_contacts,
+        "verified_first_contacts": usage.verified_first_contacts,
+        "active_claim_reservations": usage.active_claim_reservations,
+        "pending_verification_reservations": usage.pending_verification_reservations,
+        "effective_reserved_count": usage.effective_reserved_count,
+        "ready_queued_for_capacity_planning": usage.ready_queued,
+        "planned_count": usage.planned_count,
         "limit": usage.limit,
-        "pages": usage.pages,
-        "snapshot_sha256": usage.snapshot_sha256,
     }
-
-
-def _assert_outreach_account_quota_reserved(
-    db: Session,
-    row: OutreachMessage,
-    usage: GmailRolling24hUsage,
-) -> dict[str, Any]:
-    return _assert_gmail_account_quota_reserved(
-        db,
-        current_reservation_key=f"outreach:{row.outreach_id}",
-        usage=usage,
-    )
 
 
 def _outreach_transport_capacity_reserved(
@@ -3196,10 +3228,23 @@ def _delivery_acceptance_ambiguous(row: OutreachMessage) -> bool:
 
 def _claimed_reservation_at(row: OutreachMessage) -> datetime | None:
     if _delivery_acceptance_ambiguous(row):
-        # Start the conservative 24-hour reservation at the most recent
-        # acceptance/containment transition, not at an older pre-transport
-        # claim time.  This prevents an ambiguous delivery from aging out early.
-        fallback = row.updated_at or row.claimed_at or row.available_at or row.created_at
+        # Keep a stable calendar-day identity. updated_at can move during
+        # reconciliation and must never shift an accepted delivery into a later
+        # Budapest quota day. New rows persist the containment instant; older
+        # rows conservatively fall back to their immutable claim time.
+        try:
+            receipt = json.loads(row.receipt_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            receipt = {}
+        verification = receipt.get("delivery_verification")
+        if isinstance(verification, dict):
+            raw_reserved_at = verification.get("reserved_at")
+            if raw_reserved_at:
+                try:
+                    return _aware(datetime.fromisoformat(str(raw_reserved_at)))
+                except ValueError:
+                    pass
+        fallback = row.claimed_at or row.created_at or row.available_at
         return _aware(fallback) if fallback is not None else None
     if row.claimed_at is None:
         return None
@@ -4213,9 +4258,9 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             if live_listing_evidence is not None:
                 _assert_live_listing_evidence_attestation(row, live_listing_evidence)
 
-        def immediate_account_quota_guard(usage: GmailRolling24hUsage) -> None:
+        def immediate_account_quota_guard() -> None:
             account_quota_attestation.update(
-                _assert_outreach_account_quota_reserved(db, row, usage)
+                _assert_outreach_budapest_day_quota_reserved(db, row)
             )
 
         if not _outreach_sending_window_open():
@@ -4253,6 +4298,20 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                     "provider": receipt.provider,
                 },
             )
+        try:
+            provider_accepted_at = _aware(
+                datetime.fromisoformat(
+                    str(receipt.detail["provider_internal_date"]).replace("Z", "+00:00")
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EmailDeliveryError(
+                "accepted_but_unverified",
+                retry_safe=False,
+                accepted_but_unverified=True,
+                provider_message_id=receipt.provider_message_id,
+                detail={"reason": "gmail_provider_internal_date_invalid"},
+            ) from exc
         completed_at = utcnow()
         verified_receipt_json = canonical_json(
             {
@@ -4270,10 +4329,13 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         # Persist the provider identity and verified MIME evidence in the same
         # commit that finalizes the global guard.  The row deliberately remains
         # claimed until the final business transition below, but it already
-        # occupies the rolling account ledger if the process dies in between.
+        # occupies the Budapest-day first-contact ledger if the process dies
+        # in between.
         row.provider_message_id = receipt.provider_message_id
         row.receipt_json = verified_receipt_json
-        row.sent_at = completed_at
+        # Quota-day attribution uses Gmail's provider acceptance timestamp,
+        # not the later local readback/commit instant around a midnight edge.
+        row.sent_at = provider_accepted_at
         if receipt.detail.get("recovered_existing_sent") is not True:
             _record_outreach_pacing_success(db, now=completed_at)
         try:
@@ -4366,6 +4428,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                         "status": "pending_verification",
                         "retry_safe": False,
                         "provider_message_id": exc.provider_message_id,
+                        "reserved_at": utcnow().isoformat(),
                         "detail": exc.detail,
                     },
                 }
@@ -4468,16 +4531,18 @@ def _contain_unexpected_dispatch_exception(
         receipt = json.loads(held.receipt_json or "{}")
     except (TypeError, json.JSONDecodeError):
         receipt = {}
+    contained_at = utcnow()
     receipt["delivery_verification"] = {
         "status": "pending_verification",
         "retry_safe": False,
         "provider_message_id": held.provider_message_id,
+        "reserved_at": contained_at.isoformat(),
         "detail": {"reason": "unexpected_dispatch_exception_isolated"},
     }
     held.receipt_json = canonical_json(receipt)
     held.last_error = f"unexpected_dispatch_exception:{type(exc).__name__}"
     held.claimed_by = None
-    held.claimed_at = held.claimed_at or utcnow()
+    held.claimed_at = held.claimed_at or contained_at
     held.lease_expires_at = None
     audit(
         db,
@@ -4503,7 +4568,9 @@ def dispatch_batch(db: Session, *, limit: int = 20) -> int:
         return 0
     sent = 0
     # One due item per worker tick. The persisted next-send timestamp prevents
-    # restart/catch-up bursts without inventing hourly or calendar-day quotas.
+    # restart/catch-up bursts without inventing an hourly or domain count cap;
+    # the Budapest calendar-day ceiling is enforced independently above and
+    # again under the transport lock immediately before POST.
     for _ in range(max(1, min(limit, capacity, 1))):
         row = claim_outreach(db)
         if not row:
@@ -4545,6 +4612,9 @@ def _outreach_send_capacity(db: Session, now: datetime | None = None) -> int:
     current = _aware(now or utcnow())
     usage = _outreach_capacity_usage(db, current)
     if usage.active_claimed > 0:
+        return 0
+    daily_usage = _outreach_budapest_day_usage(db, current)
+    if daily_usage.effective_reserved_count >= daily_usage.limit:
         return 0
     next_at = _outreach_pacing_next_at(db)
     if next_at is None and usage.last_verified_at is not None:
@@ -4792,7 +4862,7 @@ def _production_daily_automation_state(config: Any) -> dict[str, Any]:
         "daily_at": "05:30",
         "outreach_send_start_local": "00:00",
         "outreach_send_end_local": "00:00",
-        "outreach_account_rolling_24h_max": 2000,
+        "outreach_budapest_day_max": 2000,
         "outreach_send_concurrency": 1,
         "outreach_reputation_bootstrap_messages_per_window": 100,
         "outreach_reputation_max_growth_factor": 1.25,
@@ -4817,8 +4887,8 @@ def _production_daily_automation_state(config: Any) -> dict[str, Any]:
         "outreach_send_end_local": str(
             getattr(config, "outreach_send_end_local", "")
         ),
-        "outreach_account_rolling_24h_max": getattr(
-            config, "outreach_account_rolling_24h_max", None
+        "outreach_budapest_day_max": getattr(
+            config, "outreach_budapest_day_max", None
         ),
         "outreach_send_concurrency": getattr(config, "outreach_send_concurrency", None),
         "outreach_reputation_bootstrap_messages_per_window": getattr(
