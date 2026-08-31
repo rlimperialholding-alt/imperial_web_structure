@@ -17,11 +17,24 @@ deklarál. A Task65 megoldás:
 Ez a teszt ezeket az invariánsokat zárolja szintetikus szövegváltozatokkal
 (fail-closed minden irányban), valamint a kompenzáló ellenőrző szkript
 tulajdonságait.
+
+Task66 review-remediáció (Review-1 HIGH / Review-2 CRITICAL): a Task65
+változat ``umask 0177``-je a secret-könyvtárat 0600 módúvá tehette, amin a
+runner nem tudott áthatolni, így az ``openssl rand > secrets/<név>.txt``
+írás meghiúsult. A javítás ``umask 0077`` + explicit ``chmod 0700`` a
+könyvtáron (a fájlok 0400-as minimális jogosultsága változatlan). Az
+alábbi végrehajtási regressziók valódi temp könyvtárban futtatják a
+szkriptet, és ellenőrzik a könyvtár traversálhatóságát, a fájlok
+létrejöttét/módját és a secret-értékek logmentességét.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import os
+import re
+import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -256,12 +269,209 @@ def test_compensation_checker_passes_on_real_templates() -> None:
     assert module.main() == 0
 
 
-def test_enforce_script_covers_all_four_scan_parts() -> None:
+def test_enforce_script_covers_all_five_scan_parts() -> None:
     module = _load(
         "enforce_semgrep_verdict_invariants", REPO / "scripts" / "enforce_semgrep_verdict.py"
     )
-    assert len(module.PARTS) == 4
-    assert len(module.EXITS) == 4
+    assert len(module.PARTS) == 5
+    assert len(module.EXITS) == 5
     assert "semgrep-platform-core-templates.json" in module.PARTS
     assert "semgrep-platform-core-templates.exit" in module.EXITS
+    assert "semgrep-shell-workflow.json" in module.PARTS
+    assert "semgrep-shell-workflow.exit" in module.EXITS
     assert len(set(module.PARTS)) == len(module.PARTS)
+
+
+def _provisioned_names() -> list[str]:
+    checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
+    return checker._parse_provisioning_list(PROVISION_SCRIPT.read_text(encoding="utf-8"))
+
+
+def test_provisioning_script_uses_traversable_directory_mode() -> None:
+    # Task66 Review-1 HIGH / Review-2 CRITICAL regresszió: az umask 0177 a
+    # secret-könyvtárat 0600 módúvá tehette, amin a runner nem tudott
+    # áthatolni (a fájlírás meghiúsult). A javítás umask 0077 + explicit
+    # 0700 könyvtár-mód; a secret-fájlok 0400 jogosultsága változatlan.
+    text = PROVISION_SCRIPT.read_text(encoding="utf-8")
+    assert "umask 0177" not in text
+    assert "umask 0077" in text
+    assert 'chmod 0700 "$SECRET_DIR"' in text
+    assert 'chmod 0400 "$SECRET_DIR/${name}.txt"' in text
+
+
+def test_provisioning_script_executes_in_real_temp_dir(tmp_path) -> None:
+    # Végrehajtási regresszió valódi temp könyvtárban: a szkript létrehozza
+    # a traversálható könyvtárat és minden kanonikus secret-fájlt, a
+    # fájlok 0400 (POSIX) módúak, az értékek 64 hex karakter hosszú
+    # openssl rand kimenetek, és a kimenet egyetlen generált értéket sem
+    # tartalmaz (logmentesség).
+    names = _provisioned_names()
+    secret_dir = tmp_path / "secrets"
+    completed = subprocess.run(
+        ["sh", "scripts/ci-provision-secrets.sh"],
+        cwd=str(REPO),
+        env=dict(os.environ, CI_SECRET_DIR=str(secret_dir)),
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    values: dict[str, str] = {}
+    for name in names:
+        secret_file = secret_dir / f"{name}.txt"
+        assert secret_file.is_file(), f"{name}: secret-fájl nem jött létre"
+        content = secret_file.read_text(encoding="utf-8").strip()
+        assert re.fullmatch(r"[0-9a-f]{64}", content), f"{name}: nem openssl rand érték"
+        values[name] = content
+    # Könyvtár traversálhatóság (X_OK) és minimális jogosultságok.
+    assert os.access(secret_dir, os.X_OK), "a secret-könyvtár nem traversálható"
+    if os.name == "posix":
+        assert stat.S_IMODE(secret_dir.stat().st_mode) == 0o700, (
+            "a secret-könyvtár módja nem 0700"
+        )
+        for name in names:
+            mode = stat.S_IMODE((secret_dir / f"{name}.txt").stat().st_mode)
+            assert mode == 0o400, f"{name}: fájlmód {oct(mode)} nem 0400"
+    # Logmentesség: sem a stdout, sem a stderr nem tartalmazza az értékeket.
+    output = completed.stdout + completed.stderr
+    for name, content in values.items():
+        assert content not in output, f"{name}: secret-érték a szkript kimenetében"
+    assert f"Provisioned {len(names)} ephemeral synthetic CI secret file(s)" in completed.stdout
+    # A Windows proof-path-ot a chmod 0400 csak olvashatóvá teheti; a
+    # takarítás előtt írhatóvá állítjuk a fájlokat (POSIX-on no-op).
+    for name in names:
+        (secret_dir / f"{name}.txt").chmod(0o600)
+
+
+def test_provisioning_script_repairs_preexisting_restrictive_directory(tmp_path) -> None:
+    # POSIX-only: a korábbi hibás 0600 könyvtár-módot a chmod 0700 javítja
+    # (a Windows proof-path nem érvényesít unix módokat, ott a teszt nem
+    # fut — a mkdir -p egy már létező könyvtárat nem módosítana).
+    if os.name != "posix":
+        return
+    secret_dir = tmp_path / "secrets"
+    secret_dir.mkdir()
+    secret_dir.chmod(0o600)
+    completed = subprocess.run(
+        ["sh", "scripts/ci-provision-secrets.sh"],
+        cwd=str(REPO),
+        env=dict(os.environ, CI_SECRET_DIR=str(secret_dir)),
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert stat.S_IMODE(secret_dir.stat().st_mode) == 0o700
+    for name in _provisioned_names():
+        assert (secret_dir / f"{name}.txt").is_file()
+
+
+def test_provisioning_script_is_posix_sh_syntax_valid() -> None:
+    completed = subprocess.run(
+        ["sh", "-n", str(PROVISION_SCRIPT)], capture_output=True, text=True
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_compensation_checker_detects_unquoted_plaintext_http(tmp_path) -> None:
+    module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
+    bad = tmp_path / "bad.html"
+    bad.write_text(
+        '<html><body><a href=http://insecure.example/>x</a></body></html>\n',
+        encoding="utf-8",
+    )
+    kinds = {kind for _line, kind in module._violations_for(bad)}
+    assert "plaintext-http-link" in kinds
+
+
+def test_compensation_checker_detects_unquoted_remote_script_without_integrity(
+    tmp_path,
+) -> None:
+    module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
+    bad = tmp_path / "bad.html"
+    bad.write_text(
+        '<html><body><script src=https://cdn.example/app.js></script></body></html>\n',
+        encoding="utf-8",
+    )
+    kinds = {kind for _line, kind in module._violations_for(bad)}
+    assert "missing-integrity" in kinds
+
+
+def test_compensation_checker_detects_jinja_expression_plaintext_http(tmp_path) -> None:
+    module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
+    bad = tmp_path / "bad.html"
+    bad.write_text(
+        '<html><body><img src="{{ \'http://\' + host + \'/x.png\' }}"></body></html>\n',
+        encoding="utf-8",
+    )
+    kinds = {kind for _line, kind in module._violations_for(bad)}
+    assert "plaintext-http-link" in kinds
+
+
+def test_compensation_checker_detects_jinja_dynamic_remote_script_without_integrity(
+    tmp_path,
+) -> None:
+    module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
+    bad = tmp_path / "bad.html"
+    bad.write_text(
+        '<html><body><script src="https://{{ cdn_host }}/lib.js"></script></body></html>\n',
+        encoding="utf-8",
+    )
+    kinds = {kind for _line, kind in module._violations_for(bad)}
+    assert "missing-integrity" in kinds
+
+
+def test_compensation_checker_detects_protocol_relative_script_without_integrity(
+    tmp_path,
+) -> None:
+    module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
+    bad = tmp_path / "bad.html"
+    bad.write_text(
+        '<html><body><script src="//cdn.example/app.js"></script></body></html>\n',
+        encoding="utf-8",
+    )
+    kinds = {kind for _line, kind in module._violations_for(bad)}
+    assert "missing-integrity" in kinds
+
+
+def test_compensation_checker_detects_entity_obfuscated_plaintext_http(tmp_path) -> None:
+    module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
+    bad = tmp_path / "bad.html"
+    bad.write_text(
+        '<html><body><a href="http&#58;//evil.example/">x</a></body></html>\n',
+        encoding="utf-8",
+    )
+    kinds = {kind for _line, kind in module._violations_for(bad)}
+    assert "plaintext-http-link" in kinds
+
+
+def test_compensation_checker_accepts_jinja_local_urls(tmp_path) -> None:
+    module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
+    good = tmp_path / "good.html"
+    good.write_text(
+        '<html><body>\n'
+        '<script src="{{ url_for(\'static\', filename=\'app.js\') }}"></script>\n'
+        '<a href="{{ url_for(\'login\') }}">login</a>\n'
+        '<form action="{{ url_for(\'submit\') }}" method="post"></form>\n'
+        "</body></html>\n",
+        encoding="utf-8",
+    )
+    assert module._violations_for(good) == []
+
+
+def test_compensation_checker_accepts_https_with_integrity_and_local_paths(
+    tmp_path,
+) -> None:
+    # Positive kontroll: a remote https script/link integrity attribútummal
+    # és a helyi útvonalak nem sértenek.
+    module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
+    good = tmp_path / "good.html"
+    good.write_text(
+        '<html><body>\n'
+        '<script src="https://cdn.example/lib.js" integrity="sha384-abc"></script>\n'
+        '<link href="https://fonts.example/x.css" rel="stylesheet" '
+        'integrity="sha384-def">\n'
+        '<a href="/login">login</a>\n'
+        '<img src="/static/logo.png">\n'
+        "</body></html>\n",
+        encoding="utf-8",
+    )
+    assert module._violations_for(good) == []

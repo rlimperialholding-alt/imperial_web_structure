@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """A path-szűk Semgrep scan-lépések összesített, fail-closed enforcement kapuja.
 
-Az ``.github/workflows/imperial-adas-semgrep.yml`` négy részscanje (platform-core
-kód, platform-core Jinja-sablonok, npm projektek, minden más path) ``if:
+Az ``.github/workflows/imperial-adas-semgrep.yml`` öt részscanje (platform-core
+kód, platform-core Jinja-sablonok, npm projektek, shell/workflow fájlok,
+minden más path) ``if:
 always()`` mellett fut: mindegyik lefut akkor is, ha egy korábbi scan blokkoló
 találattal vagy technikai hibával tért vissza, a saját exit kódját
 ``<rész>.exit`` fájlba rögzíti, és a lépés maga a scan kilépőkódjával ér véget
@@ -33,12 +34,14 @@ PARTS = (
     "semgrep-platform-core.json",
     "semgrep-platform-core-templates.json",
     "semgrep-npm.json",
+    "semgrep-shell-workflow.json",
     "semgrep-rest.json",
 )
 EXITS = (
     "semgrep-platform-core.exit",
     "semgrep-platform-core-templates.exit",
     "semgrep-npm.exit",
+    "semgrep-shell-workflow.exit",
     "semgrep-rest.exit",
 )
 MERGED = "semgrep.json"
@@ -56,7 +59,7 @@ def _severity(finding: dict[str, Any]) -> str:
 def main() -> int:
     failures: list[str] = []
     blocking: list[str] = []
-    for part, exit_file in zip(PARTS, EXITS):
+    for part, exit_file in zip(PARTS, EXITS, strict=True):
         part_path = Path(part)
         if not part_path.is_file():
             failures.append(f"missing scan evidence: {part}")

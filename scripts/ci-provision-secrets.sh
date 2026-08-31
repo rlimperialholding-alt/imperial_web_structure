@@ -33,8 +33,14 @@ dpm_auth_hs256_secret
 
 SECRET_DIR="${CI_SECRET_DIR:-secrets}"
 
-umask 0177
+# A secret-könyvtárnak a runner számára traversálhatónak kell lennie, ezért
+# umask 0077 (könyvtárak 0700, fájlok 0600) + explicit chmod 0700 a már
+# létező könyvtár javítására is; az egyes secret-fájlok ezután 0400-ra
+# szűkülnek, így csak a tulajdonos olvashatja őket (chown-nal a
+# 10001:10001 app-felhasználóé lesznek Linux runneren).
+umask 0077
 mkdir -p "$SECRET_DIR"
+chmod 0700 "$SECRET_DIR"
 
 for name in $CANONICAL_SECRET_NAMES; do
   openssl rand -hex 32 > "$SECRET_DIR/${name}.txt"

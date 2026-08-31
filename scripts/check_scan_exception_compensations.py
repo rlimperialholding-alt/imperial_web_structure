@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Task65 kompenzáló ellenőrzés a templates-shard html-rule kivételei mögé.
+"""Task65/Task66 kompenzáló ellenőrzés a templates-shard html-rule kivételei mögé.
 
 Az ``.github/workflows/imperial-adas-semgrep.yml`` platform-core
 Jinja-sablon shardja két html-szabályt zár ki
@@ -11,13 +11,33 @@ path-scope-ú (csak a ``services/platform-core/app/templates`` könyvtár,
 csak az a shard; minden más HTML path a rest scanben a teljes
 szabályhalmazzal fut), és ezen szkript a kizárt szabályok biztonsági
 tulajdonságait determinisztikusan, fail-closed módon ellenőrzi ugyanezen a
-path-körön:
+path-körön.
 
-- remote ``<script src="https?://...">``/``<link href="https?://...">``
-  ``integrity`` attribútum nélkül → FAIL (missing-integrity tulajdonság);
-- ``http://`` (nem TLS) hivatkozás ``<a href>``/``<link href>``/``<script
-  src>``/``<img src>``/``<form action>`` attribútumban → FAIL
-  (plaintext-http-link tulajdonság).
+Task66 review-remediáció (Review-2 MEDIUM): a korábbi, csak idézőjeles
+attribútumokat ismerő regex-közelítés helyett valódi HTML-tokenizer
+(``html.parser.HTMLParser``, ``convert_charrefs=True``) vizsgálja a
+``script``/``link``/``a``/``img``/``form`` elemek ``src``/``href``/
+``action`` attribútumait. Így a következő esetek is fail-closed módon
+ellenőrzöttek:
+
+- idézőjeles ÉS idézőjel nélküli attribútumértékek (``src=http://…``);
+- HTML-entity-dekódolt értékek (``http&#58;//…`` a dekódolás után vizsgált);
+- Jinja/dinamikus, URL-t hordozó értékek (``src="{{ 'http://' + host }}"``,
+  ``href="https://{{ cdn_host }}/…"``, idézőjelben ``>`` jelet tartalmazó
+  Jinja-kifejezések is — a tokenizer a valós taghatárokat követi);
+- protocol-relative ``//host/…`` remote hivatkozások (script/link integrity
+  tulajdonság szempontjából remote-nak minősülnek).
+
+A tulajdonság-ellenőrzés:
+
+- plaintext-http-link: a ``src``/``href``/``action`` érték ``http``
+  szóhatáros szószeletet ÉS ``://`` URL-tokent tartalmaz (lefedi a
+  ``http://`` literált, a kisbetű/nagybetű változatokat, a
+  ``{{'http'}}://`` és entity-dekódolt obfuszkációt; a ``https://`` szó
+  nem illeszkedik a ``\bhttp\b`` mintára) → FAIL;
+- missing-integrity: ``script``/``link`` elem ``src``/``href`` értéke
+  remote (``://`` tokent tartalmaz, vagy ``//`` prefixszel indul) és a tag
+  ``integrity`` attribútuma hiányzik → FAIL.
 
 A kimenet csak fájlnevet, sorszámot és tulajdonságnevet közöl, titkot vagy
 tartalmat nem; a lista rendezett, a report korlátos.
@@ -27,57 +47,67 @@ from __future__ import annotations
 
 import re
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_DIR = REPO_ROOT / "services" / "platform-core" / "app" / "templates"
 _MAX_VIOLATION_ROWS = 25
 
-_SCRIPT_TAG_RE = re.compile(r"<script\b[^>]*>", re.IGNORECASE | re.DOTALL)
-_LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE | re.DOTALL)
-_ANCHOR_TAG_RE = re.compile(r"<a\b[^>]*>", re.IGNORECASE | re.DOTALL)
-_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE | re.DOTALL)
-_FORM_TAG_RE = re.compile(r"<form\b[^>]*>", re.IGNORECASE | re.DOTALL)
-_INTEGRITY_RE = re.compile(r"\bintegrity\s*=", re.IGNORECASE)
-_ATTR_RE = re.compile(
-    r"(?:src|href|action)\s*=\s*([\"'])([^\"']+)\1", re.IGNORECASE
-)
-_REMOTE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
-_PLAINTEXT_HTTP_RE = re.compile(r"^http://", re.IGNORECASE)
+_URL_ATTRIBUTES = ("src", "href", "action")
+_MISSING_INTEGRITY_TAGS = ("script", "link")
+_CHECKED_TAGS = _MISSING_INTEGRITY_TAGS + ("a", "img", "form")
+# A ``http`` szóhatáros szószelet (a ``https`` nem illeszkedik) és a ``://``
+# URL-token együttes jelenléte azonosítja a plaintext-http hivatkozást,
+# idézőjelektől, Jinja-konstrukcióktól és entity-dekódolástól függetlenül.
+_HTTP_WORD_RE = re.compile(r"\bhttp\b", re.IGNORECASE)
+_SCHEME_TOKEN = "://"
 
 
-def _line_number(text: str, offset: int) -> int:
-    return text.count("\n", 0, offset) + 1
+class _TemplateURLCheckParser(HTMLParser):
+    """Valódi HTML-tokenizer a URL-t hordozó attribútumok fail-closed
+    ellenőrzésére; a Jinja-blokkokat adatként kezeli, az attribútumértékeket
+    entity-dekódoltan adja vissza (``convert_charrefs=True``)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.violations: set[tuple[int, str]] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._check_tag(tag, attrs)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._check_tag(tag, attrs)
+
+    def _check_tag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in _CHECKED_TAGS:
+            return
+        line, _ = self.getpos()
+        attr_map = {name.lower(): value or "" for name, value in attrs}
+        has_integrity = "integrity" in attr_map
+        for name in _URL_ATTRIBUTES:
+            if name not in attr_map:
+                continue
+            value = attr_map[name].strip()
+            if not value:
+                continue
+            if _HTTP_WORD_RE.search(value) and _SCHEME_TOKEN in value:
+                self.violations.add((line, "plaintext-http-link"))
+            if (
+                tag in _MISSING_INTEGRITY_TAGS
+                and (_SCHEME_TOKEN in value or value.startswith("//"))
+                and not has_integrity
+            ):
+                self.violations.add((line, "missing-integrity"))
 
 
 def _violations_for(path: Path) -> list[tuple[int, str]]:
     """(sorszám, tulajdonságnév) párok egy sablonfájlra."""
     text = path.read_text(encoding="utf-8")
-    violations: list[tuple[int, str]] = []
-    for pattern, attribute_kind in (
-        (_SCRIPT_TAG_RE, "script"),
-        (_LINK_TAG_RE, "link"),
-        (_ANCHOR_TAG_RE, "anchor"),
-        (_IMG_TAG_RE, "img"),
-        (_FORM_TAG_RE, "form"),
-    ):
-        for tag_match in pattern.finditer(text):
-            tag = tag_match.group(0)
-            for attr_match in _ATTR_RE.finditer(tag):
-                url = attr_match.group(2)
-                if _PLAINTEXT_HTTP_RE.match(url):
-                    violations.append(
-                        (_line_number(text, tag_match.start()), "plaintext-http-link")
-                    )
-                elif (
-                    attribute_kind in ("script", "link")
-                    and _REMOTE_URL_RE.match(url)
-                    and not _INTEGRITY_RE.search(tag)
-                ):
-                    violations.append(
-                        (_line_number(text, tag_match.start()), "missing-integrity")
-                    )
-    return violations
+    parser = _TemplateURLCheckParser()
+    parser.feed(text)
+    parser.close()
+    return sorted(parser.violations)
 
 
 def main() -> int:

@@ -27,15 +27,25 @@ jobs:
         # 1) Timeout: a pinelt semgrep==1.172.0 per-rule-per-file timeoutja
         #    alapból 5 s; az app/main.py és app/models.py nagy moduljain a
         #    közösségi taint-szabályok (boto3/flask) ezt túllépik (Task64 run
-        #    33420589320: 6 Timeout hiba). A ``--timeout 30`` korlátos,
-        #    indokolt emelés: egy 30 s-t is túllépő szabály továbbra is
-        #    Timeout hibát ad, amit az összesített fail-closed kapu elutasít
-        #    (a hidden opció a pinelt 1.172.0-ban rögzített, a pin miatt a
-        #    jövőbeli verzióváltás nem némíthatja el).
+        #    33420589320: 6 Timeout hiba). A ``--timeout 120`` korlátos,
+        #    indokolt emelés (Task66: a Task65 30 s-es korlát a 16k/6k soros
+        #    modulokon runner-sebességtől függően flaky Timeoutot adhat —
+        #    az exact scan során reprodukált; a 120 s négyszeres fejtér a
+        #    mért futásidőkhöz képest). Egy 120 s-t is túllépő szabály
+        #    továbbra is Timeout hibát ad, amit az összesített fail-closed
+        #    kapu elutasít (a hidden opció a pinelt 1.172.0-ban rögzített, a
+        #    pin miatt a jövőbeli verzióváltás nem némíthatja el).
         # 2) Jinja-sablonok: a html-parser a ``{% %}``/``{{ }}``
         #    konstrukciókat részleges parse-ként jelenti; a sablonok külön
         #    path-szűk shardba kerültek (lásd a következő lépést), itt a
         #    platform-core kód/tests/Dockerfile szabályhalmaza fut.
+        # Task66 review-remediáció: a sablonkönyvtár-kizárás két ekvivalens
+        # mintával szerepel (a scan-célhoz relatív ÉS a munkakönyvtárhoz
+        # relatív alak), mert a pinelt semgrep-core a kizárási mintákat a
+        # célkönyvtárhoz relatív utakra is illeszti; egyetlen mintával a
+        # sablonok a kód-scanben maradnának, és a Jinja partial parse-ok
+        # az ``errors`` szerződést sértenék. Mindkét minta kizárólag a
+        # sablonkönyvtárat jelöli (broad exclude nincs).
         # Path-szűk rule-kivétel (Task61 threat model:
         # services/platform-core/docs/csrf-threat-model.md): a
         # python.django.security.django-no-csrf-token kizárólag a
@@ -52,8 +62,9 @@ jobs:
         if: always()
         run: >-
           status=0 ; semgrep scan --config auto --error --json --no-rewrite-rule-ids
-          --timeout 30
+          --timeout 120
           --exclude services/platform-core/app/templates
+          --exclude app/templates
           --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token
           --output semgrep-platform-core.json
           services/platform-core
@@ -101,17 +112,54 @@ jobs:
           --exclude-rule package_managers.npm.npm-missing-minimum-release-age.npm-missing-minimum-release-age
           services/imperial-sales-crm services/itep-core
           || status=$? ; printf '%s\n' "$status" > semgrep-npm.exit ; exit "$status"
+      - name: Run targeted SAST (shell scripts and GitHub workflows, parser-compatible shard)
+        # Task66 parser-kompatibilis, path-szűk felosztás (Review-1 MEDIUM):
+        # a shell-szkriptek és a GitHub-expression-t hordozó workflow YAML
+        # fájlok a semgrep bash/yaml generikus parsereinek ismert
+        # partial-parse felületei (Task65 a restore.sh és a
+        # deploy-staging-remote.sh átírással, az operational-guidance-ci.yml
+        # env-alapú kifejezésrefaktorral kezelte a konkrét hibákat, de
+        # strukturális shard nélkül a fennmaradó scan nem bizonyította a
+        # hibamentességet). Ez a shard kizárólag ezeket a célkönyvtárakat
+        # vizsgálja, a TELJES szabályhalmazzal, kivétel nélkül; a fennmaradó
+        # scan ezeket a könyvtárakat zárja ki (nincs széles körű exclude:
+        # minden kizárt fájl ebben a shardban fut). A bash/yaml parser így a
+        # saját shardjában bizonyíthatóan ``errors=[]`` mellett fut, és egy
+        # jövőbeli parse-hiba csak itt, fail-closed módon bukik el (az
+        # összesített kapu a nem üres ``errors``-t elutasítja). A célok a
+        # repóban commitolt shell/workflow felülettel egyeztetve vannak:
+        # scripts/, deploy/remote-test/ és a services/operational-guidance/
+        # scripts/ könyvtár (a három saját shardos service könyvtár shell
+        # fájljait azok shardjai fedik).
+        if: always()
+        run: >-
+          status=0 ; semgrep scan --config auto --error --json --no-rewrite-rule-ids
+          --output semgrep-shell-workflow.json
+          .github/workflows scripts deploy/remote-test services/operational-guidance/scripts
+          || status=$? ; printf '%s\n' "$status" > semgrep-shell-workflow.exit ; exit "$status"
       - name: Run targeted SAST (all remaining paths, full rule set)
         # Minden más path a teljes szabályhalmazzal, kivétel nélkül;
         # a fenti path-ok a saját lépéseikben minden más szabályra
         # vizsgáltak, így a repo lefedettsége teljes marad.
+        # Task66: korlátos, dokumentált ``--timeout 30`` (a platform-core
+        # kód-sharddal azonos érvelés): a sites/** minifikált tudásoldal
+        # HTML-jein a html-rule-ok a pinelt 1.172.0 5 s alapértelmezését
+        # túlléphetik (Timeout hiba a fennmaradó scanben); egy 30 s-t is
+        # túllépő szabály továbbra is Timeout hibát ad, amit az összesített
+        # fail-closed kapu elutasít. A shell/workflow könyvtárak a saját
+        # parser-kompatibilis shardjukban futnak (lásd az előző lépést).
         if: always()
         run: >-
           status=0 ; semgrep scan --config auto --error --json --no-rewrite-rule-ids
+          --timeout 30
           --output semgrep-rest.json
           --exclude services/platform-core
           --exclude services/imperial-sales-crm
           --exclude services/itep-core
+          --exclude .github/workflows
+          --exclude scripts
+          --exclude deploy/remote-test
+          --exclude services/operational-guidance/scripts
           .
           || status=$? ; printf '%s\n' "$status" > semgrep-rest.exit ; exit "$status"
       - name: Verify rule-exception compensating checks
@@ -145,9 +193,11 @@ jobs:
             semgrep-platform-core.json
             semgrep-platform-core-templates.json
             semgrep-npm.json
+            semgrep-shell-workflow.json
             semgrep-rest.json
             semgrep-platform-core.exit
             semgrep-platform-core-templates.exit
             semgrep-npm.exit
+            semgrep-shell-workflow.exit
             semgrep-rest.exit
           if-no-files-found: warn

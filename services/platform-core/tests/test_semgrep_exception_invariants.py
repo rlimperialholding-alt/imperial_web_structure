@@ -1,14 +1,16 @@
-"""Task61/Task65 regresszió a path-szűk Semgrep sharding- és rule-kivétel
-invariánsaira.
+"""Task61/Task65/Task66 regresszió a path-szűk Semgrep sharding- és
+rule-kivétel invariánsaira.
 
-A ``.github/workflows/imperial-adas-semgrep.yml`` NÉGY, egymást kizáró
-útvonalszeletet vizsgál (Task65 sharding):
+A ``.github/workflows/imperial-adas-semgrep.yml`` ÖT, egymást kizáró
+útvonalszeletet vizsgál (Task65 sharding + Task66 shell/workflow shard):
 
 1. platform-core kód (a Jinja-sablonok path-kizárásával, korlátos
-   ``--timeout 30`` értékkel);
+   ``--timeout 120`` értékkel);
 2. platform-core Jinja-sablonok (parser-kompatibilis shard);
 3. a két npm projekt;
-4. minden más path.
+4. shell-szkriptek és GitHub-workflow YAML fájlok (parser-kompatibilis
+   shard, teljes szabályhalmaz);
+5. minden más path.
 
 A rule-kivételek NEM globálisak, hanem exact path-ra szűkítettek, és
 mindegyik mögött bizonyított, futó egyenértékű védelem áll:
@@ -36,10 +38,11 @@ Ez a teszt a kivételek hangosság-feltételeit zárolja:
 - a repo útvonalai pontosan partícionáltak: a fennmaradó scan a három
   kivételezett útvonalat ``--exclude``-olja, minden más path a teljes
   szabályhalmazzal fut;
-- a platform-core kód-scan korlátos, dokumentált ``--timeout 30``
+- a platform-core kód-scan korlátos, dokumentált ``--timeout 120``
   per-rule-per-file értéket használ (a pinelt 1.172.0 alapértéke 5 s; a
-  main.py/models.py taint-szabály timeoutjait ez szünteti meg, egy 30 s-t
-  is túllépő szabály továbbra is fail-closed Timeout hibát ad);
+  main.py/models.py taint-szabály timeoutjait ez szünteti meg runner-
+  sebességtől függetlenül, egy 120 s-t is túllépő szabály továbbra is
+  fail-closed Timeout hibát ad);
 - nincs globális exclude (.semgrepignore), severity- vagy küszöbcsökkentés;
 - a template-ekben nincs inline ``nosemgrep`` CSRF-megjegyzés;
 - mindkét npm projekt package-age kapuja létezik és CI-be van kötve
@@ -65,6 +68,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -89,10 +93,17 @@ NARROW_TARGETS = {
     "services/itep-core",
 }
 PLATFORM_CORE_TEMPLATES_TARGET = "services/platform-core/app/templates"
+SHELL_WORKFLOW_TARGETS = (
+    ".github/workflows",
+    "scripts",
+    "deploy/remote-test",
+    "services/operational-guidance/scripts",
+)
 SCAN_PARTS = (
     "semgrep-platform-core.json",
     "semgrep-platform-core-templates.json",
     "semgrep-npm.json",
+    "semgrep-shell-workflow.json",
     "semgrep-rest.json",
 )
 
@@ -132,7 +143,7 @@ def test_semgrep_scan_keeps_auto_config_and_error_gate() -> None:
     assert "--error" in source
     assert "--no-rewrite-rule-ids" in source
     assert "semgrep==1.172.0" in source
-    assert len(_scan_blocks(source)) == 4
+    assert len(_scan_blocks(source)) == 5
 
 
 def test_csrf_exclusion_is_scoped_to_platform_core_shards_only() -> None:
@@ -163,12 +174,18 @@ def test_platform_core_code_shard_uses_bounded_timeout_and_excludes_only_templat
     code_blocks = [block for block in blocks if "semgrep-platform-core.json" in block]
     assert len(code_blocks) == 1
     block = code_blocks[0]
-    assert "--timeout 30" in block, "a kód-scan korlátos, dokumentált timeoutja hiányzik"
+    assert "--timeout 120" in block, "a kód-scan korlátos, dokumentált timeoutja hiányzik"
     lines = _command_lines(block)
     excludes = [line for line in lines if line.startswith("--exclude ")]
     # A Dockerfile a scanben MARAD (a dockerfile-szabályok lefedik); csak a
     # Jinja-sablonkönyvtár kerül a saját parser-kompatibilis shardjába.
-    assert excludes == [f"--exclude {PLATFORM_CORE_TEMPLATES_TARGET}"], (
+    # Task66: a sablonkönyvtár-kizárás két ekvivalens mintával szerepel
+    # (cél-relatív és munkakönyvtár-relatív alak), mert a pinelt semgrep-core
+    # a kizárási mintákat a célkönyvtárhoz relatív utakra is illeszti.
+    assert excludes == [
+        f"--exclude {PLATFORM_CORE_TEMPLATES_TARGET}",
+        "--exclude app/templates",
+    ], (
         f"nem várt path-kizárás a platform-core kód-scanben: {excludes}"
     )
     assert "--output semgrep-platform-core.json" in block
@@ -232,7 +249,8 @@ def test_remaining_scan_runs_the_full_rule_set_on_everything_else() -> None:
     rest_blocks = [
         block
         for block in blocks
-        if CSRF_RULE_ID not in block
+        if "--output semgrep-rest.json" in block
+        and CSRF_RULE_ID not in block
         and NPM_RULE_ID not in block
         and HTML_INTEGRITY_RULE_ID not in block
         and HTML_PLAINTEXT_HTTP_RULE_ID not in block
@@ -242,9 +260,82 @@ def test_remaining_scan_runs_the_full_rule_set_on_everything_else() -> None:
     lines = _command_lines(block)
     assert not any("--exclude-rule" in line for line in lines)
     assert "--output semgrep-rest.json" in block
-    for target in sorted(NARROW_TARGETS):
+    expected_excludes = set(NARROW_TARGETS) | set(SHELL_WORKFLOW_TARGETS)
+    for target in sorted(expected_excludes):
         assert f"--exclude {target}" in lines, f"{target} hiányzik a fennmaradó scan kizárásából"
+    assert "--timeout 30" in lines, (
+        "a fennmaradó scan korlátos, dokumentált timeoutja hiányzik "
+        "(a sites/** tudásoldal HTML-ek html-rule időigénye miatt)"
+    )
     assert "." in lines
+
+
+def test_shell_workflow_shard_targets_and_full_rule_set() -> None:
+    source = SEMGREP_WORKFLOW.read_text(encoding="utf-8")
+    blocks = _scan_blocks(source)
+    shell_blocks = [block for block in blocks if "semgrep-shell-workflow.json" in block]
+    assert len(shell_blocks) == 1, "a shell/workflow shard pontosan egyszer szerepelhet"
+    block = shell_blocks[0]
+    lines = _command_lines(block)
+    assert not any("--exclude-rule" in line for line in lines), (
+        "a shell/workflow shard a teljes szabályhalmazzal fut, rule-kivétel nélkül"
+    )
+    assert not any(line.startswith("--exclude ") for line in lines), (
+        "a shell/workflow shard nem zárhat ki path-t (a célkönyvtárak a "
+        "fennmaradó scanben vannak kizárva, itt minden célfájl vizsgált)"
+    )
+    for target in SHELL_WORKFLOW_TARGETS:
+        assert any(target in line for line in lines), (
+            f"{target} hiányzik a shell/workflow shard céljaiból"
+        )
+    assert "--output semgrep-shell-workflow.json" in block
+
+
+def test_shell_workflow_partition_covers_all_tracked_shell_files() -> None:
+    # Partíció-invariáns: minden tracked ``*.sh``/``*.bash`` fájl vagy a
+    # három saját shardos service könyvtárban van (azok shardjai fedik),
+    # vagy a shell/workflow shard célkönyvtárainak egyikében; a
+    # ``.github/workflows`` YAML-ok a shell/workflow shard céljai. Egy
+    # ismeretlen helyre kerülő új shell-fájl így a tesztben fail-closed
+    # módon driftként jelenik meg.
+    tracked = (
+        subprocess.check_output(
+            ["git", "ls-files"], cwd=str(REPO), text=True
+        ).splitlines()
+    )
+    for path in tracked:
+        if path.endswith((".sh", ".bash")):
+            covered = any(
+                path == target or path.startswith(target + "/")
+                for target in NARROW_TARGETS
+            ) or any(
+                path == target or path.startswith(target + "/")
+                for target in SHELL_WORKFLOW_TARGETS
+            )
+            assert covered, (
+                f"{path}: shell-fájl egyik shard célkönyvtárában sincs "
+                "(a shell/workflow shard céljai közé fel kell venni)"
+            )
+        if path.startswith(".github/workflows/"):
+            assert path.endswith(".yml") or path.endswith(".yaml")
+
+
+def test_no_crlf_blobs_in_tracked_dockerfiles() -> None:
+    # Task66: a semgrep 1.172 dockerfile-grammarja a CRLF sorvégződésű
+    # Dockerfile-okon PartialParsing hibát ad; a bloboknak LF-nek kell
+    # lenniük (``.gitattributes``: ``Dockerfile* text eol=lf``).
+    tracked = (
+        subprocess.check_output(
+            ["git", "ls-files"], cwd=str(REPO), text=True
+        ).splitlines()
+    )
+    for path in tracked:
+        if "Dockerfile" not in path.split("/")[-1]:
+            continue
+        blob = subprocess.check_output(
+            ["git", "show", f"HEAD:{path}"], cwd=str(REPO)
+        )
+        assert b"\r\n" not in blob, f"{path}: CRLF blob a dockerfile-parse szerződés ellen"
 
 
 def test_no_global_exclusion_or_severity_threshold_change() -> None:
@@ -290,6 +381,11 @@ def test_merge_script_deterministically_merges_scan_parts(tmp_path, monkeypatch)
             "errors": [],
         },
         "semgrep-npm.json": {"version": "1.172.0", "results": [], "errors": [{"code": 2}]},
+        "semgrep-shell-workflow.json": {
+            "version": "1.172.0",
+            "results": [{"rule": "sh"}],
+            "errors": [],
+        },
         "semgrep-rest.json": {"version": "1.172.0", "results": [{"rule": "b"}], "errors": []},
     }
     for name, payload in parts.items():
@@ -297,7 +393,7 @@ def test_merge_script_deterministically_merges_scan_parts(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
     assert merge_module.main() == 0
     merged = json.loads((tmp_path / "semgrep.json").read_text(encoding="utf-8"))
-    assert [item["rule"] for item in merged["results"]] == ["a", "tpl", "b"]
+    assert [item["rule"] for item in merged["results"]] == ["a", "tpl", "sh", "b"]
     assert [item["code"] for item in merged["errors"]] == [2]
     # A részek közül bármelyik hiánya fail-closed.
     (tmp_path / "semgrep-platform-core-templates.json").unlink()
@@ -362,6 +458,7 @@ SCAN_STEP_NAMES = (
     "Run targeted SAST (platform-core code, CSRF",
     "Run targeted SAST (platform-core Jinja templates",
     "Run targeted SAST (npm projects",
+    "Run targeted SAST (shell scripts and GitHub workflows",
     "Run targeted SAST (all remaining paths",
 )
 
@@ -383,7 +480,7 @@ def test_scans_preserve_exit_codes_and_artifacts_without_greening() -> None:
     for part in SCAN_PARTS:
         exit_name = part.replace(".json", ".exit")
         assert exit_name in source
-    assert source.count('exit "$status"') == 4
+    assert source.count('exit "$status"') == 5
     upload = _block_for(source, "Upload Semgrep evidence")
     for part in SCAN_PARTS:
         assert part in upload

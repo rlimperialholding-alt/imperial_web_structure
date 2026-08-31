@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """A path-szűk Semgrep scan-lépések JSON-bizonyítékainak determinisztikus egyesítése.
 
-Az ``.github/workflows/imperial-adas-semgrep.yml`` négy, egymást kizáró
+Az ``.github/workflows/imperial-adas-semgrep.yml`` öt, egymást kizáró
 útvonalszeletet vizsgál (platform-core kód; platform-core Jinja-sablonok; a
-két npm projekt; minden más), hogy a rule-kivételek csak a bizonyítottan
-egyenértékű védelemmel bíró exact pathokra szűküljenek. Ez a szkript a négy
+két npm projekt; shell/workflow fájlok; minden más), hogy a rule-kivételek
+csak a bizonyítottan
+egyenértékű védelemmel bíró exact pathokra szűküljenek. Ez a szkript az öt
 ``--json`` kimenetet egy ``semgrep.json`` bizonyítékba egyesíti
 (results/errors összefűzve, az első rész metaadatai megtartva) az upload
 step számára.
@@ -24,6 +25,7 @@ PARTS = (
     "semgrep-platform-core.json",
     "semgrep-platform-core-templates.json",
     "semgrep-npm.json",
+    "semgrep-shell-workflow.json",
     "semgrep-rest.json",
 )
 OUTPUT = "semgrep.json"
