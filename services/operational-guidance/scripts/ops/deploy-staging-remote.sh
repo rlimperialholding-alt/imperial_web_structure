@@ -1,17 +1,22 @@
 #!/bin/sh
 set -eu
 
-: "${SSH_TARGET:?Set SSH_TARGET, for example deploy@staging.example.hu}"
-: "${RELEASE_ZIP:?Set RELEASE_ZIP to the local release ZIP}"
-: "${STAGING_ENV_FILE:?Set STAGING_ENV_FILE to the completed staging .env file}"
-: "${GOOGLE_SERVICE_ACCOUNT_FILE:?Set GOOGLE_SERVICE_ACCOUNT_FILE to the service-account JSON}"
+[ -n "${SSH_TARGET}" ] || { echo "SSH_TARGET is required" >&2; exit 2; }
+[ -n "${RELEASE_ZIP}" ] || { echo "RELEASE_ZIP is required" >&2; exit 2; }
+[ -n "${STAGING_ENV_FILE}" ] || { echo "STAGING_ENV_FILE is required" >&2; exit 2; }
+[ -n "${GOOGLE_SERVICE_ACCOUNT_FILE}" ] || { echo "GOOGLE_SERVICE_ACCOUNT_FILE is required" >&2; exit 2; }
 
 REMOTE_ROOT=${REMOTE_ROOT:-/opt/imperial-guidance}
 RELEASE_NAME=${RELEASE_NAME:-v0.8.1-$(date -u +%Y%m%dT%H%M%SZ)}
 BASE_URL=${BASE_URL:-https://staging.example.hu}
 REMOTE_RELEASE="$REMOTE_ROOT/releases/$RELEASE_NAME"
 
-case "$RELEASE_NAME" in *[!A-Za-z0-9._-]*) echo "Unsafe RELEASE_NAME" >&2; exit 2;; esac
+case "$RELEASE_NAME" in
+  *[!A-Za-z0-9._-]*)
+    echo "Unsafe RELEASE_NAME" >&2
+    exit 2
+    ;;
+esac
 [ -f "$RELEASE_ZIP" ] || { echo "Release ZIP not found" >&2; exit 2; }
 [ -f "$STAGING_ENV_FILE" ] || { echo "Staging env file not found" >&2; exit 2; }
 [ -f "$GOOGLE_SERVICE_ACCOUNT_FILE" ] || { echo "Service-account JSON not found" >&2; exit 2; }

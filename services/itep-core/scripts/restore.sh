@@ -2,7 +2,7 @@
 set -eu
 
 : "${DATABASE_URL:?DATABASE_URL is required}"
-: "${1:?Usage: restore.sh <backup.dump>}"
+[ "$#" -ge 1 ] || { echo "Usage: restore.sh <backup.dump>" >&2; exit 2; }
 
 BACKUP_FILE="$1"
 if [ -f "${BACKUP_FILE}.sha256" ]; then

@@ -18,3 +18,6 @@ semgrep.json
 semgrep-platform-core.json
 semgrep-npm.json
 semgrep-rest.json
+# Ephemerális CI/local secret bind-source fájlok (openssl rand értékek;
+# soha nem commitolandók — Task65)
+secrets/

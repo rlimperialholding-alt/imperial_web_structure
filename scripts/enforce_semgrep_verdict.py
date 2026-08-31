@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A path-szűk Semgrep scan-lépések összesített, fail-closed enforcement kapuja.
 
-Az ``.github/workflows/imperial-adas-semgrep.yml`` három részscanje ``if:
+Az ``.github/workflows/imperial-adas-semgrep.yml`` négy részscanje (platform-core
+kód, platform-core Jinja-sablonok, npm projektek, minden más path) ``if:
 always()`` mellett fut: mindegyik lefut akkor is, ha egy korábbi scan blokkoló
 találattal vagy technikai hibával tért vissza, a saját exit kódját
 ``<rész>.exit`` fájlba rögzíti, és a lépés maga a scan kilépőkódjával ér véget
@@ -28,8 +29,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PARTS = ("semgrep-platform-core.json", "semgrep-npm.json", "semgrep-rest.json")
-EXITS = ("semgrep-platform-core.exit", "semgrep-npm.exit", "semgrep-rest.exit")
+PARTS = (
+    "semgrep-platform-core.json",
+    "semgrep-platform-core-templates.json",
+    "semgrep-npm.json",
+    "semgrep-rest.json",
+)
+EXITS = (
+    "semgrep-platform-core.exit",
+    "semgrep-platform-core-templates.exit",
+    "semgrep-npm.exit",
+    "semgrep-rest.exit",
+)
 MERGED = "semgrep.json"
 BLOCKING_SEVERITIES = {"CRITICAL", "HIGH", "ERROR"}
 

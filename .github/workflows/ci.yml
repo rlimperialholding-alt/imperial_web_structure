@@ -31,14 +31,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
-      - name: Generate ephemeral platform database secret
+      - name: Generate ephemeral synthetic CI secret files (non-production)
+        # Task65: a gyökér docker-compose.yml ``secrets:`` blokkja által
+        # igényelt MINDEN bind-source fájl létrehozása friss, futásonkénti,
+        # szintetikus runner-adatként (openssl rand; nem repository/
+        # environment production secret, nincs commitolt érték; production
+        # adapterek/external write módok OFF/fail-closed maradnak). A
+        # kanonikus névkészlet a scripts/ci-provision-secrets.sh-ban él.
         shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p secrets
-          openssl rand -hex 32 > secrets/platform_db_password.txt
-          chmod 0400 secrets/platform_db_password.txt
-          sudo chown 10001:10001 secrets/platform_db_password.txt
+        run: sh scripts/ci-provision-secrets.sh
+
+      - name: Verify Compose secret provisioning reconciliation
+        # Automatikus drift-blokkoló: a Compose secret-deklarációk és a
+        # CI-provisioning eltérése (új/átnevezett secret, árván provisionált
+        # bejegyzés, rossz sorrend) itt fail-closed.
+        run: python scripts/check_ci_secret_provisioning.py
 
       - name: Validate repository structure
         run: sh scripts/validate-structure.sh

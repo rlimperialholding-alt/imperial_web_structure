@@ -44,10 +44,13 @@ jobs:
         with:
           fetch-depth: 0
       - name: Reject cross-workstream edits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: >-
           python services/operational-guidance/tools/check_changed_paths.py
-          --base "${{ github.event.pull_request.base.sha }}"
-          --head "${{ github.event.pull_request.head.sha }}"
+          --base "$BASE_SHA"
+          --head "$HEAD_SHA"
 
   test:
     runs-on: ubuntu-latest

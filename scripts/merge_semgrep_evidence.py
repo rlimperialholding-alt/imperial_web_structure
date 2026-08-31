@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """A path-szűk Semgrep scan-lépések JSON-bizonyítékainak determinisztikus egyesítése.
 
-Az ``.github/workflows/imperial-adas-semgrep.yml`` három, egymást kizáró
-útvonalszeletet vizsgál (platform-core; a két npm projekt; minden más),
-hogy a rule-kivételek csak a bizonyítottan egyenértékű védelemmel bíró
-exact pathokra szűküljenek. Ez a szkript a három ``--json`` kimenetet egy
-``semgrep.json`` bizonyítékba egyesíti (results/errors összefűzve, az első
-rész metaadatai megtartva) az upload step számára.
+Az ``.github/workflows/imperial-adas-semgrep.yml`` négy, egymást kizáró
+útvonalszeletet vizsgál (platform-core kód; platform-core Jinja-sablonok; a
+két npm projekt; minden más), hogy a rule-kivételek csak a bizonyítottan
+egyenértékű védelemmel bíró exact pathokra szűküljenek. Ez a szkript a négy
+``--json`` kimenetet egy ``semgrep.json`` bizonyítékba egyesíti
+(results/errors összefűzve, az első rész metaadatai megtartva) az upload
+step számára.
 
 Csak olvas és a munkakönyvtárban ír ``semgrep.json``-t; bármely rész
 hiánya fail-closed (kilépés 1).
@@ -19,7 +20,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PARTS = ("semgrep-platform-core.json", "semgrep-npm.json", "semgrep-rest.json")
+PARTS = (
+    "semgrep-platform-core.json",
+    "semgrep-platform-core-templates.json",
+    "semgrep-npm.json",
+    "semgrep-rest.json",
+)
 OUTPUT = "semgrep.json"
 
 
