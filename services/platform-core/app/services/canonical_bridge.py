@@ -349,7 +349,7 @@ def _post_batch(envelopes: list[dict[str, Any]]) -> dict[str, Any]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=60) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
@@ -378,7 +378,8 @@ def _read_remote_page(cursor: int, limit: int) -> dict[str, Any]:
         headers=crm_service_headers("X-ITEP-CRM-Token", settings.crm_read_token),
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        # Belső szolgáltatás-közi hívás: a célhost operátori settingsből (crm_read/write_base_url, itep_api_base_url) vagy a CI-fixture-ből származik, sosem felhasználói kérésből; SSRF-felület nincs.
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             payload = json.loads(response.read().decode("utf-8"))
     except (
         urllib.error.HTTPError,
@@ -428,7 +429,8 @@ def _read_itep_tasks(cursor: str | None, limit: int) -> dict[str, Any]:
         headers=_itep_identity_headers(),
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        # Belső szolgáltatás-közi hívás: a célhost operátori settingsből (crm_read/write_base_url, itep_api_base_url) vagy a CI-fixture-ből származik, sosem felhasználói kérésből; SSRF-felület nincs.
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             payload = json.loads(response.read().decode("utf-8"))
     except (
         urllib.error.HTTPError,
@@ -453,7 +455,8 @@ def _post_itep_event(payload: dict[str, Any]) -> dict[str, Any]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        # Belső szolgáltatás-közi hívás: a célhost operátori settingsből (crm_read/write_base_url, itep_api_base_url) vagy a CI-fixture-ből származik, sosem felhasználói kérésből; SSRF-felület nincs.
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             result = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]

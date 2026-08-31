@@ -29,8 +29,8 @@ from app.connectors.safe_http import (
     PinnedTransport,
     SafeHttpClient,
     SafeHttpError,
-    _PinnedNetworkBackend,
     _ordered_candidates,
+    _PinnedNetworkBackend,
 )
 
 PUBLIC_V4 = ipaddress.ip_address("93.184.216.34")

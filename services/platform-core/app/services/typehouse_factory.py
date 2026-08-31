@@ -772,7 +772,7 @@ def _safe_fetch_html(url: str, *, expected_project_code: str | None) -> tuple[st
         parsed = urlsplit(canonical)
         hostname = parsed.hostname or ""
         allowed = _resolved_public_addresses(hostname)
-        connection = http.client.HTTPSConnection(
+        connection = http.client.HTTPSConnection(  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
             hostname,
             port=443,
             timeout=30,

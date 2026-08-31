@@ -76,12 +76,12 @@ Audited-set contract:
   tracked file versions at the audited anchor commit (the commit that last
   modified the baseline) with the same pinned, forced-UTF-8, per-line
   driver, through a dedicated seam (``_run_audited_driver``), with temp
-  copies under the git-ignored runtime directory, always removed. Within
-  one command the same unchanged input is never scanned twice: an addition
-  file whose live working-tree bytes equal its audited-commit bytes takes
-  its audited identities from the already-run live scan (the deterministic
-  scan of exactly those bytes) instead of being re-scanned; only
-  byte-different content is re-scanned. A
+  copies under the git-ignored runtime directory, always removed. Every
+  addition file is scanned through that audited seam -- byte-identical
+  working-tree copies included -- so a faked or tampered live scan can
+  never fabricate audited coverage; the deterministic driver yields
+  identical findings for byte-identical input, so the extra bounded
+  re-scan never changes the result. A
   baseline that is untracked, uncommitted or outside the reconciled root
   fails closed (status 2), and a file absent at the audited commit has no
   audited state -- every finding in it fails closed unless structurally
@@ -605,7 +605,7 @@ def _expected_probe_fingerprint() -> tuple[str, str, int]:
     """(type, fingerprint, expected line) -- the full live-parity identity."""
     return (
         "Secret Keyword",
-        hashlib.sha1(_probe_secret_value().encode("utf-8")).hexdigest(),
+        hashlib.sha1(_probe_secret_value().encode("utf-8")).hexdigest(),  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         _expected_probe_line_number(),
     )
 
@@ -863,7 +863,6 @@ def _audited_occurrence_identities(
     repo_root: Path,
     anchor: str,
     addition_paths: list[str],
-    live_results: dict[str, Any] | None = None,
 ) -> set[tuple[str, str, str, int]]:
     """Per-line occurrence identities of the addition files at the audited commit.
 
@@ -876,44 +875,24 @@ def _audited_occurrence_identities(
     and are always removed; any write/scan/cleanup failure fails closed. A
     path absent at the audited commit contributes no audited state.
 
-    Within one command the same unchanged input is never scanned twice:
-    when the live working-tree bytes of an addition file equal the bytes at
-    the audited commit, the pinned driver would re-derive exactly the live
-    findings (same deterministic public path, same bytes), so the audited
-    identities of that file are taken from ``live_results`` -- the already
-    run live scan -- instead of re-scanning. Only byte-different content is
-    re-scanned from a temp copy. This is an exact substitution, not a
-    weakening: the live scan itself is the canonical scan of exactly those
-    bytes, and its per-file coverage is already proven fail-closed.
+    Every file -- byte-identical working-tree copies included -- is scanned
+    through the dedicated audited seam (``_run_audited_driver``), never
+    through the live results. A faked or tampered live scan must therefore
+    never be able to fabricate audited coverage for an unchanged file: the
+    audited side is always re-derived independently from git history, so a
+    live-only seam injection stays an unclassified addition and fails
+    closed (Task59 regression: ``test_faked_live_scan_cannot_fabricate_
+    audited_coverage``). The deterministic driver guarantees identical
+    findings for byte-identical input, so correctness is preserved at the
+    cost of one bounded re-scan per addition file.
     """
     if not addition_paths:
         return set()
     identities: set[tuple[str, str, str, int]] = set()
-    live = live_results if live_results is not None else {}
     to_scan: list[str] = []
     for path in sorted(addition_paths):
         content = _audited_file_bytes(repo_root, anchor, path)
         if content is None:
-            continue
-        try:
-            live_bytes = _read_candidate_bytes(repo_root / _normalize(path))
-        except OSError as exc:
-            raise ScanFailure(f"tracked candidate file cannot be read: {path}.") from exc
-        if live_bytes == content:
-            for finding in live.get(path, []):
-                line_number = _normalized_line_number(finding)
-                if line_number is None:
-                    # Auditált előfordulás használható sor nélkül sosem
-                    # egyeztethet -- a hívó fail-closed marad.
-                    continue
-                identities.add(
-                    (
-                        path,
-                        str(finding.get("type", "")),
-                        str(finding.get("hashed_secret", "")),
-                        line_number,
-                    )
-                )
             continue
         to_scan.append(path)
     if not to_scan:
@@ -1246,7 +1225,10 @@ def _classify_content_digest(line: str, hashed: str, _document: str, path: str) 
     if path not in _CONTENT_DIGEST_PATHS:
         return False
     return any(
-        hashlib.sha1(value.encode("utf-8")).hexdigest() == hashed
+        # A SHA-1 itt nem biztonsági hash: a scanner ``hashed_secret``
+        # ujjlenyomat-formátuma (detect-secrets spec) kizárólag SHA-1, az
+        # osztályozó ezt reprodukálja az auditált értékkel való egyezéshez.
+        hashlib.sha1(value.encode("utf-8")).hexdigest() == hashed  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         for value in _CONTENT_DIGEST_RE.findall(line)
     )
 
@@ -1257,7 +1239,10 @@ def _classify_drive_resource_id(line: str, hashed: str, document: str, path: str
     if not _DRIVE_PROVENANCE_RE.search(document):
         return False
     return any(
-        hashlib.sha1(value.encode("utf-8")).hexdigest() == hashed
+        # A SHA-1 itt nem biztonsági hash: a scanner ``hashed_secret``
+        # ujjlenyomat-formátuma (detect-secrets spec) kizárólag SHA-1, az
+        # osztályozó ezt reprodukálja az auditált értékkel való egyezéshez.
+        hashlib.sha1(value.encode("utf-8")).hexdigest() == hashed  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         for value in _DRIVE_RESOURCE_ID_RE.findall(line)
     )
 
@@ -1452,7 +1437,7 @@ def reconcile_tracked_secrets(
         if additions:
             addition_paths = sorted({filename for filename, _, _, _ in additions})
             audited_state = _audited_occurrence_identities(
-                root, audited_anchor, addition_paths, current.get("results", {})
+                root, audited_anchor, addition_paths
             )
         resolved, remaining = _split_additions(
             additions, observed, audited_state, audited_line_digests, live_line_digests

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from app.demo_runtime import DemoRuntime
 
 
@@ -85,3 +88,31 @@ def test_failure_retry_and_reset_are_visible(tmp_path):
     assert retried["status"] == "delivered"
     assert reset["events"] == []
     assert reset["outbox"] == []
+
+
+def test_demo_seed_module_set_matches_registered_portal_modules() -> None:
+    """A demó seed modulhalmaza pontosan a regisztrált portal modulhalmaz.
+
+    Task59 regresszió: a seed a ``house-designer`` és a
+    ``market-creative-intelligence`` modult deklarálta anélkül, hogy a
+    portal/route/runtime deklarációk is tartalmazták volna őket. A két
+    modul most már explicit: portal route, platform-admin hozzáférés és
+    client routeMap egyaránt létezik, és ez a teszt a halmaz-egyenlőséget
+    zárolja, hogy a jövőbeni eltérés a lokális pytest futtatásban is
+    azonnal látszódjon (nem csak a CI validatorban).
+    """
+    root = Path(__file__).resolve().parents[3]
+    portal = json.loads(
+        (root / "sites" / "_portal" / "data" / "platform.json").read_text(encoding="utf-8")
+    )
+    seed = json.loads(
+        (
+            root / "services" / "platform-core" / "data" / "platform_demo_seed.json"
+        ).read_text(encoding="utf-8")
+    )
+    portal_ids = {module["id"] for module in portal["modules"]}
+    seed_ids = {module["id"] for module in seed["modules"]}
+    assert seed_ids == portal_ids
+    assert {"house-designer", "market-creative-intelligence"} <= portal_ids
+    for module in portal["modules"]:
+        assert module["route"] == f"/{module['id']}/"

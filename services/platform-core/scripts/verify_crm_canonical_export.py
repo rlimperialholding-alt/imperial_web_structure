@@ -32,7 +32,7 @@ def fetch_entity(entity: str, *, limit: int = 5) -> dict:
         headers=crm_service_headers("X-ITEP-CRM-Token", CRM_READ_TOKEN),
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]

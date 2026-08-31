@@ -4,11 +4,11 @@ import ipaddress
 from collections.abc import Callable
 
 import httpx
+from synthetic_fixtures import synthetic_auth_value
 
 from app.config import Settings
 from app.connectors.ingatlan import IngatlanConnector
 from app.connectors.safe_http import AddressResolver, SafeHttpClient
-from synthetic_fixtures import synthetic_auth_value
 
 PUBLIC_ADDRESS = ipaddress.ip_address("93.184.216.34")
 

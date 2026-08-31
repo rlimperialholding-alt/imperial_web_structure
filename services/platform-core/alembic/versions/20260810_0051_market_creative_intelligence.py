@@ -327,7 +327,9 @@ def downgrade() -> None:
     for table in TABLES:
         if (
             table in existing
-            and bind.execute(sa.text(f'SELECT COUNT(*) FROM "{table}"')).scalar_one()
+            and bind.execute(
+                sa.select(sa.func.count()).select_from(sa.table(table))
+            ).scalar_one()
         ):
             populated.append(table)
     if populated:

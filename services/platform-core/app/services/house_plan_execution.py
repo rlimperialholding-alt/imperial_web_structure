@@ -12,7 +12,7 @@ from math import ceil
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1688,10 +1688,10 @@ def execute_batch(
             )
         )
         if batch:
-            item_count = len(
-                db.scalars(
-                    select(HousePlanBatchItem).where(HousePlanBatchItem.batch_id == batch.batch_id)
-                ).all()
+            item_count = db.scalar(
+                select(func.count())
+                .select_from(HousePlanBatchItem)
+                .where(HousePlanBatchItem.batch_id == batch.batch_id)
             )
             batch.status = "partial" if item_count else "failed"
             batch.completed_at = utcnow()

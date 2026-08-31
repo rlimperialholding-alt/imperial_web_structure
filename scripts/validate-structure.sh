@@ -100,8 +100,8 @@ platform = json.loads(
 system = json.loads(
     (root / "sites/_portal/data/system.json").read_text(encoding="utf-8")
 )
-if len(platform["modules"]) != 47:
-    raise SystemExit(f"Expected 47 registered modules, found {len(platform['modules'])}.")
+if len(platform["modules"]) != 49:
+    raise SystemExit(f"Expected 49 registered modules, found {len(platform['modules'])}.")
 if len(system["roles"]) < 10 or len(system["eventContracts"]) < 12:
     raise SystemExit("system.json requires role workspaces and event contracts.")
 if (

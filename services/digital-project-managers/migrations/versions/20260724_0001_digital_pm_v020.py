@@ -283,6 +283,35 @@ def upgrade() -> None:
         $$ LANGUAGE plpgsql;
         """
     )
+    # Statikus DDL literálok: a triggerek táblánként explicit néven léteznek,
+    # nincs f-string interpoláció és nincs felhasználói bemenet.
+    audit_trigger_ddl = {
+        "digital_project_managers": """
+            CREATE TRIGGER trg_audit_digital_project_managers
+            AFTER INSERT OR UPDATE OR DELETE ON digital_project_managers
+            FOR EACH ROW EXECUTE FUNCTION audit_dpm_write()
+            """,
+        "project_assignments": """
+            CREATE TRIGGER trg_audit_project_assignments
+            AFTER INSERT OR UPDATE OR DELETE ON project_assignments
+            FOR EACH ROW EXECUTE FUNCTION audit_dpm_write()
+            """,
+        "project_memories": """
+            CREATE TRIGGER trg_audit_project_memories
+            AFTER INSERT OR UPDATE OR DELETE ON project_memories
+            FOR EACH ROW EXECUTE FUNCTION audit_dpm_write()
+            """,
+        "agent_tasks": """
+            CREATE TRIGGER trg_audit_agent_tasks
+            AFTER INSERT OR UPDATE OR DELETE ON agent_tasks
+            FOR EACH ROW EXECUTE FUNCTION audit_dpm_write()
+            """,
+        "approval_requests": """
+            CREATE TRIGGER trg_audit_approval_requests
+            AFTER INSERT OR UPDATE OR DELETE ON approval_requests
+            FOR EACH ROW EXECUTE FUNCTION audit_dpm_write()
+            """,
+    }
     for table_name in (
         "digital_project_managers",
         "project_assignments",
@@ -290,13 +319,7 @@ def upgrade() -> None:
         "agent_tasks",
         "approval_requests",
     ):
-        op.execute(
-            f"""
-            CREATE TRIGGER trg_audit_{table_name}
-            AFTER INSERT OR UPDATE OR DELETE ON {table_name}
-            FOR EACH ROW EXECUTE FUNCTION audit_dpm_write()
-            """
-        )
+        op.execute(audit_trigger_ddl[table_name])
 
     connection = op.get_bind()
     connection.execute(
@@ -372,6 +395,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    drop_trigger_ddl = {
+        "approval_requests": "DROP TRIGGER IF EXISTS trg_audit_approval_requests ON approval_requests",
+        "agent_tasks": "DROP TRIGGER IF EXISTS trg_audit_agent_tasks ON agent_tasks",
+        "project_memories": "DROP TRIGGER IF EXISTS trg_audit_project_memories ON project_memories",
+        "project_assignments": "DROP TRIGGER IF EXISTS trg_audit_project_assignments ON project_assignments",
+        "digital_project_managers": (
+            "DROP TRIGGER IF EXISTS trg_audit_digital_project_managers ON digital_project_managers"
+        ),
+    }
     for table_name in (
         "approval_requests",
         "agent_tasks",
@@ -379,7 +411,7 @@ def downgrade() -> None:
         "project_assignments",
         "digital_project_managers",
     ):
-        op.execute(f"DROP TRIGGER IF EXISTS trg_audit_{table_name} ON {table_name}")
+        op.execute(drop_trigger_ddl[table_name])
     op.execute("DROP FUNCTION IF EXISTS audit_dpm_write()")
     op.drop_index("ix_audit_events_project_time", table_name="audit_events")
     op.drop_table("audit_events")

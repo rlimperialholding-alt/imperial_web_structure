@@ -86,8 +86,8 @@ if ($artifactsData.meta.runtimeExternalApis -ne $false) {
 $platformData = Get-Content -LiteralPath (Join-Path $repositoryRoot 'sites\_portal\data\platform.json') -Raw | ConvertFrom-Json
 $systemData = Get-Content -LiteralPath (Join-Path $repositoryRoot 'sites\_portal\data\system.json') -Raw | ConvertFrom-Json
 
-if (@($platformData.modules).Count -ne 47) {
-  throw "Expected 47 registered Imperial Intelligence modules, found $(@($platformData.modules).Count)."
+if (@($platformData.modules).Count -ne 49) {
+  throw "Expected 49 registered Imperial Intelligence modules, found $(@($platformData.modules).Count)."
 }
 
 if (@($systemData.roles).Count -lt 10 -or @($systemData.eventContracts).Count -lt 12) {

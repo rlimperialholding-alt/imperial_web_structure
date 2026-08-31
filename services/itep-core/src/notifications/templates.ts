@@ -84,11 +84,17 @@ export function renderTaskReminder(
   };
 }
 
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#039;",
+};
+
+// Egy menetben, karaktertérképből dolgozik: a láncolt replaceAll helyett
+// nincs újra-escape ablak, és a detect-replaceall-sanitization heurisztika
+// sem talál láncot (Task60 hardening).
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return value.replace(/[&<>"']/g, (character) => HTML_ESCAPES[character]);
 }

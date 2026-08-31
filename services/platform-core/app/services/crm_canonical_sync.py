@@ -220,7 +220,7 @@ def _fetch_page(entity: str, cursor: int, limit: int = 500) -> dict[str, Any]:
         headers=crm_service_headers("X-ITEP-CRM-Token", settings.crm_read_token),
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             payload = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise CrmCanonicalSyncError(

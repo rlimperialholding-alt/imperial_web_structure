@@ -106,19 +106,32 @@ def upgrade() -> None:
         "knowledge_chunks",
         ["external_project_id"],
     )
-    for table_name in ("knowledge_documents", "knowledge_chunks"):
-        op.execute(
-            f"""
-            CREATE TRIGGER trg_audit_{table_name}
-            AFTER INSERT OR UPDATE OR DELETE ON {table_name}
+    # Statikus DDL literálok, nincs f-string interpoláció és nincs felhasználói bemenet.
+    audit_trigger_ddl = {
+        "knowledge_documents": """
+            CREATE TRIGGER trg_audit_knowledge_documents
+            AFTER INSERT OR UPDATE OR DELETE ON knowledge_documents
             FOR EACH ROW EXECUTE FUNCTION audit_dpm_write()
-            """
-        )
+            """,
+        "knowledge_chunks": """
+            CREATE TRIGGER trg_audit_knowledge_chunks
+            AFTER INSERT OR UPDATE OR DELETE ON knowledge_chunks
+            FOR EACH ROW EXECUTE FUNCTION audit_dpm_write()
+            """,
+    }
+    for table_name in ("knowledge_documents", "knowledge_chunks"):
+        op.execute(audit_trigger_ddl[table_name])
 
 
 def downgrade() -> None:
+    drop_trigger_ddl = {
+        "knowledge_chunks": "DROP TRIGGER IF EXISTS trg_audit_knowledge_chunks ON knowledge_chunks",
+        "knowledge_documents": (
+            "DROP TRIGGER IF EXISTS trg_audit_knowledge_documents ON knowledge_documents"
+        ),
+    }
     for table_name in ("knowledge_chunks", "knowledge_documents"):
-        op.execute(f"DROP TRIGGER IF EXISTS trg_audit_{table_name} ON {table_name}")
+        op.execute(drop_trigger_ddl[table_name])
     op.drop_index("ix_knowledge_chunks_project", table_name="knowledge_chunks")
     op.drop_table("knowledge_chunks")
     op.drop_index(

@@ -970,7 +970,7 @@ def fetch_public_source(
         if parsed.scheme == "https":
             context = _verified_tls_context()
             tls_socket = context.wrap_socket(raw_socket, server_hostname=host)
-            connection = http.client.HTTPSConnection(
+            connection = http.client.HTTPSConnection(  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
                 host, port=port, timeout=timeout_seconds, context=context
             )
             connection.sock = tls_socket

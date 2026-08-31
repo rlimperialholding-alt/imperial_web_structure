@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Generate ephemeral platform database secret
         shell: bash
@@ -46,6 +46,13 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose config --quiet
 
+      - name: Ensure the shared integration network exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          network_name="${INTEGRATED_NETWORK_NAME:-imperial-intelligence-test_default}"
+          docker network inspect "$network_name" >/dev/null 2>&1 || docker network create "$network_name"
+
       - name: Start staging stack
         run: docker compose up --detach --wait --wait-timeout 180
 
@@ -54,27 +61,33 @@ jobs:
         run: |
           set -euo pipefail
 
-          portal_html="$(curl --fail --silent --show-error \
+          # A jelenlegi architektúra füsttesztje: a 9fc0751 óta az nginx a
+          # platform-core FastAPI alkalmazásra proxyz (a korábbi statikus SPA
+          # már nem az alapértelmezett felület), a brand-oldalak a
+          # /site-preview/ útvonalon, az adatfájlok repo-szintű validálása a
+          # validate-structure.sh lépésben fut.
+
+          # 1) Az alkalmazás nyilvános felülete: / és /login HTML-oldal az
+          #    alkalmazás base assetjével.
+          for path in "/" "/login"; do
+            page="$(curl --fail --silent --show-error --location \
+              --header "Host: localhost" \
+              "http://127.0.0.1:8080${path}")"
+            grep --quiet '/static/style.css' <<<"$page"
+          done
+
+          # 2) A portal asset-réteg (a kliens routeMap-mel).
+          portal_css="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/)"
-
-          grep --quiet 'id="brand-select"' <<<"$portal_html"
-          grep --quiet 'id="page-select"' <<<"$portal_html"
-          grep --quiet 'id="review-panel"' <<<"$portal_html"
-          grep --quiet 'data-device="desktop"' <<<"$portal_html"
-          grep --quiet 'data-device="tablet"' <<<"$portal_html"
-          grep --quiet 'data-device="mobile"' <<<"$portal_html"
-
-          brands_json="$(curl --fail --silent --show-error \
+            http://127.0.0.1:8080/assets/platform.css)"
+          grep --quiet '.platform-shell' <<<"$portal_css"
+          portal_js="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/data/brands.json)"
-          python3 -c 'import json,sys; data=json.load(sys.stdin); assert len(data["brands"]) == 12' <<<"$brands_json"
+            http://127.0.0.1:8080/assets/platform.js)"
+          grep --quiet 'history.pushState' <<<"$portal_js"
 
-          artifacts_json="$(curl --fail --silent --show-error \
-            --header "Host: localhost" \
-            http://127.0.0.1:8080/data/artifacts.json)"
-          python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["meta"]["containsCustomerData"] is False; assert sum(len(x["pages"]) for x in data["brands"].values()) == 50' <<<"$artifacts_json"
-
+          # 3) Mind a 12 brand-oldal elérhető a jelenlegi szolgáltatási
+          #    útvonalon.
           sites=(
             imperial
             danish-fabrik
@@ -92,22 +105,17 @@ jobs:
 
           for site in "${sites[@]}"; do
             site_html="$(curl --fail --silent --show-error \
-              --header "Host: ${site}.localhost" \
-              http://127.0.0.1:8080/)"
+              --header "Host: localhost" \
+              "http://127.0.0.1:8080/site-preview/${site}/")"
             grep --quiet 'name="robots" content="noindex,nofollow"' <<<"$site_html"
-          done
-
-          imperial_html="$(curl --fail --silent --show-error \
-            --header "Host: imperial.localhost" \
-            http://127.0.0.1:8080/)"
-          for section_id in hero trust portfolio capabilities projects sustainability news contact; do
-            grep --quiet "id=\"${section_id}\"" <<<"$imperial_html"
           done
 
           preview_html="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
             'http://127.0.0.1:8080/site-preview/imperial/?review=1')"
-          grep --quiet 'id="hero"' <<<"$preview_html"
+          for section_id in hero trust portfolio capabilities projects sustainability news contact; do
+            grep --quiet "id=\"${section_id}\"" <<<"$preview_html"
+          done
 
           drive_previews=(
             "site-preview/imperial/drive/venture/venture-studio.html?review=1"

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -524,14 +524,14 @@ def _generate_legacy_source_derivatives(db: Session, job_id: str, actor: str) ->
             job_id=job_id,
             source_visual_id=source.source_visual_id,
             revision=1
-            + len(
-                db.scalars(
-                    select(HouseVisionOutputAsset).where(
-                        HouseVisionOutputAsset.job_id == job_id,
-                        HouseVisionOutputAsset.source_visual_id == source.source_visual_id,
-                    )
-                ).all()
-            ),
+            + (db.scalar(
+                select(func.count())
+                .select_from(HouseVisionOutputAsset)
+                .where(
+                    HouseVisionOutputAsset.job_id == job_id,
+                    HouseVisionOutputAsset.source_visual_id == source.source_visual_id,
+                )
+            ) or 0),
             provider_job_id=provider_job_id,
             output_ref=str(target_path),
             content_sha256=proof["output_sha256"],
@@ -732,14 +732,14 @@ def generate_typehouse_renders(db: Session, job_id: str, actor: str) -> dict:
             job_id=job_id,
             source_visual_id=source.source_visual_id,
             revision=1
-            + len(
-                db.scalars(
-                    select(HouseVisionOutputAsset).where(
-                        HouseVisionOutputAsset.job_id == job_id,
-                        HouseVisionOutputAsset.source_visual_id == source.source_visual_id,
-                    )
-                ).all()
-            ),
+            + (db.scalar(
+                select(func.count())
+                .select_from(HouseVisionOutputAsset)
+                .where(
+                    HouseVisionOutputAsset.job_id == job_id,
+                    HouseVisionOutputAsset.source_visual_id == source.source_visual_id,
+                )
+            ) or 0),
             provider_job_id=provider_job_id,
             output_ref=str(target_path),
             content_sha256=output_hash,
@@ -902,14 +902,14 @@ def create_source_preserved_baseline(db: Session, job_id: str, actor: str) -> di
             job_id=job_id,
             source_visual_id=source.source_visual_id,
             revision=1
-            + len(
-                db.scalars(
-                    select(HouseVisionOutputAsset).where(
-                        HouseVisionOutputAsset.job_id == job_id,
-                        HouseVisionOutputAsset.source_visual_id == source.source_visual_id,
-                    )
-                ).all()
-            ),
+            + (db.scalar(
+                select(func.count())
+                .select_from(HouseVisionOutputAsset)
+                .where(
+                    HouseVisionOutputAsset.job_id == job_id,
+                    HouseVisionOutputAsset.source_visual_id == source.source_visual_id,
+                )
+            ) or 0),
             provider_job_id=source_provider_job_id,
             output_ref=str(target),
             content_sha256=source.content_sha256,

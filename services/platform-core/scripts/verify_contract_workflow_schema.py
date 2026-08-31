@@ -43,24 +43,27 @@ def main() -> int:
             errors.append(f"missing column: {table}.{missing}")
 
     if not errors:
+        # Statikus, rögzített táblanévvel írt integritás-lekérdezések: nincs
+        # f-string/interpoláció, a szöveg változatlanul kerül a motorhoz.
         queries = {
-            "rows": f"SELECT COUNT(*) FROM {table}",
+            "rows": "SELECT COUNT(*) FROM contract_workflows",
             "invalid_payload_hash": (
-                f"SELECT COUNT(*) FROM {table} WHERE length(payload_sha256) <> 64"
+                "SELECT COUNT(*) FROM contract_workflows "
+                "WHERE length(payload_sha256) <> 64"
             ),
             "premature_work_start": (
-                f"SELECT COUNT(*) FROM {table} "
+                "SELECT COUNT(*) FROM contract_workflows "
                 "WHERE work_start_allowed = true AND status <> 'active'"
             ),
             "active_without_evidence": (
-                f"SELECT COUNT(*) FROM {table} WHERE status = 'active' AND "
+                "SELECT COUNT(*) FROM contract_workflows WHERE status = 'active' AND "
                 "(signed_file_id IS NULL OR length(signed_document_sha256) <> 64 "
                 "OR postal_tracking_number IS NULL OR postal_proof_file_id IS NULL "
                 "OR electronic_message_id IS NULL OR electronic_recipient IS NULL "
                 "OR electronic_attachment_sha256 <> signed_document_sha256)"
             ),
             "approved_without_gates": (
-                f"SELECT COUNT(*) FROM {table} WHERE status IN "
+                "SELECT COUNT(*) FROM contract_workflows WHERE status IN "
                 "('approved','signed','dispatched','active') AND "
                 "(commercial_approved_by IS NULL OR technical_approved_by IS NULL "
                 "OR owner_approved_by IS NULL "

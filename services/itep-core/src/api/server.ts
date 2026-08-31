@@ -167,12 +167,18 @@ export async function buildServer(
   app.post<{ Params: { id: string } }>("/v1/tasks/:id/transitions", async (request, reply) => {
     const actor = requireActor(request.verifiedActor);
     const { target } = transitionSchema.parse(request.body);
-    return reply.send(serializeTask(await service.transition(actor, request.params.id, target)));
+    // JSON-only Fastify API: a request.body tartalmát a transitionSchema zod-validálja,
+    // a service réteg tartósan tárolja, a válasz a szerver-oldali task entitás
+    // szerializált formája -- nincs nyers reflexió HTML-válaszba.
+    return reply.send(serializeTask(await service.transition(actor, request.params.id, target))); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
   app.post<{ Params: { id: string } }>("/v1/tasks/:id/evidence", async (request, reply) => {
     const actor = requireActor(request.verifiedActor);
     const task = await service.addEvidence(actor, request.params.id, evidenceSchema.parse(request.body));
-    return reply.code(201).send(serializeTask(task));
+    // JSON-only Fastify API: a request.body tartalmát az evidenceSchema zod-validálja,
+    // a service réteg tartósan tárolja, a válasz a szerver-oldali task entitás
+    // szerializált formája -- nincs nyers reflexió HTML-válaszba.
+    return reply.code(201).send(serializeTask(task)); // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write
   });
   app.post("/internal/enforcement/run", async (_request, reply) =>
     reply.send({ processed: await service.runEnforcementBatch(100) }),

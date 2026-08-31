@@ -4,7 +4,6 @@ import hashlib
 import json
 import math
 import unicodedata
-from copy import deepcopy
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -72,7 +71,12 @@ def _nfc(value: Any) -> Any:
 
 
 def _canonical_geometry(value: dict[str, Any]) -> dict[str, Any]:
-    result = deepcopy(_nfc(value))
+    # A `_nfc` már friss, rekurzívan újraépített (nem megosztott) struktúrát
+    # ad vissza, így a rendezés bátran módosíthatja helyben: a korábbi
+    # `deepcopy(_nfc(value))` második teljes másolása tisztán redundáns
+    # munka volt (a Task60 Gate4 7,65 mp-es háziköteg-timeoutjának fő
+    # konstans-költsége: soronként kétszeri teljes geometria-másolás).
+    result = _nfc(value)
     result["levels"] = sorted(result.get("levels", []), key=lambda item: item["id"])
     for level in result["levels"]:
         for key in ("rooms", "walls", "openings"):
@@ -119,6 +123,20 @@ def canonical_json(value: Any) -> str:
 
 def geometry_signature(geometry: dict[str, Any]) -> str:
     payload = "imperial-house-geometry:v1\n" + canonical_json(geometry)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _signature_of_canonical_geometry(geometry: dict[str, Any]) -> str:
+    """A már kanonikus geometria aláírása ismételt normalizálás nélkül.
+
+    A `generate_houseplan` már egyszer kanonizált alakot állít elő; az újra-
+    kanonizálás idempens, a serializált bájtok azonosak, tehát ez az út
+    bájtszinten megegyezik a `geometry_signature(canonical)` eredményével,
+    a teljes második rendezés/NFC-menet nélkül.
+    """
+    payload = "imperial-house-geometry:v1\n" + json.dumps(
+        geometry, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -340,6 +358,11 @@ def _partition(
         tuple[int, int, int, int, int, int],
         list[tuple[dict[str, Any], _Rect]] | None,
     ] = {}
+    # Prefix-összegek: a célcellák részletösszegei O(1)-ben (a korábbi
+    # csomópontonkénti sum() újraszámolás a rekurzió fő konstans-költsége volt).
+    prefix = [0]
+    for item in rooms:
+        prefix.append(prefix[-1] + item["target_cells"])
 
     def solve(box: _Rect, start: int, end: int):
         key = (box.x, box.y, box.width, box.height, start, end)
@@ -350,27 +373,37 @@ def _partition(
                 cache[key] = None
                 return None
             target = rooms[start]["target_cells"]
-            deviation = abs(Decimal(box.area - target)) / Decimal(target)
-            if deviation > Decimal("0.10"):
+            # A Decimal-aritmetikás eltérésvizsgálat egész-ekvivalense:
+            # abs(box.area - target) / target > 0,10  ⟺  10·|eltérés| > target.
+            # A tört nevezője (target ≤ 45000) garantálja, hogy a 28 jegyű
+            # Decimal kerekítés soha nem billenti át az összehasonlítást.
+            if 10 * abs(box.area - target) > target:
                 cache[key] = None
                 return None
             result = [(rooms[start], box)]
             cache[key] = result
             return result
-        total_target = sum(rooms[index]["target_cells"] for index in range(start, end))
+        total_target = prefix[end] - prefix[start]
         axes = ("vertical", "horizontal") if box.width >= box.height else ("horizontal", "vertical")
         for axis in axes:
             dimension = box.width if axis == "vertical" else box.height
             for split in range(start + 1, end):
-                first_target = sum(rooms[index]["target_cells"] for index in range(start, split))
-                ideal = Decimal(dimension) * Decimal(first_target) / Decimal(total_target)
-                rounded = int(ideal.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                first_target = prefix[split] - prefix[start]
+                # ROUND_HALF_UP egész-ekvivalense: (2·dim·first + total) // (2·total).
+                # A Decimal(28 jegyű) hányados kerekítése és a félkerekítés
+                # eredménye azonos, mert a racionális hányados a legközelebbi
+                # félegésztől legalább 1/(2·total) ≥ 1/90000 távolságra van.
+                rounded = (2 * dimension * first_target + total_target) // (2 * total_target)
+                # A rendezés a |cut − ideális| távolság szerint, azonos nevezőre
+                # hozva (total_target konstans), kötésnél a kisebb cut nyer —
+                # bájtszinten azonos a korábbi Decimal rendezéssel.
+                numerator = 2 * dimension * first_target
                 cuts = sorted(
                     {
                         max(minimum, min(dimension - minimum, rounded + delta))
                         for delta in (0, -1, 1, -2, 2, -3, 3, -4, 4)
                     },
-                    key=lambda cut: (abs(Decimal(cut) - ideal), cut),
+                    key=lambda cut: (abs(2 * cut * total_target - numerator), cut),
                 )
                 for cut in cuts:
                     if not minimum <= cut <= dimension - minimum:
@@ -782,8 +815,15 @@ def _level_geometry(
     return level, core_payloads
 
 
-def generate_houseplan(data: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
-    normalized = normalize_input(data)
+def generate_houseplan_from_normalized(
+    normalized: dict[str, Any], source: dict[str, Any]
+) -> dict[str, Any]:
+    """A terv generálása már normalizált bemenetből.
+
+    A `dry_run_batch` a deduplikációhoz úgyis normalizál; ez az út a
+    második, azonos eredményű `normalize_input` menetet spórolja meg
+    (a kimenet bájtszinten azonos a `generate_houseplan` kimenetével).
+    """
     floors = normalized["floors"]
     width_mm, depth_mm = _footprint(
         Decimal(normalized["grossAreaM2"]), floors, normalized["layout"]
@@ -880,5 +920,9 @@ def generate_houseplan(data: dict[str, Any], source: dict[str, Any]) -> dict[str
         "inputHash": input_hash(normalized, source),
         "geometry": _canonical_geometry(geometry),
     }
-    result["geometrySignature"] = geometry_signature(result["geometry"])
+    result["geometrySignature"] = _signature_of_canonical_geometry(result["geometry"])
     return result
+
+
+def generate_houseplan(data: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
+    return generate_houseplan_from_normalized(normalize_input(data), source)

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
 from uuid import uuid4
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -142,7 +142,9 @@ def create_release(db: Session, data: WebsiteReleaseIn, actor: str, actor_role: 
         if not site.active or site.kill_switch: raise ValueError(f"A webhely inaktív vagy kill switch alatt áll: {site.site_id}")
         if site.brand_id != asset.brand_id: raise ValueError("A tartalom márkája és a webhely márkája eltér.")
         if not target.route_path.startswith("/") or ".." in target.route_path: raise ValueError("A route abszolút, biztonságos webhelyútvonal legyen.")
-    version = 1 + len(db.scalars(select(WebsiteRelease).where(WebsiteRelease.asset_id == data.asset_id)).all())
+    version = 1 + (db.scalar(
+        select(func.count()).select_from(WebsiteRelease).where(WebsiteRelease.asset_id == data.asset_id)
+    ) or 0)
     manifest = {"asset_id": asset.asset_id, "content_version": asset.content_version, "content_sha256": asset.content_hash, "bundle_id": bundle.bundle_id, "bundle_sha256": bundle.bundle_hash, "publication_proof_id": asset.publication_proof_id, "targets": [item.model_dump() for item in data.targets]}
     row = WebsiteRelease(release_id=_id("WEBREL"), asset_id=asset.asset_id, version=version, content_version=asset.content_version, content_sha256=asset.content_hash, publication_bundle_id=bundle.bundle_id, publication_proof_id=asset.publication_proof_id, release_manifest_sha256=_hash(manifest), target_count=len(data.targets), status="ready", created_by=actor)
     db.add(row)

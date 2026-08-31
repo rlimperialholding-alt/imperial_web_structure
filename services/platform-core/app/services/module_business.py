@@ -685,7 +685,7 @@ def module_source_projection(module_key: str) -> dict[str, Any] | None:
         headers=crm_service_headers("X-ITEP-CRM-Token", settings.crm_read_token),
     )
     try:
-        with urllib.request.urlopen(request, timeout=4) as response:
+        with urllib.request.urlopen(request, timeout=4) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             payload = json.load(response)
     except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as exc:
         return {

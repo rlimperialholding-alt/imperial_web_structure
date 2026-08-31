@@ -16,6 +16,15 @@ spec:
         - name: worker
           image: ghcr.io/imperial-holding/itep-core:1.1.0
           command: ["node", "dist/src/workers/main.js"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           envFrom:
             - secretRef:
                 name: imperial-itep-secrets

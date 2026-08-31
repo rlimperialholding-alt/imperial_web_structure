@@ -25,10 +25,6 @@ from datetime import date
 
 import httpx
 import pytest
-
-from app.connectors.directus import DirectusConnector
-from app.connectors.google_business import GoogleBusinessProfileConnector
-from app.connectors.safe_http import PinnedTransport, SafeHttpClient
 from test_connector_http_hardening import (
     _FakeCredentials,
     _loopback_resolver,
@@ -36,6 +32,10 @@ from test_connector_http_hardening import (
     _settings,
 )
 from test_safe_http_pinning import _ScriptedBackend, _ScriptedSession
+
+from app.connectors.directus import DirectusConnector
+from app.connectors.google_business import GoogleBusinessProfileConnector
+from app.connectors.safe_http import PinnedTransport, SafeHttpClient
 
 PUBLIC = ipaddress.ip_address("93.184.216.34")
 PUBLIC_SECOND = ipaddress.ip_address("1.1.1.1")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.database import SessionLocal
 from app.models import (
@@ -86,19 +86,15 @@ def main() -> None:
             {
                 "project_id": PROJECT_ID,
                 "customer_email": CUSTOMER_EMAIL,
-                "updates": len(
-                    db.scalars(
-                        select(CustomerPortalUpdate).where(
-                            CustomerPortalUpdate.project_id == PROJECT_ID
-                        )
-                    ).all()
+                "updates": db.scalar(
+                    select(func.count())
+                    .select_from(CustomerPortalUpdate)
+                    .where(CustomerPortalUpdate.project_id == PROJECT_ID)
                 ),
-                "decisions": len(
-                    db.scalars(
-                        select(CustomerDecisionRequest).where(
-                            CustomerDecisionRequest.project_id == PROJECT_ID
-                        )
-                    ).all()
+                "decisions": db.scalar(
+                    select(func.count())
+                    .select_from(CustomerDecisionRequest)
+                    .where(CustomerDecisionRequest.project_id == PROJECT_ID)
                 ),
             }
         )

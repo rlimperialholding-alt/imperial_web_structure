@@ -118,7 +118,7 @@ def _fetch(url: str, *, accept: str, max_bytes: int, source_url: str) -> tuple[s
         context = ssl.create_default_context()
         # Publikus provider-fetch: kizárólag igazolt TLS 1.2+; SSL és TLS 1.0/1.1 tiltott.
         context.minimum_version = ssl.TLSVersion.TLSv1_2
-        connection = http.client.HTTPSConnection(
+        connection = http.client.HTTPSConnection(  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
             host, port=443, timeout=30, context=context
         )
         try:

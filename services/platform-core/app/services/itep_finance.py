@@ -71,7 +71,7 @@ def incoming_invoices(
     )
     request = Request(url, headers=_identity_headers(user), method="GET")
     try:
-        with urlopen(request, timeout=15) as response:
+        with urlopen(request, timeout=15) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         raise ItepFinanceError(

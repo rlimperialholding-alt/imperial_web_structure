@@ -92,7 +92,7 @@ def request_json(
         method=method,
         data=data,
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with urllib.request.urlopen(request, timeout=60) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         return response.status, json.loads(response.read().decode())
 
 
@@ -132,7 +132,8 @@ for document in batch["documents"]:
         f"{CRM}{document['downloadUrl']}",
         headers={"X-CRM-Migration-Token": MIGRATION_TOKEN},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    # Belső szolgáltatás-közi hívás: a célhost operátori settingsből (crm_read/write_base_url, itep_api_base_url) vagy a CI-fixture-ből származik, sosem felhasználói kérésből; SSRF-felület nincs.
+    with urllib.request.urlopen(request, timeout=30) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         payload = response.read()
         digest = hashlib.sha256(payload).hexdigest()
         if digest != document["sha256"]:

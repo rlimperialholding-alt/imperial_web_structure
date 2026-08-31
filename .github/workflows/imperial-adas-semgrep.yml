@@ -13,19 +13,59 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v7.0.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.13'
       - name: Install pinned Semgrep
         run: python -m pip install --disable-pip-version-check semgrep==1.172.0
-      - name: Run targeted SAST
-        run: semgrep scan --config auto --error --json --output semgrep.json .
+      - name: Run targeted SAST (platform-core, FastAPI CSRF false-positive exception)
+        # Path-szűk rule-kivétel (Task61 threat model:
+        # services/platform-core/docs/csrf-threat-model.md): a
+        # python.django.security.django-no-csrf-token kizárólag a
+        # platform-core FastAPI/Jinja2 alkalmazásra van kivéve (nincs
+        # Django-függőség; minden POST form/endpoint CSRF-védelmét a
+        # SessionWriteOriginMiddleware + synchronizer token réteg
+        # biztosítja, a services/platform-core/tests/
+        # test_csrf_control_matrix.py végpont- és tesztszinten bizonyítja).
+        # Minden más path (pl. Django template-ek) továbbra is vizsgált:
+        # az utolsó lépés azokon a rule kizárása nélkül fut.
+        run: >-
+          semgrep scan --config auto --error --json --no-rewrite-rule-ids
+          --output semgrep-platform-core.json
+          --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token
+          services/platform-core
+      - name: Run targeted SAST (npm projects with enforced package-age gate)
+        # Path-szűk rule-kivétel (threat model:
+        # services/imperial-sales-crm/docs/package-age-threat-model.md): a
+        # package_managers.npm.npm-missing-minimum-release-age kizárólag a
+        # két npm projektre (imperial-sales-crm, itep-core) van kivéve,
+        # mert mindkettőben futó, tesztelt 7 napos package-age kapu van
+        # (scripts/check-package-age.mjs, Quality CI), az audit/signature/
+        # lockfile kontrollok változatlanok. Minden más path vizsgált.
+        run: >-
+          semgrep scan --config auto --error --json --no-rewrite-rule-ids
+          --output semgrep-npm.json
+          --exclude-rule package_managers.npm.npm-missing-minimum-release-age.npm-missing-minimum-release-age
+          services/imperial-sales-crm services/itep-core
+      - name: Run targeted SAST (all remaining paths, full rule set)
+        # Minden más path a teljes szabályhalmazzal, kivétel nélkül;
+        # a két fenti path az első két lépésben minden más szabályra
+        # vizsgált, így a repo lefedettsége teljes marad.
+        run: >-
+          semgrep scan --config auto --error --json --no-rewrite-rule-ids
+          --output semgrep-rest.json
+          --exclude services/platform-core
+          --exclude services/imperial-sales-crm
+          --exclude services/itep-core
+          .
+      - name: Merge Semgrep evidence
+        run: python scripts/merge_semgrep_evidence.py
       - name: Upload Semgrep evidence
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: imperial-adas-semgrep
           path: semgrep.json

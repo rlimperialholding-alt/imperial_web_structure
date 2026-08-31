@@ -14,7 +14,13 @@ branch_labels = None
 depends_on = None
 
 INDEX_NAME = "uq_finance_project_single_open_plan"
-OPEN_STATUSES = "'draft','review','finance_approved'"
+OPEN_STATUSES = ("draft", "review", "finance_approved")
+# DDL-literal: a CREATE INDEX ... WHERE predikátum PostgreSQL-en nem fogad
+# bind paramétert, ezért a rögzített státuszhalmaz tiszta literálként kerül a
+# predikátumba (nincs f-string, concat vagy formázás a text() hívásnál).
+_OPEN_STATUSES_WHERE = "status IN ('draft', 'review', 'finance_approved')"
+if _OPEN_STATUSES_WHERE != "status IN (" + ", ".join(f"'{status}'" for status in OPEN_STATUSES) + ")":
+    raise RuntimeError("0040: OPEN_STATUSES és _OPEN_STATUSES_WHERE eltér, a literál szinkronja sérült.")
 
 
 def upgrade() -> None:
@@ -25,18 +31,17 @@ def upgrade() -> None:
         return
 
     duplicates = connection.execute(
-        sa.text(
-            "SELECT project_id, COUNT(*) AS open_count "
-            "FROM finance_project_plans "
-            f"WHERE status IN ({OPEN_STATUSES}) "
-            "GROUP BY project_id HAVING COUNT(*) > 1"
-        )
+        sa.select(sa.column("project_id"), sa.func.count().label("open_count"))
+        .select_from(sa.table("finance_project_plans"))
+        .where(sa.column("status").in_(OPEN_STATUSES))
+        .group_by(sa.column("project_id"))
+        .having(sa.func.count() > 1)
     ).fetchall()
     if duplicates:
         project_ids = ", ".join(str(row.project_id) for row in duplicates)
         raise RuntimeError("Multiple open finance plans must be resolved first: " + project_ids)
 
-    predicate = sa.text(f"status IN ({OPEN_STATUSES})")
+    predicate = sa.text(_OPEN_STATUSES_WHERE)
     op.create_index(
         INDEX_NAME,
         "finance_project_plans",

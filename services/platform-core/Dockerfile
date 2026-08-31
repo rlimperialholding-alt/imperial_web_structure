@@ -21,7 +21,7 @@ RUN --mount=type=secret,id=build_ca,required=false \
       cat /etc/ssl/certs/ca-certificates.crt /run/secrets/build_ca > /tmp/build-ca.pem; \
       export PIP_CERT=/tmp/build-ca.pem; \
     fi; \
-    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install --no-cache-dir -r requirements-dev.txt; \
+    PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install --no-cache-dir --no-binary mypy -r requirements-dev.txt; \
     status=$?; rm -f /tmp/build-ca.pem; exit $status
 COPY . .
 RUN mkdir -p /app/data /app/runtime && chown -R imperial:imperial /app

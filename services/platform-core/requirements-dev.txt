@@ -2,5 +2,5 @@ pytest>=8.0,<9.0
 pytest-cov>=7.1,<8.0
 httpx>=0.27,<1.0
 ruff>=0.12,<1.0
-mypy>=1.17,<2.0
+mypy==1.18.2
 detect-secrets==1.5.0

@@ -36,7 +36,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Generate ephemeral CI secrets
         shell: bash
@@ -60,6 +60,13 @@ jobs:
 
       - name: Run migration, format check, lint, type check and tests
         run: docker compose --profile digital-pm-test run --rm dpm-tests
+
+      - name: Ensure the shared integration network exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          network_name="${INTEGRATED_NETWORK_NAME:-imperial-intelligence-test_default}"
+          docker network inspect "$network_name" >/dev/null 2>&1 || docker network create "$network_name"
 
       - name: Start API and worker
         run: docker compose --profile digital-pm up --detach --wait --wait-timeout 120 digital-project-managers dpm-worker

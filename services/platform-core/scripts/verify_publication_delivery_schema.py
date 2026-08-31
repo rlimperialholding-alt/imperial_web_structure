@@ -52,20 +52,22 @@ def main() -> int:
                 errors.append(f"missing index: {name}")
 
     if not errors:
+        # Statikus, rögzített táblanévvel írt integritás-lekérdezések: nincs
+        # f-string/interpoláció, a szöveg változatlanul kerül a motorhoz.
         integrity_queries = {
-            "rows": f"SELECT COUNT(*) FROM {table}",
+            "rows": "SELECT COUNT(*) FROM cq_publication_deliveries",
             "invalid_attempts": (
-                f"SELECT COUNT(*) FROM {table} "
+                "SELECT COUNT(*) FROM cq_publication_deliveries "
                 "WHERE attempt_count < 0 OR max_attempts < 1 "
                 "OR attempt_count > max_attempts"
             ),
             "invalid_hashes": (
-                f"SELECT COUNT(*) FROM {table} "
+                "SELECT COUNT(*) FROM cq_publication_deliveries "
                 "WHERE length(payload_sha256) <> 64 "
                 "OR length(idempotency_key) <> 64"
             ),
             "invalid_claims": (
-                f"SELECT COUNT(*) FROM {table} WHERE "
+                "SELECT COUNT(*) FROM cq_publication_deliveries WHERE "
                 "(status = 'claimed' AND "
                 "(claimed_by IS NULL OR claimed_at IS NULL OR lease_expires_at IS NULL)) "
                 "OR (status <> 'claimed' AND "
@@ -73,13 +75,13 @@ def main() -> int:
                 "OR lease_expires_at IS NOT NULL))"
             ),
             "invalid_deliveries": (
-                f"SELECT COUNT(*) FROM {table} "
+                "SELECT COUNT(*) FROM cq_publication_deliveries "
                 "WHERE status = 'delivered' AND "
                 "(external_reference IS NULL OR receipt_json IS NULL "
                 "OR receipt_sha256 IS NULL OR delivered_at IS NULL)"
             ),
             "unexplained_failures": (
-                f"SELECT COUNT(*) FROM {table} "
+                "SELECT COUNT(*) FROM cq_publication_deliveries "
                 "WHERE status IN ('retry','dead_letter') AND last_error IS NULL"
             ),
         }

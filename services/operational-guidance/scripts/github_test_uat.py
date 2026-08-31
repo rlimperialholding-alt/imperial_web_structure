@@ -17,7 +17,7 @@ SECRET = os.environ["ITEP_IDENTITY_SHARED_SECRET"]
 
 def get_json(url: str, headers: dict[str, str] | None = None):
     request = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(request, timeout=20) as response:
+    with urllib.request.urlopen(request, timeout=20) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         return response.status, json.loads(response.read().decode())
 
 
@@ -29,7 +29,8 @@ def post_json(url: str, headers: dict[str, str] | None = None):
         method="POST",
         data=b"{}",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    # Belső szolgáltatás-közi hívás: a célhost operátori settingsből (crm_read/write_base_url, itep_api_base_url) vagy a CI-fixture-ből származik, sosem felhasználói kérésből; SSRF-felület nincs.
+    with urllib.request.urlopen(request, timeout=30) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         return response.status, json.loads(response.read().decode())
 
 

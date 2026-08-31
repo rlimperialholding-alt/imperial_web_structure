@@ -46,7 +46,7 @@ jobs:
       CRM_WORKSPACE_QUERY_PARAMETER: workspace
       API_ADMIN_TOKEN: test-admin-token-not-for-production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Prepare isolated test credentials
         shell: bash
@@ -104,7 +104,7 @@ jobs:
           docker compose -f docker-compose.github-test.yml ps > uat-results/compose-ps.txt
           docker compose -f docker-compose.github-test.yml logs --no-color > uat-results/compose.log
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: imperial-integration-uat

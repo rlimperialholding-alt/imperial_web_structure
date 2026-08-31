@@ -60,6 +60,8 @@ EXPECTED_MODULES = {
     "import-center",
     "tendermail",
     "b2b-project-intake",
+    "house-designer",
+    "market-creative-intelligence",
 }
 
 MINIMUM_COUNTS = {

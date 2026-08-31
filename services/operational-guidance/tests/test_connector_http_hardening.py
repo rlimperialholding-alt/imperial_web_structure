@@ -8,12 +8,12 @@ from typing import Any
 
 import httpx
 import pytest
+from synthetic_fixtures import synthetic_auth_value
 
 from app.config import Settings
 from app.connectors.directus import DirectusConnector
 from app.connectors.google_business import GoogleBusinessProfileConnector
 from app.connectors.safe_http import AddressResolver, SafeHttpError
-from synthetic_fixtures import synthetic_auth_value
 
 PUBLIC = ipaddress.ip_address("93.184.216.34")
 LOOPBACK = ipaddress.ip_address("127.0.0.1")

@@ -28,7 +28,7 @@
     "restore": [
       {
         "name": "platform-core dependency restore",
-        "command": "python -m pip install --disable-pip-version-check -r services/platform-core/requirements.txt -r services/platform-core/requirements-dev.txt",
+        "command": "python -m pip install --disable-pip-version-check --no-binary mypy -r services/platform-core/requirements.txt -r services/platform-core/requirements-dev.txt",
         "requiredAtRisk": ["R2", "R3"],
         "timeoutSeconds": 1800
       }
@@ -132,8 +132,24 @@
         "timeoutSeconds": 600
       }
     ],
-    "rollback": [],
-    "forwardRecovery": [],
+    "rollback": [
+      {
+        "name": "rollback dry-run: checkpoint ref integrity and clean-tree restore plan",
+        "command": "python scripts/rollback_dry_run.py",
+        "executionScope": "read-only",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 600
+      }
+    ],
+    "forwardRecovery": [
+      {
+        "name": "forward-recovery dry-run: head connectivity and reproducible candidate diff",
+        "command": "python scripts/forward_recovery_dry_run.py",
+        "executionScope": "read-only",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 600
+      }
+    ],
     "reconciliation": [
       {
         "name": "platform-core local synthetic reconciliation",

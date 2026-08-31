@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Generate ephemeral platform database secret
         shell: bash
@@ -53,99 +53,69 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose config --quiet
 
+      - name: Ensure the shared integration network exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          network_name="${INTEGRATED_NETWORK_NAME:-imperial-intelligence-test_default}"
+          docker network inspect "$network_name" >/dev/null 2>&1 || docker network create "$network_name"
+
       - name: Start isolated staging stack
         run: docker compose up --detach --wait --wait-timeout 180
 
-      - name: Smoke test every module route
+      - name: Smoke test module routes and public surfaces
         shell: bash
         run: |
           set -euo pipefail
 
-          routes=(
-            executive-dashboard
-            my-imperial
-            crm
-            sales
-            contract-generator
-            project-control
-            financial-control
-            imperial-care
-            partner-control
-            marketing-control
-            website-content-control
-            document-center
-            workflow-center
-            admin
-            workspace
-            control-center
-            integration-control-room
-            completion-audit
-            smart-calendar
-            change-control
-            document-evidence
-            procurement
-            partner-connect
-            partner-field
-            house-catalog
-            housebuild-agent
-            housematch
-            plotcheck
-            buildconfig
-            plancheck
-            engineering-workspace
-            housevision
-            booking-engine
-            reservation-engine
-            campaign-factory
-            content-factory
-            claim-registry
-            answer-center
-            lead-intelligence
-            digital-project-managers
-            pm-cockpit
-            operations-workspace
-            field-pwa
-            finance-intelligence
-            import-center
-            tendermail
-            b2b-project-intake
-          )
+          # A jelenlegi architektúra füsttesztje: a 9fc0751 óta az nginx a
+          # platform-core FastAPI alkalmazásra proxyz; a modul-oldalak
+          # session-hitelesítettek, a demo API sessiont kér, a /data/*
+          # adatfájlokat a validate-platform.py (repo-szinten) és a
+          # platform-core-tests pytest lépés ellenőrzi. Itt a kiszolgált
+          # felület HTTP-szintű bizonyítékai futnak.
 
-          for route in "${routes[@]}"; do
-            module_html="$(curl --fail --silent --show-error \
-              --header "Host: localhost" \
-              "http://127.0.0.1:8080/${route}/")"
-            grep --quiet '/assets/platform.css' <<<"$module_html"
-            grep --quiet '/assets/platform.js' <<<"$module_html"
-          done
-
-          platform_json="$(curl --fail --silent --show-error \
+          # 1) A portal asset-réteg elérhető, és a kiszolgált kliens
+          #    routeMap mind a 49 regisztrált modult tartalmazza
+          #    (route/fixture/runtime konzisztencia a kiszolgált oldalon).
+          platform_css="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
-            http://127.0.0.1:8080/data/platform.json)"
-          python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d["modules"]) == 47; assert len(d["leads"]) >= 10; assert len(d["customers"]) >= 5; assert len(d["projects"]) >= 3; assert len(d["partners"]) >= 5; assert len(d["offers"]) >= 8; assert len(d["contracts"]) >= 4; assert len(d["financialItems"]) >= 20; assert len(d["careTickets"]) >= 6; assert d["meta"]["synthetic"] is True; assert d["meta"]["containsCustomerData"] is False' <<<"$platform_json"
-
-          system_json="$(curl --fail --silent --show-error \
-            --header "Host: localhost" \
-            http://127.0.0.1:8080/data/system.json)"
-          python3 -c 'import json,sys; d=json.load(sys.stdin); assert len(d["roles"]) >= 10; assert len(d["eventContracts"]) >= 12; assert len(d["houseBuild"]["sources"]) >= 3; assert d["meta"]["usesExternalApis"] is False; assert d["meta"]["containsProductionSecrets"] is False' <<<"$system_json"
+            http://127.0.0.1:8080/assets/platform.css)"
+          grep --quiet '.platform-shell' <<<"$platform_css"
 
           platform_js="$(curl --fail --silent --show-error \
             --header "Host: localhost" \
             http://127.0.0.1:8080/assets/platform.js)"
           grep --quiet 'history.pushState' <<<"$platform_js"
+          printf '%s' "$platform_js" > /tmp/platform-smoke.js
 
-          demo_state="$(curl --fail --silent --show-error \
-            --header "Host: localhost" \
-            http://127.0.0.1:8080/core/api/demo/state)"
-          python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["summary"]["registeredModules"] == 47; assert d["summary"]["testableModules"] == 47; assert d["meta"]["containsCustomerData"] is False' <<<"$demo_state"
+          python3 - <<'PY'
+          import json
+          import pathlib
 
-          journey_result="$(curl --fail --silent --show-error \
-            --header "Host: localhost" \
-            --header "Content-Type: application/json" \
-            --request POST \
-            --data '{"actor":"ci@demo.imperial.local"}' \
-            http://127.0.0.1:8080/core/api/demo/journeys/campaign-to-profit/run)"
-          python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["journey"]["status"] == "completed"; assert len(d["events"]) == 11; assert len({e["correlationId"] for e in d["events"]}) == 1' <<<"$journey_result"
+          portal = json.loads(
+              pathlib.Path("sites/_portal/data/platform.json").read_text(encoding="utf-8")
+          )
+          platform_js = pathlib.Path("/tmp/platform-smoke.js").read_text(encoding="utf-8")
+          missing = [
+              module["id"]
+              for module in portal["modules"]
+              if f'"/{module["id"]}"' not in platform_js
+          ]
+          if missing:
+              raise SystemExit(f"served client routeMap missing for: {missing}")
+          print(f"served routeMap completeness OK for {len(portal['modules'])} modules")
+          PY
+
+          # 2) Az alkalmazás nyilvános felülete: a nyitó- és login-oldal
+          #    HTML-t ad, az alkalmazás base assetjével (a modul-oldalak
+          #    auth mögött; elérésüket a pytest szvit bizonyítja).
+          for path in "/" "/login"; do
+            page="$(curl --fail --silent --show-error --location \
+              --header "Host: localhost" \
+              "http://127.0.0.1:8080${path}")"
+            grep --quiet '/static/style.css' <<<"$page"
+          done
 
           health_response="$(curl --fail --silent --show-error \
             http://127.0.0.1:8080/healthz)"

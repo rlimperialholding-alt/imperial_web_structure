@@ -13,3 +13,8 @@ services/platform-core/data/*
 services/platform-core/runtime/
 services/platform-core/integrations/contract_generator_v0_4/sample_output/
 **/.coverage*
+# Helyi Semgrep-bizonyítékok (a CI futásban keletkeznek, commitba nem tartoznak)
+semgrep.json
+semgrep-platform-core.json
+semgrep-npm.json
+semgrep-rest.json

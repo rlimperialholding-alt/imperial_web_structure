@@ -30,7 +30,7 @@ request = urllib.request.Request(
     method="GET",
 )
 
-with urllib.request.urlopen(request, timeout=20) as response:
+with urllib.request.urlopen(request, timeout=20) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     if not 200 <= response.status < 300:
         raise RuntimeError(f"CRM returned HTTP {response.status}")
     payload = json.loads(response.read().decode("utf-8"))

@@ -46,7 +46,9 @@
     "/finance-intelligence": "finance-intelligence",
     "/import-center": "import-center",
     "/tendermail": "tendermail",
-    "/b2b-project-intake": "b2b-project-intake"
+    "/b2b-project-intake": "b2b-project-intake",
+    "/house-designer": "house-designer",
+    "/market-creative-intelligence": "market-creative-intelligence"
   };
 
   const normalizedPath = location.pathname.replace(/\/+$/, "") || "/";
@@ -146,15 +148,17 @@
     "claim-registry": "CL",
     "answer-center": "AC",
     "lead-intelligence": "LI",
-    "digital-project-managers": "DP"
+    "digital-project-managers": "DP",
+    "house-designer": "HD",
+    "market-creative-intelligence": "MCI"
   };
 
   const moduleGroups = [
     { id: "overview", label: "Áttekintés", modules: ["workspace", "executive-dashboard", "control-center", "integration-control-room"] },
     { id: "commercial", label: "Ügyfél és értékesítés", modules: ["crm", "sales", "contract-generator", "booking-engine", "reservation-engine", "my-imperial"] },
-    { id: "house", label: "Típusház és műszaki", modules: ["house-catalog", "housebuild-agent", "housematch", "plotcheck", "buildconfig", "plancheck", "engineering-workspace", "housevision"] },
+    { id: "house", label: "Típusház és műszaki", modules: ["house-catalog", "housebuild-agent", "housematch", "plotcheck", "buildconfig", "plancheck", "engineering-workspace", "housevision", "house-designer"] },
     { id: "delivery", label: "Projekt és teljesítés", modules: ["project-control", "digital-project-managers", "pm-cockpit", "operations-workspace", "smart-calendar", "change-control", "document-center", "document-evidence", "import-center", "tendermail", "procurement", "partner-connect", "partner-control", "partner-field", "field-pwa", "financial-control", "finance-intelligence", "imperial-care"] },
-    { id: "marketing", label: "Marketing és web", modules: ["marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "answer-center", "lead-intelligence", "b2b-project-intake"] },
+    { id: "marketing", label: "Marketing és web", modules: ["marketing-control", "campaign-factory", "content-factory", "claim-registry", "website-content-control", "answer-center", "lead-intelligence", "b2b-project-intake", "market-creative-intelligence"] },
     { id: "governance", label: "Irányítás", modules: ["workflow-center", "completion-audit", "admin"] }
   ];
 
@@ -275,13 +279,18 @@
     ]
   };
 
+  const HTML_ESCAPES = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  };
+
+  // Egy menetben, karaktertérképből dolgozik: a láncolt replaceAll helyett
+  // nincs újra-escape ablak (Task60 hardening).
   function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+    return String(value ?? "").replace(/[&<>"']/g, (character) => HTML_ESCAPES[character]);
   }
 
   function formatMoney(value) {

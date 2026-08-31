@@ -385,6 +385,22 @@
       "shortLabel": "B2B Intake",
       "icon": "B2",
       "description": "B2B projektjelek forrás-, deduplikációs, műszaki és pénzügyi előszűrése."
+    },
+    {
+      "id": "house-designer",
+      "route": "/house-designer/",
+      "label": "House Designer",
+      "shortLabel": "Designer",
+      "icon": "HD",
+      "description": "Típusház-tervezői munkaasztal: geometria-, rajz- és kiadásvezérlés a jóváhagyott tervtől a gyártási csomagig."
+    },
+    {
+      "id": "market-creative-intelligence",
+      "route": "/market-creative-intelligence/",
+      "label": "Market & Creative Intelligence",
+      "shortLabel": "MCI",
+      "icon": "MCI",
+      "description": "Piaci és kreatív adatok összevont intelligencia-rétege a kampány- és tartalomgyártási döntésekhez."
     }
   ],
   "journey": {

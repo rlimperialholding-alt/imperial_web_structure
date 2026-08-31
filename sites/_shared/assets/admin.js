@@ -51,13 +51,18 @@ const elements = {
   toast: document.querySelector("#toast")
 };
 
+const HTML_ESCAPES = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#039;"
+};
+
+// Egy menetben, karaktertérképből dolgozik: a láncolt replaceAll helyett
+// nincs újra-escape ablak (Task60 hardening).
 function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPES[character]);
 }
 
 function loadReviews() {

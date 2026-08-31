@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -429,11 +429,11 @@ def add_source_asset(
             HouseVisionRightsPolicy.policy_id == job.rights_policy_id
         )
     )
-    count = len(
-        db.scalars(
-            select(HouseVisionSourceAsset).where(HouseVisionSourceAsset.job_id == job_id)
-        ).all()
-    )
+    count = db.scalar(
+        select(func.count())
+        .select_from(HouseVisionSourceAsset)
+        .where(HouseVisionSourceAsset.job_id == job_id)
+    ) or 0
     if not policy or count >= policy.max_assets_per_page:
         raise ValueError("A jogpolicy assetlimitje elérve vagy hiányzik.")
     row = HouseVisionSourceAsset(source_visual_id=_id("HVS"), job_id=job_id, **data.model_dump())
@@ -586,11 +586,11 @@ def lock_geometry(
         raise ValueError("GeometryLockhoz legalább egy elfogadott alaprajz szükséges.")
     if not any(a.asset_type == "EXTERIOR" for a in assets):
         raise ValueError("GeometryLockhoz legalább egy külső látvány szükséges.")
-    version = 1 + len(
-        db.scalars(
-            select(HouseVisionGeometryLock).where(HouseVisionGeometryLock.job_id == job_id)
-        ).all()
-    )
+    version = 1 + (db.scalar(
+        select(func.count())
+        .select_from(HouseVisionGeometryLock)
+        .where(HouseVisionGeometryLock.job_id == job_id)
+    ) or 0)
     data.floorplan_topology_sha256 = _sha256(data.floorplan_topology_sha256)
     payload = data.model_dump(mode="json") | {"job_id": job_id, "version": version}
     row = HouseVisionGeometryLock(
@@ -670,11 +670,11 @@ def auto_lock_geometry(db: Session, job_id: str, actor: str) -> HouseVisionGeome
         for item in assets
         if item.asset_type in {"EXTERIOR", "FLOORPLAN"}
     ]
-    version = 1 + len(
-        db.scalars(
-            select(HouseVisionGeometryLock).where(HouseVisionGeometryLock.job_id == job_id)
-        ).all()
-    )
+    version = 1 + (db.scalar(
+        select(func.count())
+        .select_from(HouseVisionGeometryLock)
+        .where(HouseVisionGeometryLock.job_id == job_id)
+    ) or 0)
     immutable_features = [
         "ismeretlen mezők kezelése: DO_NOT_INVENT",
         "az alaprajz helyiségkapcsolatai és külső kontúrja",
@@ -782,14 +782,14 @@ def add_output_asset(
     if not source:
         raise KeyError(data.source_visual_id)
     data.content_sha256 = _sha256(data.content_sha256)
-    revision = 1 + len(
-        db.scalars(
-            select(HouseVisionOutputAsset).where(
-                HouseVisionOutputAsset.job_id == job_id,
-                HouseVisionOutputAsset.source_visual_id == data.source_visual_id,
-            )
-        ).all()
-    )
+    revision = 1 + (db.scalar(
+        select(func.count())
+        .select_from(HouseVisionOutputAsset)
+        .where(
+            HouseVisionOutputAsset.job_id == job_id,
+            HouseVisionOutputAsset.source_visual_id == data.source_visual_id,
+        )
+    ) or 0)
     row = HouseVisionOutputAsset(
         output_visual_id=_id("HVO"), job_id=job_id, revision=revision, **data.model_dump()
     )
@@ -886,9 +886,11 @@ def run_qa(db: Session, job_id: str, actor: str) -> HouseVisionQAReport:
     }
     passed = all(gates.values())
     automatic_retry = not passed and job.retry_count < 3
-    revision = 1 + len(
-        db.scalars(select(HouseVisionQAReport).where(HouseVisionQAReport.job_id == job_id)).all()
-    )
+    revision = 1 + (db.scalar(
+        select(func.count())
+        .select_from(HouseVisionQAReport)
+        .where(HouseVisionQAReport.job_id == job_id)
+    ) or 0)
     row = HouseVisionQAReport(
         qa_report_id=_id("HVQ"),
         job_id=job_id,
@@ -950,9 +952,11 @@ def package_job(db: Session, job_id: str, storage_ref: str, actor: str) -> House
         latest.setdefault(output.source_visual_id, output)
     if len(sources) != len(latest):
         raise ValueError("Forrás–kimenet darabszám eltérés miatt nincs csomagolás.")
-    version = 1 + len(
-        db.scalars(select(HouseVisionPackage).where(HouseVisionPackage.job_id == job_id)).all()
-    )
+    version = 1 + (db.scalar(
+        select(func.count())
+        .select_from(HouseVisionPackage)
+        .where(HouseVisionPackage.job_id == job_id)
+    ) or 0)
     manifest = {
         "job_id": job_id,
         "version": version,

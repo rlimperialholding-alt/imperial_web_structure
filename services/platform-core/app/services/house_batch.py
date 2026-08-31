@@ -11,7 +11,7 @@ from app.services.house_geometry import (
     RULESET_VERSION,
     HouseGeometryError,
     canonical_json,
-    generate_houseplan,
+    generate_houseplan_from_normalized,
     input_hash,
     normalize_input,
 )
@@ -160,7 +160,7 @@ def dry_run_batch(
                     }
                 )
                 continue
-            generated = generate_houseplan(row, source)
+            generated = generate_houseplan_from_normalized(normalized, source)
             seen[generated["inputHash"]] = row_number
             item = {
                 "rowNumber": row_number,

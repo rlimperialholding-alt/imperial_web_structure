@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -174,7 +174,11 @@ def select_offer(db: Session, data: ProcurementSelectionIn, actor: str) -> Procu
         raise KeyError(data.requirement_id if not requirement else data.offer_id)
     if not offer.technical_compliant:
         raise ValueError("Műszakilag nem megfelelő ajánlat nem választható.")
-    offer_count = len(db.scalars(select(ProcurementOffer).where(ProcurementOffer.requirement_id == data.requirement_id)).all())
+    offer_count = db.scalar(
+        select(func.count())
+        .select_from(ProcurementOffer)
+        .where(ProcurementOffer.requirement_id == data.requirement_id)
+    ) or 0
     if offer_count < 2 and not data.market_evidence_ref:
         raise ValueError("Legalább két összehasonlítható ajánlat vagy dokumentált piaci bizonyíték szükséges.")
     savings = ((requirement.target_huf - offer.total_landed_cost_huf) / requirement.target_huf * Decimal("100")).quantize(Decimal("0.0001"))
