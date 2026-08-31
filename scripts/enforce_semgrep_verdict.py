@@ -10,6 +10,8 @@ találattal vagy technikai hibával tért vissza, a saját exit kódját
 
 - bármely rész JSON hiányzik, nem parse-olható, vagy nem tartalmaz
   ``results`` listát (hiányos bizonyíték) → FAIL;
+- bármely rész ``errors`` mezője hiányzik, nem lista típusú, vagy nem üres
+  (belső Semgrep hiba) → FAIL;
 - bármely rögzített scan exit kód nem 0 (blokkoló találat vagy technikai
   hiba) → FAIL;
 - bármely rész CRITICAL/HIGH/ERROR severity találatot tartalmaz → FAIL;
@@ -58,6 +60,15 @@ def main() -> int:
                 if not isinstance(results, list):
                     failures.append(f"incomplete scan evidence: {part} (missing results list)")
                     results = []
+                if "errors" not in data:
+                    failures.append(f"incomplete scan evidence: {part} (missing errors list)")
+                elif not isinstance(data["errors"], list):
+                    failures.append(f"invalid scan evidence: {part} (errors is not a list)")
+                elif data["errors"]:
+                    failures.append(
+                        f"scan evidence {part} contains internal errors "
+                        f"({len(data['errors'])} error(s))"
+                    )
                 for index, finding in enumerate(results):
                     if isinstance(finding, dict) and _severity(finding) in BLOCKING_SEVERITIES:
                         blocking.append(

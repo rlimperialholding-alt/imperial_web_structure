@@ -33,7 +33,10 @@ Ez a teszt a kivételek hangosság-feltételeit zárolja:
   őrzik meg (``<rész>.exit``, ``exit "$status"``) — nincs continue-on-error,
   a job-összegzés nem zöldül;
 - az összesített enforcement kapu hiányos/hibás bizonyíték, nem nulla scan
-  exit vagy CRITICAL/HIGH/ERROR találat esetén fail-closed.
+  exit vagy CRITICAL/HIGH/ERROR találat esetén fail-closed;
+- az összesített enforcement kapu bármely részscan hiányzó, nem lista
+  típusú vagy nem üres ``errors`` mezője esetén fail-closed (a belső
+  Semgrep hibákat az exit 0 sem zöldítheti).
 
 Ha bármely feltétel megszűnik, a kivételt vissza kell vonni.
 """
@@ -43,6 +46,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 REPO = Path(__file__).resolve().parents[3]
 SEMGREP_WORKFLOW = REPO / ".github" / "workflows" / "imperial-adas-semgrep.yml"
@@ -280,11 +284,18 @@ def _enforcement_module():
     return module
 
 
-def _write_scan_part(tmp_path, part: str, results: list[dict], exit_code: str = "0") -> None:
-    (tmp_path / part).write_text(
-        json.dumps({"version": "1.172.0", "results": results, "errors": []}),
-        encoding="utf-8",
-    )
+def _write_scan_part(
+    tmp_path,
+    part: str,
+    results: list[dict],
+    exit_code: str = "0",
+    errors: Any | None = None,
+    include_errors: bool = True,
+) -> None:
+    payload: dict[str, Any] = {"version": "1.172.0", "results": results}
+    if include_errors:
+        payload["errors"] = [] if errors is None else errors
+    (tmp_path / part).write_text(json.dumps(payload), encoding="utf-8")
     (tmp_path / part.replace(".json", ".exit")).write_text(exit_code, encoding="utf-8")
 
 
@@ -342,3 +353,71 @@ def test_enforcement_fails_when_merge_did_not_produce_evidence(tmp_path, monkeyp
     _write_scan_part(tmp_path, "semgrep-rest.json", [])
     monkeypatch.chdir(tmp_path)
     assert module.main() == 1
+
+
+def test_enforcement_fails_on_unparsable_scan_evidence(tmp_path, monkeypatch) -> None:
+    module = _enforcement_module()
+    (tmp_path / "semgrep-platform-core.json").write_text("{not json", encoding="utf-8")
+    (tmp_path / "semgrep-platform-core.exit").write_text("0", encoding="utf-8")
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    _write_scan_part(tmp_path, "semgrep-rest.json", [])
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 1
+
+
+def test_enforcement_passes_on_empty_errors_field(tmp_path, monkeypatch) -> None:
+    module = _enforcement_module()
+    _write_scan_part(tmp_path, "semgrep-platform-core.json", [], errors=[])
+    _write_scan_part(tmp_path, "semgrep-npm.json", [], errors=[])
+    _write_scan_part(tmp_path, "semgrep-rest.json", [], errors=[])
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 0
+
+
+def test_enforcement_fails_on_nonempty_errors_with_exit_zero(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    module = _enforcement_module()
+    _write_scan_part(
+        tmp_path,
+        "semgrep-platform-core.json",
+        [],
+        errors=[{"code": 3, "type": "UnknownLanguageError", "message": "n/a"}],
+    )
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    _write_scan_part(tmp_path, "semgrep-rest.json", [])
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 1
+    stderr = capsys.readouterr().err
+    assert "semgrep-platform-core.json" in stderr
+    assert "internal errors" in stderr
+    assert "UnknownLanguageError" not in stderr  # secretmentes diagnosztika
+
+
+def test_enforcement_fails_on_missing_errors_field(tmp_path, monkeypatch, capsys) -> None:
+    module = _enforcement_module()
+    _write_scan_part(tmp_path, "semgrep-platform-core.json", [], include_errors=False)
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    _write_scan_part(tmp_path, "semgrep-rest.json", [])
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 1
+    stderr = capsys.readouterr().err
+    assert "semgrep-platform-core.json" in stderr
+    assert "missing errors list" in stderr
+
+
+def test_enforcement_fails_on_non_list_errors_field(tmp_path, monkeypatch, capsys) -> None:
+    module = _enforcement_module()
+    _write_scan_part(tmp_path, "semgrep-platform-core.json", [], errors="boom")
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    _write_scan_part(tmp_path, "semgrep-rest.json", [])
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 1
+    stderr = capsys.readouterr().err
+    assert "semgrep-platform-core.json" in stderr
+    assert "errors is not a list" in stderr
