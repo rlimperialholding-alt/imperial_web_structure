@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, time
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
@@ -290,8 +290,7 @@ def _assert_external_transport_window_open() -> None:
         end = time.fromisoformat(config.outreach_send_end_local)
     except (ValueError, ZoneInfoNotFoundError) as exc:
         raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
-    # Equal endpoints are the explicit all-day sentinel. Keep rejecting an
-    # inverted partial-day window so a typo cannot silently widen transport.
+    # Equal endpoints are the explicit all-day sentinel.
     if start == end:
         return
     if start > end:
@@ -572,103 +571,6 @@ class EmailReceipt:
     detail: dict[str, Any]
 
 
-@dataclass(frozen=True)
-class GmailRolling24hUsage:
-    provider_ids: frozenset[str]
-    limit: int
-    cutoff: datetime
-    observed_at: datetime
-    pages: int
-
-    @property
-    def sent_messages(self) -> int:
-        return len(self.provider_ids)
-
-    @property
-    def headroom(self) -> int:
-        return max(0, self.limit - self.sent_messages)
-
-    @property
-    def snapshot_sha256(self) -> str:
-        return hashlib.sha256("\n".join(sorted(self.provider_ids)).encode()).hexdigest()
-
-
-def _gmail_sent_rolling_24h_usage(
-    *,
-    access_token: str,
-    now: datetime | None = None,
-) -> GmailRolling24hUsage:
-    """Count all mailbox SENT messages in the preceding rolling 24 hours."""
-
-    current = now or datetime.now(UTC)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=UTC)
-    current = current.astimezone(UTC)
-    cutoff = current - timedelta(hours=24)
-    config = growth_settings()
-    limit = int(getattr(config, "outreach_account_rolling_24h_max", 2000))
-    if not 1 <= limit <= 2000:
-        raise GrowthRegistryError("outreach_account_rolling_24h_max_invalid_no_send")
-
-    authorization = {"Authorization": f"Bearer {access_token}"}
-    seen_ids: set[str] = set()
-    seen_page_tokens: set[str] = set()
-    page_token: str | None = None
-    pages = 0
-    while True:
-        params = {
-            "labelIds": "SENT",
-            # Whole-second epoch boundaries make the scan stable across pages.
-            # Including the snapshot second is conservative for concurrent UI
-            # sends while excluding all later seconds.
-            "q": (
-                # Gmail's second-granularity search boundary is widened by
-                # one second so a message exactly on the rolling cutoff can
-                # never be missed.  The slight overcount is fail-safe.
-                f"after:{int(cutoff.timestamp()) - 1} "
-                f"before:{int(current.timestamp()) + 1}"
-            ),
-            "maxResults": "500",
-        }
-        if page_token:
-            params["pageToken"] = page_token
-        url = (
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages?"
-            + urllib.parse.urlencode(params)
-        )
-        with urllib.request.urlopen(
-            urllib.request.Request(url, headers=authorization),
-            timeout=30,
-        ) as response:
-            payload = json.loads(response.read(2_000_000))
-        if not isinstance(payload, dict):
-            raise _GmailReadbackError("gmail_rolling_24h_list_result_invalid")
-        messages = payload.get("messages", [])
-        if not isinstance(messages, list):
-            raise _GmailReadbackError("gmail_rolling_24h_list_result_invalid")
-        for candidate in messages:
-            if not isinstance(candidate, dict) or not str(candidate.get("id") or ""):
-                raise _GmailReadbackError("gmail_rolling_24h_message_id_missing")
-            seen_ids.add(str(candidate["id"]))
-        pages += 1
-        if pages > 100:
-            raise _GmailReadbackError("gmail_rolling_24h_pagination_limit_exceeded")
-        next_page_token = str(payload.get("nextPageToken") or "")
-        if not next_page_token:
-            break
-        if next_page_token in seen_page_tokens:
-            raise _GmailReadbackError("gmail_rolling_24h_pagination_cycle")
-        seen_page_tokens.add(next_page_token)
-        page_token = next_page_token
-    return GmailRolling24hUsage(
-        provider_ids=frozenset(seen_ids),
-        limit=limit,
-        cutoff=cutoff,
-        observed_at=current,
-        pages=pages,
-    )
-
-
 def _validated_one_click_unsubscribe_url(value: str | None) -> str:
     candidate = str(value or "")
     parsed = urllib.parse.urlsplit(candidate)
@@ -813,7 +715,7 @@ class SMTPEmailAdapter:
         delivery_scope: str,
         reconcile_only: bool = False,
         pre_send_guard: Callable[[], None] | None = None,
-        account_quota_guard: Callable[[GmailRolling24hUsage], None] | None = None,
+        account_quota_guard: Callable[[], None] | None = None,
     ) -> EmailReceipt:
         token_body = urllib.parse.urlencode(
             {
@@ -1078,53 +980,9 @@ class SMTPEmailAdapter:
         # operation before the Gmail transport POST.
         if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
             _assert_external_transport_window_open()
-        try:
-            quota_usage = _gmail_sent_rolling_24h_usage(access_token=access_token)
-        except urllib.error.HTTPError as exc:
-            metadata = _gmail_http_error_metadata(exc)
-            raise EmailDeliveryError(
-                "gmail_account_quota_verification_failed_no_send",
-                retry_safe=exc.code >= 500 or bool(metadata["rate_limited"]),
-                authentication_failure=bool(metadata["authentication_failure"]),
-                rate_limited=bool(metadata["rate_limited"]),
-                retry_after_seconds=metadata["retry_after_seconds"],
-                provider_reason=metadata["provider_reason"],
-                http_status=exc.code,
-                detail={
-                    **metadata,
-                    "reason": f"gmail_rolling_24h_list_http_{exc.code}",
-                },
-            ) from exc
-        except (
-            OSError,
-            urllib.error.URLError,
-            http.client.HTTPException,
-            json.JSONDecodeError,
-            UnicodeDecodeError,
-            _GmailReadbackError,
-        ) as exc:
-            raise EmailDeliveryError(
-                "gmail_account_quota_verification_failed_no_send",
-                retry_safe=True,
-                detail={"reason": str(exc)},
-            ) from exc
-        if quota_usage.headroom <= 0:
-            raise EmailDeliveryError(
-                "gmail_account_rolling_24h_limit_reached_no_send",
-                retry_safe=True,
-                rate_limited=True,
-                retry_after_seconds=900,
-                detail={
-                    "sent_messages": quota_usage.sent_messages,
-                    "limit": quota_usage.limit,
-                    "cutoff": quota_usage.cutoff.isoformat(),
-                    "pages": quota_usage.pages,
-                    "retry_after_seconds": 900,
-                },
-            )
         if account_quota_guard is None:
             raise GrowthRegistryError("external_customer_account_quota_guard_required_no_send")
-        account_quota_guard(quota_usage)
+        account_quota_guard()
         if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
             _assert_external_transport_window_open()
         try:
@@ -1267,13 +1125,6 @@ class SMTPEmailAdapter:
                 "outbound_rfc_message_id": message_id,
                 "oauth_profile_email": profile_email,
                 "recovered_existing_sent": False,
-                "account_rolling_24h": {
-                    "sent_messages_before_send": quota_usage.sent_messages,
-                    "limit": quota_usage.limit,
-                    "headroom_before_send": quota_usage.headroom,
-                    "cutoff": quota_usage.cutoff.isoformat(),
-                    "pages": quota_usage.pages,
-                },
             },
         )
 
@@ -1290,7 +1141,7 @@ class SMTPEmailAdapter:
         reply_to: str | None = None,
         attachments: list[tuple[str, bytes, str]] | None = None,
         pre_send_guard: Callable[[], None] | None = None,
-        account_quota_guard: Callable[[GmailRolling24hUsage], None] | None = None,
+        account_quota_guard: Callable[[], None] | None = None,
         unsubscribe_url: str | None = None,
     ) -> EmailReceipt:
         if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:

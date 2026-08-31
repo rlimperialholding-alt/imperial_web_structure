@@ -159,7 +159,7 @@ def _settings() -> SimpleNamespace:
         timezone="Europe/Budapest",
         outreach_send_start_local="08:00",
         outreach_send_end_local="18:00",
-        outreach_account_rolling_24h_max=2000,
+        outreach_budapest_day_max=2000,
         outreach_send_concurrency=1,
         outreach_reputation_bootstrap_messages_per_window=100,
         outreach_reputation_max_growth_factor=1.25,
@@ -363,6 +363,7 @@ def _install_guard_and_transport(monkeypatch, events: list[str]):
                     "readback_verified": True,
                     "readback_mime_sha256": "d" * 64,
                     "rfc_message_id": f"<{to_email}>",
+                    "provider_internal_date": datetime.now(UTC).isoformat(),
                 },
             )
 
@@ -784,6 +785,7 @@ def test_unproven_nonofficial_final_guard_blocks_promotion_race(
                     "readback_verified": True,
                     "readback_mime_sha256": "d" * 64,
                     "rfc_message_id": "<promotion-race@example.test>",
+                    "provider_internal_date": datetime.now(UTC).isoformat(),
                 },
             )
 

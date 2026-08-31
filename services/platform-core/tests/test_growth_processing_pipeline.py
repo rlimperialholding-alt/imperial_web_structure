@@ -19,6 +19,7 @@ from app.growth_ops.models import (
     SourceCoverageAttempt,
     SourceCoverageRoute,
 )
+from app.models import AuditLog
 
 
 def _route() -> SourceCoverageRoute:
@@ -741,6 +742,54 @@ def test_publication_digest_includes_hash_bound_blocked_forum_draft(db, monkeypa
     assert answer.answer_sha256 in captured["body_text"]
     assert answer.answer_text in captured["body_text"]
     assert captured["delivery_scope"] == "internal"
+
+
+def test_internal_digest_uses_no_arg_guard_without_first_contact_quota(
+    db,
+    monkeypatch,
+):
+    from app.growth_ops import service as growth_service
+
+    guard_calls = []
+
+    class GuardCallingMailer:
+        def __init__(self, _binding):
+            pass
+
+        def send(self, **kwargs):
+            kwargs["pre_send_guard"]()
+            guard_calls.append("transport")
+            kwargs["account_quota_guard"]()
+            guard_calls.append("quota")
+            return SimpleNamespace(
+                provider_message_id="MSG-DIGEST-NO-FIRST-CONTACT-QUOTA",
+                detail={"readback_verified": True},
+            )
+
+    monkeypatch.setattr(
+        processing,
+        "settings",
+        lambda: _settings(canonical_publication_digest_at="00:00"),
+    )
+    monkeypatch.setattr(processing, "_smtp_binding", lambda: SimpleNamespace())
+    monkeypatch.setattr(processing, "SMTPEmailAdapter", GuardCallingMailer)
+    monkeypatch.setattr(growth_service, "_lock_outreach_transport_account", lambda _db: None)
+    monkeypatch.setattr(growth_service, "_assert_gmail_account_pacing_due", lambda _db: None)
+    current = datetime.now(UTC)
+
+    result = processing.send_publication_digest(db, now=current)
+
+    audit_row = db.scalar(
+        select(AuditLog)
+        .where(AuditLog.action == "gmail_account_send_verified")
+        .order_by(AuditLog.id.desc())
+    )
+    assert result["status"] == "sent"
+    assert guard_calls == ["transport", "quota"]
+    assert audit_row is not None
+    attestation = json.loads(audit_row.after_json)["account_quota_attestation"]
+    assert attestation["scope"] == "internal"
+    assert attestation["first_contact_budapest_day_quota"] == "not_applicable"
 
 
 def test_publication_digest_contains_every_quarantined_forum_draft(db, monkeypatch):

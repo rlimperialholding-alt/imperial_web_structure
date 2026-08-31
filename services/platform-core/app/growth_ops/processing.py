@@ -3023,15 +3023,32 @@ def send_publication_digest(
         ):
             raise GrowthRegistryError("canonical_email_delivery_reservation_invalid_no_send")
 
-    def immediate_account_quota_guard(usage: Any) -> None:
-        from .service import _assert_gmail_account_quota_reserved
-
+    def immediate_account_quota_guard() -> None:
+        current_delivery = db.scalar(
+            select(CanonicalEmailDelivery)
+            .where(CanonicalEmailDelivery.identity_sha256 == delivery_identity)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        current_now = datetime.now(UTC)
+        lease_expires_at = current_delivery.lease_expires_at if current_delivery else None
+        if lease_expires_at and lease_expires_at.tzinfo is None:
+            lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
+        if (
+            current_delivery is None
+            or current_delivery.status != "sending"
+            or not claimed_lease_token
+            or current_delivery.lease_token != claimed_lease_token
+            or lease_expires_at is None
+            or lease_expires_at <= current_now
+        ):
+            raise GrowthRegistryError("canonical_email_delivery_reservation_invalid_no_send")
         quota_attestation.update(
-            _assert_gmail_account_quota_reserved(
-                db,
-                current_reservation_key=f"canonical:{delivery_identity}",
-                usage=usage,
-            )
+            {
+                "scope": "internal",
+                "first_contact_budapest_day_quota": "not_applicable",
+                "reservation_verified_at": current_now.isoformat(),
+            }
         )
 
     try:

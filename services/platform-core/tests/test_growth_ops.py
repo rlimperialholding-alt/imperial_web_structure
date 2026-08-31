@@ -141,7 +141,7 @@ def growth_runtime(monkeypatch, db):
             canonical_daily_at="05:30",
             outreach_send_start_local="00:00",
             outreach_send_end_local="00:00",
-            outreach_account_rolling_24h_max=2000,
+            outreach_budapest_day_max=2000,
             outreach_send_concurrency=1,
             outreach_reputation_bootstrap_messages_per_window=100,
             outreach_reputation_max_growth_factor=1.25,
@@ -520,7 +520,7 @@ def test_platform_health_readiness_skips_external_provider_preflight(
         ("canonical_daily_at", "08:00"),
         ("outreach_send_start_local", "07:00"),
         ("outreach_send_end_local", "19:00"),
-        ("outreach_account_rolling_24h_max", 1999),
+        ("outreach_budapest_day_max", 1999),
         ("outreach_send_concurrency", 2),
         ("outreach_reputation_bootstrap_messages_per_window", 101),
         ("outreach_reputation_max_growth_factor", 1.20),
@@ -694,7 +694,7 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
         "GROWTH_OPS_TIMEZONE": "Europe/Budapest",
         "GROWTH_OPS_OUTREACH_SEND_START_LOCAL": "00:00",
         "GROWTH_OPS_OUTREACH_SEND_END_LOCAL": "00:00",
-        "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX": "2000",
+        "GROWTH_OPS_OUTREACH_BUDAPEST_DAY_MAX": "2000",
         "GROWTH_OPS_OUTREACH_SEND_CONCURRENCY": "1",
         "GROWTH_OPS_OUTREACH_REPUTATION_BOOTSTRAP_MESSAGES_PER_WINDOW": "100",
         "GROWTH_OPS_OUTREACH_REPUTATION_MAX_GROWTH_FACTOR": "1.25",
@@ -712,6 +712,7 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
         "GROWTH_OPS_OUTREACH_MAX_PER_HOUR",
         "GROWTH_OPS_OUTREACH_MAX_PER_DAY",
         "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
+        "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX",
     ):
         assert legacy_key not in text
         assert legacy_key not in root_text
@@ -1486,7 +1487,7 @@ def test_more_than_fifty_unique_public_land_contacts_all_queue_before_dispatch(
     assert all("brand_daily_rate_limit" not in receipt.reasons for receipt in receipts)
     assert len(db.scalars(select(OutreachMessage)).all()) == 51
     # The legacy registry value is intentionally not a queue reservation. The
-    # account-wide rolling Gmail quota and persisted pacing are transport gates.
+    # The Budapest-day first-contact quota and persisted pacing are transport gates.
     assert service._rate_errors(
         db,
         queue_limited_brand_binding("imperial"),
