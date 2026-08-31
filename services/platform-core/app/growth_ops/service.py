@@ -68,6 +68,9 @@ LAND_RENDER_RECIPIENT_NAME_BY_ROLE = {
     "property_owner": "Hirdető",
 }
 LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION = "LAND-PUBLIC-ROLE-NAME-FALLBACK-V2"
+PUBLIC_LAND_TRANSIENT_QUEUE_REASONS = frozenset(
+    {"brand_daily_rate_limit", "growth_writes_locked"}
+)
 
 OUTREACH_CAPACITY_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_252
 _PROCESS_EMERGENCY_SEND_STOP = Event()
@@ -1177,21 +1180,29 @@ def _recipient_suppressed(db: Session, email: str) -> bool:
     )
 
 
-def _rate_errors(db: Session, binding: BrandBinding, recipient: str) -> list[str]:
+def _rate_errors(
+    db: Session,
+    binding: BrandBinding,
+    recipient: str,
+    *,
+    enforce_daily_queue_limit: bool = True,
+) -> list[str]:
     now = utcnow()
-    today = datetime(now.year, now.month, now.day, tzinfo=UTC)
-    daily = (
-        db.scalar(
-            select(func.count())
-            .select_from(OutreachMessage)
-            .where(
-                OutreachMessage.brand_id == binding.brand_id,
-                OutreachMessage.created_at >= today,
-                OutreachMessage.status.not_in(("blocked", "suppressed")),
+    daily = 0
+    if enforce_daily_queue_limit:
+        today = datetime(now.year, now.month, now.day, tzinfo=UTC)
+        daily = (
+            db.scalar(
+                select(func.count())
+                .select_from(OutreachMessage)
+                .where(
+                    OutreachMessage.brand_id == binding.brand_id,
+                    OutreachMessage.created_at >= today,
+                    OutreachMessage.status.not_in(("blocked", "suppressed")),
+                )
             )
+            or 0
         )
-        or 0
-    )
     recent_recipient = db.scalar(
         select(OutreachMessage.id)
         .where(
@@ -1204,7 +1215,9 @@ def _rate_errors(db: Session, binding: BrandBinding, recipient: str) -> list[str
         .limit(1)
     )
     errors: list[str] = []
-    if daily >= int(binding.config.get("max_daily_messages", 100)):
+    if enforce_daily_queue_limit and daily >= int(
+        binding.config.get("max_daily_messages", 100)
+    ):
         errors.append("brand_daily_rate_limit")
     if recent_recipient:
         errors.append("recipient_brand_cooldown")
@@ -1228,7 +1241,16 @@ def _queue_message(
     if _recipient_suppressed(db, signal.recipient_email or ""):
         raise GrowthRegistryError("Recipient is suppressed")
     if enforce_recipient_cooldown:
-        errors = _rate_errors(db, binding, signal.recipient_email or "")
+        # Public-listing discovery may fill tomorrow's queue. Actual transport
+        # remains bounded by the independent 5/hour and 50/day reservations at
+        # claim and immediately before provider transport. Recipient cooldown
+        # is still checked here for every queued row.
+        errors = _rate_errors(
+            db,
+            binding,
+            signal.recipient_email or "",
+            enforce_daily_queue_limit=not _public_land_signal(signal),
+        )
         if errors:
             raise GrowthRegistryError(";".join(errors))
     token = token_urlsafe(32)
@@ -1620,6 +1642,207 @@ def _persisted_source_evidence(db: Session, signal_id: str) -> list[dict[str, An
             .order_by(GrowthSignalSourceEvidence.field_name)
         )
     ]
+
+
+def _persisted_public_land_signal_input(
+    signal: GrowthSignal,
+    source_evidence: list[dict[str, Any]],
+) -> GrowthSignalIn:
+    payload = _public_land_name_fallback_signal_input(signal).model_dump()
+    payload["recipient_name"] = next(
+        (
+            str(item["observed_value"])
+            for item in source_evidence
+            if item["field_name"] == "recipient_name"
+        ),
+        None,
+    )
+    return GrowthSignalIn.model_validate(payload)
+
+
+def automatic_public_land_transient_block_promotion(
+    db: Session,
+    *,
+    max_rows: int = 500,
+) -> dict[str, Any]:
+    """Re-queue only old public listings blocked by a transient queue condition."""
+
+    if not settings().enabled:
+        return {"status": "disabled", "selected_count": 0, "queued": 0}
+    if not writes_unlocked():
+        return {"status": "writes_locked", "selected_count": 0, "queued": 0}
+    if max_rows < 1 or max_rows > 500:
+        raise GrowthRegistryError("public_land_transient_promotion_limit_invalid")
+
+    transient_reason_json = tuple(
+        canonical_json([reason]) for reason in sorted(PUBLIC_LAND_TRANSIENT_QUEUE_REASONS)
+    )
+    filters = (
+        GrowthSignal.status == "blocked",
+        GrowthSignal.rejection_reasons_json.in_(transient_reason_json),
+        GrowthSignal.signal_type == "residential_building_plot",
+        GrowthSignal.contact_basis == "public_property_listing",
+        GrowthSignal.recipient_role.in_(tuple(LAND_RECIPIENT_TYPES_BY_ROLE)),
+        GrowthSignal.recipient_email.is_not(None),
+        GrowthSignal.recipient_email_type.in_(("role", "named", "unknown")),
+        GrowthSignal.public_contact_url.is_not(None),
+        GrowthSignal.public_contact_url == GrowthSignal.evidence_url,
+        GrowthSignal.signal_id.not_in(
+            select(OutreachMessage.signal_id).where(OutreachMessage.sequence_step == 0)
+        ),
+    )
+    rows = [
+        row
+        for row in db.scalars(
+            select(GrowthSignal)
+            .where(*filters)
+            .order_by(GrowthSignal.id)
+            .limit(max_rows)
+            .with_for_update()
+        )
+        if _control_enabled(db, row.motor_key)
+    ]
+    if not rows:
+        return {
+            "status": "applied",
+            "selected_count": 0,
+            "queued": 0,
+            "blocked": 0,
+            "suppressed": 0,
+            "idempotent": True,
+        }
+
+    registry = GrowthRegistry.load()
+    canonical_registry = CanonicalFirstContactRegistry.load()
+    outcomes: list[dict[str, Any]] = []
+    for row in rows:
+        before = {
+            "status": row.status,
+            "reasons": json.loads(row.rejection_reasons_json or "[]"),
+        }
+        outreach: OutreachMessage | None = None
+        evidence_manifest_sha256: str | None = None
+        try:
+            source_evidence = _persisted_source_evidence(db, row.signal_id)
+            data = _persisted_public_land_signal_input(row, source_evidence)
+            hard_gate_reason = _incoming_hard_gate_reason(data, canonical_registry)
+            if hard_gate_reason:
+                raise GrowthRegistryError(hard_gate_reason)
+            validated_evidence = _validated_source_evidence(data, source_evidence)
+            required_template_evidence = (
+                {"location", "plot_size_sqm"}
+                if row.recipient_role == "property_owner"
+                else set()
+            )
+            if data.recipient_name:
+                required_template_evidence.add("recipient_name")
+            evidenced_fields = {str(item["field_name"]) for item in validated_evidence}
+            missing_template_fields = sorted(
+                field_name
+                for field_name in required_template_evidence
+                if field_name not in evidenced_fields
+                or not str(getattr(data, field_name, None) or "").strip()
+            )
+            if missing_template_fields:
+                raise GrowthRegistryError(
+                    "template-variable-missing:" + ",".join(missing_template_fields)
+                )
+            registry.validate_signal_source(
+                source_id=data.source_id,
+                motor_key=data.motor_key,
+                source_bucket=data.source_bucket,
+                recipient_type=data.recipient_type,
+                recipient_email=data.recipient_email,
+                recipient_email_type=data.recipient_email_type,
+                contact_basis=data.contact_basis,
+                recipient_name=data.recipient_name,
+                company_name=data.company_name,
+                recipient_organization_name=data.recipient_organization_name,
+                evidence_url=data.evidence_url,
+                public_contact_url=data.public_contact_url,
+                source_payload_hash=data.source_payload_hash,
+                detected_at=data.detected_at,
+            )
+            if registry.brand_for(data.signal_type, data.brand_id) != row.brand_id:
+                raise GrowthRegistryError("public_land_transient_promotion_brand_mismatch")
+            binding = registry.brand_binding(row.brand_id)
+            _verified_sender(db, binding)
+            evidence_manifest_sha256 = _source_evidence_manifest_sha256(validated_evidence)
+            outreach = _queue_message(
+                db,
+                row,
+                binding,
+                step=0,
+                available_at=utcnow(),
+                enforce_recipient_cooldown=True,
+                data=data,
+                source_evidence_manifest_sha256=evidence_manifest_sha256,
+            )
+            # SessionLocal disables autoflush. Make this row visible to the
+            # next recipient-cooldown query in the same promotion batch.
+            db.flush()
+            row.status = "queued"
+            row.rejection_reasons_json = "[]"
+            outcome = "queued"
+            error = None
+        except (GrowthRegistryError, ValueError) as exc:
+            error = str(exc)
+            render_missing_prefix = "Canonical render field is missing: "
+            if error.startswith(render_missing_prefix):
+                error = "template-variable-missing:" + error.removeprefix(
+                    render_missing_prefix
+                )
+            row.status = "suppressed" if "suppressed" in error else "blocked"
+            row.rejection_reasons_json = canonical_json([error])
+            outcome = row.status
+        outcome_item = {
+            "signal_id": row.signal_id,
+            "outreach_id": outreach.outreach_id if outreach else None,
+            "status": outcome,
+            "error": error,
+        }
+        outcomes.append(outcome_item)
+        audit(
+            db,
+            actor="growth-worker",
+            action="growth_public_land_transient_block_signal_promoted",
+            entity_type="growth_signal",
+            entity_id=row.signal_id,
+            before=before,
+            after={
+                **outcome_item,
+                "eligible_transient_reasons": sorted(PUBLIC_LAND_TRANSIENT_QUEUE_REASONS),
+                "persisted_source_evidence_manifest_sha256": evidence_manifest_sha256,
+                "suppression_rechecked": True,
+                "recipient_cooldown_rechecked": True,
+                "hard_gates_rechecked": True,
+                "canonical_template_and_release_recreated": outreach is not None,
+            },
+        )
+    summary = {
+        "status": "applied",
+        "selected_count": len(rows),
+        "queued": sum(item["status"] == "queued" for item in outcomes),
+        "blocked": sum(item["status"] == "blocked" for item in outcomes),
+        "suppressed": sum(item["status"] == "suppressed" for item in outcomes),
+        "idempotent": False,
+        "outcomes": outcomes,
+    }
+    audit(
+        db,
+        actor="growth-worker",
+        action="growth_public_land_transient_block_promotion_applied",
+        entity_type="growth_public_land_transient_block_promotion",
+        entity_id=f"{utcnow().date().isoformat()}:{sha(summary)[:32]}",
+        before={"selected_count": len(rows), "queued": 0},
+        after=summary,
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise GrowthRegistryError("public_land_transient_promotion_concurrent_conflict") from exc
+    return summary
 
 
 def promote_public_land_name_fallback_signals(
@@ -4055,6 +4278,15 @@ def run_once(
     from .wide_service import run_due as run_due_wide
 
     try:
+        transient_block_promotion = automatic_public_land_transient_block_promotion(db)
+    except (GrowthRegistryError, ValueError) as exc:
+        db.rollback()
+        transient_block_promotion = {
+            "status": "blocked",
+            "queued": 0,
+            "reason": str(exc),
+        }
+    try:
         name_fallback_promotion = automatic_public_land_name_fallback_promotion(db)
     except (GrowthRegistryError, ValueError) as exc:
         db.rollback()
@@ -4096,6 +4328,7 @@ def run_once(
             "land_takedown": land_takedown,
             "land_readiness": land_readiness_detail,
             "publication_digest": publication_digest,
+            "public_land_transient_block_promotion": transient_block_promotion,
             "public_land_name_fallback_promotion": name_fallback_promotion,
             "followups": 0,
             "sent": 0,
@@ -4105,7 +4338,10 @@ def run_once(
     followups = schedule_followups(db) if writes_unlocked() else 0
     sent = early_sent + (dispatch_batch(db) if writes_unlocked() else 0)
     content_ok = content_factory.get("status") == "complete"
-    promotion_ok = name_fallback_promotion.get("status") != "blocked"
+    promotion_ok = all(
+        result.get("status") != "blocked"
+        for result in (transient_block_promotion, name_fallback_promotion)
+    )
     result = {
         "status": "healthy" if content_ok and land_ready and promotion_ok else "degraded",
         "runs": len(runs),
@@ -4119,6 +4355,7 @@ def run_once(
         "land_takedown": land_takedown,
         "land_readiness": land_readiness_detail,
         "publication_digest": publication_digest,
+        "public_land_transient_block_promotion": transient_block_promotion,
         "public_land_name_fallback_promotion": name_fallback_promotion,
         "followups": followups,
         "sent": sent,
@@ -4132,6 +4369,11 @@ def run_once(
                     []
                     if name_fallback_promotion.get("status") != "blocked"
                     else ["public_land_name_fallback_promotion_blocked"]
+                ),
+                *(
+                    []
+                    if transient_block_promotion.get("status") != "blocked"
+                    else ["public_land_transient_block_promotion_blocked"]
                 ),
                 *[
                     f"unresolved_brand:{brand}"
