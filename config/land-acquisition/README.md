@@ -23,9 +23,12 @@ the same concrete permalink again with the same HTTPS, robots.txt, identified-us
 response-size and blocked-page controls. A missing, changed, inactive or unverifiable listing is
 a hard NO_SEND.
 
-The first production canary has a separate global lifetime cap of three accepted land emails
-(`LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL`, allowed range 0..3). It does not replace or raise
-the normal 5/hour, 50/day, 30-day-recipient or global rolling-24-hour limits.
+An explicitly dated first-production canary may temporarily reserve one to three accepted land
+emails (`LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL`, allowed range 1..3). It is a release gate,
+not an ongoing transport quota, and is inactive when no canary date is configured. Normal account
+transport has no hourly, calendar-day or recipient-domain count cap: the sole account count ceiling
+is 2,000 Gmail SENT messages in the rolling 24-hour window. Recipient cooldown, suppression,
+deduplication, consent/contact-basis and content-verification gates remain independent safeguards.
 
 The seven registered category routes can be checked without writes, then idempotently upserted
 with database readback:

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -15,7 +16,6 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from publicsuffix2 import get_sld
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..config import settings as platform_settings
 from ..global_email_guard import (
+    GlobalEmailRecipientGuard,
     claim_global_recipient_delivery,
     fail_global_recipient_delivery,
     finalize_global_recipient_delivery,
@@ -37,8 +38,14 @@ from .canonical_policy import (
 )
 from .canonical_templates import CanonicalFirstContactRegistry
 from .connectors import SourceError, fetch_source
-from .email import GMAIL_OAUTH_FIELDS, EmailDeliveryError, SMTPEmailAdapter
+from .email import (
+    GMAIL_OAUTH_FIELDS,
+    EmailDeliveryError,
+    GmailRolling24hUsage,
+    SMTPEmailAdapter,
+)
 from .models import (
+    CanonicalEmailDelivery,
     GrowthControlState,
     GrowthLandCanarySlot,
     GrowthLandCanaryState,
@@ -70,6 +77,11 @@ LAND_RENDER_RECIPIENT_NAME_BY_ROLE = {
 LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION = "LAND-PUBLIC-ROLE-NAME-FALLBACK-V2"
 
 OUTREACH_CAPACITY_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_252
+OUTREACH_TRANSPORT_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_253
+OUTREACH_PACING_STATE_KEY = "transport:gmail:info@imperialholding.hu"
+OUTREACH_COMPLAINT_STOP_RATE = 0.003
+OUTREACH_BOUNCE_STOP_RATE = 0.05
+OUTREACH_BOUNCE_STOP_MINIMUM = 3
 _PROCESS_EMERGENCY_SEND_STOP = Event()
 
 
@@ -392,6 +404,10 @@ def _valid_land_canary_slot(row: GrowthLandCanarySlot) -> bool:
 
 
 def _claim_land_canary_slot(db: Session, outreach_id: str, *, now: datetime | None = None) -> bool:
+    if not str(
+        getattr(settings(), "land_outreach_production_canary_local_date", "") or ""
+    ).strip():
+        return False
     limit, scope_date, active = _land_canary_scope(db, now)
     if not active:
         return False
@@ -802,34 +818,46 @@ def _outbound_send_readiness_state(
         if not route_state.get("ready"):
             detail["reason"] = "public_land_route_readiness_no_send"
             return detail
-        limit, scope_date, canary_active = _land_canary_scope(db)
-        slots = list(
-            db.scalars(
-                select(GrowthLandCanarySlot).where(
-                    GrowthLandCanarySlot.scope_local_date == scope_date
+        canary_date = str(
+            getattr(settings(), "land_outreach_production_canary_local_date", "") or ""
+        ).strip()
+        if not canary_date:
+            detail["land_canary"] = {
+                "ready": True,
+                "configured": False,
+                "active": False,
+            }
+            detail["canary_active"] = False
+        else:
+            limit, scope_date, canary_active = _land_canary_scope(db)
+            slots = list(
+                db.scalars(
+                    select(GrowthLandCanarySlot).where(
+                        GrowthLandCanarySlot.scope_local_date == scope_date
+                    )
                 )
             )
-        )
-        if (
-            len(slots) != 3
-            or sorted(row.slot_number for row in slots) != [1, 2, 3]
-            or any(not _valid_land_canary_slot(row) for row in slots)
-        ):
-            detail["reason"] = "land_outreach_production_canary_slots_invalid"
-            return detail
-        if limit < 0:
-            detail["reason"] = "land_outreach_production_canary_cap_invalid"
-            return detail
-        state = db.get(GrowthLandCanaryState, 1)
-        detail["land_canary"] = {
-            "ready": True,
-            "scope_local_date": scope_date.isoformat(),
-            "max_total": limit,
-            "status": state.status if state else None,
-            "active": canary_active,
-            "valid_slots": len(slots),
-        }
-        detail["canary_active"] = canary_active
+            if (
+                len(slots) != 3
+                or sorted(row.slot_number for row in slots) != [1, 2, 3]
+                or any(not _valid_land_canary_slot(row) for row in slots)
+            ):
+                detail["reason"] = "land_outreach_production_canary_slots_invalid"
+                return detail
+            if limit < 0:
+                detail["reason"] = "land_outreach_production_canary_cap_invalid"
+                return detail
+            state = db.get(GrowthLandCanaryState, 1)
+            detail["land_canary"] = {
+                "ready": True,
+                "configured": True,
+                "scope_local_date": scope_date.isoformat(),
+                "max_total": limit,
+                "status": state.status if state else None,
+                "active": canary_active,
+                "valid_slots": len(slots),
+            }
+            detail["canary_active"] = canary_active
     except (GrowthRegistryError, LandRegistryError) as exc:
         detail["reason"] = str(exc)
         return detail
@@ -1175,19 +1203,6 @@ def _recipient_suppressed(db: Session, email: str) -> bool:
 
 def _rate_errors(db: Session, binding: BrandBinding, recipient: str) -> list[str]:
     now = utcnow()
-    today = datetime(now.year, now.month, now.day, tzinfo=UTC)
-    daily = (
-        db.scalar(
-            select(func.count())
-            .select_from(OutreachMessage)
-            .where(
-                OutreachMessage.brand_id == binding.brand_id,
-                OutreachMessage.created_at >= today,
-                OutreachMessage.status.not_in(("blocked", "suppressed")),
-            )
-        )
-        or 0
-    )
     recent_recipient = db.scalar(
         select(OutreachMessage.id)
         .where(
@@ -1200,8 +1215,6 @@ def _rate_errors(db: Session, binding: BrandBinding, recipient: str) -> list[str
         .limit(1)
     )
     errors: list[str] = []
-    if daily >= int(binding.config.get("max_daily_messages", 100)):
-        errors.append("brand_daily_rate_limit")
     if recent_recipient:
         errors.append("recipient_brand_cooldown")
     return errors
@@ -2020,9 +2033,6 @@ def _release_expired_claims(db: Session) -> None:
                     "retry_safe": False,
                 },
             )
-            _require_runtime_kill_switch(
-                db, reason="worker_lease_expired_delivery_ambiguous"
-            )
         # A worker may have died after Gmail accepted the POST but before the
         # provider id/readback could be committed. Gmail search is useful for
         # later recovery, but is not a safe automatic retry boundary because
@@ -2054,45 +2064,6 @@ def _preclaim_outreach_readiness_reason(
     return None
 
 
-def _recipient_root_domain(email: str) -> str:
-    value = str(email or "").strip()
-    local_part, separator, domain = value.rpartition("@")
-    domain = domain.strip().rstrip(".").casefold()
-    if not separator or not local_part or not domain or ".." in domain:
-        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send")
-    try:
-        ascii_domain = domain.encode("idna").decode("ascii")
-    except UnicodeError as exc:
-        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send") from exc
-    labels = ascii_domain.split(".")
-    if any(not label or len(label) > 63 for label in labels):
-        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send")
-    root_domain = get_sld(ascii_domain, strict=False)
-    if not root_domain:
-        raise GrowthRegistryError("outreach_recipient_root_domain_invalid_no_send")
-    return str(root_domain).casefold()
-
-
-def _outreach_period_bounds(
-    now: datetime | None = None,
-) -> tuple[datetime, datetime, datetime, datetime]:
-    config = settings()
-    try:
-        zone = ZoneInfo(config.timezone)
-    except ZoneInfoNotFoundError as exc:
-        raise GrowthRegistryError("Configured growth timezone is unavailable") from exc
-    local_now = (now or utcnow()).astimezone(zone)
-    day_start = datetime.combine(local_now.date(), time.min, tzinfo=zone).astimezone(UTC)
-    next_day = datetime.combine(
-        local_now.date() + timedelta(days=1), time.min, tzinfo=zone
-    ).astimezone(UTC)
-    hour_start = local_now.replace(minute=0, second=0, microsecond=0).astimezone(UTC)
-    next_hour = (
-        local_now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-    ).astimezone(UTC)
-    return day_start, next_day, hour_start, next_hour
-
-
 def _lock_outreach_claim_capacity(db: Session) -> None:
     dialect = db.get_bind().dialect.name
     if dialect == "postgresql":
@@ -2105,146 +2076,525 @@ def _lock_outreach_claim_capacity(db: Session) -> None:
         db.execute(text("BEGIN IMMEDIATE"))
 
 
+def _lock_outreach_transport_account(db: Session) -> None:
+    dialect = db.get_bind().dialect.name
+    if dialect == "postgresql":
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": OUTREACH_TRANSPORT_ADVISORY_LOCK_KEY},
+        )
+    elif dialect != "sqlite":
+        raise GrowthRegistryError("gmail_account_transport_lock_unavailable_no_send")
+
+
 @dataclass(frozen=True)
 class OutreachCapacityUsage:
-    hourly_verified: int
-    daily_verified: int
-    hourly_claimed: int
-    daily_claimed: int
-    hourly_queued: int
-    daily_queued: int
-    daily_domain_reservations: dict[str, int]
+    rolling_24h_verified: int
+    previous_24h_verified: int
+    active_claimed: int
+    pending_verification: int
+    ready_queued: int
+    last_verified_at: datetime | None
+
+
+@dataclass(frozen=True)
+class OutreachReputationHealth:
+    verified_sent: int
+    bounced: int
+    complained: int
+    bounce_rate: float
+    complaint_rate: float
+    action: str
+
+    @property
+    def pacing_multiplier(self) -> float:
+        if self.bounced <= 0 and self.complained <= 0:
+            return 1.0
+        return min(
+            4.0,
+            1.0 + self.bounce_rate * 20.0 + self.complaint_rate * 200.0,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "window_hours": 24,
+            "verified_sent": self.verified_sent,
+            "bounced": self.bounced,
+            "complained": self.complained,
+            "bounce_rate": self.bounce_rate,
+            "complaint_rate": self.complaint_rate,
+            "action": self.action,
+            "pacing_multiplier": self.pacing_multiplier,
+            "complaint_stop_rate": OUTREACH_COMPLAINT_STOP_RATE,
+            "bounce_stop_rate": OUTREACH_BOUNCE_STOP_RATE,
+            "bounce_stop_minimum": OUTREACH_BOUNCE_STOP_MINIMUM,
+        }
 
 
 def _outreach_capacity_usage(db: Session, now: datetime | None = None) -> OutreachCapacityUsage:
-    day_start, next_day, hour_start, next_hour = _outreach_period_bounds(now)
+    current = _aware(now or utcnow())
+    rolling_start = current - timedelta(hours=24)
+    previous_start = current - timedelta(hours=48)
     sent_rows = db.scalars(
         select(OutreachMessage).where(
-            OutreachMessage.sent_at >= day_start,
-            OutreachMessage.sent_at < next_day,
+            OutreachMessage.sent_at >= previous_start,
+            OutreachMessage.sent_at <= current,
         )
     ).all()
     verified_rows = [row for row in sent_rows if _gmail_sent_mime_verified(row)]
-    claimed_rows = [
+    rolling_rows = [row for row in verified_rows if _aware(row.sent_at) > rolling_start]
+    previous_rows = [
         row
-        for row in db.scalars(
-            select(OutreachMessage).where(OutreachMessage.status == "claimed")
-        ).all()
-        if (reservation_at := _claimed_reservation_at(row)) is not None
-        and day_start <= reservation_at < next_day
+        for row in verified_rows
+        if previous_start < _aware(row.sent_at) <= rolling_start
     ]
-    queued_rows = db.scalars(
-        select(OutreachMessage).where(
-            OutreachMessage.status == "queued",
-            OutreachMessage.available_at >= day_start,
-            OutreachMessage.available_at < next_day,
+    claimed_rows = list(
+        db.scalars(select(OutreachMessage).where(OutreachMessage.status == "claimed"))
+    )
+    pending_rows = [row for row in claimed_rows if _delivery_verification_pending(row)]
+    active_rows = [
+        row
+        for row in claimed_rows
+        if row.claimed_by is not None
+        and row.lease_expires_at is not None
+        and _aware(row.lease_expires_at) > current
+        and row not in pending_rows
+    ]
+    ready_queued = int(
+        db.scalar(
+            select(func.count())
+            .select_from(OutreachMessage)
+            .where(
+                OutreachMessage.status == "queued",
+                OutreachMessage.available_at <= current,
+            )
         )
-    ).all()
-    domain_usage: dict[str, int] = {}
-    # A queued row is not yet a transport reservation. Counting every queued
-    # address here would make 11 same-domain candidates block all 11 instead
-    # of allowing the first ten under the transaction lock.
-    for row in [*verified_rows, *claimed_rows]:
-        try:
-            root_domain = _recipient_root_domain(row.recipient_email)
-        except GrowthRegistryError:
-            continue
-        domain_usage[root_domain] = domain_usage.get(root_domain, 0) + 1
+        or 0
+    )
     return OutreachCapacityUsage(
-        hourly_verified=sum(hour_start <= _aware(row.sent_at) < next_hour for row in verified_rows),
-        daily_verified=len(verified_rows),
-        hourly_claimed=sum(
-            hour_start <= _claimed_reservation_at(row) < next_hour for row in claimed_rows
-        ),
-        daily_claimed=len(claimed_rows),
-        hourly_queued=sum(
-            hour_start <= _aware(row.available_at) < next_hour for row in queued_rows
-        ),
-        daily_queued=len(queued_rows),
-        daily_domain_reservations=domain_usage,
+        rolling_24h_verified=len(rolling_rows),
+        previous_24h_verified=len(previous_rows),
+        active_claimed=len(active_rows),
+        pending_verification=len(pending_rows),
+        ready_queued=ready_queued,
+        last_verified_at=max((_aware(row.sent_at) for row in rolling_rows), default=None),
     )
 
 
-def _outreach_root_domain_capacity_available(
-    db: Session, candidate: OutreachMessage, now: datetime | None = None
-) -> bool:
+def _outreach_reputation_health(
+    db: Session, now: datetime | None = None
+) -> OutreachReputationHealth:
+    current = _aware(now or utcnow())
+    cutoff = current - timedelta(hours=24)
+    rows = db.scalars(
+        select(OutreachMessage).where(OutreachMessage.sent_at >= cutoff)
+    ).all()
+    verified = [row for row in rows if _gmail_sent_mime_verified(row)]
+    sent_count = len(verified)
+    bounced = sum(row.status == "bounced" for row in verified)
+    complained = sum(row.status == "complained" for row in verified)
+    denominator = max(1, sent_count)
+    bounce_rate = bounced / denominator
+    complaint_rate = complained / denominator
+    if complained and complaint_rate >= OUTREACH_COMPLAINT_STOP_RATE:
+        action = "pause_external_outreach"
+    elif (
+        bounced >= OUTREACH_BOUNCE_STOP_MINIMUM
+        and bounce_rate >= OUTREACH_BOUNCE_STOP_RATE
+    ):
+        action = "pause_external_outreach"
+    elif bounced or complained:
+        action = "slow_external_outreach"
+    else:
+        action = "healthy"
+    return OutreachReputationHealth(
+        verified_sent=sent_count,
+        bounced=bounced,
+        complained=complained,
+        bounce_rate=bounce_rate,
+        complaint_rate=complaint_rate,
+        action=action,
+    )
+
+
+def _assert_outreach_reputation_healthy(
+    db: Session, now: datetime | None = None
+) -> dict[str, Any]:
+    health = _outreach_reputation_health(db, now)
+    detail = health.as_dict()
+    if health.action == "pause_external_outreach":
+        raise EmailDeliveryError(
+            "gmail_account_reputation_degraded_no_send",
+            retry_safe=True,
+            rate_limited=True,
+            retry_after_seconds=3600,
+            detail=detail,
+        )
+    return detail
+
+
+def _outreach_window_seconds(config: Any) -> float:
     try:
-        root_domain = _recipient_root_domain(candidate.recipient_email)
-    except GrowthRegistryError:
-        return False
-    usage = _outreach_capacity_usage(db, now)
+        start = time.fromisoformat(str(config.outreach_send_start_local))
+        end = time.fromisoformat(str(config.outreach_send_end_local))
+    except ValueError as exc:
+        raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
+    start_seconds = start.hour * 3600 + start.minute * 60 + start.second
+    end_seconds = end.hour * 3600 + end.minute * 60 + end.second
+    if start_seconds >= end_seconds:
+        raise GrowthRegistryError("Outreach sending window must start before it ends")
+    return float(end_seconds - start_seconds)
+
+
+def _outreach_reputation_gap_seconds(
+    usage: OutreachCapacityUsage,
+    *,
+    now: datetime | None = None,
+    penalty_multiplier: float = 1.0,
+) -> float:
     config = settings()
-    hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
-    daily_limit = int(getattr(config, "outreach_max_per_day", 50))
-    root_limit = min(
-        10,
-        max(
-            1,
-            int(
-                getattr(
-                    config,
-                    "outreach_max_per_recipient_root_domain_per_day",
-                    10,
+    absolute_limit = int(getattr(config, "outreach_account_rolling_24h_max", 2000))
+    bootstrap = int(
+        getattr(config, "outreach_reputation_bootstrap_messages_per_window", 100)
+    )
+    growth_factor = float(
+        getattr(config, "outreach_reputation_max_growth_factor", 1.25)
+    )
+    jitter_fraction = float(getattr(config, "outreach_reputation_jitter_fraction", 0.20))
+    if not 1 <= absolute_limit <= 2000 or int(getattr(config, "outreach_send_concurrency", 1)) != 1:
+        raise GrowthRegistryError("outreach_transport_policy_invalid_no_send")
+    # Upward-only jitter deliberately sends fewer than the nominal target.
+    # Qualify a healthy window against the worst-case achievable volume so
+    # the warm-up can progress instead of becoming a permanent ~90/day cap.
+    ramp_threshold = max(1, math.ceil(bootstrap / (1.0 + jitter_fraction)))
+    if usage.previous_24h_verified >= ramp_threshold:
+        paced_volume = min(
+            absolute_limit,
+            max(bootstrap, int(usage.previous_24h_verified * growth_factor)),
+        )
+    else:
+        paced_volume = min(absolute_limit, bootstrap)
+    window_seconds = _outreach_window_seconds(config)
+    transport_floor = window_seconds / absolute_limit
+    reputation_gap = window_seconds / max(1, paced_volume)
+    current = _aware(now or utcnow())
+    seed = hashlib.sha256(
+        (
+            f"{current.date().isoformat()}:{usage.rolling_24h_verified}:"
+            f"{usage.previous_24h_verified}"
+        ).encode()
+    ).digest()
+    unit = int.from_bytes(seed[:8], "big") / float(2**64 - 1)
+    # Jitter may spread traffic later, but must never shorten the reputation
+    # gap and silently exceed the configured +25% healthy-growth ceiling.
+    jitter = 1.0 + unit * jitter_fraction
+    return max(transport_floor, reputation_gap * jitter) * max(1.0, penalty_multiplier)
+
+
+def _outreach_pacing_detail(db: Session, *, lock: bool = False) -> dict[str, Any]:
+    query = select(GrowthControlState).where(
+        GrowthControlState.key == OUTREACH_PACING_STATE_KEY
+    )
+    if lock:
+        query = query.with_for_update()
+    row = db.scalar(query)
+    if row is None or not row.reason:
+        return {}
+    try:
+        detail = json.loads(row.reason)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise GrowthRegistryError("outreach_pacing_state_invalid_no_send") from exc
+    if not isinstance(detail, dict):
+        raise GrowthRegistryError("outreach_pacing_state_invalid_no_send")
+    return detail
+
+
+def _outreach_pacing_next_at(db: Session) -> datetime | None:
+    raw = _outreach_pacing_detail(db).get("next_send_not_before")
+    if not raw:
+        return None
+    try:
+        return _aware(datetime.fromisoformat(str(raw)))
+    except ValueError as exc:
+        raise GrowthRegistryError("outreach_pacing_state_invalid_no_send") from exc
+
+
+def _assert_gmail_account_pacing_due(
+    db: Session, *, now: datetime | None = None
+) -> None:
+    current = _aware(now or utcnow())
+    next_at = _outreach_pacing_next_at(db)
+    if next_at is None or current >= next_at:
+        return
+    retry_after = max(1.0, (next_at - current).total_seconds())
+    raise EmailDeliveryError(
+        "gmail_account_pacing_not_due_no_send",
+        retry_safe=True,
+        retry_after_seconds=retry_after,
+        detail={
+            "next_send_not_before": next_at.isoformat(),
+            "retry_after_seconds": retry_after,
+        },
+    )
+
+
+def _write_outreach_pacing_state(db: Session, detail: dict[str, Any]) -> None:
+    row = db.scalar(
+        select(GrowthControlState)
+        .where(GrowthControlState.key == OUTREACH_PACING_STATE_KEY)
+        .with_for_update()
+    )
+    if row is None:
+        row = GrowthControlState(key=OUTREACH_PACING_STATE_KEY)
+        db.add(row)
+    row.enabled = True
+    row.reason = canonical_json(detail)
+    row.changed_by = "growth-worker-pacing"
+    row.changed_at = utcnow()
+
+
+def _record_outreach_pacing_success(db: Session, *, now: datetime) -> None:
+    current = _aware(now)
+    usage = _outreach_capacity_usage(db, current)
+    health = _outreach_reputation_health(db, current)
+    prior = _outreach_pacing_detail(db, lock=True)
+    penalty = max(
+        health.pacing_multiplier,
+        float(prior.get("penalty_multiplier") or 1.0) * 0.95,
+    )
+    gap = _outreach_reputation_gap_seconds(
+        usage,
+        now=current,
+        penalty_multiplier=penalty,
+    )
+    _write_outreach_pacing_state(
+        db,
+        {
+            "next_send_not_before": (current + timedelta(seconds=gap)).isoformat(),
+            "penalty_multiplier": penalty,
+            "last_success_at": current.isoformat(),
+            "last_error": None,
+            "gap_seconds": gap,
+            "rolling_24h_verified": usage.rolling_24h_verified,
+            "previous_24h_verified": usage.previous_24h_verified,
+            "reputation_health": health.as_dict(),
+        },
+    )
+
+
+def _record_outreach_pacing_backoff(
+    db: Session,
+    *,
+    error: EmailDeliveryError,
+    now: datetime,
+) -> datetime:
+    current = _aware(now)
+    prior = _outreach_pacing_detail(db, lock=True)
+    previous_penalty = max(1.0, float(prior.get("penalty_multiplier") or 1.0))
+    penalty = (
+        min(64.0, previous_penalty * 2.0)
+        if error.rate_limited
+        else previous_penalty
+    )
+    retry_after = error.retry_after_seconds
+    if retry_after is None:
+        retry_after = error.detail.get("retry_after_seconds")
+    try:
+        retry_seconds = max(1.0, float(retry_after))
+    except (TypeError, ValueError):
+        retry_seconds = min(900.0, max(15.0, penalty))
+    next_at = current + timedelta(seconds=retry_seconds)
+    if error.rate_limited:
+        usage = _outreach_capacity_usage(db, current)
+        next_at = max(
+            next_at,
+            current
+            + timedelta(
+                seconds=_outreach_reputation_gap_seconds(
+                    usage,
+                    now=current,
+                    penalty_multiplier=penalty,
                 )
             ),
-        ),
+        )
+    existing_raw = prior.get("next_send_not_before")
+    if existing_raw:
+        try:
+            next_at = max(next_at, _aware(datetime.fromisoformat(str(existing_raw))))
+        except ValueError as exc:
+            raise GrowthRegistryError("outreach_pacing_state_invalid_no_send") from exc
+    _write_outreach_pacing_state(
+        db,
+        {
+            **prior,
+            "next_send_not_before": next_at.isoformat(),
+            "penalty_multiplier": penalty,
+            "last_error": error.error_type,
+            "last_error_at": current.isoformat(),
+        },
     )
-    return bool(
-        usage.hourly_verified
-        + usage.hourly_claimed
-        + 1
-        <= hourly_limit
-        and usage.daily_verified
-        + usage.daily_claimed
-        + 1
-        <= daily_limit
-        and usage.daily_domain_reservations.get(root_domain, 0) + 1 <= root_limit
+    return next_at
+
+
+def _gmail_account_unmatched_reservations(
+    db: Session,
+    usage: GmailRolling24hUsage,
+) -> set[str]:
+    unmatched: set[str] = set()
+
+    def add_unmatched(*, fallback_key: str, provider_message_id: str | None) -> None:
+        if provider_message_id and provider_message_id in usage.provider_ids:
+            return
+        # The provider ID is the account-wide identity.  Using it when it is
+        # available prevents the same Gmail delivery from being counted twice
+        # when both a business row and a canonical-delivery row reference it.
+        unmatched.add(
+            f"provider:{provider_message_id}"
+            if provider_message_id
+            else fallback_key
+        )
+
+    for reserved in db.scalars(
+        select(OutreachMessage).where(OutreachMessage.status == "claimed")
+    ):
+        reservation_at = _claimed_reservation_at(reserved)
+        if reservation_at is None or reservation_at < usage.cutoff:
+            continue
+        add_unmatched(
+            fallback_key=f"outreach:{reserved.outreach_id}",
+            provider_message_id=reserved.provider_message_id,
+        )
+    for reserved in db.scalars(
+        select(CanonicalEmailDelivery).where(
+            CanonicalEmailDelivery.status.in_(("sending", "accepted_unverified"))
+        )
+    ):
+        reservation_at = reserved.accepted_at or reserved.updated_at or reserved.created_at
+        if reservation_at is None or _aware(reservation_at) < usage.cutoff:
+            continue
+        add_unmatched(
+            fallback_key=f"canonical:{reserved.identity_sha256}",
+            provider_message_id=reserved.provider_message_id,
+        )
+
+    # SENT is normally provider-authoritative.  Keep centrally MIME-verified
+    # deliveries as a conservative fallback when a user or mailbox rule has
+    # removed the message from Gmail's SENT label before Workspace's rolling
+    # quota has expired.
+    for sent_row in db.scalars(
+        select(OutreachMessage).where(
+            OutreachMessage.sent_at >= usage.cutoff,
+        )
+    ):
+        if not _gmail_sent_mime_verified(sent_row):
+            continue
+        add_unmatched(
+            fallback_key=f"outreach-sent:{sent_row.outreach_id}",
+            provider_message_id=sent_row.provider_message_id,
+        )
+    for sent_delivery in db.scalars(
+        select(CanonicalEmailDelivery).where(
+            CanonicalEmailDelivery.status == "sent",
+            CanonicalEmailDelivery.verified_at >= usage.cutoff,
+        )
+    ):
+        add_unmatched(
+            fallback_key=f"canonical-sent:{sent_delivery.identity_sha256}",
+            provider_message_id=sent_delivery.provider_message_id,
+        )
+    # Global recipient-guard finalization commits before the business row is
+    # marked sent.  Include that durable transition so releasing the advisory
+    # transaction lock cannot create a short quota-undercount window while
+    # Gmail's SENT listing is still converging.
+    for guard_sent in db.scalars(
+        select(GlobalEmailRecipientGuard).where(
+            GlobalEmailRecipientGuard.status == "sent",
+            GlobalEmailRecipientGuard.sent_at >= usage.cutoff,
+        )
+    ):
+        add_unmatched(
+            fallback_key=f"guard-sent:{guard_sent.identity_sha256}",
+            provider_message_id=guard_sent.provider_message_id,
+        )
+    return unmatched
+
+
+def _assert_gmail_account_quota_reserved(
+    db: Session,
+    *,
+    current_reservation_key: str,
+    usage: GmailRolling24hUsage,
+) -> dict[str, Any]:
+    config_limit = int(getattr(settings(), "outreach_account_rolling_24h_max", 2000))
+    if usage.limit != config_limit:
+        raise GrowthRegistryError("outreach_account_quota_snapshot_limit_mismatch_no_send")
+    unmatched_reservations = _gmail_account_unmatched_reservations(db, usage)
+    if current_reservation_key not in unmatched_reservations:
+        raise GrowthRegistryError("outreach_account_current_reservation_missing_no_send")
+    effective = usage.sent_messages + len(unmatched_reservations)
+    if effective > usage.limit:
+        raise EmailDeliveryError(
+            "gmail_account_rolling_24h_limit_reached_no_send",
+            retry_safe=True,
+            rate_limited=True,
+            retry_after_seconds=900,
+            detail={
+                "gmail_sent_messages": usage.sent_messages,
+                "unmatched_reservations": len(unmatched_reservations),
+                "effective_reserved_count": effective,
+                "limit": usage.limit,
+                "retry_after_seconds": 900,
+            },
+        )
+    return {
+        "observed_at": usage.observed_at.isoformat(),
+        "cutoff": usage.cutoff.isoformat(),
+        "gmail_sent_messages": usage.sent_messages,
+        "unmatched_reservations": len(unmatched_reservations),
+        "effective_reserved_count": effective,
+        "limit": usage.limit,
+        "pages": usage.pages,
+        "snapshot_sha256": usage.snapshot_sha256,
+    }
+
+
+def _assert_outreach_account_quota_reserved(
+    db: Session,
+    row: OutreachMessage,
+    usage: GmailRolling24hUsage,
+) -> dict[str, Any]:
+    return _assert_gmail_account_quota_reserved(
+        db,
+        current_reservation_key=f"outreach:{row.outreach_id}",
+        usage=usage,
     )
 
 
 def _outreach_transport_capacity_reserved(
     db: Session, row: OutreachMessage, now: datetime | None = None
 ) -> bool:
-    if row.status != "claimed":
+    current = _aware(now or utcnow())
+    if (
+        row.status != "claimed"
+        or row.claimed_by != settings().worker_id
+        or row.lease_expires_at is None
+        or _aware(row.lease_expires_at) <= current
+        or _delivery_verification_pending(row)
+    ):
         return False
-    day_start, next_day, hour_start, next_hour = _outreach_period_bounds(now)
-    usage = _outreach_capacity_usage(db, now)
-    config = settings()
-    hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
-    daily_limit = int(getattr(config, "outreach_max_per_day", 50))
-    root_limit = min(
-        10,
-        max(
-            1,
-            int(
-                getattr(
-                    config,
-                    "outreach_max_per_recipient_root_domain_per_day",
-                    10,
-                )
-            ),
-        ),
-    )
-    try:
-        root_domain = _recipient_root_domain(row.recipient_email)
-    except GrowthRegistryError:
-        return False
-    claimed_at = _aware(row.claimed_at) if row.claimed_at else None
-    already_hourly_reserved = bool(claimed_at and hour_start <= claimed_at < next_hour)
-    already_daily_reserved = bool(claimed_at and day_start <= claimed_at < next_day)
-    return bool(
-        usage.hourly_verified
-        + usage.hourly_claimed
-        + (0 if already_hourly_reserved else 1)
-        <= hourly_limit
-        and usage.daily_verified
-        + usage.daily_claimed
-        + (0 if already_daily_reserved else 1)
-        <= daily_limit
-        and usage.daily_domain_reservations.get(root_domain, 0)
-        + (0 if already_daily_reserved else 1)
-        <= root_limit
-    )
+    active_claimed_ids = {
+        candidate.outreach_id
+        for candidate in db.scalars(
+            select(OutreachMessage).where(
+                OutreachMessage.status == "claimed",
+                OutreachMessage.claimed_by.is_not(None),
+                OutreachMessage.lease_expires_at.is_not(None),
+                OutreachMessage.lease_expires_at > current,
+            )
+        )
+        if not _delivery_verification_pending(candidate)
+    }
+    return active_claimed_ids == {row.outreach_id}
 
 
 def claim_outreach(db: Session) -> OutreachMessage | None:
@@ -2291,14 +2641,7 @@ def claim_outreach(db: Session) -> OutreachMessage | None:
             of=OutreachMessage,
         )
     ).all()
-    row = next(
-        (
-            candidate
-            for candidate in candidates
-            if _outreach_root_domain_capacity_available(db, candidate, now)
-        ),
-        None,
-    )
+    row = candidates[0] if candidates else None
     if not row:
         db.commit()
         return None
@@ -2638,14 +2981,15 @@ def _delivery_acceptance_ambiguous(row: OutreachMessage) -> bool:
 
 
 def _claimed_reservation_at(row: OutreachMessage) -> datetime | None:
-    if row.claimed_at is not None:
-        return _aware(row.claimed_at)
-    if not _delivery_acceptance_ambiguous(row):
+    if _delivery_acceptance_ambiguous(row):
+        # Start the conservative 24-hour reservation at the most recent
+        # acceptance/containment transition, not at an older pre-transport
+        # claim time.  This prevents an ambiguous delivery from aging out early.
+        fallback = row.updated_at or row.claimed_at or row.available_at or row.created_at
+        return _aware(fallback) if fallback is not None else None
+    if row.claimed_at is None:
         return None
-    # Older ambiguous rows cleared claimed_at. updated_at is the persisted
-    # acceptance/containment boundary for those rows; never make them retryable
-    # merely because the original claim timestamp is missing.
-    fallback = row.updated_at or row.available_at or row.created_at
+    fallback = row.claimed_at
     return _aware(fallback) if fallback is not None else None
 
 
@@ -3532,6 +3876,8 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
     land_canary_claimed = False
     live_listing_evidence: dict[str, Any] | None = None
     official_required = False
+    account_quota_attestation: dict[str, Any] = {}
+    account_reputation_attestation: dict[str, Any] = {}
     try:
         registry = GrowthRegistry.load()
         if not signal:
@@ -3616,6 +3962,14 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             raise GrowthRegistryError(f"global_recipient_guard_no_send:{global_guard.decision}")
 
         def immediate_pre_send_guard() -> None:
+            # Serialize every central external POST from the final database
+            # recheck through Gmail SENT/MIME readback. The committed claim is
+            # the crash-safe reservation if the process dies mid-transport.
+            _lock_outreach_transport_account(db)
+            _assert_gmail_account_pacing_due(db)
+            account_reputation_attestation.update(
+                _assert_outreach_reputation_healthy(db)
+            )
             _assert_outreach_pre_send_guard(
                 db,
                 row,
@@ -3645,10 +3999,18 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             if live_listing_evidence is not None:
                 _assert_live_listing_evidence_attestation(row, live_listing_evidence)
 
+        def immediate_account_quota_guard(usage: GmailRolling24hUsage) -> None:
+            account_quota_attestation.update(
+                _assert_outreach_account_quota_reserved(db, row, usage)
+            )
+
         if not _outreach_sending_window_open():
             raise GrowthRegistryError("outreach_sending_window_closed_no_send")
         if not _outreach_transport_capacity_reserved(db, row):
             raise GrowthRegistryError("outreach_transport_capacity_not_reserved_no_send")
+        render_input = canonical_metadata.get("render_input")
+        if not isinstance(render_input, dict):
+            raise GrowthRegistryError("canonical_render_input_missing")
         receipt = SMTPEmailAdapter(binding).send(
             to_email=row.recipient_email,
             subject=row.subject,
@@ -3658,6 +4020,8 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             reply_to=str(binding.config.get("reply_to") or binding.sender_email),
             delivery_scope="external_customer",
             pre_send_guard=immediate_pre_send_guard,
+            account_quota_guard=immediate_account_quota_guard,
+            unsubscribe_url=str(render_input.get("unsubscribe_url") or ""),
         )
         if (
             receipt.provider != "gmail_api"
@@ -3675,6 +4039,29 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                     "provider": receipt.provider,
                 },
             )
+        completed_at = utcnow()
+        verified_receipt_json = canonical_json(
+            {
+                "provider": receipt.provider,
+                "accepted_recipient": receipt.accepted_recipient,
+                "response_sha256": receipt.response_sha256,
+                "accepted": True,
+                "delivery_detail": receipt.detail,
+                "account_quota_attestation": account_quota_attestation,
+                "account_reputation_attestation": account_reputation_attestation,
+                "canonical_template": canonical_metadata,
+                "live_listing_revalidation": live_listing_evidence,
+            }
+        )
+        # Persist the provider identity and verified MIME evidence in the same
+        # commit that finalizes the global guard.  The row deliberately remains
+        # claimed until the final business transition below, but it already
+        # occupies the rolling account ledger if the process dies in between.
+        row.provider_message_id = receipt.provider_message_id
+        row.receipt_json = verified_receipt_json
+        row.sent_at = completed_at
+        if receipt.detail.get("recovered_existing_sent") is not True:
+            _record_outreach_pacing_success(db, now=completed_at)
         try:
             finalize_global_recipient_delivery(
                 db,
@@ -3682,7 +4069,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                 identity_sha256=row.idempotency_key,
                 claim_token=global_guard.claim_token,
                 provider_message_id=receipt.provider_message_id,
-                now=utcnow(),
+                now=completed_at,
             )
         except RuntimeError as exc:
             raise EmailDeliveryError(
@@ -3701,18 +4088,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             )
         row.status = "sent"
         row.provider_message_id = receipt.provider_message_id
-        row.receipt_json = canonical_json(
-            {
-                "provider": receipt.provider,
-                "accepted_recipient": receipt.accepted_recipient,
-                "response_sha256": receipt.response_sha256,
-                "accepted": True,
-                "delivery_detail": receipt.detail,
-                "canonical_template": canonical_metadata,
-                "live_listing_revalidation": live_listing_evidence,
-            }
-        )
-        row.sent_at = utcnow()
+        row.receipt_json = verified_receipt_json
         row.claimed_by = None
         row.claimed_at = None
         row.lease_expires_at = None
@@ -3733,8 +4109,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         )
     except (GrowthRegistryError, EmailDeliveryError) as exc:
         transport_ambiguous = bool(
-            isinstance(exc, EmailDeliveryError)
-            and (exc.accepted_but_unverified or exc.transport_attempted)
+            isinstance(exc, EmailDeliveryError) and exc.accepted_but_unverified
         )
         if global_guard and global_guard.may_send and global_guard.claim_token:
             fail_global_recipient_delivery(
@@ -3759,6 +4134,12 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                 ),
             )
         if transport_ambiguous:
+            if isinstance(exc, EmailDeliveryError) and exc.rate_limited:
+                _record_outreach_pacing_backoff(db, error=exc, now=utcnow())
+            if isinstance(exc, EmailDeliveryError) and exc.authentication_failure:
+                _require_runtime_kill_switch(
+                    db, reason="provider_authentication_failure"
+                )
             try:
                 pending_receipt = json.loads(row.receipt_json or "{}")
             except (TypeError, json.JSONDecodeError):
@@ -3794,9 +4175,6 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                     "detail": exc.detail,
                 },
             )
-            _require_runtime_kill_switch(
-                db, reason="provider_delivery_pending_verification"
-            )
             db.commit()
             return row
         recipient_hard_gate = _is_recipient_hard_gate_error(exc)
@@ -3806,6 +4184,8 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             if recipient_hard_gate
             or retryable_canary
             or isinstance(exc, OfficialSourceEvidenceError)
+            else exc.error_type
+            if isinstance(exc, EmailDeliveryError)
             else type(exc).__name__
         )
         row.claimed_by = None
@@ -3825,11 +4205,25 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             )
         else:
             retry_safe = not isinstance(exc, EmailDeliveryError) or exc.retry_safe
+            if (
+                isinstance(exc, EmailDeliveryError)
+                and exc.retry_safe
+                and (not exc.transport_attempted or exc.rate_limited)
+            ):
+                row.attempt_count = max(0, row.attempt_count - 1)
+                next_at = _record_outreach_pacing_backoff(db, error=exc, now=utcnow())
+            elif isinstance(exc, EmailDeliveryError) and exc.retry_safe:
+                next_at = _record_outreach_pacing_backoff(db, error=exc, now=utcnow())
+            else:
+                next_at = None
         if not recipient_hard_gate and (row.attempt_count >= row.max_attempts or not retry_safe):
             row.status = "dead_letter"
         elif not recipient_hard_gate:
             row.status = "queued"
-            row.available_at = utcnow() + timedelta(minutes=2 ** min(row.attempt_count, 8))
+            row.available_at = max(
+                utcnow() + timedelta(minutes=2 ** min(row.attempt_count, 8)),
+                next_at or utcnow(),
+            )
         authentication_failure = isinstance(exc, EmailDeliveryError) and exc.authentication_failure
         if authentication_failure or "payload_hash" in str(exc):
             _require_runtime_kill_switch(
@@ -3894,7 +4288,9 @@ def dispatch_batch(db: Session, *, limit: int = 20) -> int:
     if capacity <= 0:
         return 0
     sent = 0
-    for _ in range(max(1, min(limit, capacity, 100))):
+    # One due item per worker tick. The persisted next-send timestamp prevents
+    # restart/catch-up bursts without inventing hourly or calendar-day quotas.
+    for _ in range(max(1, min(limit, capacity, 1))):
         row = claim_outreach(db)
         if not row:
             break
@@ -3930,22 +4326,16 @@ def _outreach_sending_window_open(now: datetime | None = None) -> bool:
 
 
 def _outreach_send_capacity(db: Session, now: datetime | None = None) -> int:
-    config = settings()
-    usage = _outreach_capacity_usage(db, now)
-    hourly_limit = int(getattr(config, "outreach_max_per_hour", 5))
-    daily_limit = int(getattr(config, "outreach_max_per_day", 50))
-    if (
-        usage.hourly_verified + usage.hourly_claimed > hourly_limit
-        or usage.daily_verified + usage.daily_claimed > daily_limit
-    ):
+    current = _aware(now or utcnow())
+    usage = _outreach_capacity_usage(db, current)
+    if usage.active_claimed > 0:
         return 0
-    return max(
-        0,
-        min(
-            hourly_limit - usage.hourly_verified - usage.hourly_claimed,
-            daily_limit - usage.daily_verified - usage.daily_claimed,
-        ),
-    )
+    next_at = _outreach_pacing_next_at(db)
+    if next_at is None and usage.last_verified_at is not None:
+        next_at = usage.last_verified_at + timedelta(
+            seconds=_outreach_reputation_gap_seconds(usage, now=current)
+        )
+    return 0 if next_at is not None and current < next_at else 1
 
 
 def schedule_followups(db: Session) -> int:
@@ -4167,8 +4557,11 @@ def _production_daily_automation_state(config: Any) -> dict[str, Any]:
         "daily_at": "05:30",
         "outreach_send_start_local": "08:00",
         "outreach_send_end_local": "18:00",
-        "outreach_max_per_hour": 5,
-        "outreach_max_per_day": 50,
+        "outreach_account_rolling_24h_max": 2000,
+        "outreach_send_concurrency": 1,
+        "outreach_reputation_bootstrap_messages_per_window": 100,
+        "outreach_reputation_max_growth_factor": 1.25,
+        "outreach_reputation_jitter_fraction": 0.20,
     }
     actual = {
         "growth_ops_enabled": getattr(config, "enabled", False) is True,
@@ -4189,8 +4582,19 @@ def _production_daily_automation_state(config: Any) -> dict[str, Any]:
         "outreach_send_end_local": str(
             getattr(config, "outreach_send_end_local", "")
         ),
-        "outreach_max_per_hour": getattr(config, "outreach_max_per_hour", None),
-        "outreach_max_per_day": getattr(config, "outreach_max_per_day", None),
+        "outreach_account_rolling_24h_max": getattr(
+            config, "outreach_account_rolling_24h_max", None
+        ),
+        "outreach_send_concurrency": getattr(config, "outreach_send_concurrency", None),
+        "outreach_reputation_bootstrap_messages_per_window": getattr(
+            config, "outreach_reputation_bootstrap_messages_per_window", None
+        ),
+        "outreach_reputation_max_growth_factor": getattr(
+            config, "outreach_reputation_max_growth_factor", None
+        ),
+        "outreach_reputation_jitter_fraction": getattr(
+            config, "outreach_reputation_jitter_fraction", None
+        ),
     }
     mismatches = {
         key: {"expected": expected_value, "actual": actual[key]}

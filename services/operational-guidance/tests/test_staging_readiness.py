@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.config import Settings
+from app.process_cards.adapters import GmailApprovalNotifier
 from app.readiness import build_readiness_report
 
 
@@ -55,6 +57,36 @@ def test_gmail_approval_requires_drive_and_addresses() -> None:
     assert any("DRIVE_PUBLICATION_ENABLED" in item for item in errors)
     assert any("PROCESS_CARD_APPROVER_EMAIL" in item for item in errors)
     assert any("PROCESS_CARD_GMAIL_DELEGATED_USER" in item for item in errors)
+
+
+def test_gmail_approval_cannot_bypass_the_central_info_account_gate() -> None:
+    settings = Settings(
+        gmail_approval_enabled=True,
+        drive_publication_enabled=True,
+        process_card_approver_email="approver@imperialholding.hu",
+        process_card_gmail_delegated_user=" INFO@ImperialHolding.hu ",
+    )
+
+    errors = settings.validation_errors()
+
+    assert any("centrally gated info@imperialholding.hu" in item for item in errors)
+
+
+def test_notifier_runtime_also_rejects_the_centrally_gated_info_account() -> None:
+    notifier = GmailApprovalNotifier(
+        service_account_file="unused.json",
+        delegated_user="info@imperialholding.hu",
+        approver_email="approver@imperialholding.hu",
+    )
+
+    with pytest.raises(RuntimeError, match="central account quota gate"):
+        notifier.notify(
+            process_key="PC-TEST",
+            title="Test",
+            version=1,
+            role="owner",
+            artifact_links={},
+        )
 
 
 def test_readiness_checks_database_catalog_and_runtime(tmp_path: Path) -> None:

@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
-from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, SessionLocal, engine
+from app.global_email_guard import GlobalEmailRecipientGuard
 from app.growth_ops import registry, service
-from app.growth_ops.models import OutreachMessage
+from app.growth_ops.email import EmailDeliveryError, GmailRolling24hUsage
+from app.growth_ops.models import CanonicalEmailDelivery, GrowthControlState, OutreachMessage
 from app.growth_ops.registry import GrowthRegistryError
 from app.growth_ops.registry import settings as growth_settings
 
@@ -80,6 +81,59 @@ def _message(index: int, recipient: str, *, status: str = "queued") -> OutreachM
     )
 
 
+def _verified_sent_message(
+    index: int,
+    *,
+    status: str,
+    sent_at: datetime,
+) -> OutreachMessage:
+    row = _message(index, f"sent{index}@example.hu", status=status)
+    provider_message_id = f"gmail-sent-{index}"
+    row.provider_message_id = provider_message_id
+    row.receipt_json = _verified_gmail_receipt(provider_message_id, f"{index:064x}")
+    row.sent_at = sent_at
+    return row
+
+
+def _canonical_delivery(
+    index: int,
+    *,
+    status: str,
+    provider_message_id: str | None = None,
+    at: datetime,
+) -> CanonicalEmailDelivery:
+    return CanonicalEmailDelivery(
+        delivery_id=f"DEL-CAP-{index}",
+        identity_sha256=f"{10_000 + index:064x}",
+        recipient_normalized=f"internal{index}@imperialholding.hu",
+        report_type="daily_executive",
+        local_date=date(2026, 8, 31),
+        tenant_scope="imperial",
+        payload_sha256=f"{20_000 + index:064x}",
+        status=status,
+        provider_message_id=provider_message_id,
+        accepted_at=at if status == "accepted_unverified" else None,
+        verified_at=at if status == "sent" else None,
+        created_at=at,
+        updated_at=at,
+    )
+
+
+def _gmail_usage(
+    current: datetime,
+    provider_ids: set[str] | frozenset[str] = frozenset(),
+    *,
+    limit: int = 2000,
+) -> GmailRolling24hUsage:
+    return GmailRolling24hUsage(
+        provider_ids=frozenset(provider_ids),
+        limit=limit,
+        cutoff=current - timedelta(hours=24),
+        observed_at=current,
+        pages=1,
+    )
+
+
 def _runtime_settings(**changes):
     values = {
         "timezone": "Europe/Budapest",
@@ -87,37 +141,28 @@ def _runtime_settings(**changes):
         "lease_seconds": 300,
         "outreach_send_start_local": "08:00",
         "outreach_send_end_local": "18:00",
-        "outreach_max_per_hour": 100,
-        "outreach_max_per_day": 100,
-        "outreach_max_per_recipient_root_domain_per_day": 10,
+        "outreach_account_rolling_24h_max": 2000,
+        "outreach_send_concurrency": 1,
+        "outreach_reputation_bootstrap_messages_per_window": 100,
+        "outreach_reputation_max_growth_factor": 1.25,
+        "outreach_reputation_jitter_fraction": 0.20,
     }
     values.update(changes)
     return SimpleNamespace(**values)
 
 
-@pytest.mark.parametrize(
-    ("email", "expected"),
-    [
-        ("Sales@Example.HU", "example.hu"),
-        ("office@mail.example.hu.", "example.hu"),
-        ("hello@branch.example.co.uk", "example.co.uk"),
-        ("hello@branch.example.com.au", "example.com.au"),
-        ("hello@a.b.ide.kyoto.jp", "b.ide.kyoto.jp"),
-        ("hello@foo.blogspot.com", "foo.blogspot.com"),
-        ("hello@BÜRO.at", "xn--bro-hoa.at"),
-    ],
-)
-def test_recipient_root_domain_normalization(email, expected):
-    assert service._recipient_root_domain(email) == expected
+def _capacity_usage(*, rolling: int = 0, previous: int = 0):
+    return service.OutreachCapacityUsage(
+        rolling_24h_verified=rolling,
+        previous_24h_verified=previous,
+        active_claimed=0,
+        pending_verification=0,
+        ready_queued=0,
+        last_verified_at=None,
+    )
 
 
-@pytest.mark.parametrize("email", ["missing-at", "x@", "x@bad..hu"])
-def test_recipient_root_domain_rejects_invalid_values(email):
-    with pytest.raises(ValueError, match="root_domain_invalid_no_send"):
-        service._recipient_root_domain(email)
-
-
-def test_only_gmail_sent_with_full_mime_readback_consumes_verified_quota():
+def test_only_gmail_sent_with_full_mime_readback_is_locally_verified():
     current = datetime(2026, 8, 29, 9, tzinfo=UTC)
     row = SimpleNamespace(
         sent_at=current,
@@ -132,22 +177,80 @@ def test_only_gmail_sent_with_full_mime_readback_consumes_verified_quota():
     assert not service._gmail_sent_mime_verified(row)
 
 
-def test_root_domain_cap_cannot_be_relaxed_above_ten(monkeypatch):
-    monkeypatch.setenv(
+@pytest.mark.parametrize(
+    "name",
+    [
+        "GROWTH_OPS_OUTREACH_MAX_PER_HOUR",
+        "GROWTH_OPS_OUTREACH_MAX_PER_DAY",
         "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
-        "99",
-    )
+    ],
+)
+def test_legacy_static_count_cap_environment_fails_closed(monkeypatch, name):
+    monkeypatch.setenv(name, "1")
+    with pytest.raises(
+        GrowthRegistryError,
+        match="legacy_outreach_count_cap_environment_present_no_send",
+    ):
+        growth_settings()
 
-    assert growth_settings().outreach_max_per_recipient_root_domain_per_day == 10
+
+@pytest.mark.parametrize("invalid", ["1", "50", "1999", "2001"])
+def test_account_rolling_24h_limit_is_exactly_2000(monkeypatch, invalid):
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX", "2000")
+    assert growth_settings().outreach_account_rolling_24h_max == 2000
+
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX", invalid)
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_account_rolling_24h_max_invalid_no_send",
+    ):
+        growth_settings()
 
 
-def test_hour_and_day_caps_cannot_be_relaxed(monkeypatch):
-    monkeypatch.setenv("GROWTH_OPS_OUTREACH_MAX_PER_HOUR", "100")
-    monkeypatch.setenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "1000")
+def test_account_send_concurrency_is_exactly_one(monkeypatch):
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_SEND_CONCURRENCY", "1")
+    assert growth_settings().outreach_send_concurrency == 1
 
-    config = growth_settings()
-    assert config.outreach_max_per_hour == 5
-    assert config.outreach_max_per_day == 50
+    monkeypatch.setenv("GROWTH_OPS_OUTREACH_SEND_CONCURRENCY", "2")
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outreach_send_concurrency_must_be_one_no_send",
+    ):
+        growth_settings()
+
+
+@pytest.mark.parametrize(
+    ("name", "valid", "invalid", "error"),
+    [
+        (
+            "GROWTH_OPS_OUTREACH_REPUTATION_BOOTSTRAP_MESSAGES_PER_WINDOW",
+            "100",
+            "50",
+            "outreach_reputation_bootstrap_invalid_no_send",
+        ),
+        (
+            "GROWTH_OPS_OUTREACH_REPUTATION_MAX_GROWTH_FACTOR",
+            "1.25",
+            "1.0",
+            "outreach_reputation_growth_factor_invalid_no_send",
+        ),
+        (
+            "GROWTH_OPS_OUTREACH_REPUTATION_JITTER_FRACTION",
+            "0.20",
+            "0.0",
+            "outreach_reputation_jitter_invalid_no_send",
+        ),
+    ],
+)
+def test_reputation_pacing_policy_cannot_be_turned_into_a_shadow_cap(
+    monkeypatch, name, valid, invalid, error
+):
+    monkeypatch.setenv(name, valid)
+    growth_settings()
+
+    monkeypatch.setenv(name, invalid)
+    with pytest.raises(GrowthRegistryError, match=error):
+        growth_settings()
 
 
 def test_runtime_trip_uses_configured_writable_path_and_closes_writes(tmp_path, monkeypatch):
@@ -214,7 +317,7 @@ def test_double_emergency_stop_failure_latches_process_and_aborts_batch(db, monk
         lambda: (_ for _ in ()).throw(OSError("database connection unavailable")),
     )
     monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db: 2)
+    monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db: 100)
     monkeypatch.setattr(
         service,
         "claim_outreach",
@@ -236,7 +339,7 @@ def test_double_emergency_stop_failure_latches_process_and_aborts_batch(db, monk
 
     monkeypatch.setattr(service, "dispatch_outreach", dispatch_once)
     try:
-        assert service.dispatch_batch(db, limit=2) == 0
+        assert service.dispatch_batch(db, limit=20) == 0
         assert dispatch_calls == [first.outreach_id]
         assert service._PROCESS_EMERGENCY_SEND_STOP.is_set()
         assert pending == [second]
@@ -244,7 +347,17 @@ def test_double_emergency_stop_failure_latches_process_and_aborts_batch(db, monk
         service._PROCESS_EMERGENCY_SEND_STOP.clear()
 
 
-def test_postgresql_claim_uses_transaction_advisory_lock():
+@pytest.mark.parametrize(
+    ("lock_function", "lock_key"),
+    [
+        (service._lock_outreach_claim_capacity, service.OUTREACH_CAPACITY_ADVISORY_LOCK_KEY),
+        (service._lock_outreach_transport_account, service.OUTREACH_TRANSPORT_ADVISORY_LOCK_KEY),
+    ],
+)
+def test_postgresql_capacity_and_account_transport_use_transaction_advisory_locks(
+    lock_function,
+    lock_key,
+):
     calls = []
 
     class FakeDB:
@@ -254,12 +367,11 @@ def test_postgresql_claim_uses_transaction_advisory_lock():
         def execute(self, statement, params):
             calls.append((str(statement), params))
 
-    service._lock_outreach_claim_capacity(FakeDB())
-
+    lock_function(FakeDB())
     assert calls == [
         (
             "SELECT pg_advisory_xact_lock(:lock_key)",
-            {"lock_key": service.OUTREACH_CAPACITY_ADVISORY_LOCK_KEY},
+            {"lock_key": lock_key},
         )
     ]
 
@@ -302,179 +414,58 @@ def test_direct_dispatch_cannot_bypass_window_or_reach_transport(db, monkeypatch
     assert row.provider_message_id is None
 
 
-def test_exact_root_domain_cap_skips_capped_domain_without_claiming(db, monkeypatch):
+def test_same_recipient_domain_history_does_not_create_a_static_quota(db, monkeypatch):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
     monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    for index in range(10):
-        row = _message(index + 10, f"person{index}@sub.example.hu", status="claimed")
-        row.claimed_at = datetime.now(UTC)
-        row.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
-        db.add(row)
-    capped = _message(100, "next@mail.example.hu")
-    available = _message(101, "next@different.hu")
-    db.add_all([capped, available])
+    current = datetime.now(UTC)
+    sent_rows = []
+    for index in range(10, 35):
+        row = _message(index, f"person{index}@branch.example.hu", status="sent")
+        row.sent_at = current - timedelta(hours=2)
+        row.provider_message_id = f"gmail-{index}"
+        row.receipt_json = _verified_gmail_receipt(row.provider_message_id, f"{index:064x}")
+        sent_rows.append(row)
+    candidate = _message(100, "next@mail.example.hu")
+    db.add_all([*sent_rows, candidate])
     db.commit()
 
     claimed = service.claim_outreach(db)
 
-    assert claimed is not None and claimed.outreach_id == available.outreach_id
-    db.refresh(capped)
-    assert capped.status == "queued"
-    assert capped.attempt_count == 0
+    assert claimed is not None
+    assert claimed.outreach_id == candidate.outreach_id
 
 
-def test_same_day_queued_rows_do_not_starve_first_ten_domain_claims(db, monkeypatch):
+def test_only_one_live_outreach_claim_can_exist(db, monkeypatch):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
     monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    now = datetime.now(UTC)
-    same_domain = [_message(600 + index, f"person{index}@branch.example.hu") for index in range(11)]
-    for row in same_domain:
-        row.available_at = now
-    other = _message(620, "other@different.hu")
-    other.available_at = now
-    db.add_all([*same_domain, other])
+    first = _message(110, "first@example.hu")
+    second = _message(111, "second@example.net")
+    db.add_all([first, second])
     db.commit()
 
-    claimed = [service.claim_outreach(db) for _ in range(11)]
+    claimed = service.claim_outreach(db)
 
-    assert all(row is not None for row in claimed)
-    assert [row.recipient_email for row in claimed[:10]] == [
-        row.recipient_email for row in same_domain[:10]
-    ]
-    assert claimed[10].outreach_id == other.outreach_id
-    db.refresh(same_domain[10])
-    assert same_domain[10].status == "queued"
-    assert same_domain[10].attempt_count == 0
+    assert claimed is not None and claimed.outreach_id == first.outreach_id
+    assert service._outreach_transport_capacity_reserved(db, claimed)
+    assert service.claim_outreach(db) is None
+    db.refresh(second)
+    assert second.status == "queued"
+    assert second.attempt_count == 0
 
 
-@pytest.mark.parametrize(
-    ("total", "hourly_limit", "daily_limit", "expected_claimed"),
-    [(6, 5, 50, 5), (51, 100, 50, 50)],
-)
-def test_queued_rows_do_not_starve_hourly_or_daily_claim_capacity(
+def test_pending_verification_row_reserves_quota_but_does_not_block_next_claim(
     db,
     monkeypatch,
-    total,
-    hourly_limit,
-    daily_limit,
-    expected_claimed,
 ):
-    monkeypatch.setattr(
-        service,
-        "settings",
-        lambda: _runtime_settings(
-            outreach_max_per_hour=hourly_limit,
-            outreach_max_per_day=daily_limit,
-        ),
-    )
-    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    now = datetime.now(UTC)
-    rows = [
-        _message(700 + index, f"person{index}@example{index}.hu")
-        for index in range(total)
-    ]
-    for row in rows:
-        row.available_at = now
-    db.add_all(rows)
-    db.commit()
-
-    claimed = [service.claim_outreach(db) for _ in range(total)]
-
-    assert sum(row is not None for row in claimed) == expected_claimed
-    db.expire_all()
-    persisted = db.scalars(
-        select(OutreachMessage).where(OutreachMessage.outreach_id.like("OUT-CAP-7%"))
-    ).all()
-    assert sum(row.status == "claimed" for row in persisted) == expected_claimed
-    assert sum(row.status == "queued" for row in persisted) == total - expected_claimed
-
-
-def test_fifty_one_same_day_queued_rows_allow_exactly_five_current_hour_claims(
-    db, monkeypatch
-):
-    monkeypatch.setattr(
-        service,
-        "settings",
-        lambda: _runtime_settings(
-            outreach_max_per_hour=5,
-            outreach_max_per_day=50,
-        ),
-    )
-    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    now = datetime.now(UTC)
-    rows = [
-        _message(800 + index, f"person{index}@backlog{index}.hu")
-        for index in range(51)
-    ]
-    for row in rows:
-        row.available_at = now
-    db.add_all(rows)
-    db.commit()
-
-    assert service._outreach_send_capacity(db, now) == 5
-    claimed = [service.claim_outreach(db) for _ in range(5)]
-    assert all(row is not None for row in claimed)
-    assert all(
-        service._outreach_transport_capacity_reserved(db, row, now)
-        for row in claimed
-    )
-    assert service.claim_outreach(db) is None
-
-    sixth = rows[5]
-    sixth.status = "claimed"
-    sixth.claimed_by = "growth-cap-test"
-    sixth.claimed_at = now
-    sixth.lease_expires_at = now + timedelta(minutes=5)
-    db.commit()
-    assert not service._outreach_transport_capacity_reserved(db, sixth, now)
-
-
-def test_capacity_usage_buckets_queued_and_claimed_by_budapest_hour_and_day(db, monkeypatch):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
-    current = local_now.astimezone(UTC)
-    hourly_queued = _message(102, "hourly@one.hu")
-    hourly_queued.available_at = current - timedelta(minutes=5)
-    daily_queued = _message(103, "daily@two.hu")
-    daily_queued.available_at = current - timedelta(hours=2)
-    future_queued = _message(104, "future@three.hu")
-    future_queued.available_at = current + timedelta(days=1)
-    hourly_claimed = _message(105, "claimed@four.hu", status="claimed")
-    hourly_claimed.claimed_at = current - timedelta(minutes=2)
-    daily_claimed = _message(106, "claimed@five.hu", status="claimed")
-    daily_claimed.claimed_at = current - timedelta(hours=2)
-    old_claimed = _message(107, "claimed@six.hu", status="claimed")
-    old_claimed.claimed_at = current - timedelta(days=1)
-    db.add_all(
-        [
-            hourly_queued,
-            daily_queued,
-            future_queued,
-            hourly_claimed,
-            daily_claimed,
-            old_claimed,
-        ]
-    )
-    db.commit()
-
-    usage = service._outreach_capacity_usage(db, current)
-
-    assert usage.hourly_queued == 1
-    assert usage.daily_queued == 2
-    assert usage.hourly_claimed == 1
-    assert usage.daily_claimed == 2
-
-
-def test_ambiguous_accepted_claim_without_claimed_at_still_reserves_capacity(db, monkeypatch):
-    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
-    current = local_now.astimezone(UTC)
-    ambiguous = _message(108, "held@branch.example.hu", status="claimed")
-    ambiguous.claimed_at = None
-    ambiguous.claimed_by = None
-    ambiguous.lease_expires_at = None
-    ambiguous.provider_message_id = "gmail-possibly-accepted"
-    ambiguous.receipt_json = json.dumps(
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
+    current = datetime.now(UTC)
+    pending = _message(120, "held@example.hu", status="claimed")
+    pending.claimed_at = current
+    pending.claimed_by = None
+    pending.lease_expires_at = None
+    pending.provider_message_id = "gmail-possibly-accepted"
+    pending.receipt_json = json.dumps(
         {
             "provider": "gmail_api",
             "accepted": True,
@@ -484,203 +475,402 @@ def test_ambiguous_accepted_claim_without_claimed_at_still_reserves_capacity(db,
             },
         }
     )
-    ambiguous.updated_at = current - timedelta(minutes=1)
-    db.add(ambiguous)
+    candidate = _message(121, "next@example.net")
+    db.add_all([pending, candidate])
     db.commit()
 
-    usage = service._outreach_capacity_usage(db, current)
+    usage = _gmail_usage(current)
+    assert service._gmail_account_unmatched_reservations(db, usage) == {
+        "provider:gmail-possibly-accepted"
+    }
 
-    assert usage.hourly_claimed == 1
-    assert usage.daily_claimed == 1
-    assert usage.daily_domain_reservations == {"example.hu": 1}
-
-
-def test_ten_ambiguous_claims_without_claimed_at_block_same_domain(db, monkeypatch):
-    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    current = datetime.now(UTC)
-    for index in range(10):
-        ambiguous = _message(
-            160 + index,
-            f"held{index}@branch.example.hu",
-            status="claimed",
-        )
-        ambiguous.claimed_at = None
-        ambiguous.claimed_by = None
-        ambiguous.lease_expires_at = None
-        ambiguous.provider_message_id = f"gmail-ambiguous-{index}"
-        ambiguous.receipt_json = json.dumps(
-            {
-                "provider": "gmail_api",
-                "accepted": True,
-                "delivery_verification": {
-                    "status": "pending_verification",
-                    "retry_safe": False,
-                },
-            }
-        )
-        ambiguous.updated_at = current
-        db.add(ambiguous)
-    candidate = _message(170, "next@mail.example.hu")
-    db.add(candidate)
-    db.commit()
-
-    assert service.claim_outreach(db) is None
-    db.refresh(candidate)
-    assert candidate.status == "queued"
-    assert candidate.attempt_count == 0
+    claimed = service.claim_outreach(db)
+    assert claimed is not None and claimed.outreach_id == candidate.outreach_id
 
 
-def test_expired_ambiguous_claim_preserves_reservation_timestamp(db, monkeypatch):
-    monkeypatch.setattr(service, "_trip_runtime_kill_switch", lambda: True)
-    claimed_at = datetime.now(UTC) - timedelta(minutes=10)
-    ambiguous = _message(109, "held@example.hu", status="claimed")
-    ambiguous.claimed_by = "dead-worker"
-    ambiguous.claimed_at = claimed_at
-    ambiguous.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    db.add(ambiguous)
-    db.commit()
-
-    service._release_expired_claims(db)
-    db.commit()
-    db.refresh(ambiguous)
-
-    assert ambiguous.status == "claimed"
-    assert service._aware(ambiguous.claimed_at) == claimed_at
-    assert ambiguous.claimed_by is None
-    assert ambiguous.lease_expires_at is None
-    assert service._delivery_verification_pending(ambiguous)
-
-
-def test_verified_sent_plus_claimed_reservations_reach_exact_domain_cap(db, monkeypatch):
-    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    current = datetime.now(UTC)
-    verified = _message(110, "sent@example.hu", status="sent")
-    verified.sent_at = current
-    verified.provider_message_id = "gmail-verified-id"
-    verified.receipt_json = _verified_gmail_receipt("gmail-verified-id", "b" * 64)
-    db.add(verified)
-    for index in range(9):
-        reserved = _message(
-            111 + index,
-            f"person{index}@sub.example.hu",
-            status="claimed",
-        )
-        reserved.claimed_at = current
-        reserved.lease_expires_at = current + timedelta(minutes=5)
-        db.add(reserved)
-    candidate = _message(121, "next@mail.example.hu")
-    db.add(candidate)
-    db.commit()
-
-    assert service.claim_outreach(db) is None
-    db.refresh(candidate)
-    assert candidate.status == "queued"
-    assert candidate.attempt_count == 0
-
-
-@pytest.mark.parametrize("status", ["delivered", "responded"])
-def test_verified_gmail_delivery_events_continue_consuming_quota(db, monkeypatch, status):
+def test_composite_reservations_dedupe_the_same_provider_message_id(db, monkeypatch):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
     current = datetime.now(UTC)
-    verified = _message(122, "sent@events.example.hu", status=status)
-    verified.sent_at = current
-    verified.provider_message_id = f"gmail-{status}"
-    verified.receipt_json = _verified_gmail_receipt(verified.provider_message_id, "c" * 64)
-    db.add(verified)
+    claimed = _message(130, "external@example.hu", status="claimed")
+    claimed.claimed_at = current
+    claimed.provider_message_id = "gmail-shared"
+    sent = _message(131, "sent@example.net", status="sent")
+    sent.sent_at = current
+    sent.provider_message_id = "gmail-shared"
+    sent.receipt_json = _verified_gmail_receipt("gmail-shared", "b" * 64)
+    accepted_internal = _canonical_delivery(
+        1,
+        status="accepted_unverified",
+        provider_message_id="gmail-shared",
+        at=current,
+    )
+    sent_internal = _canonical_delivery(
+        2,
+        status="sent",
+        provider_message_id="gmail-shared",
+        at=current,
+    )
+    guard_sent = GlobalEmailRecipientGuard(
+        recipient_normalized="guard@example.org",
+        identity_sha256="d" * 64,
+        message_type="growth_outreach",
+        tenant_scope="imperial",
+        status="sent",
+        sent_at=current,
+        provider_message_id="gmail-shared",
+        created_at=current,
+        updated_at=current,
+    )
+    db.add_all([claimed, sent, accepted_internal, sent_internal, guard_sent])
     db.commit()
 
-    usage = service._outreach_capacity_usage(db, current)
+    assert service._gmail_account_unmatched_reservations(
+        db,
+        _gmail_usage(current),
+    ) == {"provider:gmail-shared"}
+    assert service._gmail_account_unmatched_reservations(
+        db,
+        _gmail_usage(current, {"gmail-shared"}),
+    ) == set()
 
-    assert usage.hourly_verified == 1
-    assert usage.daily_verified == 1
-    assert usage.daily_domain_reservations == {"example.hu": 1}
 
-
-def test_dispatch_batch_isolates_unexpected_row_and_continues(db, monkeypatch):
+def test_global_recipient_guard_sent_row_bridges_business_row_commit_gap(db, monkeypatch):
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db: 2)
-    bad = _message(150, "bad@example.hu", status="claimed")
-    bad.claimed_by = "growth-cap-test"
-    bad.claimed_at = datetime.now(UTC)
-    bad.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
-    good = _message(151, "good@different.hu", status="claimed")
-    good.claimed_by = "growth-cap-test"
-    good.claimed_at = datetime.now(UTC)
-    good.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
-    db.add_all([bad, good])
+    current = datetime.now(UTC)
+    guard_sent = GlobalEmailRecipientGuard(
+        recipient_normalized="guard-gap@example.org",
+        identity_sha256="e" * 64,
+        message_type="growth_outreach",
+        tenant_scope="imperial",
+        status="sent",
+        sent_at=current,
+        provider_message_id="gmail-guard-gap",
+        created_at=current,
+        updated_at=current,
+    )
+    db.add(guard_sent)
     db.commit()
-    claimed_ids = iter([bad.id, good.id])
 
-    def claim_next(current_db):
-        return current_db.get(OutreachMessage, next(claimed_ids))
+    assert service._gmail_account_unmatched_reservations(
+        db,
+        _gmail_usage(current),
+    ) == {"provider:gmail-guard-gap"}
+    assert service._gmail_account_unmatched_reservations(
+        db,
+        _gmail_usage(current, {"gmail-guard-gap"}),
+    ) == set()
 
-    def dispatch_one(current_db, row):
-        if row.id == bad.id:
-            raise RuntimeError("malformed isolated row")
+
+def test_all_local_reservation_ledgers_include_the_exact_24h_cutoff(db, monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    current = datetime.now(UTC)
+    cutoff = current - timedelta(hours=24)
+    claimed = _message(135, "claimed-cutoff@example.hu", status="claimed")
+    claimed.claimed_at = cutoff
+    claimed.provider_message_id = "gmail-claimed-cutoff"
+    sent = _message(136, "sent-cutoff@example.net", status="delivered")
+    sent.sent_at = cutoff
+    sent.provider_message_id = "gmail-sent-cutoff"
+    sent.receipt_json = _verified_gmail_receipt("gmail-sent-cutoff", "f" * 64)
+    canonical_sending = _canonical_delivery(
+        3,
+        status="sending",
+        provider_message_id="gmail-canonical-sending-cutoff",
+        at=cutoff,
+    )
+    canonical_sent = _canonical_delivery(
+        4,
+        status="sent",
+        provider_message_id="gmail-canonical-sent-cutoff",
+        at=cutoff,
+    )
+    guard_sent = GlobalEmailRecipientGuard(
+        recipient_normalized="guard-cutoff@example.org",
+        identity_sha256="1" * 64,
+        message_type="growth_outreach",
+        tenant_scope="imperial",
+        status="sent",
+        sent_at=cutoff,
+        provider_message_id="gmail-guard-cutoff",
+        created_at=cutoff,
+        updated_at=cutoff,
+    )
+    db.add_all([claimed, sent, canonical_sending, canonical_sent, guard_sent])
+    db.commit()
+
+    assert service._gmail_account_unmatched_reservations(
+        db,
+        _gmail_usage(current),
+    ) == {
+        "provider:gmail-claimed-cutoff",
+        "provider:gmail-sent-cutoff",
+        "provider:gmail-canonical-sending-cutoff",
+        "provider:gmail-canonical-sent-cutoff",
+        "provider:gmail-guard-cutoff",
+    }
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["sent", "delivered", "responded", "bounced", "complained", "unsubscribed"],
+)
+def test_mime_verified_outreach_remains_a_local_24h_fallback_after_status_events(
+    db,
+    monkeypatch,
+    status,
+):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    current = datetime.now(UTC)
+    row = _message(140, "sent@example.hu", status=status)
+    row.sent_at = current
+    row.provider_message_id = f"gmail-{status}"
+    row.receipt_json = _verified_gmail_receipt(row.provider_message_id, "c" * 64)
+    db.add(row)
+    db.commit()
+
+    assert service._gmail_account_unmatched_reservations(
+        db,
+        _gmail_usage(current),
+    ) == {f"provider:gmail-{status}"}
+
+
+def test_1999_gmail_sent_plus_current_reservation_is_allowed(db, monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    current = datetime.now(UTC)
+    row = _message(150, "current@example.hu", status="claimed")
+    row.claimed_at = current
+    db.add(row)
+    db.commit()
+    usage = _gmail_usage(current, {f"gmail-{index}" for index in range(1999)})
+
+    attestation = service._assert_outreach_account_quota_reserved(db, row, usage)
+
+    assert attestation["gmail_sent_messages"] == 1999
+    assert attestation["unmatched_reservations"] == 1
+    assert attestation["effective_reserved_count"] == 2000
+    assert attestation["limit"] == 2000
+
+
+def test_2000_gmail_sent_plus_current_reservation_is_blocked(db, monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    current = datetime.now(UTC)
+    row = _message(151, "current@example.hu", status="claimed")
+    row.claimed_at = current
+    db.add(row)
+    db.commit()
+    usage = _gmail_usage(current, {f"gmail-{index}" for index in range(2000)})
+
+    with pytest.raises(
+        EmailDeliveryError,
+        match="gmail_account_rolling_24h_limit_reached_no_send",
+    ) as raised:
+        service._assert_outreach_account_quota_reserved(db, row, usage)
+
+    assert raised.value.retry_safe is True
+    assert raised.value.rate_limited is True
+    assert raised.value.detail["effective_reserved_count"] == 2001
+    assert raised.value.detail["limit"] == 2000
+
+
+def test_pacing_adapts_to_verified_previous_window_without_static_hourly_quota(monkeypatch):
+    current = datetime(2026, 8, 31, 9, tzinfo=UTC)
+    monkeypatch.setattr(
+        service,
+        "settings",
+        lambda: _runtime_settings(outreach_reputation_jitter_fraction=0.0),
+    )
+
+    bootstrap_gap = service._outreach_reputation_gap_seconds(
+        _capacity_usage(previous=0),
+        now=current,
+    )
+    grown_gap = service._outreach_reputation_gap_seconds(
+        _capacity_usage(previous=400),
+        now=current,
+    )
+    physical_floor = 10 * 60 * 60 / 2000
+
+    assert bootstrap_gap == pytest.approx(10 * 60 * 60 / 100)
+    assert grown_gap == pytest.approx(10 * 60 * 60 / 500)
+    assert grown_gap < bootstrap_gap
+    assert grown_gap >= physical_floor
+
+
+def test_jitter_can_only_slow_pacing_not_exceed_growth_ceiling(monkeypatch):
+    current = datetime(2026, 8, 31, 9, tzinfo=UTC)
+
+    class ZeroDigest:
+        def digest(self):
+            return b"\0" * 32
+
+    monkeypatch.setattr(service.hashlib, "sha256", lambda *_args, **_kwargs: ZeroDigest())
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    usage = _capacity_usage(previous=100)
+    no_jitter_growth_ceiling_gap = 10 * 60 * 60 / 125
+
+    gap = service._outreach_reputation_gap_seconds(usage, now=current)
+
+    assert gap >= no_jitter_growth_ceiling_gap
+
+
+def test_upward_jitter_cannot_trap_warmup_at_a_permanent_shadow_cap(monkeypatch):
+    current = datetime(2026, 8, 31, 9, tzinfo=UTC)
+
+    class MaxDigest:
+        def digest(self):
+            return b"\xff" * 32
+
+    monkeypatch.setattr(service.hashlib, "sha256", lambda *_args, **_kwargs: MaxDigest())
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    bootstrap_gap = service._outreach_reputation_gap_seconds(
+        _capacity_usage(previous=0),
+        now=current,
+    )
+    reachable_worst_case_volume = 84
+    ramped_gap = service._outreach_reputation_gap_seconds(
+        _capacity_usage(previous=reachable_worst_case_volume),
+        now=current,
+    )
+
+    assert ramped_gap < bootstrap_gap
+    assert ramped_gap >= 10 * 60 * 60 / (
+        reachable_worst_case_volume * 1.25
+    )
+
+
+def test_rate_limit_backoff_is_at_least_penalized_reputation_gap(db, monkeypatch):
+    current = datetime(2026, 8, 31, 9, tzinfo=UTC)
+    monkeypatch.setattr(
+        service,
+        "settings",
+        lambda: _runtime_settings(outreach_reputation_jitter_fraction=0.0),
+    )
+    error = EmailDeliveryError(
+        "gmail_api_rate_limited",
+        retry_safe=True,
+        rate_limited=True,
+        retry_after_seconds=5,
+    )
+
+    next_at = service._record_outreach_pacing_backoff(db, error=error, now=current)
+
+    assert next_at >= current + timedelta(seconds=720)
+    db.flush()
+    state = db.get(GrowthControlState, service.OUTREACH_PACING_STATE_KEY)
+    assert state is not None
+    detail = json.loads(state.reason)
+    assert detail["penalty_multiplier"] == 2.0
+    assert detail["last_error"] == "gmail_api_rate_limited"
+
+
+@pytest.mark.parametrize(
+    ("sent_count", "complained", "bounced", "must_pause"),
+    [
+        (333, 1, 0, True),
+        (334, 1, 0, False),
+        (60, 0, 3, True),
+        (40, 0, 2, False),
+    ],
+)
+def test_account_reputation_health_pauses_or_slows_external_outreach(
+    db,
+    sent_count,
+    complained,
+    bounced,
+    must_pause,
+):
+    current = datetime(2026, 8, 31, 9, tzinfo=UTC)
+    rows = []
+    for offset in range(sent_count):
+        status = (
+            "complained"
+            if offset < complained
+            else "bounced"
+            if offset < complained + bounced
+            else "sent"
+        )
+        rows.append(
+            _verified_sent_message(
+                10_000 + offset,
+                status=status,
+                sent_at=current - timedelta(hours=1),
+            )
+        )
+    db.add_all(rows)
+    db.commit()
+
+    if must_pause:
+        with pytest.raises(
+            EmailDeliveryError,
+            match="gmail_account_reputation_degraded_no_send",
+        ) as raised:
+            service._assert_outreach_reputation_healthy(db, current)
+        assert raised.value.retry_safe is True
+        assert raised.value.transport_attempted is False
+        assert raised.value.detail["action"] == "pause_external_outreach"
+    else:
+        detail = service._assert_outreach_reputation_healthy(db, current)
+        assert detail["action"] == "slow_external_outreach"
+        assert detail["pacing_multiplier"] > 1.0
+
+
+def test_persisted_pacing_gate_controls_when_one_slot_is_due(db, monkeypatch):
+    current = datetime(2026, 8, 31, 9, tzinfo=UTC)
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    db.add(_message(160, "queued@example.hu"))
+    state = GrowthControlState(
+        key=service.OUTREACH_PACING_STATE_KEY,
+        enabled=True,
+        reason=json.dumps(
+            {"next_send_not_before": (current + timedelta(minutes=1)).isoformat()}
+        ),
+        changed_by="test",
+        changed_at=current,
+    )
+    db.add(state)
+    db.commit()
+
+    assert service._outreach_send_capacity(db, current) == 0
+    state.reason = json.dumps(
+        {"next_send_not_before": (current - timedelta(seconds=1)).isoformat()}
+    )
+    db.commit()
+    assert service._outreach_send_capacity(db, current) == 1
+
+
+def test_dispatch_batch_processes_at_most_one_due_item_per_tick(db, monkeypatch):
+    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
+    monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db: 100)
+    pending = [
+        _message(170, "first@example.hu", status="claimed"),
+        _message(171, "second@example.net", status="claimed"),
+    ]
+    dispatched: list[str] = []
+
+    def claim_next(_db):
+        return pending.pop(0) if pending else None
+
+    def dispatch_one(_db, row):
+        dispatched.append(row.outreach_id)
         row.status = "sent"
-        current_db.commit()
         return row
 
     monkeypatch.setattr(service, "claim_outreach", claim_next)
     monkeypatch.setattr(service, "dispatch_outreach", dispatch_one)
 
-    assert service.dispatch_batch(db, limit=2) == 1
-    db.refresh(bad)
-    db.refresh(good)
-    assert bad.status == "claimed"
-    assert bad.claimed_by is None
-    assert bad.claimed_at is not None
-    assert bad.lease_expires_at is None
-    assert bad.last_error == "unexpected_dispatch_exception:RuntimeError"
-    assert service._delivery_verification_pending(bad)
-    assert good.status == "sent"
+    assert service.dispatch_batch(db, limit=100) == 1
+    assert dispatched == ["OUT-CAP-170"]
+    assert [row.outreach_id for row in pending] == ["OUT-CAP-171"]
 
 
-def test_direct_dispatch_cannot_bypass_reserved_root_domain_cap(db, monkeypatch):
-    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
-    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    for index in range(10):
-        reserved = _message(
-            120 + index,
-            f"person{index}@sub.example.hu",
-            status="claimed",
-        )
-        reserved.claimed_at = datetime.now(UTC)
-        reserved.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
-        db.add(reserved)
-    row = _message(140, "direct@mail.example.hu", status="claimed")
-    row.claimed_by = "growth-cap-test"
-    row.claimed_at = datetime.now(UTC)
-    row.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
-    row.attempt_count = 1
-    db.add(row)
-    db.commit()
-
-    class UnexpectedTransport:
-        def __init__(self, *_args, **_kwargs):
-            raise AssertionError("transport must not run without reserved domain capacity")
-
-    monkeypatch.setattr(service, "SMTPEmailAdapter", UnexpectedTransport)
-    result = service.dispatch_outreach(db, row)
-
-    assert result is row
-    assert row.status == "queued"
-    assert row.attempt_count == 0
-    assert row.claimed_by is None and row.claimed_at is None
-    assert row.provider_message_id is None
-
-
-def test_parallel_claims_reserve_exactly_ten_per_root_domain(tmp_path, monkeypatch):
-    database = tmp_path / "growth-outreach-domain-cap.sqlite"
-    engine = create_engine(
+def test_parallel_sqlite_claims_reserve_exactly_one_active_sender(tmp_path, monkeypatch):
+    database = tmp_path / "growth-outreach-concurrency.sqlite"
+    sqlite_engine = create_engine(
         f"sqlite:///{database}",
         connect_args={"check_same_thread": False, "timeout": 20},
     )
-    Base.metadata.create_all(engine)
-    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    Base.metadata.create_all(sqlite_engine)
+    sessions = sessionmaker(bind=sqlite_engine, expire_on_commit=False)
     with sessions() as db:
         db.add_all(
             [_message(200 + index, f"person{index}@branch.example.hu") for index in range(12)]
@@ -698,19 +888,19 @@ def test_parallel_claims_reserve_exactly_ten_per_root_domain(tmp_path, monkeypat
     with ThreadPoolExecutor(max_workers=12) as executor:
         claimed_ids = list(executor.map(worker, range(12)))
 
-    assert len([value for value in claimed_ids if value]) == 10
+    assert len([value for value in claimed_ids if value]) == 1
     with sessions() as db:
         rows = db.scalars(select(OutreachMessage)).all()
-        assert sum(row.status == "claimed" for row in rows) == 10
-        assert sum(row.status == "queued" for row in rows) == 2
-        assert sum(row.attempt_count for row in rows) == 10
+        assert sum(row.status == "claimed" for row in rows) == 1
+        assert sum(row.status == "queued" for row in rows) == 11
+        assert sum(row.attempt_count for row in rows) == 1
 
 
 @pytest.mark.skipif(
     engine.dialect.name != "postgresql",
     reason="requires the dedicated PostgreSQL integration-test database",
 )
-def test_postgresql_parallel_claims_reserve_exactly_ten_with_advisory_lock(
+def test_postgresql_parallel_claims_reserve_exactly_one_with_advisory_lock(
     monkeypatch,
 ):
     with SessionLocal() as db:
@@ -730,10 +920,10 @@ def test_postgresql_parallel_claims_reserve_exactly_ten_with_advisory_lock(
     with ThreadPoolExecutor(max_workers=12) as executor:
         claimed_ids = list(executor.map(worker, range(12)))
 
-    assert len([value for value in claimed_ids if value]) == 10
+    assert len([value for value in claimed_ids if value]) == 1
     with SessionLocal() as db:
         rows = db.scalars(
             select(OutreachMessage).where(OutreachMessage.outreach_id.like("OUT-CAP-4%"))
         ).all()
-        assert sum(row.status == "claimed" for row in rows) == 10
-        assert sum(row.status == "queued" for row in rows) == 2
+        assert sum(row.status == "claimed" for row in rows) == 1
+        assert sum(row.status == "queued" for row in rows) == 11
