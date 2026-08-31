@@ -45,7 +45,6 @@
       "sender_email": "REPLACE_EXITFLOW_SENDER@example.invalid",
       "domain_key": "REPLACE_EXITFLOW_DOMAIN_KEY",
       "secret_ref": "exitflow-smtp.json",
-      "max_daily_messages": 100,
       "recipient_cooldown_days": 30,
       "followup_delays_days": [4, 8],
       "templates": {"default": {

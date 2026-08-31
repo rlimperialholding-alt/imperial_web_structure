@@ -95,7 +95,6 @@ def _binding() -> BrandBinding:
         config={
             "brand_name": "Imperial Holding",
             "recipient_cooldown_days": 30,
-            "max_daily_messages": 50,
         },
     )
 
@@ -160,9 +159,11 @@ def _settings() -> SimpleNamespace:
         timezone="Europe/Budapest",
         outreach_send_start_local="08:00",
         outreach_send_end_local="18:00",
-        outreach_max_per_hour=5,
-        outreach_max_per_day=50,
-        outreach_max_per_recipient_root_domain_per_day=10,
+        outreach_account_rolling_24h_max=2000,
+        outreach_send_concurrency=1,
+        outreach_reputation_bootstrap_messages_per_window=100,
+        outreach_reputation_max_growth_factor=1.25,
+        outreach_reputation_jitter_fraction=0.20,
         runtime_kill_switch_file="unused-test-runtime-kill-switch",
     )
 
@@ -1278,7 +1279,9 @@ def test_row_local_live_failure_retries_and_batch_continues_to_next_row(
     monkeypatch.setattr(service, "claim_outreach", lambda _db: next(claimed))
     monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db: 2)
 
-    sent = service.dispatch_batch(db, limit=2)
+    first_sent = service.dispatch_batch(db, limit=2)
+    second_sent = service.dispatch_batch(db, limit=2)
+    sent = first_sent + second_sent
 
     db.refresh(bad)
     db.refresh(good)

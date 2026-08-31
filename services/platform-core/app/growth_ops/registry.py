@@ -24,6 +24,11 @@ _EMAIL_RE = re.compile(
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_LEGACY_OUTREACH_COUNT_CAP_ENV = (
+    "GROWTH_OPS_OUTREACH_MAX_PER_HOUR",
+    "GROWTH_OPS_OUTREACH_MAX_PER_DAY",
+    "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
+)
 
 
 def _valid_email(value: str) -> bool:
@@ -88,9 +93,11 @@ class GrowthSettings:
     timezone: str
     outreach_send_start_local: str
     outreach_send_end_local: str
-    outreach_max_per_hour: int
-    outreach_max_per_day: int
-    outreach_max_per_recipient_root_domain_per_day: int
+    outreach_account_rolling_24h_max: int
+    outreach_send_concurrency: int
+    outreach_reputation_bootstrap_messages_per_window: int
+    outreach_reputation_max_growth_factor: float
+    outreach_reputation_jitter_fraction: float
     land_outreach_production_canary_max_total: int
     land_outreach_production_canary_local_date: str
     canonical_wide_enabled: bool
@@ -123,14 +130,53 @@ class GrowthSettings:
     deepseek_output_usd_per_million: float
 
 
-def _land_canary_max_total_setting() -> int:
+def _strict_int_setting(
+    name: str,
+    default: str,
+    *,
+    minimum: int,
+    maximum: int,
+    error: str,
+) -> int:
     try:
-        return int(os.getenv("LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL", "3"))
+        value = int(os.getenv(name, default))
     except (TypeError, ValueError) as exc:
-        raise GrowthRegistryError("land_outreach_production_canary_cap_invalid") from exc
+        raise GrowthRegistryError(error) from exc
+    if not minimum <= value <= maximum:
+        raise GrowthRegistryError(error)
+    return value
+
+
+def _strict_float_setting(
+    name: str,
+    default: str,
+    *,
+    minimum: float,
+    maximum: float,
+    error: str,
+) -> float:
+    try:
+        value = float(os.getenv(name, default))
+    except (TypeError, ValueError) as exc:
+        raise GrowthRegistryError(error) from exc
+    if not minimum <= value <= maximum:
+        raise GrowthRegistryError(error)
+    return value
+
+
+def _land_canary_max_total_setting() -> int:
+    return _strict_int_setting(
+        "LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL",
+        "3",
+        minimum=1,
+        maximum=3,
+        error="land_outreach_production_canary_cap_invalid",
+    )
 
 
 def settings() -> GrowthSettings:
+    if any(name in os.environ for name in _LEGACY_OUTREACH_COUNT_CAP_ENV):
+        raise GrowthRegistryError("legacy_outreach_count_cap_environment_present_no_send")
     return GrowthSettings(
         enabled=os.getenv("GROWTH_OPS_ENABLED", "false").lower() == "true",
         registry_file=os.getenv("GROWTH_OPS_REGISTRY_FILE", "/app/config/growth/registry.json"),
@@ -153,27 +199,44 @@ def settings() -> GrowthSettings:
         timezone=os.getenv("GROWTH_OPS_TIMEZONE", "Europe/Budapest"),
         outreach_send_start_local=os.getenv("GROWTH_OPS_OUTREACH_SEND_START_LOCAL", "08:00"),
         outreach_send_end_local=os.getenv("GROWTH_OPS_OUTREACH_SEND_END_LOCAL", "18:00"),
-        outreach_max_per_hour=max(
-            1, min(5, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_HOUR", "5")))
+        outreach_account_rolling_24h_max=_strict_int_setting(
+            "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX",
+            "2000",
+            minimum=2000,
+            maximum=2000,
+            error="outreach_account_rolling_24h_max_invalid_no_send",
         ),
-        outreach_max_per_day=max(
-            1, min(50, int(os.getenv("GROWTH_OPS_OUTREACH_MAX_PER_DAY", "50")))
+        outreach_send_concurrency=_strict_int_setting(
+            "GROWTH_OPS_OUTREACH_SEND_CONCURRENCY",
+            "1",
+            minimum=1,
+            maximum=1,
+            error="outreach_send_concurrency_must_be_one_no_send",
         ),
-        outreach_max_per_recipient_root_domain_per_day=max(
-            1,
-            min(
-                10,
-                int(
-                    os.getenv(
-                        "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
-                        "10",
-                    )
-                ),
-            ),
+        outreach_reputation_bootstrap_messages_per_window=_strict_int_setting(
+            "GROWTH_OPS_OUTREACH_REPUTATION_BOOTSTRAP_MESSAGES_PER_WINDOW",
+            "100",
+            minimum=100,
+            maximum=100,
+            error="outreach_reputation_bootstrap_invalid_no_send",
+        ),
+        outreach_reputation_max_growth_factor=_strict_float_setting(
+            "GROWTH_OPS_OUTREACH_REPUTATION_MAX_GROWTH_FACTOR",
+            "1.25",
+            minimum=1.25,
+            maximum=1.25,
+            error="outreach_reputation_growth_factor_invalid_no_send",
+        ),
+        outreach_reputation_jitter_fraction=_strict_float_setting(
+            "GROWTH_OPS_OUTREACH_REPUTATION_JITTER_FRACTION",
+            "0.20",
+            minimum=0.20,
+            maximum=0.20,
+            error="outreach_reputation_jitter_invalid_no_send",
         ),
         land_outreach_production_canary_max_total=(_land_canary_max_total_setting()),
         land_outreach_production_canary_local_date=os.getenv(
-            "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE", "2026-08-31"
+            "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE", ""
         ).strip(),
         canonical_wide_enabled=os.getenv("CANONICAL_GROWTH_ENABLED", "false").lower() == "true",
         canonical_daily_at=os.getenv("CANONICAL_GROWTH_DAILY_AT", "05:30"),

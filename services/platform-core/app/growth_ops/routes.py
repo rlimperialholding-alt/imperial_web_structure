@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hmac
 import json
+from urllib.parse import parse_qs
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from ..config import settings as platform_settings
@@ -311,3 +312,31 @@ def growth_unsubscribe(token: str, db: Session = Depends(get_db)):  # noqa: B008
         "A leiratkozást rögzítettük. Erre a címre nem küldünk további megkeresést.",
         media_type="text/plain; charset=utf-8",
     )
+
+
+@router.post("/growth/unsubscribe/{token}", response_class=Response)
+async def growth_unsubscribe_one_click(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    content_type = (
+        request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    )
+    body = await request.body()
+    try:
+        fields = parse_qs(body.decode("ascii"), keep_blank_values=True, strict_parsing=True)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="invalid one-click unsubscribe request",
+        ) from exc
+    if content_type != "application/x-www-form-urlencoded" or fields != {
+        "List-Unsubscribe": ["One-Click"]
+    }:
+        raise HTTPException(status_code=400, detail="invalid one-click unsubscribe request")
+    try:
+        unsubscribe(db, token)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="invalid unsubscribe link") from exc
+    return Response(status_code=204)

@@ -107,7 +107,6 @@ class FakeRegistry:
             config={
                 "brand_name": "Imperial Holding",
                 "recipient_cooldown_days": 30,
-                "max_daily_messages": 100,
             },
         )
 
@@ -142,8 +141,11 @@ def growth_runtime(monkeypatch, db):
             canonical_daily_at="05:30",
             outreach_send_start_local="08:00",
             outreach_send_end_local="18:00",
-            outreach_max_per_hour=5,
-            outreach_max_per_day=50,
+            outreach_account_rolling_24h_max=2000,
+            outreach_send_concurrency=1,
+            outreach_reputation_bootstrap_messages_per_window=100,
+            outreach_reputation_max_growth_factor=1.25,
+            outreach_reputation_jitter_fraction=0.20,
         ),
     )
     db.add(
@@ -347,26 +349,34 @@ def test_dispatch_batch_does_not_claim_outside_sending_window(db, growth_runtime
     assert service.dispatch_batch(db) == 0
 
 
-def test_outreach_send_capacity_enforces_hourly_and_daily_limits(db, growth_runtime, monkeypatch):
+def test_outreach_send_capacity_enforces_single_concurrency_and_pacing(
+    db, growth_runtime, monkeypatch
+):
     local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: service.OutreachCapacityUsage(2, 47, 0, 0, 0, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(1999, 800, 0, 0, 50, None),
     )
-    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 3
+    monkeypatch.setattr(service, "_outreach_pacing_next_at", lambda _db: None)
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 1
 
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: service.OutreachCapacityUsage(5, 12, 0, 0, 0, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(2, 2, 1, 0, 50, None),
     )
     assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: service.OutreachCapacityUsage(1, 50, 0, 0, 0, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(2, 2, 0, 0, 50, None),
+    )
+    monkeypatch.setattr(
+        service,
+        "_outreach_pacing_next_at",
+        lambda _db: local_now.astimezone(UTC) + timedelta(seconds=30),
     )
     assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 
@@ -485,8 +495,11 @@ def test_platform_health_readiness_skips_external_provider_preflight(
         ("canonical_daily_at", "08:00"),
         ("outreach_send_start_local", "07:00"),
         ("outreach_send_end_local", "19:00"),
-        ("outreach_max_per_hour", 6),
-        ("outreach_max_per_day", 51),
+        ("outreach_account_rolling_24h_max", 1999),
+        ("outreach_send_concurrency", 2),
+        ("outreach_reputation_bootstrap_messages_per_window", 101),
+        ("outreach_reputation_max_growth_factor", 1.20),
+        ("outreach_reputation_jitter_fraction", 0.10),
     ],
 )
 def test_production_daily_automation_contract_fails_closed_on_config_drift(
@@ -648,10 +661,11 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
         "GROWTH_OPS_TIMEZONE": "Europe/Budapest",
         "GROWTH_OPS_OUTREACH_SEND_START_LOCAL": "08:00",
         "GROWTH_OPS_OUTREACH_SEND_END_LOCAL": "18:00",
-        "GROWTH_OPS_OUTREACH_MAX_PER_HOUR": "5",
-        "GROWTH_OPS_OUTREACH_MAX_PER_DAY": "50",
-        "LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL": "3",
-        "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE": "2026-08-31",
+        "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX": "2000",
+        "GROWTH_OPS_OUTREACH_SEND_CONCURRENCY": "1",
+        "GROWTH_OPS_OUTREACH_REPUTATION_BOOTSTRAP_MESSAGES_PER_WINDOW": "100",
+        "GROWTH_OPS_OUTREACH_REPUTATION_MAX_GROWTH_FACTOR": "1.25",
+        "GROWTH_OPS_OUTREACH_REPUTATION_JITTER_FRACTION": "0.20",
     }
     text = override.read_text(encoding="utf-8")
     for key, value in expected_environment.items():
@@ -661,14 +675,15 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
 
     root_compose = Path(__file__).resolve().parents[3] / "docker-compose.yml"
     root_text = root_compose.read_text(encoding="utf-8")
-    assert (
-        "LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL: "
-        "${LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL:-3}"
-    ) in root_text
-    assert (
-        "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE: "
-        "${LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE:-2026-08-31}"
-    ) in root_text
+    for legacy_key in (
+        "GROWTH_OPS_OUTREACH_MAX_PER_HOUR",
+        "GROWTH_OPS_OUTREACH_MAX_PER_DAY",
+        "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
+    ):
+        assert legacy_key not in text
+        assert legacy_key not in root_text
+    assert "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE" not in text
+    assert "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE" not in root_text
 
 
 def test_verified_business_role_signal_queues_once(db, growth_runtime):
@@ -777,6 +792,58 @@ def test_queued_payload_is_bound_to_the_canonical_registry(db, growth_runtime):
     assert metadata["registry_sha256"]
     assert service._payload_matches(message)
     assert service._canonical_metadata_sha256(metadata)
+
+
+def test_rfc8058_one_click_unsubscribe_is_strict_and_idempotent(
+    db, client, growth_runtime
+):
+    result = service.ingest_signal(
+        db, _signal(external_key="ETDR-RFC8058-ONE-CLICK")
+    )
+    message = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
+    )
+    assert message is not None
+    unsubscribe_url = service._canonical_metadata(message)["render_input"][
+        "unsubscribe_url"
+    ]
+    token = unsubscribe_url.rsplit("/", 1)[-1]
+
+    invalid = client.post(
+        f"/growth/unsubscribe/{token}",
+        content="List-Unsubscribe=Wrong",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert invalid.status_code == 400
+
+    for _ in range(2):
+        response = client.post(
+            f"/growth/unsubscribe/{token}",
+            content="List-Unsubscribe=One-Click",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert response.status_code == 204
+
+    db.expire_all()
+    refreshed = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
+    )
+    suppression = db.scalar(
+        select(MailSuppression).where(
+            MailSuppression.email == refreshed.recipient_email
+        )
+    )
+    assert refreshed.status == "unsubscribed"
+    assert suppression is not None and suppression.active is True
+
+
+def test_rfc8058_one_click_unsubscribe_rejects_unknown_token(client):
+    response = client.post(
+        "/growth/unsubscribe/not-a-real-token",
+        content="List-Unsubscribe=One-Click",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == 404
 
 
 def test_canonical_metadata_tampering_invalidates_payload_and_release(db, growth_runtime):
@@ -1002,7 +1069,7 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
     assert receipt["delivery_verification"]["retry_safe"] is False
     assert second.status == "claimed"
     assert sends == 1
-    assert kill_switch_trips == 1
+    assert kill_switch_trips == 0
 
 
 def test_expired_claim_is_held_pending_verification_and_never_requeued(
@@ -1040,7 +1107,7 @@ def test_expired_claim_is_held_pending_verification_and_never_requeued(
     assert receipt["delivery_verification"]["detail"] == {
         "reason": "worker_lease_expired_delivery_ambiguous"
     }
-    assert kill_switch_trips == 1
+    assert kill_switch_trips == 0
 
     message.claimed_by = "verification-worker"
     message.claimed_at = datetime.now(UTC) - timedelta(minutes=10)
@@ -1051,7 +1118,7 @@ def test_expired_claim_is_held_pending_verification_and_never_requeued(
     assert message.status == "claimed"
     assert message.claimed_by is None and message.lease_expires_at is None
     assert service._delivery_verification_pending(message)
-    assert kill_switch_trips == 1
+    assert kill_switch_trips == 0
 
 
 def test_verified_referral_partner_queues_only_the_canonical_locked_template(db, growth_runtime):
@@ -1989,7 +2056,7 @@ def test_smtp_adapter_sends_internal_html_as_multipart_alternative(monkeypatch):
     base_binding = FakeRegistry().brand_binding("imperial")
     binding = BrandBinding(
         brand_id=base_binding.brand_id,
-        sender_email="info@imperialholding.hu",
+        sender_email="reports@imperialholding.hu",
         domain_key=base_binding.domain_key,
         secret=base_binding.secret,
         config=base_binding.config,

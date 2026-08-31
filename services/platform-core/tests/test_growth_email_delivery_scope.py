@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import base64
 import http.client
+import io
 import json
 import re
 import stat
+import urllib.error
+import urllib.parse
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 
+from app.growth_ops import email as growth_email
 from app.growth_ops import processing
 from app.growth_ops.email import EmailDeliveryError, SMTPEmailAdapter
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
@@ -72,11 +77,18 @@ class _HTTPResponse:
 
 
 class _FakeGmail:
-    def __init__(self, *, readback_mode: str = "exact") -> None:
+    def __init__(
+        self,
+        *,
+        readback_mode: str = "exact",
+        quota_pages: dict[str, object] | None = None,
+    ) -> None:
         self.readback_mode = readback_mode
+        self.quota_pages = quota_pages
         self.provider_id = "gmail-provider-id"
         self.sent_raw: str | None = None
         self.post_count = 0
+        self.quota_queries: list[dict[str, list[str]]] = []
 
     def urlopen(self, request, timeout):
         assert timeout == 30
@@ -95,6 +107,14 @@ class _FakeGmail:
         if url == "https://gmail.googleapis.com/gmail/v1/users/me/profile":
             return _HTTPResponse({"emailAddress": "info@imperialholding.hu"})
         if "/users/me/messages?" in url:
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            if query.get("labelIds") == ["SENT"] and query.get("maxResults") == ["500"]:
+                self.quota_queries.append(query)
+                if self.quota_pages is not None:
+                    token = query.get("pageToken", [""])[0]
+                    return _HTTPResponse(self.quota_pages[token])
+                messages = [] if self.sent_raw is None else [{"id": self.provider_id}]
+                return _HTTPResponse({"messages": messages})
             if self.sent_raw is None:
                 return _HTTPResponse({"messages": []})
             return _HTTPResponse({"messages": [{"id": self.provider_id}]})
@@ -102,6 +122,15 @@ class _FakeGmail:
             self.post_count += 1
             if self.readback_mode == "post_transport_error":
                 raise OSError("connection reset after request write")
+            if self.readback_mode.startswith("post_http_"):
+                status = int(self.readback_mode.rsplit("_", 1)[1])
+                raise urllib.error.HTTPError(
+                    url,
+                    status,
+                    "provider timeout",
+                    {},
+                    io.BytesIO(b'{"error":{"message":"provider timeout"}}'),
+                )
             payload = json.loads(request.data)
             self.sent_raw = payload["raw"]
             if self.readback_mode == "incomplete_read":
@@ -130,8 +159,64 @@ class _FakeGmail:
                     1,
                 )
                 readback_raw = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-            return _HTTPResponse({"id": self.provider_id, "labelIds": labels, "raw": readback_raw})
+            elif self.readback_mode == "mismatched_list_unsubscribe":
+                raw = base64.urlsafe_b64decode(readback_raw + "=" * (-len(readback_raw) % 4))
+                original = (
+                    b"List-Unsubscribe: "
+                    b"<https://imperialholding.hu/growth/unsubscribe/token>"
+                )
+                assert original in raw
+                raw = raw.replace(
+                    original,
+                    b"List-Unsubscribe: <https://example.test/unsubscribe/other>",
+                    1,
+                )
+                readback_raw = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+            elif self.readback_mode == "mismatched_list_unsubscribe_post":
+                raw = base64.urlsafe_b64decode(readback_raw + "=" * (-len(readback_raw) % 4))
+                original = b"List-Unsubscribe-Post: List-Unsubscribe=One-Click"
+                assert original in raw
+                raw = raw.replace(
+                    original,
+                    b"List-Unsubscribe-Post: List-Unsubscribe=No",
+                    1,
+                )
+                readback_raw = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+            elif self.readback_mode == "attachment_mismatch":
+                raw = base64.urlsafe_b64decode(readback_raw + "=" * (-len(readback_raw) % 4))
+                original = base64.b64encode(b"Prefab.hu")
+                assert original in raw
+                raw = raw.replace(original, base64.b64encode(b"Other.txt"), 1)
+                readback_raw = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+            return _HTTPResponse(
+                {
+                    "id": self.provider_id,
+                    "labelIds": labels,
+                    "internalDate": "1788160000000",
+                    "raw": readback_raw,
+                }
+            )
         raise AssertionError(f"unexpected URL: {url}")
+
+
+def _quota_pages(*page_sizes: int) -> dict[str, object]:
+    pages: dict[str, object] = {}
+    next_id = 0
+    for index, page_size in enumerate(page_sizes):
+        token = "" if index == 0 else f"page-{index}"
+        payload: dict[str, object] = {
+            "messages": [
+                {"id": f"sent-{message_id}"}
+                for message_id in range(next_id, next_id + page_size)
+            ],
+            # Deliberately wrong: the adapter must enumerate IDs, not trust this hint.
+            "resultSizeEstimate": 1,
+        }
+        next_id += page_size
+        if index + 1 < len(page_sizes):
+            payload["nextPageToken"] = f"page-{index + 1}"
+        pages[token] = payload
+    return pages
 
 
 @pytest.fixture(autouse=True)
@@ -174,6 +259,8 @@ def _payload(**changes):
         "body_text": "Az Imperial Holding ajánlata.",
         "idempotency_key": "a" * 64,
         "pre_send_guard": lambda: None,
+        "account_quota_guard": lambda _usage: None,
+        "unsubscribe_url": "https://imperialholding.hu/growth/unsubscribe/token",
     }
     payload.update(changes)
     return payload
@@ -210,7 +297,7 @@ def test_external_customer_rejects_attachments_before_transport(smtp_transport):
 def test_external_customer_smtp_is_rejected_before_transport(smtp_transport):
     with pytest.raises(
         GrowthRegistryError,
-        match="external_customer_gmail_oauth_required_no_send",
+        match="account_scoped_gmail_oauth_required_no_send",
     ):
         SMTPEmailAdapter(_binding()).send(
             **_payload(
@@ -385,6 +472,206 @@ def test_external_gmail_exact_sent_readback_roundtrip(monkeypatch):
     assert receipt.detail["readback_mime_sha256"] == receipt.response_sha256
     assert receipt.detail["rfc_message_id"].startswith("<imperial-")
     assert receipt.detail["oauth_profile_email"] == "info@imperialholding.hu"
+
+
+def test_gmail_rolling_24h_usage_paginates_exact_ids_and_uses_fixed_bounds(
+    monkeypatch,
+):
+    gmail = _FakeGmail(quota_pages=_quota_pages(500, 500, 7))
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    observed_at = datetime(2026, 8, 31, 8, 25, 27, tzinfo=UTC)
+
+    usage = growth_email._gmail_sent_rolling_24h_usage(
+        access_token="access-token",
+        now=observed_at,
+    )
+
+    assert usage.sent_messages == 1007
+    assert usage.pages == 3
+    assert usage.observed_at == observed_at
+    assert usage.cutoff == observed_at - timedelta(hours=24)
+    assert len(gmail.quota_queries) == 3
+    expected_query = (
+        f"after:{int(usage.cutoff.timestamp()) - 1} "
+        f"before:{int(observed_at.timestamp()) + 1}"
+    )
+    assert {query["q"][0] for query in gmail.quota_queries} == {expected_query}
+    assert [query.get("pageToken", [""])[0] for query in gmail.quota_queries] == [
+        "",
+        "page-1",
+        "page-2",
+    ]
+
+
+def test_gmail_rolling_24h_usage_deduplicates_provider_ids(monkeypatch):
+    gmail = _FakeGmail(
+        quota_pages={
+            "": {
+                "messages": [{"id": "sent-1"}, {"id": "sent-2"}],
+                "nextPageToken": "next",
+                "resultSizeEstimate": 9000,
+            },
+            "next": {
+                "messages": [{"id": "sent-2"}, {"id": "sent-3"}],
+                "resultSizeEstimate": 0,
+            },
+        }
+    )
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    usage = growth_email._gmail_sent_rolling_24h_usage(access_token="access-token")
+
+    assert usage.provider_ids == frozenset({"sent-1", "sent-2", "sent-3"})
+    assert usage.sent_messages == 3
+    assert usage.pages == 2
+
+
+def test_external_gmail_allows_1999_provider_messages_and_current_send(monkeypatch):
+    gmail = _FakeGmail(quota_pages=_quota_pages(500, 500, 500, 499))
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    observed_usage = []
+
+    receipt = SMTPEmailAdapter(_oauth_binding()).send(
+        **_payload(
+            delivery_scope="external_customer",
+            body_text="Imperial Holding offer.",
+            account_quota_guard=observed_usage.append,
+        )
+    )
+
+    assert [usage.sent_messages for usage in observed_usage] == [1999]
+    assert observed_usage[0].headroom == 1
+    assert gmail.post_count == 1
+    assert receipt.provider_message_id == gmail.provider_id
+
+
+def test_external_gmail_blocks_at_2000_provider_messages_before_post(monkeypatch):
+    gmail = _FakeGmail(quota_pages=_quota_pages(500, 500, 500, 500))
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(
+        EmailDeliveryError,
+        match="gmail_account_rolling_24h_limit_reached_no_send",
+    ) as raised:
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+            )
+        )
+
+    assert raised.value.retry_safe is True
+    assert raised.value.rate_limited is True
+    assert raised.value.detail["sent_messages"] == 2000
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+@pytest.mark.parametrize(
+    ("quota_pages", "reason"),
+    [
+        (
+            {
+                "": {"messages": [], "nextPageToken": "loop"},
+                "loop": {"messages": [], "nextPageToken": "loop"},
+            },
+            "gmail_rolling_24h_pagination_cycle",
+        ),
+        (
+            {"": {"messages": {"id": "not-a-list"}}},
+            "gmail_rolling_24h_list_result_invalid",
+        ),
+    ],
+    ids=["pagination-cycle", "malformed-page"],
+)
+def test_external_gmail_quota_pagination_failure_is_fail_closed_before_post(
+    quota_pages,
+    reason,
+    monkeypatch,
+):
+    gmail = _FakeGmail(quota_pages=quota_pages)
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(
+        EmailDeliveryError,
+        match="gmail_account_quota_verification_failed_no_send",
+    ) as raised:
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+            )
+        )
+
+    assert reason in raised.value.detail["reason"]
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_requires_account_quota_guard_before_post(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="external_customer_account_quota_guard_required_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                account_quota_guard=None,
+            )
+        )
+
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+def test_external_gmail_requires_https_unsubscribe_before_network(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="outbound_https_unsubscribe_url_required_no_send",
+    ):
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                unsubscribe_url=None,
+            )
+        )
+
+    assert gmail.quota_queries == []
+    assert gmail.post_count == 0
+    assert gmail.sent_raw is None
+
+
+@pytest.mark.parametrize(
+    "readback_mode",
+    ["mismatched_list_unsubscribe", "mismatched_list_unsubscribe_post"],
+)
+def test_external_gmail_rfc8058_readback_tamper_is_held(
+    readback_mode,
+    monkeypatch,
+):
+    gmail = _FakeGmail(readback_mode=readback_mode)
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(EmailDeliveryError, match="accepted_but_unverified") as raised:
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+            )
+        )
+
+    assert gmail.post_count == 1
+    assert raised.value.accepted_but_unverified is True
+    assert raised.value.retry_safe is False
+    assert raised.value.provider_message_id == gmail.provider_id
 
 
 def test_external_gmail_rechecks_guard_immediately_before_send_post(monkeypatch):
@@ -683,6 +970,30 @@ def test_external_gmail_post_transport_ambiguity_is_held_and_never_retry_safe(
     assert raised.value.retry_safe is False
 
 
+@pytest.mark.parametrize("status", [408, 500])
+def test_external_gmail_post_timeout_or_server_error_is_held_without_resend(
+    status,
+    monkeypatch,
+):
+    gmail = _FakeGmail(readback_mode=f"post_http_{status}")
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(EmailDeliveryError, match="accepted_but_unverified") as raised:
+        SMTPEmailAdapter(_oauth_binding()).send(
+            **_payload(
+                delivery_scope="external_customer",
+                body_text="Imperial Holding offer.",
+                reply_to="info@imperialholding.hu",
+            )
+        )
+
+    assert gmail.post_count == 1
+    assert raised.value.accepted_but_unverified is True
+    assert raised.value.transport_attempted is True
+    assert raised.value.retry_safe is False
+    assert raised.value.http_status == status
+
+
 @pytest.mark.parametrize("readback_mode", ["incomplete_read", "invalid_utf8"])
 def test_external_gmail_post_response_protocol_errors_are_ambiguous(
     readback_mode,
@@ -784,21 +1095,77 @@ def test_external_gmail_pre_send_search_failure_does_not_claim_acceptance(monkey
 
     assert gmail.post_count == 0
     assert raised.value.accepted_but_unverified is False
-    assert raised.value.retry_safe is False
+    assert raised.value.retry_safe is True
 
 
-def test_internal_corporate_multi_brand_message_passes(smtp_transport):
-    receipt = SMTPEmailAdapter(_binding()).send(
+def test_internal_info_account_requires_gmail_oauth(smtp_transport):
+    with pytest.raises(
+        GrowthRegistryError,
+        match="account_scoped_gmail_oauth_required_no_send",
+    ):
+        SMTPEmailAdapter(_binding()).send(
+            to_email="vezetes@imperialholding.hu",
+            subject="Belső márkaösszefoglaló",
+            body_text="Imperial Holding, Prefab.hu, Bautica és BauFreund belső összefoglalója.",
+            idempotency_key="b" * 64,
+            delivery_scope="internal",
+            attachments=[("belso.txt", b"Prefab.hu", "text/plain")],
+        )
+    assert smtp_transport == []
+
+
+def test_internal_gmail_uses_account_guard_without_external_window(monkeypatch):
+    gmail = _FakeGmail()
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+    window_calls = 0
+
+    def external_window_must_not_run():
+        nonlocal window_calls
+        window_calls += 1
+        raise AssertionError("internal Gmail delivery must not use external outreach window")
+
+    monkeypatch.setattr(
+        "app.growth_ops.email._assert_external_transport_window_open",
+        external_window_must_not_run,
+    )
+    receipt = SMTPEmailAdapter(_oauth_binding()).send(
         to_email="vezetes@imperialholding.hu",
         subject="Belső márkaösszefoglaló",
         body_text="Imperial Holding, Prefab.hu, Bautica és BauFreund belső összefoglalója.",
         idempotency_key="b" * 64,
         delivery_scope="internal",
         attachments=[("belso.txt", b"Prefab.hu", "text/plain")],
+        pre_send_guard=lambda: None,
+        account_quota_guard=lambda _usage: None,
     )
 
-    assert receipt.provider == "smtp"
-    assert len(smtp_transport) == 1
+    assert receipt.provider == "gmail_api"
+    assert gmail.post_count == 1
+    assert window_calls == 0
+
+
+def test_internal_gmail_attachment_readback_mismatch_is_held(monkeypatch):
+    gmail = _FakeGmail(readback_mode="attachment_mismatch")
+    monkeypatch.setattr("app.growth_ops.email.urllib.request.urlopen", gmail.urlopen)
+
+    with pytest.raises(EmailDeliveryError, match="accepted_but_unverified") as raised:
+        SMTPEmailAdapter(_oauth_binding()).send(
+            to_email="vezetes@imperialholding.hu",
+            subject="Belső márkaösszefoglaló",
+            body_text=(
+                "Imperial Holding, Prefab.hu, Bautica és BauFreund belső összefoglalója."
+            ),
+            idempotency_key="b" * 64,
+            delivery_scope="internal",
+            attachments=[("belso.txt", b"Prefab.hu", "text/plain")],
+            pre_send_guard=lambda: None,
+            account_quota_guard=lambda _usage: None,
+        )
+
+    assert gmail.post_count == 1
+    assert raised.value.accepted_but_unverified is True
+    assert raised.value.retry_safe is False
+    assert raised.value.provider_message_id == gmail.provider_id
 
 
 @pytest.mark.parametrize(

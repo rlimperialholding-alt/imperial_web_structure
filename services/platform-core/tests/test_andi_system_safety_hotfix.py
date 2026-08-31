@@ -285,6 +285,15 @@ def test_ambiguous_delivery_enters_reconcile_only_and_never_blindly_resends(
     monkeypatch.setattr(processing, "SMTPEmailAdapter", Mailer)
     now = datetime(2026, 8, 27, 10, 5, tzinfo=UTC)
     first = processing.send_publication_digest(db, now=now)
+    db.expire_all()
+    held_delivery = db.scalar(select(CanonicalEmailDelivery))
+    held_row = db.scalar(select(CanonicalInternalHandoff))
+    assert held_delivery.status == "accepted_unverified"
+    assert held_delivery.last_error == "accepted_but_unverified"
+    assert held_delivery.lease_token is None
+    assert held_delivery.lease_expires_at is None
+    assert held_row.status == "dead_letter"
+    assert held_row.last_error == "accepted_but_unverified"
     during_backoff = processing.send_publication_digest(db, now=now + timedelta(minutes=1))
     recovered = processing.send_publication_digest(db, now=now + timedelta(minutes=6))
     delivery = db.scalar(select(CanonicalEmailDelivery))
@@ -311,6 +320,15 @@ def test_known_pre_send_failure_backs_off_without_immediate_retry(db, monkeypatc
     monkeypatch.setattr(processing, "SMTPEmailAdapter", Mailer)
     now = datetime(2026, 8, 27, 10, 5, tzinfo=UTC)
     first = processing.send_publication_digest(db, now=now)
+    db.expire_all()
+    retry_delivery = db.scalar(select(CanonicalEmailDelivery))
+    retry_row = db.scalar(select(CanonicalInternalHandoff))
+    assert retry_delivery.status == "failed_retryable"
+    assert retry_delivery.last_error == "oauth_network_pre_send"
+    assert retry_delivery.lease_token is None
+    assert retry_delivery.lease_expires_at is None
+    assert retry_row.status == "failed"
+    assert retry_row.last_error == "oauth_network_pre_send"
     second = processing.send_publication_digest(db, now=now + timedelta(seconds=10))
     assert first["status"] == "failed_retryable"
     assert second["status"] == "backoff"
