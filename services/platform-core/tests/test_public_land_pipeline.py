@@ -2413,7 +2413,7 @@ def test_public_portal_listing_discovery_is_same_host_and_bounded(tmp_path, monk
         if url.endswith("elado+telek"):
             links = "".join(
                 f'<a href="https://www.ingatlan.com/{35500010 + index}">Telek {index}</a>'
-                for index in range(5)
+                for index in range(15)
             )
             body = f"<html><body>{links}</body></html>".encode()
         else:
@@ -2435,12 +2435,13 @@ def test_public_portal_listing_discovery_is_same_host_and_bounded(tmp_path, monk
     )
 
     assert result["status"] == "succeeded"
-    assert len(result["land_listing_pages"]) == 3
+    assert len(result["land_listing_pages"]) == catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
     assert streamed == [
         "https://www.ingatlan.com/elado+telek",
-        "https://www.ingatlan.com/35500010",
-        "https://www.ingatlan.com/35500011",
-        "https://www.ingatlan.com/35500012",
+        *[
+            f"https://www.ingatlan.com/{35500010 + index}"
+            for index in range(catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM)
+        ],
     ]
 
 
@@ -2678,13 +2679,17 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
         route,
         *,
         managed_land=False,
+        discovery_url=None,
         pending_listing_urls=None,
         examined_listing_urls=None,
         replay_only_listing_urls=None,
         listing_fetch_limit=None,
     ):
         assert replay_only_listing_urls is None
-        assert listing_fetch_limit in {None, 3}
+        assert listing_fetch_limit in {
+            None,
+            catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM,
+        }
         nonlocal target_calls
         pending = list(pending_listing_urls or [])
         examined = set(examined_listing_urls or set())
@@ -2792,6 +2797,156 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
     assert by_url[fourth_url].status == "examined"
     assert all(by_url[url].status == "retryable" for url in first_three)
     assert target_calls == 3
+
+
+def test_public_land_pagination_is_exact_same_category_and_bounded():
+    base = "https://dh.hu/elado-ingatlan/telek"
+
+    assert catalog._public_land_pagination_entry(base, "?page=2") == (
+        2,
+        "https://dh.hu/elado-ingatlan/telek?page=2",
+    )
+    assert catalog._public_land_pagination_entry(base, f"{base}?page=317") == (
+        317,
+        "https://dh.hu/elado-ingatlan/telek?page=317",
+    )
+    assert catalog._public_land_pagination_entry(base, f"{base}?page=1") is None
+    assert catalog._public_land_pagination_entry(base, f"{base}?page=1001") is None
+    assert catalog._public_land_pagination_entry(base, f"{base}?page=2&sort=date") is None
+    assert catalog._public_land_pagination_entry(
+        base, "https://www.dh.hu/elado-ingatlan/telek?page=2"
+    ) is None
+    assert catalog._public_land_pagination_entry(
+        base, "https://dh.hu:bad/elado-ingatlan/telek?page=2"
+    ) is None
+    assert catalog._public_land_pagination_entry(
+        base, "https://dh.hu/elado-ingatlan/lakas-haz?page=2"
+    ) is None
+
+
+def test_managed_fetch_uses_observed_page_and_persists_next_page_evidence(
+    land_runtime, monkeypatch
+):
+    base = "https://dh.hu/elado-ingatlan/telek"
+    page_two = f"{base}?page=2"
+    listing_url = "https://dh.hu/ingatlan/TK123456/elado-telek-pest-megye-minta"
+    html = (
+        "<html><body>"
+        f'<a href="{listing_url}">telek</a>'
+        f'<a href="{base}?page=3"><svg aria-label="következő"></svg></a>'
+        f'<a href="{base}?page=317">utolsó</a>'
+        "</body></html>"
+    )
+    fetched: list[str] = []
+    monkeypatch.setattr(catalog, "_fresh_pinned_robots_error", lambda *_a, **_k: None)
+
+    def pinned_get(url, **_kwargs):
+        fetched.append(url)
+        return {
+            "status_code": 200,
+            "headers": {"content-type": "text/html"},
+            "body": html.encode(),
+            "source_ip": "93.184.216.34",
+        }
+
+    monkeypatch.setattr(catalog, "_pinned_https_get", pinned_get)
+    result = catalog._fetch(
+        SimpleNamespace(route_url=base, source_record_json="{}"),
+        managed_land=True,
+        discovery_url=page_two,
+        listing_fetch_limit=0,
+    )
+
+    assert fetched == [page_two]
+    assert result["status"] == "succeeded"
+    assert result["land_listing_candidates"] == [listing_url]
+    assert result["evidence"]["land_discovery_url"] == page_two
+    assert result["evidence"]["land_pagination_candidates"] == [
+        f"{base}?page=3",
+        f"{base}?page=317",
+    ]
+
+
+def test_managed_lane_advances_only_through_observed_contiguous_pages(
+    db, land_runtime, monkeypatch
+):
+    target_key = "LAND-PUBLIC-HTML:dh"
+    seen: list[str] = []
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            timezone="Europe/Budapest",
+            canonical_daily_at="05:30",
+            canonical_route_batch_size=0,
+            canonical_processing_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "active_revision",
+        lambda _db: SimpleNamespace(catalog_sha256="c" * 64),
+    )
+
+    def fake_fetch(
+        route,
+        *,
+        managed_land=False,
+        discovery_url=None,
+        pending_listing_urls=None,
+        examined_listing_urls=None,
+        replay_only_listing_urls=None,
+        listing_fetch_limit=None,
+    ):
+        assert managed_land is True
+        assert replay_only_listing_urls is None
+        assert pending_listing_urls == []
+        assert listing_fetch_limit == catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
+        selected_url = str(discovery_url or route.route_url)
+        if route.route_key == target_key:
+            seen.append(selected_url)
+            if selected_url == route.route_url:
+                pages = [f"{route.route_url}?page=2", f"{route.route_url}?page=317"]
+            elif selected_url.endswith("?page=2"):
+                pages = [f"{route.route_url}?page=3", f"{route.route_url}?page=317"]
+            else:
+                pages = [f"{route.route_url}?page=317"]
+        else:
+            pages = []
+        return {
+            "status": "succeeded",
+            "http_status": 200,
+            "response_sha256": "a" * 64,
+            "evidence": {
+                "land_listing_fetches": [],
+                "land_discovery_url": selected_url,
+                "land_pagination_candidates": pages,
+            },
+            "analysis_text": "",
+            "analysis_links": [],
+            "land_listing_pages": [],
+            "land_listing_candidates": [],
+            "land_listing_exhausted": True,
+        }
+
+    monkeypatch.setattr(catalog, "_fetch", fake_fetch)
+    for minute in range(4):
+        catalog.scan_due_routes(
+            db,
+            now=datetime(2026, 8, 31, 6, minute, tzinfo=UTC),
+        )
+
+    target_route = db.scalar(
+        select(SourceCoverageRoute).where(SourceCoverageRoute.route_key == target_key)
+    )
+    assert target_route is not None
+    assert seen == [
+        target_route.route_url,
+        f"{target_route.route_url}?page=2",
+        f"{target_route.route_url}?page=3",
+    ]
 
 
 def test_policy_replay_preview_apply_is_bounded_idempotent_and_audited(
@@ -2921,6 +3076,7 @@ def test_policy_replay_preview_apply_is_bounded_idempotent_and_audited(
 def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
     db, land_runtime, monkeypatch
 ):
+    monkeypatch.setattr(catalog, "LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET", 30)
     route_key = "LAND-PUBLIC-HTML:ingatlan_com"
     examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
     for index in range(30):
@@ -2978,6 +3134,7 @@ def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
         route,
         *,
         managed_land=False,
+        discovery_url=None,
         pending_listing_urls=None,
         examined_listing_urls=None,
         replay_only_listing_urls=None,
@@ -2989,7 +3146,7 @@ def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
             assert managed_land is True
             assert pending == replay_urls
             assert replay_only_listing_urls == set(replay_urls)
-            assert listing_fetch_limit == 3
+            assert listing_fetch_limit == catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
             return {
                 "status": "succeeded",
                 "http_status": 200,
@@ -3044,6 +3201,7 @@ def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
 def test_over_budget_policy_replay_does_not_expand_category_analysis_links(
     db, land_runtime, monkeypatch
 ):
+    monkeypatch.setattr(catalog, "LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET", 30)
     route_key = "LAND-PUBLIC-HTML:ingatlan_com"
     examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
     for index in range(30):
@@ -3154,6 +3312,7 @@ def test_over_budget_policy_replay_does_not_expand_category_analysis_links(
 def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
     db, land_runtime, monkeypatch
 ):
+    monkeypatch.setattr(catalog, "LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET", 30)
     route_key = "LAND-PUBLIC-HTML:ingatlan_com"
     examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
     for index in range(29):
@@ -3210,6 +3369,7 @@ def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
         route,
         *,
         managed_land=False,
+        discovery_url=None,
         pending_listing_urls=None,
         examined_listing_urls=None,
         replay_only_listing_urls=None,
@@ -3220,7 +3380,7 @@ def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
             target_calls.append(pending)
             assert pending == [replay_url]
             assert replay_only_listing_urls == {replay_url}
-            assert listing_fetch_limit == 3
+            assert listing_fetch_limit == catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
             return {
                 "status": "succeeded",
                 "http_status": 200,
@@ -3276,6 +3436,7 @@ def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
 def test_ordinary_route_remaining_budget_limits_pending_and_analysis_fetches(
     db, land_runtime, monkeypatch
 ):
+    monkeypatch.setattr(catalog, "LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET", 30)
     route_key = "LAND-PUBLIC-HTML:ingatlan_com"
     examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
     for index in range(29):
