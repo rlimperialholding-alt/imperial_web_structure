@@ -290,7 +290,11 @@ def _assert_external_transport_window_open() -> None:
         end = time.fromisoformat(config.outreach_send_end_local)
     except (ValueError, ZoneInfoNotFoundError) as exc:
         raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
-    if start >= end:
+    # Equal endpoints are the explicit all-day sentinel. Keep rejecting an
+    # inverted partial-day window so a typo cannot silently widen transport.
+    if start == end:
+        return
+    if start > end:
         raise GrowthRegistryError("Outreach sending window must start before it ends")
     local_time = datetime.now(zone).time().replace(tzinfo=None)
     if not start <= local_time < end:

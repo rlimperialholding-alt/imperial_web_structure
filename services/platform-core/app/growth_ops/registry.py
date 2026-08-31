@@ -197,8 +197,8 @@ def settings() -> GrowthSettings:
         lease_seconds=max(30, int(os.getenv("GROWTH_OPS_LEASE_SECONDS", "300"))),
         base_url=os.getenv("GROWTH_OPS_BASE_URL", "").rstrip("/"),
         timezone=os.getenv("GROWTH_OPS_TIMEZONE", "Europe/Budapest"),
-        outreach_send_start_local=os.getenv("GROWTH_OPS_OUTREACH_SEND_START_LOCAL", "08:00"),
-        outreach_send_end_local=os.getenv("GROWTH_OPS_OUTREACH_SEND_END_LOCAL", "18:00"),
+        outreach_send_start_local=os.getenv("GROWTH_OPS_OUTREACH_SEND_START_LOCAL", "00:00"),
+        outreach_send_end_local=os.getenv("GROWTH_OPS_OUTREACH_SEND_END_LOCAL", "00:00"),
         outreach_account_rolling_24h_max=_strict_int_setting(
             "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX",
             "2000",
