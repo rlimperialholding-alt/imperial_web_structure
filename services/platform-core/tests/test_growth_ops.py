@@ -139,8 +139,8 @@ def growth_runtime(monkeypatch, db):
             canonical_route_scanning_enabled=True,
             canonical_processing_enabled=True,
             canonical_daily_at="05:30",
-            outreach_send_start_local="08:00",
-            outreach_send_end_local="18:00",
+            outreach_send_start_local="00:00",
+            outreach_send_end_local="00:00",
             outreach_account_rolling_24h_max=2000,
             outreach_send_concurrency=1,
             outreach_reputation_bootstrap_messages_per_window=100,
@@ -331,11 +331,30 @@ def test_public_land_named_and_role_fallback_render_samples_are_hash_bound(
     [(7, 59, False), (8, 0, True), (17, 59, True), (18, 0, False)],
 )
 def test_outreach_sending_window_is_enforced_in_budapest_time(
-    growth_runtime, hour, minute, expected
+    growth_runtime, monkeypatch, hour, minute, expected
 ):
+    production = service.settings()
+    monkeypatch.setattr(
+        service,
+        "settings",
+        lambda: SimpleNamespace(
+            **{
+                **vars(production),
+                "outreach_send_start_local": "08:00",
+                "outreach_send_end_local": "18:00",
+            }
+        ),
+    )
     local_now = datetime(2026, 8, 28, hour, minute, tzinfo=ZoneInfo("Europe/Budapest"))
 
     assert service._outreach_sending_window_open(local_now.astimezone(UTC)) is expected
+
+
+@pytest.mark.parametrize("hour", [0, 7, 18, 23])
+def test_equal_midnight_endpoints_are_all_day(growth_runtime, hour):
+    local_now = datetime(2026, 8, 31, hour, 59, tzinfo=ZoneInfo("Europe/Budapest"))
+
+    assert service._outreach_sending_window_open(local_now.astimezone(UTC)) is True
 
 
 def test_dispatch_batch_does_not_claim_outside_sending_window(db, growth_runtime, monkeypatch):
@@ -528,6 +547,14 @@ def test_production_daily_automation_contract_fails_closed_on_config_drift(
     assert expected_key in state["mismatches"]
 
 
+def test_production_daily_automation_contract_accepts_all_day_sentinel(growth_runtime):
+    state = service._production_daily_automation_state(service.settings())
+
+    assert state["ready"] is True
+    assert state["expected"]["outreach_send_start_local"] == "00:00"
+    assert state["expected"]["outreach_send_end_local"] == "00:00"
+
+
 def test_growth_readiness_is_not_ready_when_growth_ops_is_disabled(
     db, growth_runtime, monkeypatch
 ):
@@ -665,8 +692,8 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
         "CANONICAL_PROCESSING_ENABLED": "true",
         "CANONICAL_GROWTH_DAILY_AT": "05:30",
         "GROWTH_OPS_TIMEZONE": "Europe/Budapest",
-        "GROWTH_OPS_OUTREACH_SEND_START_LOCAL": "08:00",
-        "GROWTH_OPS_OUTREACH_SEND_END_LOCAL": "18:00",
+        "GROWTH_OPS_OUTREACH_SEND_START_LOCAL": "00:00",
+        "GROWTH_OPS_OUTREACH_SEND_END_LOCAL": "00:00",
         "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX": "2000",
         "GROWTH_OPS_OUTREACH_SEND_CONCURRENCY": "1",
         "GROWTH_OPS_OUTREACH_REPUTATION_BOOTSTRAP_MESSAGES_PER_WINDOW": "100",

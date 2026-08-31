@@ -18,6 +18,8 @@ from app.growth_ops import processing
 from app.growth_ops.email import EmailDeliveryError, SMTPEmailAdapter
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
 
+_REAL_EXTERNAL_TRANSPORT_WINDOW_OPEN = growth_email._assert_external_transport_window_open
+
 
 def _binding(
     *,
@@ -729,6 +731,66 @@ def test_external_gmail_authoritative_window_guard_runs_before_send_post(monkeyp
     assert window_calls == 1
     assert gmail.post_count == 0
     assert gmail.sent_raw is None
+
+
+def test_external_gmail_all_day_window_allows_1930_pre_post(monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = cls(2026, 8, 31, 17, 30, tzinfo=UTC)
+            return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+    gmail = _FakeGmail()
+    monkeypatch.setattr(growth_email.urllib.request, "urlopen", gmail.urlopen)
+    monkeypatch.setattr(growth_email, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        growth_email,
+        "growth_settings",
+        lambda: SimpleNamespace(
+            timezone="Europe/Budapest",
+            outreach_send_start_local="00:00",
+            outreach_send_end_local="00:00",
+            outreach_account_rolling_24h_max=2000,
+        ),
+    )
+    monkeypatch.setattr(
+        growth_email,
+        "_assert_external_transport_window_open",
+        _REAL_EXTERNAL_TRANSPORT_WINDOW_OPEN,
+    )
+
+    receipt = SMTPEmailAdapter(_oauth_binding()).send(
+        **_payload(
+            delivery_scope="external_customer",
+            body_text="Imperial Holding offer.",
+        )
+    )
+
+    assert receipt.provider == "gmail_api"
+    assert gmail.post_count == 1
+
+
+def test_external_gmail_inverted_partial_window_fails_closed(monkeypatch):
+    monkeypatch.setattr(
+        growth_email,
+        "growth_settings",
+        lambda: SimpleNamespace(
+            timezone="Europe/Budapest",
+            outreach_send_start_local="18:00",
+            outreach_send_end_local="08:00",
+        ),
+    )
+    monkeypatch.setattr(
+        growth_email,
+        "_assert_external_transport_window_open",
+        _REAL_EXTERNAL_TRANSPORT_WINDOW_OPEN,
+    )
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="Outreach sending window must start before it ends",
+    ):
+        growth_email._assert_external_transport_window_open()
 
 
 def test_external_gmail_rechecks_authoritative_clock_after_capacity_guard(monkeypatch):

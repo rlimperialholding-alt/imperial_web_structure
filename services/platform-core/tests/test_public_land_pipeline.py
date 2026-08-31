@@ -1817,6 +1817,40 @@ def test_invalid_canary_cap_configuration_fails_closed(monkeypatch, configured_c
         service._land_canary_limit()
 
 
+def test_blank_canary_date_does_not_claim_or_limit(db, land_runtime, monkeypatch):
+    config = service.settings()
+    state = db.get(GrowthLandCanaryState, 1)
+    assert state is not None
+    state.status = "pending"
+    state.released_by = None
+    state.released_at = None
+    db.commit()
+    monkeypatch.setattr(
+        service,
+        "settings",
+        lambda: SimpleNamespace(
+            **{
+                **vars(config),
+                "land_outreach_production_canary_local_date": "",
+            }
+        ),
+    )
+
+    for index in range(5):
+        assert (
+            service._claim_land_canary_slot(
+                db,
+                f"OUT-NO-CANARY-{index}",
+                now=datetime(2026, 8, 31, 19, 30, tzinfo=UTC),
+            )
+            is False
+        )
+
+    slots = list(db.scalars(select(GrowthLandCanarySlot)))
+    assert len(slots) == 3
+    assert all(slot.status == "available" and slot.outreach_id is None for slot in slots)
+
+
 def test_land_canary_stops_at_three_without_changing_account_pacing(db, land_runtime):
     canary_now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
     _set_canary_pending(db)

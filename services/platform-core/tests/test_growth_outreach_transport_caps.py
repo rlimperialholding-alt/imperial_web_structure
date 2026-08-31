@@ -139,8 +139,8 @@ def _runtime_settings(**changes):
         "timezone": "Europe/Budapest",
         "worker_id": "growth-cap-test",
         "lease_seconds": 300,
-        "outreach_send_start_local": "08:00",
-        "outreach_send_end_local": "18:00",
+        "outreach_send_start_local": "00:00",
+        "outreach_send_end_local": "00:00",
         "outreach_account_rolling_24h_max": 2000,
         "outreach_send_concurrency": 1,
         "outreach_reputation_bootstrap_messages_per_window": 100,
@@ -175,6 +175,41 @@ def test_only_gmail_sent_with_full_mime_readback_is_locally_verified():
     receipt["delivery_detail"].pop("readback_mime_sha256")
     row.receipt_json = json.dumps(receipt)
     assert not service._gmail_sent_mime_verified(row)
+
+
+def test_default_outreach_window_is_explicit_all_day(monkeypatch):
+    monkeypatch.delenv("GROWTH_OPS_OUTREACH_SEND_START_LOCAL", raising=False)
+    monkeypatch.delenv("GROWTH_OPS_OUTREACH_SEND_END_LOCAL", raising=False)
+
+    config = growth_settings()
+
+    assert config.outreach_send_start_local == "00:00"
+    assert config.outreach_send_end_local == "00:00"
+
+
+def test_all_day_pacing_window_is_exactly_86400_seconds(monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+
+    assert service._outreach_window_seconds(service.settings()) == 86_400.0
+
+
+def test_inverted_partial_service_window_fails_closed(monkeypatch):
+    config = _runtime_settings(
+        outreach_send_start_local="18:00",
+        outreach_send_end_local="08:00",
+    )
+    monkeypatch.setattr(service, "settings", lambda: config)
+
+    with pytest.raises(
+        GrowthRegistryError,
+        match="Outreach sending window must start before it ends",
+    ):
+        service._outreach_window_seconds(config)
+    with pytest.raises(
+        GrowthRegistryError,
+        match="Outreach sending window must start before it ends",
+    ):
+        service._outreach_sending_window_open(datetime.now(UTC))
 
 
 @pytest.mark.parametrize(
@@ -412,6 +447,37 @@ def test_direct_dispatch_cannot_bypass_window_or_reach_transport(db, monkeypatch
     assert row.attempt_count == 0
     assert row.claimed_by is None and row.claimed_at is None
     assert row.provider_message_id is None
+
+
+def test_all_day_sentinel_allows_late_claim_and_dispatch(db, monkeypatch):
+    monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
+    late_utc = datetime(2026, 8, 31, 21, 59, tzinfo=UTC)
+    assert service._outreach_sending_window_open(late_utc) is True
+
+    row = _message(3, "late@example.hu")
+    db.add(row)
+    db.commit()
+
+    claimed = service.claim_outreach(db)
+    assert claimed is not None and claimed.outreach_id == row.outreach_id
+
+    claimed.status = "queued"
+    claimed.claimed_by = None
+    claimed.claimed_at = None
+    claimed.lease_expires_at = None
+    claimed.attempt_count = 0
+    db.commit()
+    dispatched: list[str] = []
+
+    def dispatch_one(_db, candidate):
+        dispatched.append(candidate.outreach_id)
+        candidate.status = "sent"
+        return candidate
+
+    monkeypatch.setattr(service, "dispatch_outreach", dispatch_one)
+
+    assert service.dispatch_batch(db, limit=100) == 1
+    assert dispatched == [row.outreach_id]
 
 
 def test_same_recipient_domain_history_does_not_create_a_static_quota(db, monkeypatch):
@@ -688,10 +754,10 @@ def test_pacing_adapts_to_verified_previous_window_without_static_hourly_quota(m
         _capacity_usage(previous=400),
         now=current,
     )
-    physical_floor = 10 * 60 * 60 / 2000
+    physical_floor = 24 * 60 * 60 / 2000
 
-    assert bootstrap_gap == pytest.approx(10 * 60 * 60 / 100)
-    assert grown_gap == pytest.approx(10 * 60 * 60 / 500)
+    assert bootstrap_gap == pytest.approx(24 * 60 * 60 / 100)
+    assert grown_gap == pytest.approx(24 * 60 * 60 / 500)
     assert grown_gap < bootstrap_gap
     assert grown_gap >= physical_floor
 
@@ -706,7 +772,7 @@ def test_jitter_can_only_slow_pacing_not_exceed_growth_ceiling(monkeypatch):
     monkeypatch.setattr(service.hashlib, "sha256", lambda *_args, **_kwargs: ZeroDigest())
     monkeypatch.setattr(service, "settings", lambda: _runtime_settings())
     usage = _capacity_usage(previous=100)
-    no_jitter_growth_ceiling_gap = 10 * 60 * 60 / 125
+    no_jitter_growth_ceiling_gap = 24 * 60 * 60 / 125
 
     gap = service._outreach_reputation_gap_seconds(usage, now=current)
 
@@ -733,7 +799,7 @@ def test_upward_jitter_cannot_trap_warmup_at_a_permanent_shadow_cap(monkeypatch)
     )
 
     assert ramped_gap < bootstrap_gap
-    assert ramped_gap >= 10 * 60 * 60 / (
+    assert ramped_gap >= 24 * 60 * 60 / (
         reachable_worst_case_volume * 1.25
     )
 
@@ -754,7 +820,7 @@ def test_rate_limit_backoff_is_at_least_penalized_reputation_gap(db, monkeypatch
 
     next_at = service._record_outreach_pacing_backoff(db, error=error, now=current)
 
-    assert next_at >= current + timedelta(seconds=720)
+    assert next_at >= current + timedelta(seconds=1728)
     db.flush()
     state = db.get(GrowthControlState, service.OUTREACH_PACING_STATE_KEY)
     assert state is not None

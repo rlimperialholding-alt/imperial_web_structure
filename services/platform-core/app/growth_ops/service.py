@@ -2453,7 +2453,9 @@ def _outreach_window_seconds(config: Any) -> float:
         raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
     start_seconds = start.hour * 3600 + start.minute * 60 + start.second
     end_seconds = end.hour * 3600 + end.minute * 60 + end.second
-    if start_seconds >= end_seconds:
+    if start_seconds == end_seconds:
+        return float(timedelta(days=1).total_seconds())
+    if start_seconds > end_seconds:
         raise GrowthRegistryError("Outreach sending window must start before it ends")
     return float(end_seconds - start_seconds)
 
@@ -4527,11 +4529,13 @@ def _outreach_sending_window_open(now: datetime | None = None) -> bool:
     config = settings()
     try:
         zone = ZoneInfo(config.timezone)
-        start = time.fromisoformat(getattr(config, "outreach_send_start_local", "08:00"))
-        end = time.fromisoformat(getattr(config, "outreach_send_end_local", "18:00"))
+        start = time.fromisoformat(getattr(config, "outreach_send_start_local", "00:00"))
+        end = time.fromisoformat(getattr(config, "outreach_send_end_local", "00:00"))
     except (ValueError, ZoneInfoNotFoundError) as exc:
         raise GrowthRegistryError("Configured outreach sending window is invalid") from exc
-    if start >= end:
+    if start == end:
+        return True
+    if start > end:
         raise GrowthRegistryError("Outreach sending window must start before it ends")
     local_time = (now or utcnow()).astimezone(zone).time().replace(tzinfo=None)
     return start <= local_time < end
@@ -4786,8 +4790,8 @@ def _production_daily_automation_state(config: Any) -> dict[str, Any]:
         "canonical_processing_enabled": True,
         "timezone": "Europe/Budapest",
         "daily_at": "05:30",
-        "outreach_send_start_local": "08:00",
-        "outreach_send_end_local": "18:00",
+        "outreach_send_start_local": "00:00",
+        "outreach_send_end_local": "00:00",
         "outreach_account_rolling_24h_max": 2000,
         "outreach_send_concurrency": 1,
         "outreach_reputation_bootstrap_messages_per_window": 100,
