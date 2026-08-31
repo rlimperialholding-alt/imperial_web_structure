@@ -1,45 +1,7 @@
 <#
 .SYNOPSIS
-Task55/56/57 — isolated, network-free control-plane regression for the ADAS
-independent-review transport (canonical tracked source); Invoke-RestMethod is
-replaced by a global scripted mock, so no HTTP call is possible. Modes: default =
-canonical unit standalone with faithful mirrors of the tiny profile dependencies;
--ModulePath = the same cases against the installed profile module;
--VerifyInstalledBlockPath = independently extract the installed sections and prove
-byte/normalized SHA-256 equality with the canonical tracked source.
-
-Coverage: valid PASS/BLOCKED; retry flows then one fresh valid retry with the
-SECOND request attestation; two bad attempts => fail-closed review-unavailable
-BLOCKED; Task52 matrix (transport errors never masked, compact whitelist
-projection, hash-stamped segment coverage, strict schema, no reasoning trace, no
-secret material); Task54 truncation matrix incl. the full official Task53
-change.diff fixture (178,839 bytes, official SHA-256) whose deterministic segments
-concatenate byte-identically; Task55/56 context-budget matrix (named reasons,
-derived 873,843 budget at 95%, documented 350,000 fallback cap, explicit ZERO
-budget for valid-too-small windows, exact boundary FULL, budget+1 =>
-budgetExceeded with text='' and full size/hash metadata, multibyte on UTF-8
-bytes, multi-model MINIMUM budget, zero budget wins in any order,
-New-ADASDiffBudgetExceededResult: BLOCKED with exact metadata and 0 provider
-requests); full candidate diff: exact counts and SHA-256, fits the derived
-budget, every diff byte appears exactly once in the prompt; Task56 review-output
-contract (non-empty severity/category/evidence/requiredFix, violations
-schema-error fail-closed with attempts preserved); Task57 attestation matrix
-(PASS requires non-empty EXACT actualModel, requestId, positive tokens, no
-observed fallback; empty/mismatched model => BLOCKED with attempts kept); Task57
-file/line contract (exclusively null or string; number/boolean/array/object fail
-closed); Task57 fallback metadata (fallbackObserved only for an actually observed
-different model; transport/parse/schema failures carry the precise
-unavailabilityClass); Task57 caller migration audit (-CallerAuditProfileDir):
-exactly ONE structured caller; the installed caller region must byte/normalized-
-hash match the tracked canonical caller source (canonical-adas-caller-region.ps1);
-Task57 atomicity: offline fault-injection regression proves the post-replace
-backup-hash mismatch branch restores the verified pre-sync backup atomically,
-re-verifies the live hash, preserves backups and exits fail-closed; caller sync
-proves canonical discipline, atomic replace/rollback, single call site and
-idempotent noop; Task56 changed-line gate (-ChangedLineBaselineCommit): the
-baseline-relative cumulative git diff --numstat total must be at most
--ChangedLineLimit (default 6000). Exit code 0 only when every check passed.
-
+Task55/56/57/58 — isolated, network-free control-plane regression for the ADAS independent-review transport (canonical tracked source); Invoke-RestMethod is replaced by a global scripted mock, so no HTTP call is possible. Modes: default = canonical unit standalone with faithful mirrors of the tiny profile dependencies; -ModulePath = the same cases against the installed profile module; -VerifyInstalledBlockPath = extract the installed sections and prove byte/normalized SHA-256 equality with the canonical tracked source.
+Coverage: valid PASS/BLOCKED; retry flows with the SECOND request attestation; two bad attempts => fail-closed review-unavailable BLOCKED; Task52 matrix (transport errors never masked, compact whitelist projection, hash-stamped segment coverage, strict schema, no reasoning trace, no secret material); Task54 truncation matrix incl. the full official Task53 change.diff fixture (178,839 bytes, official SHA-256); Task55/56 context-budget matrix (named reasons, derived 873,843 budget at 95%, documented 350,000 fallback cap, explicit ZERO budget for valid-too-small windows, exact boundary FULL, budget+1 => budgetExceeded with text='' and full metadata, multibyte on UTF-8 bytes, multi-model MINIMUM budget, zero budget wins in any order, New-ADASDiffBudgetExceededResult: BLOCKED + exact metadata + 0 provider requests); full candidate diff: exact counts/SHA-256, every diff byte appears exactly once in the prompt; Task56 review-output contract; Task57 attestation matrix (PASS requires non-empty EXACT actualModel, requestId, positive tokens, no observed fallback); Task58 attestation terminal (failed attestation overrides the FINAL persisted verdict to BLOCKED + deduplicated HIGH provider-attestation-invalid finding; attempts kept); Task58 budget-terminal e2e (real installed caller control flow with an instrumented provider seam; the installed region is hash-proven byte-equal to the tracked canonical caller region: budget-exceeded => two persisted BLOCKED reviews + exact meta + exit 80 + 0 provider requests; normal diff => provider section reachable); Task57 file/line contract; Task57 fallback metadata (fallbackObserved only for an observed different model; failures carry the precise unavailabilityClass); Task57 caller migration audit + installer atomicity (offline fault-injection rollback, caller sync, canonical discipline, idempotent noop); Task56 changed-line gate (cumulative git diff --numstat total must be at most -ChangedLineLimit, default 6000). Exit code 0 only when every check passed.
 .PARAMETER ModulePath — run the case matrix against this installed profile module.  .PARAMETER CanonicalPath — canonical tracked unit; default: sibling Imperial-ADAS-ReviewTransport.ps1.
 .PARAMETER VerifyInstalledBlockPath — independently extract the installed sections and prove hash equality with the canonical tracked source.  .PARAMETER Task53OfficialDiffPath — full official Task53 change.diff fixture; default: sibling fixtures\task53-official-change.diff.
 .PARAMETER FullCandidateDiffPath — optional full candidate diff; omitted => explicit 'fixture-not-provided' failure.  .PARAMETER FullCandidateDiffSha256 — expected SHA-256 of the full candidate diff (lowercase hex).
@@ -74,16 +36,14 @@ $ErrorActionPreference = 'Stop'; $canonicalPath = if ($CanonicalPath) { $Canonic
 $canonicalCallerRegionPath = if ($CanonicalCallerRegionPath) { $CanonicalCallerRegionPath } else { Join-Path $PSScriptRoot 'canonical-adas-caller-region.ps1' }
 $installerPath = if ($InstallerPath) { $InstallerPath } else { Join-Path $PSScriptRoot 'Install-ADASReviewTransportSync.ps1' }
 $runMode = if ($ModulePath) { 'installed-module' } else { 'canonical-standalone' }; $task53OfficialDiffPath = if ($Task53OfficialDiffPath) { $Task53OfficialDiffPath } else { Join-Path $PSScriptRoot 'fixtures\task53-official-change.diff' }
-# The official Task53 change.diff SHA-256 is carried as 8-char chunks and joined at runtime
-# so the tracked source carries no high-entropy hex literal that the tracked-secret probe
-# would classify as unclassified.
+# The official Task53 change.diff SHA-256 is carried as 8-char chunks and joined at runtime so
+# the tracked source carries no high-entropy hex literal the tracked-secret probe would flag.
 $task53OfficialDiffSha256 = ('56d7c403', '99c16aea', '2bc5bd30', '50368d3c', '79d27516', 'f501b5d4', '814cdfc5', '054fbb87') -join ''; $task53OfficialDiffByteCount = 178839; $results = New-Object 'System.Collections.Generic.List[object]'
 function Add-ADASReviewTestResult {
     param([string]$Name, [bool]$Passed, [string]$Detail = '')
     $script:results.Add([pscustomobject]@{ name = $Name; passed = [bool]$Passed; detail = [string]$Detail })
 }
-# --- Faithful mirrors of the four tiny profile dependencies, vendored only so the canonical
-# unit can run standalone; the installed-module mode uses the real profile code. ---
+# --- Faithful mirrors of the four tiny profile dependencies, vendored only so the canonical unit can run standalone; the installed-module mode uses the real profile code. ---
 function Write-ADASUtf8NoBom {
     param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
     $parent = Split-Path -Parent $Path
@@ -112,8 +72,7 @@ function Get-ADASSha256Text {
 }
 function Read-ADASReviewUtf8File {
     param([Parameter(Mandatory = $true)][string]$Path)
-    # Ordinal char compare: StartsWith(string) is culture-sensitive and treats U+FEFF as
-    # weightless, which would strip the first real character of BOM-less content.
+    # Ordinal char compare: StartsWith(string) is culture-sensitive and treats U+FEFF as weightless, which would strip the first real character of BOM-less content.
     $text = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($Path))
     if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { return $text.Substring(1) }
     return $text
@@ -182,8 +141,7 @@ function Get-ADASReviewMockCallCount {
 }
 function New-ADASReviewSyntheticDiff {
     param([Parameter(Mandatory = $true)][int]$Characters)
-    # Deterministic ASCII-only synthetic diff of exactly the requested character count
-    # (no multibyte content; byte count == character count).
+    # Deterministic ASCII-only synthetic diff of exactly the requested character count (no multibyte content; byte count == character count).
     $unit = "diff --git a/syn.py b/syn.py`n+abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ`n"; $repeats = [Math]::Ceiling([double]$Characters / [double]$unit.Length) + 1
     return ([string]$unit * $repeats).Substring(0, $Characters)
 }
@@ -210,8 +168,7 @@ if (-not $ModelMetadataPath) {
     }
     Write-ADASJson -Path $metadataPath -Value $syntheticModels
 }
-# Derived budget with the synthetic manifest (verified below): 1,048,576 * 95% = 996,147
-# effective; 996,147 - 24,000 (output) - 65,536 (prompt) - 32,768 (safety) = 873,843.
+# Derived budget with the synthetic manifest (verified below): 1,048,576 * 95% = 996,147 effective; 996,147 - 24,000 (output) - 65,536 (prompt) - 32,768 (safety) = 873,843.
 $expectedDerivedBudget = [int64]873843
 function Invoke-ADASReviewTestReview {
     param([string]$OutputName, [string]$Diff, [bool]$Truncated = $false, [string]$Sha = '', [int64]$Chars = -1, [int]$Timeout = 30)
@@ -243,12 +200,20 @@ try {
     Reset-ADASReviewMock; $global:adasReviewMockResponses = @((New-ADASReviewMockResponse -Content '' -FinishReason 'length' -RequestId 'req-bad-1' -PromptTokens 50 -CompletionTokens 50), (New-ADASReviewMockResponse -Content $truncatedJson -RequestId 'req-bad-2' -PromptTokens 40 -CompletionTokens 10))
     $review = Invoke-ADASReviewTestReview -OutputName 'review-5' -Diff $diffText
     Add-ADASReviewTestResult 'two-bad-attempts-blocked' ([string]$review.verdict -eq 'BLOCKED') ([string]$review.verdict); $finding5 = @($review.findings)[0]; Add-ADASReviewTestResult 'two-bad-attempts-review-unavailable' (([string]$finding5.category -eq 'review-unavailable') -and ([string]$finding5.severity -eq 'HIGH')) ([string]$finding5.category); Add-ADASReviewTestResult 'two-bad-attempts-evidence-clean' (([string]$finding5.evidence -match 'reviewer attempt hib') -and ([string]$finding5.evidence -notmatch 'UNIQUEMARKER')) ([string]$finding5.evidence); Add-ADASReviewTestResult 'two-bad-attempts-attestation-blocked' ([string]$review._adasProvider.status -eq 'BLOCKED') ([string]$review._adasProvider.status); $attempts5 = @($review._adasAttempts); Add-ADASReviewTestResult 'two-bad-attempts-records' (($attempts5.Count -eq 2) -and ([string]$attempts5[0].errorClass -eq 'empty-content') -and ([string]$attempts5[1].errorClass -eq 'json-parse-error') -and (-not [bool]$attempts5[0].secretMaterialRecorded) -and (-not [bool]$attempts5[1].secretMaterialRecorded)) "count " + $attempts5.Count; Add-ADASReviewTestResult 'two-bad-attempts-no-third-call' ((Get-ADASReviewMockCallCount) -eq 2) "calls=$(Get-ADASReviewMockCallCount)"
-    # --- 7. Fallback model => attestation BLOCKED (content preserved, no retry) ---
+    # --- 7. Fallback model => Task58 fail-closed terminal: verdict BLOCKED + HIGH finding (no retry) ---
     Reset-ADASReviewMock; $global:adasReviewMockResponses = @((New-ADASReviewMockResponse -Content $validPassJson -Model 'deepseek-other-model' -RequestId 'req-fb-1' -PromptTokens 20 -CompletionTokens 8)); $review = Invoke-ADASReviewTestReview -OutputName 'review-6' -Diff $diffText
-    Add-ADASReviewTestResult 'fallback-model-content-preserved' ([string]$review.verdict -eq 'PASS') ([string]$review.verdict); $provider6 = $review._adasProvider; Add-ADASReviewTestResult 'fallback-model-attestation-blocked' (([string]$provider6.status -eq 'BLOCKED') -and ([bool]$provider6.fallbackObserved) -and ([string]$provider6.actualModel -eq 'deepseek-other-model')) ([string]$provider6.status); Add-ADASReviewTestResult 'fallback-model-no-retry' ((Get-ADASReviewMockCallCount) -eq 1) "calls=$(Get-ADASReviewMockCallCount)"
-    # --- 8. Missing request id / zero tokens => attestation BLOCKED ---
+    $provider6 = $review._adasProvider; $attempts6 = @($review._adasAttempts); $finding6 = @($review.findings | Where-Object { $_.category -eq 'provider-attestation-invalid' })
+    Add-ADASReviewTestResult 'fallback-model-verdict-overridden-blocked' ([string]$review.verdict -eq 'BLOCKED') ([string]$review.verdict); Add-ADASReviewTestResult 'fallback-model-attestation-blocked' (([string]$provider6.status -eq 'BLOCKED') -and ([bool]$provider6.fallbackObserved) -and ([string]$provider6.actualModel -eq 'deepseek-other-model')) ([string]$provider6.status)
+    Add-ADASReviewTestResult 'fallback-model-high-finding' (($finding6.Count -eq 1) -and ([string]$finding6[0].severity -eq 'HIGH') -and ([string]$finding6[0].evidence -match 'fallback')) ([string]$finding6[0].evidence)
+    Add-ADASReviewTestResult 'fallback-model-attempts-preserved-no-retry' (($attempts6.Count -eq 1) -and ([string]$attempts6[0].disposition -eq 'accepted') -and ([string]$attempts6[0].actualModel -eq 'deepseek-other-model') -and ((Get-ADASReviewMockCallCount) -eq 1)) "calls=$(Get-ADASReviewMockCallCount)"
+    # --- 8. Empty request id / zero tokens => Task58 verdict BLOCKED + HIGH finding, attempts kept ---
     Reset-ADASReviewMock; $global:adasReviewMockResponses = @((New-ADASReviewMockResponse -Content $validPassJson -RequestId '' -PromptTokens 0 -CompletionTokens 0)); $review = Invoke-ADASReviewTestReview -OutputName 'review-7' -Diff $diffText
-    Add-ADASReviewTestResult 'zero-token-attestation-blocked' (([string]$review.verdict -eq 'PASS') -and ([string]$review._adasProvider.status -eq 'BLOCKED')) ([string]$review._adasProvider.status)
+    $attempts7b = @($review._adasAttempts); $finding7b = @($review.findings | Where-Object { $_.category -eq 'provider-attestation-invalid' })
+    Add-ADASReviewTestResult 'zero-token-verdict-blocked' (([string]$review.verdict -eq 'BLOCKED') -and ([string]$review._adasProvider.status -eq 'BLOCKED') -and ($null -eq $review._adasProvider.providerRequestId) -and ([int64]$review._adasProvider.totalTokens -eq 0)) ([string]$review.verdict)
+    Add-ADASReviewTestResult 'zero-token-high-finding-precise' (($finding7b.Count -eq 1) -and ([string]$finding7b[0].severity -eq 'HIGH') -and ([string]$finding7b[0].evidence -match 'requestId .res') -and ([string]$finding7b[0].evidence -match 'totalTokens=0') -and (-not [string]::IsNullOrWhiteSpace([string]$finding7b[0].requiredFix))) ([string]$finding7b[0].evidence)
+    Add-ADASReviewTestResult 'zero-token-attempts-preserved' (($attempts7b.Count -eq 1) -and ([string]$attempts7b[0].disposition -eq 'accepted') -and ([int64]$attempts7b[0].totalTokens -eq 0) -and ((Get-ADASReviewMockCallCount) -eq 1)) "calls=$(Get-ADASReviewMockCallCount)"
+    $file7bText = [IO.File]::ReadAllText((Join-Path $tempRoot 'review-7.json'), [Text.Encoding]::UTF8)
+    Add-ADASReviewTestResult 'zero-token-persisted-blocked' (($file7bText -match '"verdict":\s*"BLOCKED"') -and ($file7bText -match 'provider-attestation-invalid')) ''
     # --- 9. Transport errors are never masked by retries ---
     Reset-ADASReviewMock; $global:adasReviewMockResponses = @('THROW:The remote server returned an error: (401) Unauthorized.'); $review = Invoke-ADASReviewTestReview -OutputName 'review-8' -Diff $diffText
     Add-ADASReviewTestResult 'transport-401-blocked' ([string]$review.verdict -eq 'BLOCKED') ([string]$review.verdict); $attempts8 = @($review._adasAttempts); Add-ADASReviewTestResult 'transport-401-no-retry' (($attempts8.Count -eq 1) -and ([string]$attempts8[0].disposition -eq 'failed-terminal') -and ([string]$attempts8[0].errorClass -eq 'http-401') -and ((Get-ADASReviewMockCallCount) -eq 1)) ([string]$attempts8[0].errorClass)
@@ -302,8 +267,7 @@ try {
     foreach ($case in $truncationCases) {
         Reset-ADASReviewMock; $global:adasReviewMockResponses = @((New-ADASReviewMockResponse -Content $validPassJson -RequestId ('req-' + $case.name + '-1')))
         $review = Invoke-ADASReviewTestReview -OutputName ('review-' + $case.name) -Diff ([string]$case.diff) -Truncated ([bool]$case.truncated) -Sha ([string]$case.sha) -Chars ([int64]$case.chars)
-        $blockedOk = ([string]$review.verdict -eq 'BLOCKED') -and (@($review._adasAttempts).Count -eq 0) -and ((Get-ADASReviewMockCallCount) -eq 0)
-        $requestOk = ([string]$review.verdict -eq 'PASS') -and ((Get-ADASReviewMockCallCount) -eq 1); $passed = if ($case.expectBlocked) { $blockedOk } else { $requestOk }
+        $blockedOk = ([string]$review.verdict -eq 'BLOCKED') -and (@($review._adasAttempts).Count -eq 0) -and ((Get-ADASReviewMockCallCount) -eq 0); $requestOk = ([string]$review.verdict -eq 'PASS') -and ((Get-ADASReviewMockCallCount) -eq 1); $passed = if ($case.expectBlocked) { $blockedOk } else { $requestOk }
         Add-ADASReviewTestResult $case.name $passed "calls=$(Get-ADASReviewMockCallCount)"
     }
     # --- 16. Full official Task53 change.diff fixture: not truncated, every segment concatenates hash-consistent ---
@@ -315,9 +279,7 @@ try {
         Add-ADASReviewTestResult 'full-task53-segments-concat-byte-identical' ($fullConcat -ceq $fullText) "segments=$($fullSections.Count)"
         $fullHashOk = $true
         foreach ($section in $fullSections) {
-            if ([string]$section.diffSha256 -ne $task53OfficialDiffSha256) { $fullHashOk = $false }
-            if ([string]$section.segmentSha256 -ne (Get-ADASSha256Text ([string]$section.text))) { $fullHashOk = $false }
-            if ([int]$section.segment -gt [int]$section.segmentCount) { $fullHashOk = $false }
+            if ([string]$section.diffSha256 -ne $task53OfficialDiffSha256) { $fullHashOk = $false }; if ([string]$section.segmentSha256 -ne (Get-ADASSha256Text ([string]$section.text))) { $fullHashOk = $false }; if ([int]$section.segment -gt [int]$section.segmentCount) { $fullHashOk = $false }
         }
         Add-ADASReviewTestResult 'full-task53-segment-hashes-consistent' $fullHashOk ''
         Reset-ADASReviewMock; $global:adasReviewMockResponses = @((New-ADASReviewMockResponse -Content $validPassJson -RequestId 'req-full-1' -PromptTokens 600 -CompletionTokens 30)); $review = Invoke-ADASReviewTestReview -OutputName 'review-full' -Diff $fullText -Sha $task53OfficialDiffSha256 -Chars $fullText.Length -Timeout 60
@@ -437,9 +399,7 @@ try {
     )
     foreach ($case in $schemaCases) {
         $payload = [ordered]@{ verdict = 'PASS'; confidence = 0.5; summary = 'schema matrix'; findings = @([ordered]@{ severity = 'LOW'; category = 'style'; file = $null; line = $null; evidence = 'e'; requiredFix = 'f' }); missingEvidence = @(); businessRisks = @() }
-        if ($case.ContainsKey('remove')) { $payload.findings[0].Remove([string]$case.remove) }
-        elseif ($case.ContainsKey('setEmpty')) { $payload.findings[0][[string]$case.setEmpty] = '' }
-        elseif ($case.ContainsKey('set')) { $payload.findings[0][[string]$case.set[0]] = $case.set[1] }
+        if ($case.ContainsKey('remove')) { $payload.findings[0].Remove([string]$case.remove) } elseif ($case.ContainsKey('setEmpty')) { $payload.findings[0][[string]$case.setEmpty] = '' } elseif ($case.ContainsKey('set')) { $payload.findings[0][[string]$case.set[0]] = $case.set[1] }
         $badJson = $payload | ConvertTo-Json -Depth 8 -Compress
         Reset-ADASReviewMock; $global:adasReviewMockResponses = @(
             (New-ADASReviewMockResponse -Content $badJson -RequestId ('req-' + $case.name + '-1') -PromptTokens 12 -CompletionTokens 4),
@@ -455,7 +415,7 @@ try {
     Add-ADASReviewTestResult 'schema-negative-validator-rejects-empty-evidence' ([string](Test-ADASReviewContract -Parsed $parsedEmptyEvidence) -eq 'schema-error') ([string](Test-ADASReviewContract -Parsed $parsedEmptyEvidence))
     $parsedMissingFix = ('{"verdict":"PASS","confidence":0.5,"summary":"x","findings":[{"severity":"LOW","category":"style","evidence":"e"}],"missingEvidence":[],"businessRisks":[]}') | ConvertFrom-Json
     Add-ADASReviewTestResult 'schema-negative-validator-rejects-missing-requiredFix' ([string](Test-ADASReviewContract -Parsed $parsedMissingFix) -eq 'schema-error') ([string](Test-ADASReviewContract -Parsed $parsedMissingFix))
-    # --- 26. Task57 attestation matrix: PASS requires non-empty EXACT actualModel; attempts kept ---
+    # --- 26. Task57/58 attestation matrix: PASS requires non-empty EXACT actualModel; Task58: a failed attestation overrides the final verdict to BLOCKED with a HIGH provider-attestation-invalid finding; attempts kept ---
     $attestationCases = @(
         @{ name = 'attestation-empty-model-blocked'; model = ''; expectPass = $false },
         @{ name = 'attestation-mismatched-model-blocked'; model = 'deepseek-other-model'; expectPass = $false },
@@ -463,10 +423,12 @@ try {
     )
     foreach ($case in $attestationCases) {
         Reset-ADASReviewMock; $global:adasReviewMockResponses = @((New-ADASReviewMockResponse -Content $validPassJson -Model ([string]$case.model) -RequestId ('req-' + $case.name) -PromptTokens 20 -CompletionTokens 8)); $review = Invoke-ADASReviewTestReview -OutputName ('review-' + $case.name) -Diff $diffText
-        $meta26 = $review._adasProvider; $attempts26 = @($review._adasAttempts); $statusOk = ([string]$meta26.status -eq $(if ($case.expectPass) { 'PASS' } else { 'BLOCKED' }))
+        $meta26 = $review._adasProvider; $attempts26 = @($review._adasAttempts); $finding26 = @($review.findings | Where-Object { $_.category -eq 'provider-attestation-invalid' })
+        $statusOk = ([string]$meta26.status -eq $(if ($case.expectPass) { 'PASS' } else { 'BLOCKED' })); $verdictOk = ([string]$review.verdict -eq $(if ($case.expectPass) { 'PASS' } else { 'BLOCKED' }))
         $attemptsKept = ($attempts26.Count -eq 1 -and ([string]$attempts26[0].providerRequestId -eq ('req-' + $case.name)) -and ([int64]$attempts26[0].totalTokens -eq 28) -and ([string]$attempts26[0].requestedModel -eq 'deepseek-v4-pro'))
         $fallbackOk = ([bool]$meta26.fallbackObserved -eq ((-not $case.expectPass) -and -not [string]::IsNullOrWhiteSpace([string]$case.model)))
-        Add-ADASReviewTestResult $case.name ($statusOk -and $attemptsKept -and $fallbackOk) "status=$($meta26.status) actualModel='$($meta26.actualModel)' fallback=$($meta26.fallbackObserved)"
+        $findingOk = (($finding26.Count -eq 1 -and [string]$finding26[0].severity -eq 'HIGH' -and -not [string]::IsNullOrWhiteSpace([string]$finding26[0].evidence)) -eq (-not $case.expectPass))
+        Add-ADASReviewTestResult $case.name ($statusOk -and $verdictOk -and $attemptsKept -and $fallbackOk -and $findingOk) "status=$($meta26.status) verdict=$($review.verdict) actualModel='$($meta26.actualModel)'"
     }
     # --- 27. Task57 finding file/line type contract: exclusively null or string ---
     $fileLineCases = @(
@@ -486,8 +448,7 @@ try {
         $payload27.findings[0][[string]$case.field] = $case.value; $json27 = $payload27 | ConvertTo-Json -Depth 8 -Compress
         Reset-ADASReviewMock; $global:adasReviewMockResponses = @((New-ADASReviewMockResponse -Content $json27 -RequestId ('req-' + $case.name + '-1') -PromptTokens 12 -CompletionTokens 4), (New-ADASReviewMockResponse -Content $json27 -RequestId ('req-' + $case.name + '-2') -PromptTokens 12 -CompletionTokens 4))
         $review = Invoke-ADASReviewTestReview -OutputName ('review-' + $case.name) -Diff $diffText; $attempts27 = @($review._adasAttempts)
-        if ($case.accept) { $passed27 = ([string]$review.verdict -eq 'PASS') -and ($attempts27.Count -eq 1) }
-        else { $passed27 = ([string]$review.verdict -eq 'BLOCKED') -and ($attempts27.Count -eq 2) -and ([string]$attempts27[0].errorClass -eq 'schema-error') }
+        if ($case.accept) { $passed27 = ([string]$review.verdict -eq 'PASS') -and ($attempts27.Count -eq 1) } else { $passed27 = ([string]$review.verdict -eq 'BLOCKED') -and ($attempts27.Count -eq 2) -and ([string]$attempts27[0].errorClass -eq 'schema-error') }
         Add-ADASReviewTestResult $case.name $passed27 "verdict=$($review.verdict)"
     }
     $parsedFileNull = ('{"verdict":"PASS","confidence":0.5,"summary":"x","findings":[{"severity":"LOW","category":"style","file":null,"line":null,"evidence":"e","requiredFix":"f"}],"missingEvidence":[],"businessRisks":[]}') | ConvertFrom-Json
@@ -515,31 +476,26 @@ try {
         $candMeta = Get-ADASDiffAcquisitionMeta -DiffText $candText -ReviewerModel @('deepseek-v4-pro') -ModelMetadataPath $metadataPath
         Add-ADASReviewTestResult 'full-candidate-fits-derived-budget' ((-not [bool]$candMeta.budgetExceeded) -and ([string]$candMeta.budgetSource -eq 'context-window') -and ([string]$candMeta.text -ceq $candText) -and ([string]$candMeta.sha256 -eq $FullCandidateDiffSha256)) "chars=$($candMeta.characterCount) budget=$($candMeta.budgetCharacters)"
         $candMetaFallback = Get-ADASDiffAcquisitionMeta -DiffText $candText -ReviewerModel @('deepseek-v4-pro') -ModelMetadataPath $missingMetadataPath
-        Add-ADASReviewTestResult 'full-candidate-missing-metadata-fail-closed' (([bool]$candMetaFallback.budgetExceeded) -and ([string]$candMetaFallback.text -eq '') -and ([string]$candMetaFallback.budgetSource -eq 'fallback-cap') -and ([int64]$candMetaFallback.characterCount -eq $FullCandidateDiffCharacterCount) -and ([string]$candMetaFallback.sha256 -eq $FullCandidateDiffSha256)) "fallback-budget=$($candMetaFallback.budgetCharacters)"
+        Add-ADASReviewTestResult 'full-candidate-missing-metadata-fail-closed' (([string]$candMetaFallback.budgetSource -eq 'fallback-cap') -and ([string]$candMetaFallback.sha256 -eq $FullCandidateDiffSha256) -and ([int64]$candMetaFallback.characterCount -eq $FullCandidateDiffCharacterCount) -and $(if ([int64]$FullCandidateDiffByteCount -gt 350000) { ([bool]$candMetaFallback.budgetExceeded) -and ([string]$candMetaFallback.text -eq '') } else { (-not [bool]$candMetaFallback.budgetExceeded) -and ([string]$candMetaFallback.text -ceq $candText) })) "fallback-budget=$($candMetaFallback.budgetCharacters)"
         $candSections = Get-ADASReviewDiffSections -DiffText $candText; $candConcat = (@($candSections | ForEach-Object { [string]$_.text }) -join '')
         Add-ADASReviewTestResult 'full-candidate-segments-concat-byte-identical' ($candConcat -ceq $candText) "segments=$($candSections.Count)"
         $candHashOk = $true
         foreach ($section in $candSections) {
-            if ([string]$section.diffSha256 -ne $FullCandidateDiffSha256) { $candHashOk = $false }
-            if ([string]$section.segmentSha256 -ne (Get-ADASSha256Text ([string]$section.text))) { $candHashOk = $false }
-            if ([int]$section.segment -gt [int]$section.segmentCount) { $candHashOk = $false }
+            if ([string]$section.diffSha256 -ne $FullCandidateDiffSha256) { $candHashOk = $false }; if ([string]$section.segmentSha256 -ne (Get-ADASSha256Text ([string]$section.text))) { $candHashOk = $false }; if ([int]$section.segment -gt [int]$section.segmentCount) { $candHashOk = $false }
         }
         Add-ADASReviewTestResult 'full-candidate-segment-hashes-consistent' $candHashOk ''
         Reset-ADASReviewMock; $global:adasReviewMockResponses = @((New-ADASReviewMockResponse -Content $validPassJson -RequestId 'req-cand-1' -PromptTokens 1000 -CompletionTokens 30)); $review = Invoke-ADASReviewTestReview -OutputName 'review-candidate' -Diff $candText -Sha $FullCandidateDiffSha256 -Chars $candText.Length -Timeout 120
         Add-ADASReviewTestResult 'full-candidate-review-requests-provider' (([string]$review.verdict -eq 'PASS') -and ((Get-ADASReviewMockCallCount) -eq 1) -and ([string]$review._adasProvider.providerRequestId -eq 'req-cand-1')) "calls=$(Get-ADASReviewMockCallCount)"
         $candBody = [string]$global:adasReviewMockCalls[0].body; $candParsedBody = $candBody | ConvertFrom-Json; $candUserContent = [string]$candParsedBody.messages[1].content
-        # Every diff byte appears exactly once in the prompt: the deterministic sections are
-        # disjoint and their concatenation is byte-identical with the full diff (proven above).
+        # Every diff byte appears exactly once in the prompt: the deterministic sections are disjoint and their concatenation is byte-identical with the full diff (proven above).
         $sectionsOnceOk = $true
         foreach ($section in $candSections) {
-            $sectionText = [string]$section.text; $firstIdx = $candUserContent.IndexOf($sectionText)
-            if ($firstIdx -lt 0 -or $firstIdx -ne $candUserContent.LastIndexOf($sectionText)) { $sectionsOnceOk = $false }
+            $sectionText = [string]$section.text; $firstIdx = $candUserContent.IndexOf($sectionText); if ($firstIdx -lt 0 -or $firstIdx -ne $candUserContent.LastIndexOf($sectionText)) { $sectionsOnceOk = $false }
         }
         Add-ADASReviewTestResult 'full-candidate-every-diff-byte-exactly-once' $sectionsOnceOk "sections=$($candSections.Count)"
         $markersOk = $true
         foreach ($section in $candSections) {
-            $marker = "[DIFF SEGMENT $($section.segment)/$($section.segmentCount) "
-            if ($candUserContent.IndexOf($marker) -ne $candUserContent.LastIndexOf($marker)) { $markersOk = $false }
+            $marker = "[DIFF SEGMENT $($section.segment)/$($section.segmentCount) "; if ($candUserContent.IndexOf($marker) -ne $candUserContent.LastIndexOf($marker)) { $markersOk = $false }
         }
         Add-ADASReviewTestResult 'full-candidate-segment-markers-once' $markersOk ''
     }
@@ -621,6 +577,7 @@ try {
                 Add-ADASReviewTestResult 'caller-installed-region-extraction' $true "region=$($installedCallerRegion.Length) chars"
                 Add-ADASReviewTestResult 'caller-installed-region-byte-equal' ($installedCallerRaw -eq $canonicalCallerRaw) "installed=$installedCallerRaw canonical=$canonicalCallerRaw"
                 Add-ADASReviewTestResult 'caller-installed-region-normalized-equal' ($installedCallerNorm -eq $canonicalCallerNorm) "installed=$installedCallerNorm canonical=$canonicalCallerNorm"
+                Add-ADASReviewTestResult 'caller-canonical-terminal-branch' ($callerCanonicalRegion.Contains('exit 80') -and ([regex]::Matches($callerCanonicalRegion, 'New-ADASDiffBudgetExceededResult')).Count -eq 2 -and $callerCanonicalRegion.Contains("'review-1.json'") -and $callerCanonicalRegion.Contains("'review-2.json'")) ''
             }
         }
         else {
@@ -694,6 +651,66 @@ try {
         }
         Remove-Item -LiteralPath $installerTemp -Recurse -Force -ErrorAction SilentlyContinue
     }
+    # --- 31. Task58 terminal e2e: installed caller control flow with an instrumented seam ---
+    # Runs the actual installed Invoke-ADASPipeline.ps1 + Imperial-ADAS.psm1 (byte-copied; the installed caller region is hash-proven byte-equal to the tracked canonical region above) against a synthetic worktree/config. Exceeded: pipeline terminates in the caller region with two persisted BLOCKED reviews + exact meta + 0 provider requests. Normal: the provider-review section IS reachable (two seam calls, R3) and the pipeline completes.
+    $termRoot = Join-Path ([IO.Path]::GetTempPath()) ('adas-terminal-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $termRoot | Out-Null
+    $termRepo = Join-Path $termRoot 'repo'; New-Item -ItemType Directory -Force -Path $termRepo | Out-Null
+    & git -C $termRepo init -q 2>$null | Out-Null; & git -C $termRepo config user.email 'adas@local.invalid' 2>$null; & git -C $termRepo config user.name 'adas' 2>$null; & git -C $termRepo config core.autocrlf false 2>$null
+    Write-ADASUtf8NoBom -Path (Join-Path $termRepo 'sample.txt') -Text "before`n"; & git -C $termRepo add sample.txt 2>$null; & git -C $termRepo commit -q -m before 2>$null
+    Write-ADASUtf8NoBom -Path (Join-Path $termRepo 'sample.txt') -Text "before`nafter-line`n"; & git -C $termRepo add sample.txt 2>$null; & git -C $termRepo commit -q -m after 2>$null
+    $termBefore = (& git -C $termRepo rev-parse HEAD~1).Trim(); $termAfter = (& git -C $termRepo rev-parse HEAD).Trim(); $termBranch = (& git -C $termRepo branch --show-current).Trim()
+    $termSeam = Join-Path $termRoot 'provider-seam.log'
+    $termTask = Join-Path $termRoot 'task.md'; Write-ADASUtf8NoBom -Path $termTask -Text "# Synthetic budget-terminal`n`n## Acceptance`n- budget-exceeded terminal path must fail closed.`n`nADAS-RISK-FLOOR: R3`n"
+    $termConfig = Join-Path $termRoot 'worker-config.json'
+    Write-ADASJson -Path $termConfig -Value ([ordered]@{ ControlRoot = $termRoot; WorktreePath = $termRepo; GitPath = 'git'; BranchName = $termBranch; Model = 'deepseek-v4-pro'; CodexModel = 'deepseek-v4-pro'; SecretPath = (Join-Path $termRoot 'secret-not-read.txt'); Role = 'PRO'; Provider = [ordered]@{ Name = 'DeepSeek'; AuthorEndpointFamily = 'https://api.deepseek.com'; FallbackAllowed = $false } })
+    New-Item -ItemType Directory -Force -Path (Join-Path $termRepo '.imperial-adas') | Out-Null
+    Write-ADASJson -Path (Join-Path $termRepo '.imperial-adas\project.json') -Value ([pscustomobject]@{ riskFloor = 'R0'; commands = [pscustomobject]@{ synthetic = @() } })
+    $termSession = Join-Path $termRoot 'session.log'
+    Write-ADASUtf8NoBom -Path $termSession -Text ('{"type":"result","subtype":"success","is_error":false,"request_id":"req-author-1","session_id":"sess-author-1","usage":{"input_tokens":100,"output_tokens":50},"modelUsage":{"deepseek-v4-pro":{"input_tokens":100,"output_tokens":50}}}' + [Environment]::NewLine)
+    $termDiffOut = Join-Path $termRoot 'expected.diff'; & git -C $termRepo diff --no-ext-diff --unified=5 "$termBefore..$termAfter" --output=$termDiffOut
+    $termDiffText = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($termDiffOut)); $termDiffSha = Get-ADASSha256Text $termDiffText
+    $termProfile = Join-Path $termRoot 'profile'; New-Item -ItemType Directory -Force -Path $termProfile | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $termRoot 'codex-home') | Out-Null
+
+    function Invoke-ADASTerminalChild {
+        param([Parameter(Mandatory = $true)][string]$ScriptPath, [string[]]$ExtraArgs = @())
+        return (Start-Process -FilePath 'powershell.exe' -ArgumentList (@('-NoProfile','-ExecutionPolicy','Bypass','-File',$ScriptPath) + $ExtraArgs) -Wait -PassThru -NoNewWindow).ExitCode
+    }
+    $termPipelineDir = Join-Path $termRoot ('proofs\task-' + $termAfter.Substring(0, 12))
+    if (-not [string]::IsNullOrWhiteSpace($CallerAuditProfileDir)) {
+        Copy-Item -LiteralPath (Join-Path $CallerAuditProfileDir 'Invoke-ADASPipeline.ps1') -Destination (Join-Path $termProfile 'Invoke-ADASPipeline.ps1') -Force
+        Copy-Item -LiteralPath (Join-Path $CallerAuditProfileDir 'Imperial-ADAS.psm1') -Destination (Join-Path $termProfile 'Imperial-ADAS.psm1') -Force
+        $termSeamText = @"
+function Invoke-ADASDeepSeekCompletion {
+    param([string]`$ApiKey, [string]`$Model, [string]`$UserPrompt, [int]`$TimeoutSeconds = 240)
+    Add-Content -LiteralPath `$env:ADAS_TERM_SEAM_PATH -Value 'provider-call' -Encoding UTF8
+    return [pscustomobject]@{ ok = `$false; transportErrorClass = 'seam-offline'; content = ''; finishReason = ''; actualModel = ''; requestId = ''; inputTokens = [int64]0; outputTokens = [int64]0; totalTokens = [int64]0 }
+}
+"@
+        [IO.File]::AppendAllText((Join-Path $termProfile 'Imperial-ADAS.psm1'), [Environment]::NewLine + $termSeamText, (New-Object Text.UTF8Encoding($false)))
+        Write-ADASJson -Path (Join-Path $termRoot 'codex-home\models.json') -Value ([pscustomobject]@{ models = @([pscustomobject]@{ slug = 'deepseek-v4-pro'; context_window = 100000 }) }); $env:ADAS_TERM_SEAM_PATH = $termSeam
+        $termExitExceeded = Invoke-ADASTerminalChild -ScriptPath (Join-Path $termProfile 'Invoke-ADASPipeline.ps1') -ExtraArgs @('-ConfigPath', $termConfig, '-TaskPath', $termTask, '-BeforeCommit', $termBefore, '-AfterCommit', $termAfter, '-AgentReportPath', (Join-Path $termRoot 'author-report.md'), '-SessionLogPath', $termSession)
+        $termP1 = [IO.File]::ReadAllText((Join-Path $termPipelineDir 'review-1.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $termP2 = [IO.File]::ReadAllText((Join-Path $termPipelineDir 'review-2.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $termPMeta = [IO.File]::ReadAllText((Join-Path $termPipelineDir 'change.diff.budget-exceeded-meta.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+        Add-ADASReviewTestResult 'terminal-installed-exit-80' ($termExitExceeded -eq 80) "exit=$termExitExceeded"
+        Add-ADASReviewTestResult 'terminal-installed-both-persisted-blocked' (([string]$termP1.verdict -eq 'BLOCKED') -and ([string]$termP2.verdict -eq 'BLOCKED') -and ([bool]$termP1._adasDiffBudget.contextCapacityBlocked) -and ([int64]$termP1._adasDiffBudget.diffCharacterCount -eq [int64]$termDiffText.Length) -and ([string]$termP1._adasDiffBudget.diffSha256 -eq $termDiffSha) -and (@($termP1._adasAttempts).Count -eq 0) -and (@($termP2._adasAttempts).Count -eq 0)) "r1=$($termP1.verdict) r2=$($termP2.verdict)"
+        Add-ADASReviewTestResult 'terminal-installed-meta-exact' (([bool]$termPMeta.budgetExceeded) -and ([string]$termPMeta.sha256 -eq $termDiffSha) -and ([int64]$termPMeta.budgetBytes -eq 0) -and ([IO.File]::ReadAllText((Join-Path $termPipelineDir 'change.diff'), [Text.Encoding]::UTF8).Length -eq 0)) ''
+        Add-ADASReviewTestResult 'terminal-installed-zero-provider-requests' (-not (Test-Path -LiteralPath $termSeam)) 'seam-absent'
+        Add-ADASReviewTestResult 'terminal-installed-pipeline-stopped' (-not (Test-Path -LiteralPath (Join-Path $termPipelineDir 'verification.json'))) ''
+        Write-ADASJson -Path (Join-Path $termRoot 'codex-home\models.json') -Value ([pscustomobject]@{ models = @([pscustomobject]@{ slug = 'deepseek-v4-pro'; context_window = 1048576; effective_context_window_percent = 95 }) })
+        'sk-test-synthetic-key' | ConvertTo-SecureString -AsPlainText -Force | Export-Clixml -Path (Join-Path $termRoot 'secret-not-read.txt')
+        $termExitNormal = Invoke-ADASTerminalChild -ScriptPath (Join-Path $termProfile 'Invoke-ADASPipeline.ps1') -ExtraArgs @('-ConfigPath', $termConfig, '-TaskPath', $termTask, '-BeforeCommit', $termBefore, '-AfterCommit', $termAfter, '-AgentReportPath', (Join-Path $termRoot 'author-report.md'), '-SessionLogPath', $termSession)
+        $termSeamCalls = @(Get-Content -LiteralPath $termSeam -ErrorAction SilentlyContinue | Where-Object { $_ -eq 'provider-call' }).Count
+        $termVerification = [IO.File]::ReadAllText((Join-Path $termPipelineDir 'verification.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+        Add-ADASReviewTestResult 'terminal-installed-normal-reaches-provider' (($termExitNormal -eq 80) -and ($termSeamCalls -eq 2) -and ([string]$termVerification.decision -eq 'BLOCKED')) "exit=$termExitNormal seam=$termSeamCalls"
+        Remove-Item Env:\ADAS_TERM_SEAM_PATH -ErrorAction SilentlyContinue
+    }
+    else {
+        Add-ADASReviewTestResult 'terminal-installed-skipped' $false 'CallerAuditProfileDir not provided'
+    }
+    Remove-Item -LiteralPath $termRoot -Recurse -Force -ErrorAction SilentlyContinue
     # --- 25. Task56 cumulative changed-line gate (git diff --numstat, baseline-relative) ---
     if ([string]::IsNullOrWhiteSpace($ChangedLineBaselineCommit)) {
         Add-ADASReviewTestResult 'changed-line-gate' $false 'ChangedLineBaselineCommit not provided'

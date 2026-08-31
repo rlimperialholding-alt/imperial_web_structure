@@ -1,26 +1,6 @@
 <#
 .SYNOPSIS
-Deterministic atomic install/sync of the canonical, git-tracked ADAS independent-review
-control-plane unit into the live profile: module sections A + B (Imperial-ADAS.psm1) and,
-optionally, the structured Get-ADASDiffText caller region (Invoke-ADASPipeline.ps1) derived
-from the git-tracked canonical caller source (canonical-adas-caller-region.ps1, Task57).
-Discipline: (1) boundaries — module regions located with the PowerShell AST (anchor +
-successor, canonical-block or legacy mode; drift fails closed); the caller region by its
-line-anchored start comment and single successor line, each exactly once; (2) canonical —
-module source parses clean and carries EXACTLY the 13 canonical functions in order; caller
-canonical parses clean and carries EXACTLY ONE structured call site (.text/.budgetExceeded),
-the exceeded branch, no sentinel, no whole-object coercion; (3) pre-sync proof — per-file
-hash/size/ACL, a hash-verified backup copy, untouched-region hashes; (4) atomic replace —
-[IO.File]::Replace with the displaced witness hash-checked against the verified before-hash;
-(5) Task57 rollback contract — a witness mismatch or a post-sync verification failure
-restores the VERIFIED backup atomically and re-verifies the live hash; the report claims
-intact ONLY when hash-proven; backups are never deleted; (6) post-sync proof — installed
-regions extracted back and matched byte/normalized-hash against the canonical sources, 0
-parser errors; (7) idempotent — byte-equal regions record a noop-identical proof.
-Proofs carry only paths, hashes, sizes, counts and ACL lines (never key/review content).
--DryRun plans without modifying. -SkipParseVerify opts out of parse checks.
--FaultInjectReplaceBackupHashMismatch is TEST-ONLY: it corrupts the displaced witness by one
-byte after each successful ReplaceFile so the rollback path is exercised deterministically.
+Deterministic atomic install/sync of the canonical, git-tracked ADAS independent-review control-plane unit into the live profile: module sections A+B (Imperial-ADAS.psm1) and the structured Get-ADASDiffText caller region (Invoke-ADASPipeline.ps1). Discipline: (1) AST/marker boundaries, drift fails closed; (2) canonical — EXACTLY the 13 canonical functions in order, EXACTLY ONE structured caller call site, exceeded branch, no sentinel, no whole-object coercion; (3) pre-sync proof — per-file hash/size/ACL + hash-verified backup; (4) atomic [IO.File]::Replace with the displaced witness hash-checked; (5) Task57 rollback — mismatch or post-sync verification failure restores the VERIFIED backup atomically and re-verifies the live hash; intact ONLY when hash-proven; backups never deleted; (6) post-sync proof — installed regions extracted back and matched byte/normalized-hash against the canonical sources, 0 parser errors; (7) idempotent noop. Proofs carry only paths, hashes, sizes, counts, ACL lines (never key/review content). -DryRun plans without modifying. -SkipParseVerify opts out of parse checks. -FaultInjectReplaceBackupHashMismatch is TEST-ONLY: corrupts the displaced witness by one byte after each successful ReplaceFile so the rollback path is exercised deterministically.
 #>
 [CmdletBinding()]
 param(
@@ -94,8 +74,7 @@ function Find-AdasSyncRegion {
 }
 function Split-AdasCanonicalSections {
     param([Parameter(Mandatory = $true)][string]$CanonicalText)
-    # Canonical discipline: EXACTLY the 13 canonical functions (5 + 8) in canonical order;
-    # section A = file start .. New-ADASReviewAttemptRecord, section B = that start .. file end.
+    # Canonical discipline: EXACTLY the 13 canonical functions (5 + 8) in order; section A = file start .. New-ADASReviewAttemptRecord, section B = that start .. file end.
     $tokens = $null; $errors = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseInput($CanonicalText, [ref]$tokens, [ref]$errors)
     if ($errors.Count -ne 0) { throw "INSTALL-FAIL-CLOSED: canonical source has $($errors.Count) parser error(s); refusing to sync a broken unit." }
@@ -113,8 +92,7 @@ function Split-AdasCanonicalSections {
 }
 function Test-AdasSyncCallerCanonical {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
-    # Task57 canonical caller discipline: parses clean, EXACTLY ONE structured call site
-    # (.text/.budgetExceeded), exceeded branch present, no sentinel, no whole-object coercion.
+    # Task57 canonical caller discipline: parses clean, EXACTLY ONE structured call site (.text/.budgetExceeded), exceeded branch, no sentinel, no whole-object coercion.
     if ([string]::IsNullOrWhiteSpace($Text)) { return 'caller canonical source is empty' }
     $tokens = $null; $errors = $null
     [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$tokens, [ref]$errors) | Out-Null
@@ -129,8 +107,7 @@ function Test-AdasSyncCallerCanonical {
 }
 function Find-AdasSyncCallerRegion {
     param([Parameter(Mandatory = $true)][string]$CallerText)
-    # Marker-based caller-region location: start comment and single successor line each occur
-    # exactly once; the region ends at the exceeded-branch closing brace. Markers are pure ASCII.
+    # Marker-based caller-region location: start comment and single successor line each occur exactly once; the region ends at the exceeded-branch closing brace. Markers are pure ASCII.
     $successorLine = 'Copy-Item -LiteralPath $TaskPath'
     $offsets = New-Object 'System.Collections.Generic.List[int]'
     $offsets.Add(0); $nl = 0
@@ -158,8 +135,7 @@ function Find-AdasSyncCallerRegion {
 }
 function Restore-AdasSyncBackup {
     param([Parameter(Mandatory = $true)][string]$BackupPath, [Parameter(Mandatory = $true)][string]$TargetPath, [Parameter(Mandatory = $true)][string]$ExpectedHash, [Parameter(Mandatory = $true)][string]$ModuleDir)
-    # Task57 atomic rollback: a working copy of the VERIFIED backup is swapped in via
-    # ReplaceFile (the backup itself is preserved), then the live hash is re-verified.
+    # Task57 atomic rollback: a working copy of the VERIFIED backup is swapped in via ReplaceFile (the backup itself is preserved), then the live hash is re-verified.
     $sourceCopy = Join-Path $ModuleDir ("restore-source-$([Guid]::NewGuid().ToString('N')).tmp")
     $displaced = Join-Path $ModuleDir ("restore-displaced-$([Guid]::NewGuid().ToString('N')).tmp")
     try {
@@ -315,8 +291,7 @@ try {
         exit 0
     }
     # --- Atomic swap via ReplaceFile. The displaced previous file is hash-checked against the
-    # verified before-hash (atomicity witness); a mismatch throws and the shared catch restores
-    # the VERIFIED pre-sync backup atomically (Task57 rollback). ---
+    # verified before-hash (atomicity witness); a mismatch throws and the shared catch restores the VERIFIED pre-sync backup atomically (Task57 rollback). ---
     $encoding = if ($hasBom) { New-Object Text.UTF8Encoding($true) } else { New-Object Text.UTF8Encoding($false) }
     if ($action -ne 'noop-identical') {
         $tempPath = Join-Path $moduleDir ("Imperial-ADAS.psm1.sync-tmp-$([Guid]::NewGuid().ToString('N')).tmp")
@@ -423,8 +398,7 @@ try {
 }
 catch {
     # Task57 rollback contract: restore every replaced file from its VERIFIED pre-sync
-    # backup atomically and re-verify the live hash. The report claims a target intact ONLY
-    # when the restore is hash-proven; backups are never deleted.
+    # backup atomically and re-verify the live hash. The report claims a target intact ONLY when the restore is hash-proven; backups are never deleted.
     $rollbackErrors = New-Object 'System.Collections.Generic.List[string]'
     if ($callerReplaced -and $callerBackupPath) { $callerRollbackError = Restore-AdasSyncBackup -BackupPath $callerBackupPath -TargetPath $callerPath -ExpectedHash $callerBeforeHash -ModuleDir $moduleDir; if ($callerRollbackError) { $rollbackErrors.Add("caller: $callerRollbackError") } }
     if ($moduleReplaced -and $moduleBackupPath) { $moduleRollbackError = Restore-AdasSyncBackup -BackupPath $moduleBackupPath -TargetPath $modulePath -ExpectedHash $moduleBeforeHash -ModuleDir $moduleDir; if ($moduleRollbackError) { $rollbackErrors.Add("module: $moduleRollbackError") } }
