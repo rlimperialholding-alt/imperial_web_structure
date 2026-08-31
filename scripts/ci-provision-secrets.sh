@@ -54,5 +54,9 @@ if [ "$(uname -s 2>/dev/null || true)" = Linux ] && command -v sudo >/dev/null 2
   sudo chown 10001:10001 "$SECRET_DIR"/*.txt
 fi
 
-count=$(printf '%s' "$CANONICAL_SECRET_NAMES" | tr ' ' '\n' | sed '/^$/d' | wc -l | tr -d ' ')
-printf 'Provisioned %s ephemeral synthetic CI secret file(s) in %s.\n' "$count" "$SECRET_DIR"
+# A stdout-szerződés (Task67 test-portability remediation): pontosan egy
+# fix, count/path-mentes, secretmentes információs sor. Secret-név, -érték
+# vagy fájltartalom soha nem kerül a kimenetre; a generált értékek kizárólag
+# a 0400-as fájlokban élnek. (A korábbi darabszám/útvonal interpoláció
+# platformfüggő wc/tr/sed függést és útvonal-kiszivárgást is hordozott.)
+printf 'Ephemeral synthetic CI secret files provisioned.\n'

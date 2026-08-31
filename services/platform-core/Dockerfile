@@ -23,6 +23,12 @@ RUN --mount=type=secret,id=build_ca,required=false \
     fi; \
     PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" pip install --no-cache-dir --no-binary mypy -r requirements-dev.txt; \
     status=$?; rm -f /tmp/build-ca.pem; exit $status
+# Task67 test-portability: az openssl CLI a valódi POSIX/Linux provisioning
+# runtime-próbákhoz kell (tests/test_ci_secret_provisioning_invariants.py a
+# szkriptet valódi sh + openssl rand futásban ellenőrzi 0700/0400 módokkal).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN mkdir -p /app/data /app/runtime && chown -R imperial:imperial /app
 USER imperial

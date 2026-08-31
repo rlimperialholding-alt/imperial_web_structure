@@ -410,6 +410,16 @@ services:
       PYTHONPYCACHEPREFIX: /tmp/pycache
     tmpfs:
       - /tmp:size=128m,mode=1777
+    volumes:
+      # Task67 test-portability: a provisioning runtime-próbák a repo-gyökér
+      # scripts/ könyvtárát read-only bind-mountként kapják (a platform-core
+      # build context nem tartalmazza a repo-szintű provisioning-szkriptet;
+      # a tests/test_ci_secret_provisioning_invariants.py a /repo-scripts
+      # alatt keresi konténer-layoutban).
+      - type: bind
+        source: ./scripts
+        target: /repo-scripts
+        read_only: true
     secrets:
       - platform_expert_review_secret
       - platform_marketing_review_secret

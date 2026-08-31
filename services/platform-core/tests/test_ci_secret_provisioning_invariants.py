@@ -26,6 +26,15 @@ könyvtáron (a fájlok 0400-as minimális jogosultsága változatlan). Az
 alábbi végrehajtási regressziók valódi temp könyvtárban futtatják a
 szkriptet, és ellenőrzik a könyvtár traversálhatóságát, a fájlok
 létrejöttét/módját és a secret-értékek logmentességét.
+
+Task67 test-portability remediáció (Review-1 HIGH x2 / Review-2 HIGH+MEDIUM):
+a valódi shell-runtime próbák explicit POSIX- és tool-availability guardot
+kaptak — Windows proof-pathon és hiányzó ``sh``/``openssl`` esetén szabályosan
+SKIP egyértelmű indokkal, miközben a statikus, pure-Python invariánsok
+változatlanul futnak. A szkript stdout-szerződése pontosan egy fix,
+count/path-mentes, secretmentes információs sor lett; a runtime teszt ezt a
+dokumentált kimenetet exact-match-szel, a secret-nevek és -értékek
+logmentességét pedig teljes stdout+stderr ellenőrzéssel zárja.
 """
 
 from __future__ import annotations
@@ -33,18 +42,73 @@ from __future__ import annotations
 import importlib.util
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
-COMPOSE_PATH = REPO / "docker-compose.yml"
-PROVISION_SCRIPT = REPO / "scripts" / "ci-provision-secrets.sh"
-CHECKER_SCRIPT = REPO / "scripts" / "check_ci_secret_provisioning.py"
-COMPENSATIONS_SCRIPT = REPO / "scripts" / "check_scan_exception_compensations.py"
-CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
-PLATFORM_CI_WORKFLOW = REPO / ".github" / "workflows" / "platform-ci.yml"
+import pytest
+
+
+# Layout-független útvonalfeloldás (Task67 test-portability): a worktree-ben a
+# repo-gyökeret a scripts/ci-provision-secrets.sh markerrel találjuk meg; a
+# platform-core-tests CI konténerben (ahol csak a platform-core forrás van
+# /app alatt) a repo-gyökér hiányzik, ott a scripts/ könyvtár a
+# docker-compose.yml bind-mountjaként (/repo-scripts, read-only) érhető el.
+def _find_repo_root() -> Path | None:
+    start = Path(__file__).resolve()
+    for parent in (start, *start.parents):
+        if (parent / "scripts" / "ci-provision-secrets.sh").is_file():
+            return parent
+    return None
+
+
+REPO = _find_repo_root()
+# A konténer-layout scripts-mount helye; CI_REPO_SCRIPTS_DIR-rel felülírható
+# (a konténer-layout lokális verifikálásához, azonos felbontási logikával).
+_CONTAINER_SCRIPTS_DIR = Path(os.environ.get("CI_REPO_SCRIPTS_DIR", "/repo-scripts"))
+
+
+def _scripts_dir() -> Path | None:
+    if REPO is not None:
+        return REPO / "scripts"
+    if (_CONTAINER_SCRIPTS_DIR / "ci-provision-secrets.sh").is_file():
+        return _CONTAINER_SCRIPTS_DIR
+    return None
+
+
+_SCRIPTS = _scripts_dir()
+COMPOSE_PATH = REPO / "docker-compose.yml" if REPO is not None else None
+PROVISION_SCRIPT = _SCRIPTS / "ci-provision-secrets.sh" if _SCRIPTS is not None else None
+CHECKER_SCRIPT = _SCRIPTS / "check_ci_secret_provisioning.py" if _SCRIPTS is not None else None
+COMPENSATIONS_SCRIPT = _SCRIPTS / "check_scan_exception_compensations.py" if _SCRIPTS is not None else None
+ENFORCE_SCRIPT = _SCRIPTS / "enforce_semgrep_verdict.py" if _SCRIPTS is not None else None
+CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml" if REPO is not None else None
+PLATFORM_CI_WORKFLOW = REPO / ".github" / "workflows" / "platform-ci.yml" if REPO is not None else None
+
+
+def _skip_reason_repo() -> str | None:
+    """Repo-szintű provisioning/CI-wiring fájlok hiánya esetén ad skip-indokot
+    (pl. platform-core-tests konténer-layout, ahol csak a bind-mountolt
+    scripts/ könyvtár érhető el)."""
+    if REPO is None:
+        return (
+            "repo-szintű provisioning/CI-wiring fájlok (compose/workflow) "
+            "hiányoznak ebben a layoutban; a szkript-alapú próbák külön futnak"
+        )
+    return None
+
+
+def _skip_reason_scripts() -> str | None:
+    """A provisioning-szkript hiánya esetén ad skip-indokot (se worktree-, se
+    konténer-layoutban nem elérhető a scripts/ könyvtár)."""
+    if _SCRIPTS is None:
+        return (
+            "a provisioning-szkript nem érhető el ebben a layoutban "
+            "(worktree scripts/ vagy konténer /repo-scripts bind-mount hiányzik)"
+        )
+    return None
 
 
 def _load(name: str, path: Path):
@@ -64,6 +128,8 @@ def _workflow_texts() -> tuple[tuple[str, str], ...]:
 
 
 def test_real_repository_state_reconciles_clean() -> None:
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
     status, message = checker.reconcile(
         COMPOSE_PATH.read_text(encoding="utf-8"),
@@ -74,6 +140,8 @@ def test_real_repository_state_reconciles_clean() -> None:
 
 
 def test_compose_declaration_without_provisioning_fails_closed() -> None:
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
     compose_text = COMPOSE_PATH.read_text(encoding="utf-8")
     # Új secret-deklaráció a Compose-ban, amely nincs a provisioning-listán.
@@ -96,6 +164,8 @@ def test_compose_declaration_without_provisioning_fails_closed() -> None:
 
 
 def test_orphan_provisioning_entry_fails_closed() -> None:
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
     provisioning_text = PROVISION_SCRIPT.read_text(encoding="utf-8")
     drifted = provisioning_text.replace(
@@ -111,6 +181,8 @@ def test_orphan_provisioning_entry_fails_closed() -> None:
 
 
 def test_compose_default_path_mismatch_fails_closed() -> None:
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
     compose_text = COMPOSE_PATH.read_text(encoding="utf-8")
     drifted = compose_text.replace(
@@ -127,6 +199,8 @@ def test_compose_default_path_mismatch_fails_closed() -> None:
 
 
 def test_workflow_without_provisioning_invocation_fails_closed() -> None:
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
     workflows = list(_workflow_texts())
     name, text = workflows[0]
@@ -141,6 +215,8 @@ def test_workflow_without_provisioning_invocation_fails_closed() -> None:
 
 
 def test_workflow_with_provisioning_after_compose_fails_closed() -> None:
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
     workflows = list(_workflow_texts())
     name, text = workflows[0]
@@ -172,6 +248,8 @@ def test_workflow_with_provisioning_after_compose_fails_closed() -> None:
 
 
 def test_provisioning_script_literal_secret_assignment_fails_closed() -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
     provisioning_text = PROVISION_SCRIPT.read_text(encoding="utf-8")
     drifted = provisioning_text.replace(
@@ -187,18 +265,24 @@ def test_provisioning_script_literal_secret_assignment_fails_closed() -> None:
 
 
 def test_provisioning_script_generates_only_openssl_rand_values() -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     text = PROVISION_SCRIPT.read_text(encoding="utf-8")
     assert "openssl rand -hex 32" in text
     # Minden secret-fájlba író sor csak openssl rand generálás lehet.
     for line in text.splitlines():
         if "> \"$SECRET_DIR" in line:
             assert "openssl rand -hex 32" in line, line
-    # A workflow-kban nincs inline secret-generálás (a régi blokk eltűnt).
-    for _name, workflow_text in _workflow_texts():
-        assert "openssl rand -hex 32 > secrets/" not in workflow_text
+    # A workflow-kban nincs inline secret-generálás (a régi blokk eltűnt);
+    # ez az ellenőrzés repo-layoutot igényel.
+    if REPO is not None:
+        for _name, workflow_text in _workflow_texts():
+            assert "openssl rand -hex 32 > secrets/" not in workflow_text
 
 
 def test_both_workflows_wire_provisioning_and_reconciliation_before_compose() -> None:
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     for path in (CI_WORKFLOW, PLATFORM_CI_WORKFLOW):
         lines = path.read_text(encoding="utf-8").splitlines()
         provision_at = next(
@@ -215,6 +299,8 @@ def test_both_workflows_wire_provisioning_and_reconciliation_before_compose() ->
 
 
 def test_ephemeral_secret_directory_is_git_ignored() -> None:
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     import subprocess
 
     completed = subprocess.run(
@@ -226,6 +312,8 @@ def test_ephemeral_secret_directory_is_git_ignored() -> None:
 
 
 def test_compensation_checker_detects_missing_integrity_violation(tmp_path) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     bad = tmp_path / "bad.html"
     bad.write_text(
@@ -238,6 +326,8 @@ def test_compensation_checker_detects_missing_integrity_violation(tmp_path) -> N
 
 
 def test_compensation_checker_detects_plaintext_http_violation(tmp_path) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     bad = tmp_path / "bad.html"
     bad.write_text(
@@ -250,6 +340,8 @@ def test_compensation_checker_detects_plaintext_http_violation(tmp_path) -> None
 
 
 def test_compensation_checker_accepts_clean_template(tmp_path) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     good = tmp_path / "good.html"
     good.write_text(
@@ -265,14 +357,19 @@ def test_compensation_checker_accepts_clean_template(tmp_path) -> None:
 
 
 def test_compensation_checker_passes_on_real_templates() -> None:
+    # A valódi templates-korpusz a repo-layout része (a checker a saját
+    # repo-gyökeréhez relatívan keresi); konténer-layoutban a valódi
+    # templates-ellenőrzés a Semgrep workflow host-lépésében fut.
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     assert module.main() == 0
 
 
 def test_enforce_script_covers_all_five_scan_parts() -> None:
-    module = _load(
-        "enforce_semgrep_verdict_invariants", REPO / "scripts" / "enforce_semgrep_verdict.py"
-    )
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
+    module = _load("enforce_semgrep_verdict_invariants", ENFORCE_SCRIPT)
     assert len(module.PARTS) == 5
     assert len(module.EXITS) == 5
     assert "semgrep-platform-core-templates.json" in module.PARTS
@@ -287,11 +384,32 @@ def _provisioned_names() -> list[str]:
     return checker._parse_provisioning_list(PROVISION_SCRIPT.read_text(encoding="utf-8"))
 
 
+def _skip_reason(*tools: str) -> str | None:
+    """A valódi shell-runtime próba futtathatósági guardja (Task67).
+
+    A ``sh``/``openssl``-t igénylő végrehajtási próbák csak POSIX-on,
+    elérhető eszközökkel futnak. Windows proof-pathon (``os.name != "posix"``)
+    és hiányzó eszköz esetén a teszt szabályosan SKIP egyértelmű indokkal;
+    a statikus, pure-Python invariánsok minden platformon futnak tovább.
+    """
+    if os.name != "posix":
+        return (
+            "valódi POSIX shell-runtime próba Linux-specifikus; "
+            "a Windows proof-path a statikus pure-Python invariánsokat futtatja"
+        )
+    missing = [tool for tool in tools if shutil.which(tool) is None]
+    if missing:
+        return f"shell-runtime eszköz(ök) hiányoznak a runneren: {', '.join(missing)}"
+    return None
+
+
 def test_provisioning_script_uses_traversable_directory_mode() -> None:
     # Task66 Review-1 HIGH / Review-2 CRITICAL regresszió: az umask 0177 a
     # secret-könyvtárat 0600 módúvá tehette, amin a runner nem tudott
     # áthatolni (a fájlírás meghiúsult). A javítás umask 0077 + explicit
     # 0700 könyvtár-mód; a secret-fájlok 0400 jogosultsága változatlan.
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     text = PROVISION_SCRIPT.read_text(encoding="utf-8")
     assert "umask 0177" not in text
     assert "umask 0077" in text
@@ -299,17 +417,37 @@ def test_provisioning_script_uses_traversable_directory_mode() -> None:
     assert 'chmod 0400 "$SECRET_DIR/${name}.txt"' in text
 
 
+def test_provisioning_script_stdout_contract_is_static_and_secret_free() -> None:
+    # Task67 szerződészárolás (statikus, pure-Python — Windows-on is fut):
+    # a szkript információs kimenete pontosan egy fix sor, interpoláció
+    # nélkül; a stdout így count/path-mentes és secretmentes (sem név, sem
+    # érték, sem útvonal nem kerülhet a logba).
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
+    text = PROVISION_SCRIPT.read_text(encoding="utf-8")
+    output_lines = [line for line in text.splitlines() if "printf" in line]
+    assert output_lines == [
+        "printf 'Ephemeral synthetic CI secret files provisioned.\\n'"
+    ]
+
+
 def test_provisioning_script_executes_in_real_temp_dir(tmp_path) -> None:
-    # Végrehajtási regresszió valódi temp könyvtárban: a szkript létrehozza
-    # a traversálható könyvtárat és minden kanonikus secret-fájlt, a
-    # fájlok 0400 (POSIX) módúak, az értékek 64 hex karakter hosszú
-    # openssl rand kimenetek, és a kimenet egyetlen generált értéket sem
-    # tartalmaz (logmentesség).
+    # Végrehajtási regresszió valódi temp könyvtárban (Task67 guard: csak
+    # POSIX + elérhető sh/openssl mellett; Windows proof-pathon szabályosan
+    # SKIP): a szkript létrehozza a traversálható könyvtárat és minden
+    # kanonikus secret-fájlt, a fájlok 0400 (POSIX) módúak, az értékek 64 hex
+    # karakter hosszú openssl rand kimenetek, és a kimenet sem secret-nevet,
+    # sem generált értéket nem tartalmaz (logmentesség).
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
+    reason = _skip_reason("sh", "openssl")
+    if reason is not None:
+        pytest.skip(reason)
     names = _provisioned_names()
     secret_dir = tmp_path / "secrets"
     completed = subprocess.run(
-        ["sh", "scripts/ci-provision-secrets.sh"],
-        cwd=str(REPO),
+        ["sh", str(PROVISION_SCRIPT)],
+        cwd=str(secret_dir),
         env=dict(os.environ, CI_SECRET_DIR=str(secret_dir)),
         capture_output=True,
         text=True,
@@ -324,36 +462,44 @@ def test_provisioning_script_executes_in_real_temp_dir(tmp_path) -> None:
         values[name] = content
     # Könyvtár traversálhatóság (X_OK) és minimális jogosultságok.
     assert os.access(secret_dir, os.X_OK), "a secret-könyvtár nem traversálható"
-    if os.name == "posix":
-        assert stat.S_IMODE(secret_dir.stat().st_mode) == 0o700, (
-            "a secret-könyvtár módja nem 0700"
-        )
-        for name in names:
-            mode = stat.S_IMODE((secret_dir / f"{name}.txt").stat().st_mode)
-            assert mode == 0o400, f"{name}: fájlmód {oct(mode)} nem 0400"
-    # Logmentesség: sem a stdout, sem a stderr nem tartalmazza az értékeket.
+    assert stat.S_IMODE(secret_dir.stat().st_mode) == 0o700, (
+        "a secret-könyvtár módja nem 0700"
+    )
+    for name in names:
+        mode = stat.S_IMODE((secret_dir / f"{name}.txt").stat().st_mode)
+        assert mode == 0o400, f"{name}: fájlmód {oct(mode)} nem 0400"
+    # A dokumentált stdout-szerződés (Task67): pontosan egy fix,
+    # count/path-mentes, secretmentes információs sor.
+    assert completed.stdout == "Ephemeral synthetic CI secret files provisioned.\n"
+    # Logmentesség: sem a stdout, sem a stderr nem tartalmazza a
+    # secret-neveket és a generált értékeket.
     output = completed.stdout + completed.stderr
     for name, content in values.items():
+        assert name not in output, f"{name}: secret-név a szkript kimenetében"
         assert content not in output, f"{name}: secret-érték a szkript kimenetében"
-    assert f"Provisioned {len(names)} ephemeral synthetic CI secret file(s)" in completed.stdout
-    # A Windows proof-path-ot a chmod 0400 csak olvashatóvá teheti; a
-    # takarítás előtt írhatóvá állítjuk a fájlokat (POSIX-on no-op).
+    # Takarítás: a chmod 0400 csak olvashatóvá teheti a fájlokat;
+    # törlés előtt írhatóvá tesszük őket.
     for name in names:
         (secret_dir / f"{name}.txt").chmod(0o600)
 
 
 def test_provisioning_script_repairs_preexisting_restrictive_directory(tmp_path) -> None:
-    # POSIX-only: a korábbi hibás 0600 könyvtár-módot a chmod 0700 javítja
-    # (a Windows proof-path nem érvényesít unix módokat, ott a teszt nem
-    # fut — a mkdir -p egy már létező könyvtárat nem módosítana).
-    if os.name != "posix":
-        return
+    # POSIX-only shell-runtime próba (Task67 guard: szabályosan SKIP a
+    # Windows proof-pathon és hiányzó eszköz esetén): a korábbi hibás 0600
+    # könyvtár-módot a chmod 0700 javítja (a mkdir -p egy már létező
+    # könyvtárat nem módosítana; a Windows proof-path nem érvényesít unix
+    # módokat, ezért ott nem is fut).
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
+    reason = _skip_reason("sh", "openssl")
+    if reason is not None:
+        pytest.skip(reason)
     secret_dir = tmp_path / "secrets"
     secret_dir.mkdir()
     secret_dir.chmod(0o600)
     completed = subprocess.run(
-        ["sh", "scripts/ci-provision-secrets.sh"],
-        cwd=str(REPO),
+        ["sh", str(PROVISION_SCRIPT)],
+        cwd=str(secret_dir),
         env=dict(os.environ, CI_SECRET_DIR=str(secret_dir)),
         capture_output=True,
         text=True,
@@ -365,6 +511,13 @@ def test_provisioning_script_repairs_preexisting_restrictive_directory(tmp_path)
 
 
 def test_provisioning_script_is_posix_sh_syntax_valid() -> None:
+    # A szkript POSIX sh szintaktikai validitása (``sh -n``); Task67 guard:
+    # Windows proof-pathon és hiányzó ``sh`` esetén szabályosan SKIP.
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
+    reason = _skip_reason("sh")
+    if reason is not None:
+        pytest.skip(reason)
     completed = subprocess.run(
         ["sh", "-n", str(PROVISION_SCRIPT)], capture_output=True, text=True
     )
@@ -372,6 +525,8 @@ def test_provisioning_script_is_posix_sh_syntax_valid() -> None:
 
 
 def test_compensation_checker_detects_unquoted_plaintext_http(tmp_path) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     bad = tmp_path / "bad.html"
     bad.write_text(
@@ -385,6 +540,8 @@ def test_compensation_checker_detects_unquoted_plaintext_http(tmp_path) -> None:
 def test_compensation_checker_detects_unquoted_remote_script_without_integrity(
     tmp_path,
 ) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     bad = tmp_path / "bad.html"
     bad.write_text(
@@ -396,6 +553,8 @@ def test_compensation_checker_detects_unquoted_remote_script_without_integrity(
 
 
 def test_compensation_checker_detects_jinja_expression_plaintext_http(tmp_path) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     bad = tmp_path / "bad.html"
     bad.write_text(
@@ -409,6 +568,8 @@ def test_compensation_checker_detects_jinja_expression_plaintext_http(tmp_path) 
 def test_compensation_checker_detects_jinja_dynamic_remote_script_without_integrity(
     tmp_path,
 ) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     bad = tmp_path / "bad.html"
     bad.write_text(
@@ -422,6 +583,8 @@ def test_compensation_checker_detects_jinja_dynamic_remote_script_without_integr
 def test_compensation_checker_detects_protocol_relative_script_without_integrity(
     tmp_path,
 ) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     bad = tmp_path / "bad.html"
     bad.write_text(
@@ -433,6 +596,8 @@ def test_compensation_checker_detects_protocol_relative_script_without_integrity
 
 
 def test_compensation_checker_detects_entity_obfuscated_plaintext_http(tmp_path) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     bad = tmp_path / "bad.html"
     bad.write_text(
@@ -444,6 +609,8 @@ def test_compensation_checker_detects_entity_obfuscated_plaintext_http(tmp_path)
 
 
 def test_compensation_checker_accepts_jinja_local_urls(tmp_path) -> None:
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     good = tmp_path / "good.html"
     good.write_text(
@@ -462,6 +629,8 @@ def test_compensation_checker_accepts_https_with_integrity_and_local_paths(
 ) -> None:
     # Positive kontroll: a remote https script/link integrity attribútummal
     # és a helyi útvonalak nem sértenek.
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
     module = _load("check_scan_exception_compensations", COMPENSATIONS_SCRIPT)
     good = tmp_path / "good.html"
     good.write_text(
