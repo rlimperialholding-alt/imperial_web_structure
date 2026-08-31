@@ -170,6 +170,27 @@ class PublicLandPolicyReplayIn(BaseModel):
         return self
 
 
+class PublicLandNameFallbackPromotionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_version: Literal["LAND-PUBLIC-ROLE-NAME-FALLBACK-V2"]
+    max_rows: int = Field(default=50, ge=1, le=100)
+    apply: bool = False
+    expected_plan_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    reason: str = Field(min_length=10, max_length=500)
+
+    @model_validator(mode="after")
+    def applied_promotion_requires_preview_hash(self):
+        if self.apply and not self.expected_plan_sha256:
+            raise ValueError("Applied name-fallback promotion requires the exact preview hash")
+        if not self.apply and self.expected_plan_sha256:
+            raise ValueError("Dry-run name-fallback promotion must not supply an expected hash")
+        return self
+
+
 class GrowthSignalReceipt(BaseModel):
     signal_id: str
     status: str

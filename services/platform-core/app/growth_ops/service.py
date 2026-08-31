@@ -63,6 +63,11 @@ LAND_RECIPIENT_TYPES_BY_ROLE = {
     "listing_agent": "real_estate_agent",
     "property_owner": "land_owner",
 }
+LAND_RENDER_RECIPIENT_NAME_BY_ROLE = {
+    "listing_agent": "Ingatlanközvetítő",
+    "property_owner": "Hirdető",
+}
+LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION = "LAND-PUBLIC-ROLE-NAME-FALLBACK-V2"
 
 OUTREACH_CAPACITY_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_252
 _PROCESS_EMERGENCY_SEND_STOP = Event()
@@ -302,9 +307,13 @@ def _is_public_land_listing_contact(data: GrowthSignalIn) -> bool:
     )
 
 
-def _canonical_screening_values(data: GrowthSignalIn) -> list[object]:
+def _canonical_screening_values(
+    data: GrowthSignalIn,
+    *,
+    render_recipient_name: str | None = None,
+) -> list[object]:
     return [
-        data.recipient_name,
+        render_recipient_name if render_recipient_name is not None else data.recipient_name,
         data.company_name,
         data.recipient_organization_name,
         data.recipient_office_name,
@@ -619,6 +628,7 @@ def release_land_canary(
     ):
         raise GrowthRegistryError("land_outreach_production_canary_verified_delivery_required")
     verified_outreach_ids: list[str] = []
+    verified_delivery_evidence: list[dict[str, Any]] = []
     for slot in slots:
         row = db.scalar(
             select(OutreachMessage)
@@ -631,10 +641,24 @@ def release_land_canary(
             or not _gmail_sent_mime_verified(row)
         ):
             raise GrowthRegistryError("land_outreach_production_canary_verified_delivery_required")
+        receipt = json.loads(row.receipt_json)
+        delivery_detail = receipt["delivery_detail"]
         verified_outreach_ids.append(row.outreach_id)
+        verified_delivery_evidence.append(
+            {
+                "slot_number": slot.slot_number,
+                "outreach_id": row.outreach_id,
+                "provider_message_id": row.provider_message_id,
+                "rfc_message_id": delivery_detail["rfc_message_id"],
+                "label_ids": delivery_detail["label_ids"],
+                "readback_verified": delivery_detail["readback_verified"],
+                "readback_mime_sha256": delivery_detail["readback_mime_sha256"],
+                "response_sha256": receipt["response_sha256"],
+            }
+        )
     release_at = now or utcnow()
     local_date = release_at.astimezone(zone).date()
-    if local_date <= state.scope_local_date:
+    if local_date < state.scope_local_date:
         raise GrowthRegistryError("land_outreach_production_canary_release_too_early")
     state.status = "released"
     state.released_by = actor
@@ -651,7 +675,12 @@ def release_land_canary(
             "status": state.status,
             "verified_sent": len(verified_outreach_ids),
             "verified_outreach_ids": verified_outreach_ids,
+            "verified_delivery_evidence": verified_delivery_evidence,
+            "scope_local_date": state.scope_local_date.isoformat(),
             "release_local_date": local_date.isoformat(),
+            "same_day_release_allowed_after_exact_verification": True,
+            "release_not_before_scope_local_date": True,
+            "approved_by_present": True,
         },
     )
     db.commit()
@@ -1083,9 +1112,17 @@ def _render_message(
         required_recipient_type = LAND_RECIPIENT_TYPES_BY_ROLE.get(signal.recipient_role)
         if not required_recipient_type or data.recipient_type != required_recipient_type:
             raise GrowthRegistryError("land_recipient_role_type_mismatch_no_send")
+    public_land_contact = _is_public_land_listing_contact(data)
+    render_recipient_name = data.recipient_name
+    recipient_name_origin = "VERIFIED_LISTING_EVIDENCE"
+    if public_land_contact and not render_recipient_name:
+        render_recipient_name = LAND_RENDER_RECIPIENT_NAME_BY_ROLE.get(signal.recipient_role)
+        recipient_name_origin = "ROLE_FALLBACK"
+    if not render_recipient_name:
+        raise GrowthRegistryError("template-variable-missing:recipient_name")
     rendered = CanonicalFirstContactRegistry.load().render(
         recipient_type=data.recipient_type,
-        recipient_name=data.recipient_name,
+        recipient_name=render_recipient_name,
         sender_company_name=data.sender_company_name,
         reference_names=data.reference_names,
         reference_names_verified=data.reference_names_verified,
@@ -1098,14 +1135,23 @@ def _render_message(
         unsubscribe_url=unsubscribe_url,
         recipient_classification_verified=data.recipient_classification_verified,
         exclusion_screening_verified=data.exclusion_screening_verified,
-        screening_values=_canonical_screening_values(data),
+        screening_values=_canonical_screening_values(
+            data,
+            render_recipient_name=render_recipient_name,
+        ),
     )
     if rendered.sender_brand_id != binding.brand_id:
         raise GrowthRegistryError("canonical_template_sender_brand_conflicts_with_routing")
     if not rendered.sendable or not rendered.subject:
         raise GrowthRegistryError(";".join(rendered.blocked_reasons))
     metadata = rendered.metadata()
-    if _is_public_land_listing_contact(data):
+    if public_land_contact:
+        metadata["recipient_name_render_policy"] = {
+            "policy_version": LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+            "origin": recipient_name_origin,
+            "recipient_role": signal.recipient_role,
+            "evidence_recipient_name_present": bool(data.recipient_name),
+        }
         render_input = metadata.get("render_input")
         if (
             not isinstance(render_input, dict)
@@ -1302,7 +1348,12 @@ def ingest_signal(
     )
     public_land_template_fields: set[str] = set()
     if _is_public_land_listing_contact(data):
-        public_land_template_fields.add("recipient_name")
+        # A verified name remains evidence-bound when one is present. When the
+        # listing exposes only an unambiguous email+role binding, the immutable
+        # template receives a role-derived salutation at render time instead;
+        # no synthetic recipient_name is persisted as source evidence.
+        if data.recipient_name:
+            public_land_template_fields.add("recipient_name")
         if data.recipient_role == "property_owner":
             public_land_template_fields.update({"location", "plot_size_sqm"})
     registry = GrowthRegistry.load()
@@ -1506,6 +1557,314 @@ def ingest_signal(
         idempotent=False,
         outreach_id=outreach.outreach_id if outreach else None,
         reasons=sorted(set(reasons)),
+    )
+
+
+def _public_land_name_fallback_signal_input(signal: GrowthSignal) -> GrowthSignalIn:
+    recipient_type = LAND_RECIPIENT_TYPES_BY_ROLE.get(signal.recipient_role)
+    if not recipient_type:
+        raise GrowthRegistryError("land_recipient_role_type_mismatch_no_send")
+    return GrowthSignalIn.model_validate(
+        {
+            "source_id": signal.source_id,
+            "external_key": signal.external_key,
+            "motor_key": signal.motor_key,
+            "source_bucket": signal.source_bucket,
+            "signal_type": signal.signal_type,
+            "detected_at": signal.detected_at,
+            "company_name": signal.company_name,
+            "company_registration_id": signal.company_registration_id,
+            "recipient_organization_name": signal.recipient_organization_name,
+            "recipient_office_name": signal.recipient_office_name,
+            "subject_type": signal.subject_type,
+            "recipient_role": signal.recipient_role,
+            "recipient_type": recipient_type,
+            # The fallback is render-only. Persisted source identity remains null.
+            "recipient_name": None,
+            "recipient_classification_verified": True,
+            "exclusion_screening_verified": True,
+            "recipient_email": signal.recipient_email,
+            "recipient_email_type": signal.recipient_email_type,
+            "contact_basis": signal.contact_basis,
+            "consent_evidence_id": signal.consent_evidence_id,
+            "public_contact_url": signal.public_contact_url,
+            "location": signal.location,
+            "plot_size_sqm": signal.plot_size_sqm,
+            "summary": signal.summary,
+            "evidence_url": signal.evidence_url,
+            "brand_id": signal.brand_id,
+            "confidence": signal.confidence,
+            "urgency": signal.urgency,
+            "source_payload_hash": signal.source_payload_hash,
+        }
+    )
+
+
+def _persisted_source_evidence(db: Session, signal_id: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "field_name": row.field_name,
+            "observed_value": row.observed_value,
+            "source_snippet": row.source_snippet,
+            "source_url": row.source_url,
+            "snapshot_sha256": row.snapshot_sha256,
+            "fetched_at": row.fetched_at,
+        }
+        for row in db.scalars(
+            select(GrowthSignalSourceEvidence)
+            .where(GrowthSignalSourceEvidence.signal_id == signal_id)
+            .order_by(GrowthSignalSourceEvidence.field_name)
+        )
+    ]
+
+
+def promote_public_land_name_fallback_signals(
+    db: Session,
+    *,
+    policy_version: str,
+    max_rows: int,
+    apply: bool,
+    expected_plan_sha256: str | None,
+    reason: str,
+    actor: str,
+    automatic: bool = False,
+) -> dict[str, Any]:
+    """Queue old name-only blocked listings through the unchanged guarded path.
+
+    The plan contains hashes and database identifiers only. Applying it never
+    dispatches mail; it re-runs sender, suppression, cooldown, hard-exclusion,
+    evidence-manifest and immutable-template gates before creating step zero.
+    """
+
+    if policy_version != LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION:
+        raise GrowthRegistryError("public_land_name_fallback_policy_version_invalid")
+    if max_rows < 1 or max_rows > 100:
+        raise GrowthRegistryError("public_land_name_fallback_limit_invalid")
+    if len(reason.strip()) < 10:
+        raise GrowthRegistryError("public_land_name_fallback_reason_required")
+    if apply and not automatic and not expected_plan_sha256:
+        raise GrowthRegistryError("public_land_name_fallback_preview_hash_required")
+    if not apply and expected_plan_sha256:
+        raise GrowthRegistryError("public_land_name_fallback_dry_run_hash_forbidden")
+    if apply and not writes_unlocked():
+        raise GrowthRegistryError("growth_writes_locked")
+
+    name_only_reason = canonical_json(["template-variable-missing:recipient_name"])
+    filters = (
+        GrowthSignal.status == "template-variable-missing",
+        GrowthSignal.rejection_reasons_json == name_only_reason,
+        GrowthSignal.signal_type == "residential_building_plot",
+        GrowthSignal.contact_basis == "public_property_listing",
+        GrowthSignal.recipient_role.in_(tuple(LAND_RECIPIENT_TYPES_BY_ROLE)),
+        GrowthSignal.recipient_email.is_not(None),
+        GrowthSignal.recipient_email_type.in_(("role", "named", "unknown")),
+        GrowthSignal.company_name.is_(None),
+        GrowthSignal.public_contact_url.is_not(None),
+        GrowthSignal.public_contact_url == GrowthSignal.evidence_url,
+        or_(
+            GrowthSignal.recipient_role == "listing_agent",
+            and_(
+                GrowthSignal.recipient_role == "property_owner",
+                GrowthSignal.location.is_not(None),
+                GrowthSignal.plot_size_sqm.is_not(None),
+            ),
+        ),
+        GrowthSignal.signal_id.not_in(
+            select(OutreachMessage.signal_id).where(OutreachMessage.sequence_step == 0)
+        ),
+    )
+    total_matching = int(
+        db.scalar(select(func.count()).select_from(GrowthSignal).where(*filters)) or 0
+    )
+    row_query = select(GrowthSignal).where(*filters).order_by(GrowthSignal.id).limit(max_rows)
+    if apply:
+        row_query = row_query.with_for_update()
+    rows = [row for row in db.scalars(row_query) if _control_enabled(db, row.motor_key)]
+    plan_items = [
+        {
+            "signal_id": row.signal_id,
+            "source_id": row.source_id,
+            "source_payload_hash": row.source_payload_hash,
+            "recipient_role": row.recipient_role,
+            "recipient_email_sha256": hashlib.sha256(
+                str(row.recipient_email or "").strip().casefold().encode("utf-8")
+            ).hexdigest(),
+            "source_evidence_manifest_sha256": _persisted_source_evidence_manifest_sha256(
+                db, row.signal_id
+            ),
+        }
+        for row in rows
+    ]
+    plan = {
+        "policy_version": policy_version,
+        "selected_count": len(plan_items),
+        "total_matching": total_matching,
+        "truncated": total_matching > len(rows),
+        "items": plan_items,
+    }
+    plan_sha256 = sha(plan)
+    result = {
+        "status": "preview" if not apply else "applied",
+        "apply": apply,
+        "automatic": automatic,
+        "idempotent": not rows,
+        "plan_sha256": plan_sha256,
+        **plan,
+    }
+    if not apply or not rows:
+        return result
+    if not automatic and expected_plan_sha256 != plan_sha256:
+        raise GrowthRegistryError("public_land_name_fallback_plan_changed")
+
+    audit_entity_id = f"{policy_version}:{plan_sha256[:32]}"
+    existing_audit = db.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.action == "growth_public_land_name_fallback_promotion_applied",
+            AuditLog.entity_type == "growth_public_land_name_fallback_policy",
+            AuditLog.entity_id == audit_entity_id,
+        )
+        .order_by(AuditLog.id.desc())
+    )
+    if existing_audit is not None:
+        return {
+            **result,
+            "status": "already_applied",
+            "idempotent": True,
+            "audit_log_id": existing_audit.id,
+        }
+
+    registry = GrowthRegistry.load()
+    outcomes: list[dict[str, Any]] = []
+    for row, plan_item in zip(rows, plan_items, strict=True):
+        before = {
+            "status": row.status,
+            "reasons": json.loads(row.rejection_reasons_json or "[]"),
+        }
+        outreach: OutreachMessage | None = None
+        try:
+            data = _public_land_name_fallback_signal_input(row)
+            source_evidence = _persisted_source_evidence(db, row.signal_id)
+            if any(item["field_name"] == "recipient_name" for item in source_evidence):
+                raise GrowthRegistryError("public_land_name_fallback_evidence_conflict")
+            validated_evidence = _validated_source_evidence(data, source_evidence)
+            template_evidence_fields = {
+                "location",
+                "plot_size_sqm",
+            } if row.recipient_role == "property_owner" else set()
+            evidenced_fields = {str(item["field_name"]) for item in validated_evidence}
+            missing_template_fields = sorted(template_evidence_fields - evidenced_fields)
+            if missing_template_fields:
+                raise GrowthRegistryError(
+                    "template-variable-missing:" + ",".join(missing_template_fields)
+                )
+            binding = registry.brand_binding(row.brand_id)
+            _verified_sender(db, binding)
+            outreach = _queue_message(
+                db,
+                row,
+                binding,
+                step=0,
+                available_at=utcnow(),
+                enforce_recipient_cooldown=True,
+                data=data,
+                source_evidence_manifest_sha256=_source_evidence_manifest_sha256(
+                    validated_evidence
+                ),
+            )
+            row.status = "queued"
+            row.rejection_reasons_json = "[]"
+            outcome = "queued"
+            error = None
+        except (GrowthRegistryError, ValueError) as exc:
+            error = str(exc)
+            render_missing_prefix = "Canonical render field is missing: "
+            if error.startswith(render_missing_prefix):
+                error = "template-variable-missing:" + error.removeprefix(
+                    render_missing_prefix
+                )
+            row.status = "suppressed" if "suppressed" in error else "blocked"
+            row.rejection_reasons_json = canonical_json([error])
+            outcome = row.status
+        outcome_item = {
+            "signal_id": row.signal_id,
+            "outreach_id": outreach.outreach_id if outreach else None,
+            "status": outcome,
+            "error": error,
+        }
+        outcomes.append(outcome_item)
+        audit(
+            db,
+            actor=actor,
+            action="growth_public_land_name_fallback_signal_promoted",
+            entity_type="growth_signal",
+            entity_id=row.signal_id,
+            before=before,
+            after={
+                **outcome_item,
+                "policy_version": policy_version,
+                "plan_sha256": plan_sha256,
+                "recipient_role": row.recipient_role,
+                "render_recipient_name": LAND_RENDER_RECIPIENT_NAME_BY_ROLE[
+                    row.recipient_role
+                ],
+                "render_recipient_name_origin": "ROLE_FALLBACK",
+                "source_evidence_manifest_sha256": plan_item[
+                    "source_evidence_manifest_sha256"
+                ],
+            },
+        )
+    summary = {
+        **result,
+        "reason": reason.strip(),
+        "queued": sum(item["status"] == "queued" for item in outcomes),
+        "suppressed": sum(item["status"] == "suppressed" for item in outcomes),
+        "blocked": sum(item["status"] == "blocked" for item in outcomes),
+        "outcomes": outcomes,
+    }
+    audit(
+        db,
+        actor=actor,
+        action="growth_public_land_name_fallback_promotion_applied",
+        entity_type="growth_public_land_name_fallback_policy",
+        entity_id=audit_entity_id,
+        before={"template_variable_missing": len(rows), "queued": 0},
+        after=summary,
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise GrowthRegistryError("public_land_name_fallback_concurrent_conflict") from exc
+    recorded_audit = db.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.action == "growth_public_land_name_fallback_promotion_applied",
+            AuditLog.entity_type == "growth_public_land_name_fallback_policy",
+            AuditLog.entity_id == audit_entity_id,
+        )
+        .order_by(AuditLog.id.desc())
+    )
+    return {
+        **summary,
+        "audit_log_id": recorded_audit.id if recorded_audit else None,
+    }
+
+
+def automatic_public_land_name_fallback_promotion(db: Session) -> dict[str, Any]:
+    if not settings().enabled:
+        return {"status": "disabled", "queued": 0}
+    if not writes_unlocked():
+        return {"status": "writes_locked", "queued": 0}
+    return promote_public_land_name_fallback_signals(
+        db,
+        policy_version=LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        max_rows=50,
+        apply=True,
+        expected_plan_sha256=None,
+        reason="Daily automatic promotion of legacy name-only public listing blocks",
+        actor="growth-worker",
+        automatic=True,
     )
 
 
@@ -2043,6 +2402,40 @@ def _assert_current_canonical_screening(
     render_input = metadata.get("render_input")
     if not isinstance(render_input, dict):
         raise GrowthRegistryError("canonical_render_input_missing")
+    if (
+        "source_evidence_manifest_sha256" in metadata
+        or "recipient_name_render_policy" in metadata
+    ) and not _public_land_signal(signal):
+        raise GrowthRegistryError("public_land_source_evidence_classification_mismatch")
+    if _public_land_signal(signal):
+        render_policy = metadata.get("recipient_name_render_policy")
+        if signal.company_name:
+            if render_input.get("recipient_name") != signal.company_name:
+                raise GrowthRegistryError("public_land_verified_recipient_name_binding_mismatch")
+            # Preserve dispatch compatibility for already-queued, verified-name
+            # rows that predate the explicit render-origin receipt. Every newly
+            # rendered row must carry the exact policy receipt.
+            if render_policy is not None and render_policy != {
+                "policy_version": LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+                "origin": "VERIFIED_LISTING_EVIDENCE",
+                "recipient_role": signal.recipient_role,
+                "evidence_recipient_name_present": True,
+            }:
+                raise GrowthRegistryError("public_land_recipient_name_render_policy_mismatch")
+        else:
+            fallback = LAND_RENDER_RECIPIENT_NAME_BY_ROLE.get(signal.recipient_role)
+            if (
+                not fallback
+                or render_input.get("recipient_name") != fallback
+                or render_policy
+                != {
+                    "policy_version": LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+                    "origin": "ROLE_FALLBACK",
+                    "recipient_role": signal.recipient_role,
+                    "evidence_recipient_name_present": False,
+                }
+            ):
+                raise GrowthRegistryError("public_land_recipient_name_render_policy_mismatch")
     expected_values = _current_canonical_screening_values(signal, render_input)
     registry = CanonicalFirstContactRegistry.load()
     hard_gate = registry.hard_gate_match(expected_values)
@@ -3657,6 +4050,15 @@ def run_once(
     )
     from .wide_service import run_due as run_due_wide
 
+    try:
+        name_fallback_promotion = automatic_public_land_name_fallback_promotion(db)
+    except (GrowthRegistryError, ValueError) as exc:
+        db.rollback()
+        name_fallback_promotion = {
+            "status": "blocked",
+            "queued": 0,
+            "reason": str(exc),
+        }
     # Process already approved outreach before the slower discovery and content
     # pipelines. An unrelated source, content, or publishing failure must not
     # prevent the mail worker from serving its independently guarded queue.
@@ -3690,6 +4092,7 @@ def run_once(
             "land_takedown": land_takedown,
             "land_readiness": land_readiness_detail,
             "publication_digest": publication_digest,
+            "public_land_name_fallback_promotion": name_fallback_promotion,
             "followups": 0,
             "sent": 0,
         }
@@ -3698,8 +4101,9 @@ def run_once(
     followups = schedule_followups(db) if writes_unlocked() else 0
     sent = early_sent + (dispatch_batch(db) if writes_unlocked() else 0)
     content_ok = content_factory.get("status") == "complete"
+    promotion_ok = name_fallback_promotion.get("status") != "blocked"
     result = {
-        "status": "healthy" if content_ok and land_ready else "degraded",
+        "status": "healthy" if content_ok and land_ready and promotion_ok else "degraded",
         "runs": len(runs),
         "wide_run": wide_run.run_id if wide_run else None,
         "route_scan": route_scan,
@@ -3711,14 +4115,20 @@ def run_once(
         "land_takedown": land_takedown,
         "land_readiness": land_readiness_detail,
         "publication_digest": publication_digest,
+        "public_land_name_fallback_promotion": name_fallback_promotion,
         "followups": followups,
         "sent": sent,
         "blocking_errors": (
             []
-            if content_ok and land_ready
+            if content_ok and land_ready and promotion_ok
             else [
                 *([] if content_ok else ["daily_content_not_complete"]),
                 *([] if land_ready else land_readiness_detail.get("blocking_reasons", [])),
+                *(
+                    []
+                    if name_fallback_promotion.get("status") != "blocked"
+                    else ["public_land_name_fallback_promotion_blocked"]
+                ),
                 *[
                     f"unresolved_brand:{brand}"
                     for brand in content_factory.get("unresolved_brands", [])

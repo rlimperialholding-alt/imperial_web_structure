@@ -21,17 +21,19 @@ from app.growth_ops.canonical_policy import (
     LAND_AGENT_HARD_GATE_TURCZER,
     land_agent_hard_gate_reason,
 )
+from app.growth_ops.canonical_templates import CanonicalFirstContactRegistry
 from app.growth_ops.connectors import SourceBatch, _timestamp
 from app.growth_ops.email import EmailDeliveryError, SMTPEmailAdapter
 from app.growth_ops.models import (
     GrowthRun,
     GrowthSignal,
+    GrowthSignalSourceEvidence,
     GrowthWorkerHeartbeat,
     OutreachMessage,
 )
 from app.growth_ops.registry import BrandBinding, GrowthRegistryError
 from app.growth_ops.schemas import GrowthSignalIn, OutreachReleaseIn
-from app.models import MailSendingDomain, MailSuppression
+from app.models import AuditLog, MailSendingDomain, MailSuppression
 
 
 class FakeRegistry:
@@ -229,7 +231,97 @@ def _public_land_source_evidence(data: GrowthSignalIn) -> list[dict[str, object]
             "fetched_at": data.detected_at,
         }
         for field_name, value in values.items()
+        if str(value).strip()
     ]
+
+
+@pytest.mark.parametrize(
+    (
+        "case_id",
+        "recipient_type",
+        "recipient_name",
+        "listing_location",
+        "listing_size",
+        "listing_url",
+        "subject_sha256",
+        "body_text_sha256",
+    ),
+    [
+        (
+            "named_agent",
+            "real_estate_agent",
+            "Minta Anna",
+            None,
+            None,
+            "https://ingatlan.com/35510001",
+            "4f5460a60567e226c1fb4c4e4a28b59315738a2eda21ce37eebdbf6d28b43334",
+            "843207603dab929c0cf3a43088477ca62a90777e0b2b59238fef8a9cb456348b",
+        ),
+        (
+            "nameless_agent",
+            "real_estate_agent",
+            "Ingatlanközvetítő",
+            None,
+            None,
+            "https://ingatlan.com/35510002",
+            "4f5460a60567e226c1fb4c4e4a28b59315738a2eda21ce37eebdbf6d28b43334",
+            "332ad693988b9a20888d996f5065fa863be0727ddeea00cfe8714d352ff116e1",
+        ),
+        (
+            "named_owner",
+            "land_owner",
+            "Kovács Péter",
+            "Sülysáp",
+            "605 m²",
+            "https://ingatlan.com/35510003",
+            "f63b3b99e89eb4e8a4d62816de87d502f6c8eefc6a2511b3d09a701e884599c3",
+            "06f59450c8640c30f8eb7acab40b16e04073df3a7ecd89456a2d66772c8281fc",
+        ),
+        (
+            "nameless_owner",
+            "land_owner",
+            "Hirdető",
+            "Sülysáp",
+            "605 m²",
+            "https://ingatlan.com/35510004",
+            "f63b3b99e89eb4e8a4d62816de87d502f6c8eefc6a2511b3d09a701e884599c3",
+            "580e0eb5e70d01d24153f6b6c1ac871860f403f7a7bd49a35d31b52ccc4c4cbd",
+        ),
+    ],
+)
+def test_public_land_named_and_role_fallback_render_samples_are_hash_bound(
+    growth_runtime,
+    case_id,
+    recipient_type,
+    recipient_name,
+    listing_location,
+    listing_size,
+    listing_url,
+    subject_sha256,
+    body_text_sha256,
+):
+    rendered = CanonicalFirstContactRegistry.load().render(
+        recipient_type=recipient_type,
+        recipient_name=recipient_name,
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        business_context=None,
+        business_context_verified=False,
+        business_context_evidence_url=None,
+        listing_location=listing_location,
+        listing_size=listing_size,
+        listing_url=listing_url,
+        unsubscribe_url=(
+            f"https://imperialholding.hu/growth/unsubscribe/{case_id}"
+        ),
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        screening_values=[recipient_name, recipient_type, listing_url],
+    )
+
+    assert hashlib.sha256((rendered.subject or "").encode()).hexdigest() == subject_sha256
+    assert hashlib.sha256(rendered.body_text.encode()).hexdigest() == body_text_sha256
 
 
 @pytest.mark.parametrize(
@@ -285,6 +377,11 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
     from app.growth_ops import wide_service
 
     events = []
+    monkeypatch.setattr(
+        service,
+        "automatic_public_land_name_fallback_promotion",
+        lambda _db: events.append("promotion") or {"status": "applied", "queued": 0},
+    )
     monkeypatch.setattr(service, "dispatch_batch", lambda _db: events.append("mail") or 0)
 
     def fail_wide_pipeline(_db):
@@ -296,7 +393,7 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
     with pytest.raises(RuntimeError, match="unrelated pipeline failure"):
         service.run_once(db)
 
-    assert events == ["mail", "wide"]
+    assert events == ["promotion", "mail", "wide"]
 
 
 def test_readiness_accepts_fresh_non_send_critical_degraded_worker_as_serving(
@@ -1163,6 +1260,255 @@ def test_public_building_plot_listing_auto_releases_single_initial_message(
     assert message.release_token_hash
 
 
+@pytest.mark.parametrize(
+    ("recipient_role", "recipient_type", "subject_type", "salutation"),
+    [
+        ("listing_agent", "real_estate_agent", "organization", "Ingatlanközvetítő"),
+        ("property_owner", "land_owner", "natural_person", "Hirdető"),
+    ],
+)
+def test_public_listing_missing_name_queues_role_salutation_without_name_evidence(
+    db,
+    growth_runtime,
+    recipient_role,
+    recipient_type,
+    subject_type,
+    salutation,
+):
+    url = f"https://property-listing.example.test/NO-NAME-{recipient_role}"
+    data = _public_land_signal(
+        external_key=f"LAND-NO-NAME-{recipient_role}",
+        signal_type="residential_building_plot",
+        company_name=None,
+        company_registration_id=None,
+        recipient_organization_name=(
+            "Független Ingatlaniroda" if recipient_role == "listing_agent" else None
+        ),
+        subject_type=subject_type,
+        recipient_role=recipient_role,
+        recipient_type=recipient_type,
+        recipient_name=None,
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email=f"no-name-{recipient_role}@example.test",
+        recipient_email_type="role" if recipient_role == "listing_agent" else "named",
+        contact_basis="public_property_listing",
+        public_contact_url=url,
+        location="Sülysáp",
+        plot_size_sqm=605,
+        evidence_url=url,
+    )
+
+    result = service.ingest_signal(
+        db,
+        data,
+        source_evidence=_public_land_source_evidence(data),
+    )
+
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == result.signal_id))
+    outreach = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
+    )
+    assert result.status == "queued"
+    assert signal is not None and signal.company_name is None
+    assert outreach is not None
+    assert outreach.body_text.startswith(f"Tisztelt {salutation}!")
+    assert not db.scalars(
+        select(GrowthSignalSourceEvidence).where(
+            GrowthSignalSourceEvidence.signal_id == signal.signal_id,
+            GrowthSignalSourceEvidence.field_name == "recipient_name",
+        )
+    ).all()
+    metadata = service._canonical_metadata(outreach)
+    assert metadata["recipient_name_render_policy"] == {
+        "policy_version": service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        "origin": "ROLE_FALLBACK",
+        "recipient_role": recipient_role,
+        "evidence_recipient_name_present": False,
+    }
+
+
+def test_name_fallback_promotion_preview_apply_is_bounded_idempotent_and_audited(
+    db, growth_runtime, monkeypatch
+):
+    url = "https://property-listing.example.test/LEGACY-NAME-MISSING"
+    data = _public_land_signal(
+        external_key="LAND-LEGACY-NAME-MISSING",
+        signal_type="residential_building_plot",
+        company_name=None,
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name=None,
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email="legacy-name-missing@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url=url,
+        evidence_url=url,
+    )
+    original_queue = service._queue_message
+    with monkeypatch.context() as queue_block:
+        queue_block.setattr(
+            service,
+            "_queue_message",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                GrowthRegistryError("template-variable-missing:recipient_name")
+            ),
+        )
+        legacy = service.ingest_signal(
+            db,
+            data,
+            source_evidence=_public_land_source_evidence(data),
+        )
+    assert service._queue_message is original_queue
+    assert legacy.status == "template-variable-missing"
+    assert legacy.outreach_id is None
+
+    preview = service.promote_public_land_name_fallback_signals(
+        db,
+        policy_version=service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        max_rows=1,
+        apply=False,
+        expected_plan_sha256=None,
+        reason="Preview legacy name-only public listing promotion",
+        actor="test-reviewer",
+    )
+    assert preview["status"] == "preview"
+    assert preview["selected_count"] == 1
+    assert preview["items"][0]["signal_id"] == legacy.signal_id
+    assert "recipient_email" not in preview["items"][0]
+
+    with pytest.raises(GrowthRegistryError, match="public_land_name_fallback_plan_changed"):
+        service.promote_public_land_name_fallback_signals(
+            db,
+            policy_version=service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+            max_rows=1,
+            apply=True,
+            expected_plan_sha256="0" * 64,
+            reason="Apply legacy name-only public listing promotion",
+            actor="test-reviewer",
+        )
+
+    applied = service.promote_public_land_name_fallback_signals(
+        db,
+        policy_version=service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        max_rows=1,
+        apply=True,
+        expected_plan_sha256=preview["plan_sha256"],
+        reason="Apply legacy name-only public listing promotion",
+        actor="test-reviewer",
+    )
+    assert applied["queued"] == 1
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == legacy.signal_id))
+    outreach = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.signal_id == legacy.signal_id)
+    )
+    assert signal is not None and signal.status == "queued"
+    assert outreach is not None
+    assert outreach.body_text.startswith("Tisztelt Ingatlanközvetítő!")
+    promotion_audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "growth_public_land_name_fallback_promotion_applied"
+        )
+    )
+    assert promotion_audit is not None
+    assert applied["audit_log_id"] == promotion_audit.id
+
+    replay = service.promote_public_land_name_fallback_signals(
+        db,
+        policy_version=service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        max_rows=1,
+        apply=True,
+        expected_plan_sha256="f" * 64,
+        reason="Idempotent legacy name-only public listing promotion replay",
+        actor="test-reviewer",
+    )
+    assert replay["idempotent"] is True
+    assert replay["selected_count"] == 0
+    assert len(db.scalars(select(OutreachMessage)).all()) == 1
+
+
+def test_name_fallback_promotion_preserves_suppression(db, growth_runtime, monkeypatch):
+    url = "https://property-listing.example.test/LEGACY-SUPPRESSED"
+    data = _public_land_signal(
+        external_key="LAND-LEGACY-SUPPRESSED",
+        signal_type="residential_building_plot",
+        company_name=None,
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name=None,
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email="legacy-suppressed@example.test",
+        recipient_email_type="role",
+        contact_basis="public_property_listing",
+        public_contact_url=url,
+        evidence_url=url,
+    )
+    with monkeypatch.context() as queue_block:
+        queue_block.setattr(
+            service,
+            "_queue_message",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                GrowthRegistryError("template-variable-missing:recipient_name")
+            ),
+        )
+        legacy = service.ingest_signal(
+            db,
+            data,
+            source_evidence=_public_land_source_evidence(data),
+        )
+    db.add(
+        MailSuppression(
+            email="legacy-suppressed@example.test",
+            reason="unsubscribe",
+            source="test",
+            active=True,
+        )
+    )
+    db.commit()
+    preview = service.promote_public_land_name_fallback_signals(
+        db,
+        policy_version=service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        max_rows=10,
+        apply=False,
+        expected_plan_sha256=None,
+        reason="Preview suppressed legacy name fallback",
+        actor="test-reviewer",
+    )
+    applied = service.promote_public_land_name_fallback_signals(
+        db,
+        policy_version=service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        max_rows=10,
+        apply=True,
+        expected_plan_sha256=preview["plan_sha256"],
+        reason="Apply suppressed legacy name fallback",
+        actor="test-reviewer",
+    )
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == legacy.signal_id))
+    assert applied["suppressed"] == 1
+    assert signal is not None and signal.status == "suppressed"
+    assert not db.scalars(
+        select(OutreachMessage).where(OutreachMessage.signal_id == legacy.signal_id)
+    ).all()
+
+
 def test_public_building_plot_owner_vs_agent_mismatch_fails_closed():
     signal = _signal(
         external_key="LAND-RECIPIENT-TYPE-MISMATCH",
@@ -1223,6 +1569,12 @@ def test_public_building_plot_uses_only_the_canonical_registry_template(db, grow
     assert result.status == "queued"
     assert metadata["template_id"] == "REAL_ESTATE_AGENT_FIRST_CONTACT_HU"
     assert metadata["recipient_type"] == "real_estate_agent"
+    assert metadata["recipient_name_render_policy"] == {
+        "policy_version": service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        "origin": "VERIFIED_LISTING_EVIDENCE",
+        "recipient_role": "listing_agent",
+        "evidence_recipient_name_present": True,
+    }
     assert "template_policy" not in metadata
     assert message.body_text.startswith("Tisztelt Minta Értékesítő!\nCégünk, az Imperial Holding")
 
