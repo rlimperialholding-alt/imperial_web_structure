@@ -1052,6 +1052,7 @@ def _fetch(
         result_status = "failed"
     land_listing_pages: list[dict[str, Any]] = []
     land_listing_fetches: list[dict[str, Any]] = []
+    all_candidate_urls: list[str] = []
     if managed_land and named_portal and result_status == "succeeded":
         route_host = (parsed.hostname or "").casefold()
         candidate_urls: list[str] = list(pending_listing_urls or [])
