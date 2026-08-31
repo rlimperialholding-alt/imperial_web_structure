@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * check-package-age.mjs — érvényesített 7 napos package-age supply-chain küszöb.
  *
@@ -6,17 +5,22 @@
  * telepítés-oldali korhatár valós, futó implementációja. A nem támogatott
  * `minimum-release-age=7` npm .npmrc kulcs (semmilyen npm parancs nem
  * érvényesíti) HELYETT ez a szkript a package-lock.json minden registry-ből
- * feloldott, nem dev csomagjának publikálási idejét ellenőrzi a registry
- * packument `time` térképe alapján, és fail-closed leáll, ha bármely verzió
- * fiatalabb a küszöbnél, ha a publikálási idő nem bizonyítható, vagy ha a
- * registry nem érhető el.
+ * feloldott csomagjának — prod, optional, dev és devOptional egyaránt —
+ * publikálási idejét ellenőrzi a registry packument `time` térképe alapján,
+ * és fail-closed leáll, ha bármely verzió fiatalabb a küszöbnél, ha a
+ * publikálási idő nem bizonyítható, vagy ha a registry nem érhető el.
  *
  * Futás: a Quality workflow `imperial-sales-crm` jobjának dedikált lépése
- * (`node scripts/check-package-age.mjs`) minden npm ci után, hálózattal;
+ * (`node scripts/check-package-age.mjs`) minden npm ci után, hálózattal — az
+ * alapértelmezett CI mód fail-closed, includeDev=true: a dev/devOptional
+ * függőségek is vizsgáltak, mielőtt bármely build/test lépés lefut. A
+ * `--prod-only` kapcsoló explicit prod-kaput állít (dev/devOptional kihagyás);
  * lokálisan `npm run check:package-age`.
  *
  * A szkript nem módosít semmit; kimenete csak a küszöbsértő vagy nem
- * bizonyítható csomagok listája (secretmentes).
+ * bizonyítható csomagok listája (secretmentes). Nincs shebang: mindig
+ * `node scripts/check-package-age.mjs`-ként indul (npm script és CI), a
+ * vite-node/vitest modulbetöltés a shebanget nem tolerálná.
  */
 
 import { readFile } from "node:fs/promises";
@@ -26,8 +30,9 @@ import { pathToFileURL } from "node:url";
 export const DEFAULT_MIN_RELEASE_AGE_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** A lockfile minden érintett csomagjának név/verzió kigyűjtése. */
-export function collectLockedPackages(lock, { includeDev = false } = {}) {
+/** A lockfile minden érintett csomagjának név/verzió kigyűjtése.
+ * CI-default: includeDev=true — a dev és devOptional függőségek is érintettek. */
+export function collectLockedPackages(lock, { includeDev = true } = {}) {
   const packages = new Map();
   for (const [key, entry] of Object.entries(lock.packages ?? {})) {
     const marker = "node_modules/";
@@ -133,11 +138,12 @@ export async function runPackageAgeCheck({
   stderr = console.error,
 } = {}) {
   const args = [...argv];
-  let includeDev = false;
+  let includeDev = true; // CI-default: dev/devOptional is vizsgált, fail-closed
   let minAgeDays = DEFAULT_MIN_RELEASE_AGE_DAYS;
   while (args.length > 0) {
     const arg = args.shift();
     if (arg === "--include-dev") includeDev = true;
+    else if (arg === "--prod-only") includeDev = false;
     else if (arg === "--min-age-days") {
       const next = args.shift();
       if (!next) return 2;

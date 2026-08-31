@@ -16,18 +16,24 @@ npm parancs sem érvényesíti — hatástalan konfiguráció, amiről védelmet
 package-age küszöb:
 
 - bemenet: `package-lock.json` (lockfileVersion 3) minden registry-ből
-  feloldott, nem dev csomagja (a link/file bejegyzések kihagyva);
+  feloldott csomagja — prod, optional, dev és devOptional egyaránt (a
+  link/file bejegyzések és a version-metadata nélküli bejegyzések kihagyva);
+- CI-default: `includeDev=true`, fail-closed — a dev/devOptional függőségek is
+  kötelezően vizsgáltak, mielőtt bármely build/test lépés lefut; a
+  `--prod-only` kapcsoló explicit prod-kaput állít (dev/devOptional kihagyás);
 - bizonyíték: a registry packument `time` térképe a lockolt verzió
   publikálási időpontjáról;
 - fail-closed: bármely verzió fiatalabb a küszöbnél, a publikálási idő nem
-  bizonyítható (hiányzó `time` bejegyzés), a packument nem tölthető le vagy a
-  registry nem érhető el → exit 1, a CI job elbukik;
+  bizonyítható (hiányzó `time` bejegyzés, jövőbeli időpont), a packument nem
+  tölthető le vagy a registry nem érhető el → exit 1, a CI job elbukik;
 - futás: a Quality workflow `imperial-sales-crm` jobjának dedikált lépése
   (`node scripts/check-package-age.mjs`) minden npm ci után; lokálisan
   `npm run check:package-age`;
-- teszt: `tests/package-age-check.test.mjs` (8 teszt, offline, determinisztikus):
-  régi/boundary csomag átmegy, fiatal csomag, hiányzó `time`, registry-hiba és
-  custom küszöb fail-closed; a scoped név kódolása ellenőrizve.
+- teszt: `tests/package-age-check.test.mjs` (13 teszt, offline, determinisztikus):
+  prod/optional/dev/devOptional lefedettség, régi/boundary csomag átmegy, fiatal
+  prod- és dev-csomag, hiányzó `time`, hiányzó metadata, jövőbeli publikálási
+  idő, HTTP- és hálózati registry-hiba, `--prod-only` és custom küszöb
+  fail-closed; a scoped név kódolása ellenőrizve.
 
 ## Megőrzött fail-closed kontrollok (nem gyengültek)
 

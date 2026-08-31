@@ -32,41 +32,68 @@ jobs:
         # test_csrf_control_matrix.py végpont- és tesztszinten bizonyítja).
         # Minden más path (pl. Django template-ek) továbbra is vizsgált:
         # az utolsó lépés azokon a rule kizárása nélkül fut.
+        # Orchestration: if: always() + saját exit kód rögzítése és tovább-
+        # adása (a lépés a scan kilépőkódjával ér véget, nem zöldül);
+        # az összesített végső kapu az Enforce lépésben fail-closed.
+        if: always()
         run: >-
-          semgrep scan --config auto --error --json --no-rewrite-rule-ids
+          status=0 ; semgrep scan --config auto --error --json --no-rewrite-rule-ids
           --output semgrep-platform-core.json
           --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token
           services/platform-core
+          || status=$? ; printf '%s\n' "$status" > semgrep-platform-core.exit ; exit "$status"
       - name: Run targeted SAST (npm projects with enforced package-age gate)
         # Path-szűk rule-kivétel (threat model:
         # services/imperial-sales-crm/docs/package-age-threat-model.md): a
         # package_managers.npm.npm-missing-minimum-release-age kizárólag a
         # két npm projektre (imperial-sales-crm, itep-core) van kivéve,
         # mert mindkettőben futó, tesztelt 7 napos package-age kapu van
-        # (scripts/check-package-age.mjs, Quality CI), az audit/signature/
+        # (scripts/check-package-age.mjs, Quality CI; a kapu a dev/devOptional
+        # függőségekre is kiterjed, includeDev=true), az audit/signature/
         # lockfile kontrollok változatlanok. Minden más path vizsgált.
+        if: always()
         run: >-
-          semgrep scan --config auto --error --json --no-rewrite-rule-ids
+          status=0 ; semgrep scan --config auto --error --json --no-rewrite-rule-ids
           --output semgrep-npm.json
           --exclude-rule package_managers.npm.npm-missing-minimum-release-age.npm-missing-minimum-release-age
           services/imperial-sales-crm services/itep-core
+          || status=$? ; printf '%s\n' "$status" > semgrep-npm.exit ; exit "$status"
       - name: Run targeted SAST (all remaining paths, full rule set)
         # Minden más path a teljes szabályhalmazzal, kivétel nélkül;
         # a két fenti path az első két lépésben minden más szabályra
         # vizsgált, így a repo lefedettsége teljes marad.
+        if: always()
         run: >-
-          semgrep scan --config auto --error --json --no-rewrite-rule-ids
+          status=0 ; semgrep scan --config auto --error --json --no-rewrite-rule-ids
           --output semgrep-rest.json
           --exclude services/platform-core
           --exclude services/imperial-sales-crm
           --exclude services/itep-core
           .
+          || status=$? ; printf '%s\n' "$status" > semgrep-rest.exit ; exit "$status"
       - name: Merge Semgrep evidence
+        if: always()
         run: python scripts/merge_semgrep_evidence.py
+      - name: Enforce Semgrep verdict
+        # Összesített fail-closed kapu (scripts/enforce_semgrep_verdict.py):
+        # bármely részscan JSON hiányos vagy nem parse-olható, bármely
+        # rögzített scan exit kód nem 0, vagy bármely rész CRITICAL/HIGH/
+        # ERROR találatot tartalmaz → FAIL. A lépésenkénti exit kódokat és
+        # artifactokat a fenti lépések őrzik meg; az if: always() csak a
+        # teljes lefutást biztosítja, a job-összegzést nem zöldíti.
+        if: always()
+        run: python scripts/enforce_semgrep_verdict.py
       - name: Upload Semgrep evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: imperial-adas-semgrep
-          path: semgrep.json
+          path: |
+            semgrep.json
+            semgrep-platform-core.json
+            semgrep-npm.json
+            semgrep-rest.json
+            semgrep-platform-core.exit
+            semgrep-npm.exit
+            semgrep-rest.exit
           if-no-files-found: warn

@@ -24,9 +24,16 @@ Ez a teszt a kivételek hangosság-feltételeit zárolja:
   szabályhalmazzal fut;
 - nincs globális exclude (.semgrepignore), severity- vagy küszöbcsökkentés;
 - a template-ekben nincs inline ``nosemgrep`` CSRF-megjegyzés;
-- mindkét npm projekt package-age kapuja létezik és CI-be van kötve;
+- mindkét npm projekt package-age kapuja létezik és CI-be van kötve
+  (CI-default ``includeDev=true``: a dev/devOptional függőségek is vizsgáltak);
 - a workflow-kben minden ``uses:`` ref 40-hexes commit SHA-ra pinelt;
-- a bizonyíték-egyesítő lépés létezik és determinisztikusan fut.
+- a bizonyíték-egyesítő lépés létezik és determinisztikusan fut;
+- minden részscan, az egyesítő és az összesített enforcement kapu
+  ``if: always()`` mellett fut, miközben a lépések a scan saját exit kódját
+  őrzik meg (``<rész>.exit``, ``exit "$status"``) — nincs continue-on-error,
+  a job-összegzés nem zöldül;
+- az összesített enforcement kapu hiányos/hibás bizonyíték, nem nulla scan
+  exit vagy CRITICAL/HIGH/ERROR találat esetén fail-closed.
 
 Ha bármely feltétel megszűnik, a kivételt vissza kell vonni.
 """
@@ -65,6 +72,20 @@ def _scan_blocks(workflow_source: str) -> list[str]:
     """A `- name:`/`- uses:` lépéshatárok közötti szövegblokkok."""
     blocks = re.split(r"(?m)^\s*- (?:name|uses):", workflow_source)
     return [block for block in blocks if "semgrep scan" in block]
+
+
+def _step_blocks(workflow_source: str) -> list[str]:
+    """A lépések szövegblokkjai a `- name:`/`- uses:` fejlécekkel együtt."""
+    return re.split(r"(?m)(?=^\s*- (?:name|uses):)", workflow_source)
+
+
+def _block_for(workflow_source: str, step_name: str) -> str:
+    """A megadott nevű lépés blokkja (a headerrel együtt)."""
+    for block in _step_blocks(workflow_source):
+        lines = block.splitlines()
+        if lines and step_name in lines[0]:
+            return block
+    raise AssertionError(f"missing workflow step: {step_name}")
 
 
 def test_semgrep_scan_keeps_auto_config_and_error_gate() -> None:
@@ -212,3 +233,112 @@ def test_no_mutable_action_refs_remain_in_branch_workflows() -> None:
             assert re.fullmatch(r"[0-9a-f]{40}", ref), (
                 f"{workflow_path.name}:{line_number} mutable action ref: {match.group(1)}"
             )
+
+
+SCAN_STEP_NAMES = (
+    "Run targeted SAST (platform-core",
+    "Run targeted SAST (npm projects",
+    "Run targeted SAST (all remaining paths",
+)
+
+
+def test_every_scan_merge_and_enforcement_step_runs_with_if_always() -> None:
+    source = SEMGREP_WORKFLOW.read_text(encoding="utf-8")
+    for step_name in SCAN_STEP_NAMES + ("Merge Semgrep evidence", "Enforce Semgrep verdict"):
+        block = _block_for(source, step_name)
+        assert "if: always()" in _command_lines(block), f"{step_name}: hiányzó if: always()"
+
+
+def test_scans_preserve_exit_codes_and_artifacts_without_greening() -> None:
+    source = SEMGREP_WORKFLOW.read_text(encoding="utf-8")
+    assert "continue-on-error" not in source
+    for part in ("semgrep-platform-core", "semgrep-npm", "semgrep-rest"):
+        assert f"{part}.exit" in source
+    assert source.count('exit "$status"') == 3
+    upload = _block_for(source, "Upload Semgrep evidence")
+    for part in ("semgrep-platform-core", "semgrep-npm", "semgrep-rest"):
+        assert f"{part}.json" in upload
+        assert f"{part}.exit" in upload
+
+
+def test_enforcement_step_and_script_exist() -> None:
+    source = SEMGREP_WORKFLOW.read_text(encoding="utf-8")
+    assert "python scripts/enforce_semgrep_verdict.py" in source
+    assert (REPO / "scripts" / "enforce_semgrep_verdict.py").is_file()
+
+
+def _enforcement_module():
+    import importlib.util
+    import sys
+
+    enforce_path = REPO / "scripts" / "enforce_semgrep_verdict.py"
+    spec = importlib.util.spec_from_file_location("enforce_semgrep_verdict", enforce_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["enforce_semgrep_verdict"] = module
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_scan_part(tmp_path, part: str, results: list[dict], exit_code: str = "0") -> None:
+    (tmp_path / part).write_text(
+        json.dumps({"version": "1.172.0", "results": results, "errors": []}),
+        encoding="utf-8",
+    )
+    (tmp_path / part.replace(".json", ".exit")).write_text(exit_code, encoding="utf-8")
+
+
+def test_enforcement_passes_on_complete_clean_scans(tmp_path, monkeypatch) -> None:
+    module = _enforcement_module()
+    _write_scan_part(tmp_path, "semgrep-platform-core.json", [])
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    _write_scan_part(
+        tmp_path,
+        "semgrep-rest.json",
+        [{"check_id": "warn.rule", "extra": {"severity": "WARNING"}}],
+    )
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 0
+
+
+def test_enforcement_fails_on_blocking_finding(tmp_path, monkeypatch) -> None:
+    module = _enforcement_module()
+    _write_scan_part(
+        tmp_path,
+        "semgrep-platform-core.json",
+        [{"check_id": "block.rule", "extra": {"severity": "ERROR"}}],
+    )
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    _write_scan_part(tmp_path, "semgrep-rest.json", [])
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 1
+
+
+def test_enforcement_fails_on_missing_scan_evidence(tmp_path, monkeypatch) -> None:
+    module = _enforcement_module()
+    _write_scan_part(tmp_path, "semgrep-platform-core.json", [])
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 1
+
+
+def test_enforcement_fails_on_early_scan_nonzero_exit(tmp_path, monkeypatch) -> None:
+    module = _enforcement_module()
+    _write_scan_part(tmp_path, "semgrep-platform-core.json", [], exit_code="1")
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    _write_scan_part(tmp_path, "semgrep-rest.json", [])
+    (tmp_path / "semgrep.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 1
+
+
+def test_enforcement_fails_when_merge_did_not_produce_evidence(tmp_path, monkeypatch) -> None:
+    module = _enforcement_module()
+    _write_scan_part(tmp_path, "semgrep-platform-core.json", [])
+    _write_scan_part(tmp_path, "semgrep-npm.json", [])
+    _write_scan_part(tmp_path, "semgrep-rest.json", [])
+    monkeypatch.chdir(tmp_path)
+    assert module.main() == 1
