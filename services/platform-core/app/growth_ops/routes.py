@@ -17,10 +17,12 @@ from .schemas import (
     GrowthSignalIn,
     OutreachEventIn,
     OutreachReleaseIn,
+    PublicLandNameFallbackPromotionIn,
     PublicLandPolicyReplayIn,
 )
 from .service import (
     ingest_signal,
+    promote_public_land_name_fallback_signals,
     readiness,
     record_outreach_event,
     release_outreach,
@@ -167,6 +169,24 @@ def public_land_policy_replay(
             actor="growth-admin",
         )
     except GrowthRegistryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/internal/growth-ops/public-land/name-fallback-promotion",
+    dependencies=[Depends(require_internal_token)],
+)
+def public_land_name_fallback_promotion(
+    data: PublicLandNameFallbackPromotionIn,
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    try:
+        return promote_public_land_name_fallback_signals(
+            db,
+            **data.model_dump(),
+            actor="growth-admin",
+        )
+    except (GrowthRegistryError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 

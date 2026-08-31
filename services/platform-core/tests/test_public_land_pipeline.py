@@ -290,8 +290,11 @@ def _set_canary_pending(db) -> None:
 def _dh_html(
     *,
     duplicate_payload: bool = False,
-    email: str = "agent@example.test",
+    email: object = "agent@example.test",
     name: str = "Minta Anna",
+    rendered_contact: bool = True,
+    footer_email: str | None = None,
+    duplicate_agent_email: str | None = None,
 ) -> str:
     payload = {
         "status": "success",
@@ -311,14 +314,40 @@ def _dh_html(
             },
         },
     }
+    decoded_payload = json.dumps(payload, ensure_ascii=False)
+    if duplicate_agent_email:
+        email_field = f'"email": {json.dumps(email, ensure_ascii=False)}'
+        assert decoded_payload.count(email_field) == 1
+        decoded_payload = decoded_payload.replace(
+            email_field,
+            email_field
+            + f', "email": {json.dumps(duplicate_agent_email, ensure_ascii=False)}',
+        )
     assignment = (
         "pageCache['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'] = "
-        + json.dumps(json.dumps(payload, ensure_ascii=False), ensure_ascii=False)
+        + json.dumps(decoded_payload, ensure_ascii=False)
         + ";"
     )
     scripts = f"<script>{assignment}</script>"
     if duplicate_payload:
         scripts += f"<script>{assignment}</script>"
+    contact = (
+        f"""
+      <section>
+        <div itemprop="name">{name}</div>
+        <div itemprop="description">Értékesítő</div>
+        <meta itemprop="email" content="{email}">
+        <div>Duna House Minta Iroda</div>
+      </section>
+        """
+        if rendered_contact
+        else ""
+    )
+    footer = (
+        f'<footer><a href="mailto:{footer_email}">Portál ügyfélszolgálat</a></footer>'
+        if footer_email
+        else ""
+    )
     return f"""
     <html><head>
       <meta property="og:site_name" content="Duna House">
@@ -326,12 +355,8 @@ def _dh_html(
     </head><body>
       <h1>Építési telek</h1>
       <p>Duna House</p><p>AB123456</p><p>Érd</p><p>900 m²</p>
-      <section>
-        <div itemprop="name">{name}</div>
-        <div itemprop="description">Értékesítő</div>
-        <meta itemprop="email" content="{email}">
-        <div>Duna House Minta Iroda</div>
-      </section>
+      {contact}
+      {footer}
     </body></html>
     """
 
@@ -643,6 +668,122 @@ def test_dh_double_json_adapter_requires_unique_identity_bound_payload():
     assert "dh_page_cache_not_unique" in duplicate.reasons
 
 
+def test_dh_structured_agent_email_queues_without_rendered_contact_and_ignores_footer(
+    db, land_runtime
+):
+    url = "https://www.dh.hu/ingatlan/AB123456/synthetic-building-plot"
+    html = _dh_html(
+        name="Értékesítő",
+        rendered_contact=False,
+        footer_email="support@dh.example.test",
+    )
+    route = SourceCoverageRoute(
+        route_key="LAND-PUBLIC-HTML:dh",
+        route_id="LAND-PUBLIC-DH",
+        catalog_sha256="a" * 64,
+        motor="construction",
+        route_url="https://dh.hu/elado-ingatlan/telek",
+        source_row_sha256="b" * 64,
+        source_record_json="{}",
+    )
+
+    result = public_land.process_public_land_listings(
+        db,
+        route=route,
+        attempt=_attempt(),
+        listing_pages=[_page(url, html)],
+    )
+
+    assert result["qualified"] == 1
+    assert result["queued"] == 1
+    signal = db.scalar(select(GrowthSignal))
+    outreach = db.scalar(select(OutreachMessage))
+    assert signal is not None and outreach is not None
+    assert signal.recipient_email == "agent@example.test"
+    assert signal.recipient_role == "listing_agent"
+    assert signal.company_name is None
+    assert "support@dh.example.test" not in outreach.body_text
+    assert outreach.body_text.startswith("Tisztelt Ingatlanközvetítő!")
+    metadata = service._canonical_metadata(outreach)
+    assert metadata["recipient_name_render_policy"] == {
+        "policy_version": service.LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION,
+        "origin": "ROLE_FALLBACK",
+        "recipient_role": "listing_agent",
+        "evidence_recipient_name_present": False,
+    }
+    assert not db.scalars(
+        select(GrowthSignalSourceEvidence).where(
+            GrowthSignalSourceEvidence.observed_value == "support@dh.example.test"
+        )
+    ).all()
+
+
+@pytest.mark.parametrize(
+    "structured_email",
+    [
+        "not-an-email",
+        ["first@example.test", "second@example.test"],
+        "first@example.test,second@example.test",
+    ],
+)
+def test_dh_malformed_or_ambiguous_structured_agent_email_stays_blocked(
+    structured_email
+):
+    url = "https://www.dh.hu/ingatlan/AB123456/synthetic-building-plot"
+    html = _dh_html(
+        email=structured_email,
+        rendered_contact=False,
+        footer_email="support@dh.example.test",
+    )
+    decision = public_land.listing_signal_decision(
+        route=SourceCoverageRoute(
+            route_key="LAND-PUBLIC-HTML:dh",
+            route_id="LAND-PUBLIC-DH",
+            catalog_sha256="a" * 64,
+            motor="construction",
+            route_url="https://dh.hu/elado-ingatlan/telek",
+            source_row_sha256="b" * 64,
+            source_record_json="{}",
+        ),
+        attempt=_attempt(),
+        listing_url=url,
+        html=html,
+        response_sha256=hashlib.sha256(html.encode()).hexdigest(),
+        source_id="construction_public_land_html",
+    )
+
+    assert decision.signal is None
+    assert "recipient_email_missing" in decision.reasons
+
+
+def test_dh_duplicate_structured_agent_email_key_is_rejected():
+    url = "https://www.dh.hu/ingatlan/AB123456/synthetic-building-plot"
+    html = _dh_html(
+        email="first@example.test",
+        duplicate_agent_email="second@example.test",
+        rendered_contact=False,
+    )
+    decision = public_land.listing_signal_decision(
+        route=SourceCoverageRoute(
+            route_key="LAND-PUBLIC-HTML:dh",
+            route_id="LAND-PUBLIC-DH",
+            catalog_sha256="a" * 64,
+            motor="construction",
+            route_url="https://dh.hu/elado-ingatlan/telek",
+            source_row_sha256="b" * 64,
+            source_record_json="{}",
+        ),
+        attempt=_attempt(),
+        listing_url=url,
+        html=html,
+        response_sha256=hashlib.sha256(html.encode()).hexdigest(),
+        source_id="construction_public_land_html",
+    )
+
+    assert decision.signal is None
+    assert "dh_page_cache_invalid" in decision.reasons
+
+
 def test_ingatlannet_next_data_adapter_binds_owner_and_rendered_listing():
     url = "https://www.ingatlannet.hu/elado-telek-erd/123456"
     html = _ingatlannet_html()
@@ -721,16 +862,21 @@ def test_structured_role_label_is_not_persisted_as_recipient_name(
     )
 
     assert result["qualified"] == 1
-    assert result["queued"] == 0
+    assert result["queued"] == 1
     signal = db.scalar(select(GrowthSignal))
+    outreach = db.scalar(select(OutreachMessage))
     assert signal is not None
+    assert outreach is not None
     assert signal.recipient_email is not None
     assert signal.company_name is None
-    assert signal.status == "template-variable-missing"
-    assert json.loads(signal.rejection_reasons_json) == [
-        "template-variable-missing:recipient_name"
-    ]
-    assert db.scalar(select(func.count()).select_from(OutreachMessage)) == 0
+    assert signal.status == "queued"
+    assert json.loads(signal.rejection_reasons_json) == []
+    assert outreach.body_text.startswith("Tisztelt Ingatlanközvetítő!")
+    assert not db.scalars(
+        select(GrowthSignalSourceEvidence).where(
+            GrowthSignalSourceEvidence.field_name == "recipient_name"
+        )
+    ).all()
 
 
 def test_ingatlannet_structured_private_owner_role_queues_owner_template(
@@ -790,7 +936,7 @@ def test_missing_or_ambiguous_listing_fields_fail_closed(html, reason):
     assert reason in decision.reasons
 
 
-def test_ambiguous_name_persists_role_email_signal_but_template_stays_unqueued(
+def test_ambiguous_name_uses_owner_role_salutation_without_persisting_a_name(
     db, land_runtime
 ):
     html = _owner_html().replace(
@@ -805,15 +951,17 @@ def test_ambiguous_name_persists_role_email_signal_but_template_stays_unqueued(
     )
 
     assert result["qualified"] == 1
-    assert result["queued"] == 0
+    assert result["queued"] == 1
     signal = db.scalar(select(GrowthSignal))
+    outreach = db.scalar(select(OutreachMessage))
     assert signal is not None
+    assert outreach is not None
     assert signal.recipient_role == "property_owner"
     assert signal.recipient_email == "kovacs.peter@example.test"
-    assert signal.status == "template-variable-missing"
-    assert json.loads(signal.rejection_reasons_json) == [
-        "template-variable-missing:recipient_name"
-    ]
+    assert signal.company_name is None
+    assert signal.status == "queued"
+    assert json.loads(signal.rejection_reasons_json) == []
+    assert outreach.body_text.startswith("Tisztelt Hirdető!")
 
 
 def test_contact_block_role_email_wins_over_unrelated_conflicting_page_role():
@@ -840,7 +988,7 @@ def test_contact_block_role_email_wins_over_unrelated_conflicting_page_role():
     assert decision.signal.recipient_name == "Kovács Péter"
 
 
-def test_name_from_separate_block_does_not_bind_to_role_email_recipient(
+def test_name_from_separate_block_does_not_bind_and_agent_role_salutation_is_used(
     db, land_runtime
 ):
     html = """
@@ -864,14 +1012,16 @@ def test_name_from_separate_block_does_not_bind_to_role_email_recipient(
     )
 
     assert result["qualified"] == 1
-    assert result["queued"] == 0
+    assert result["queued"] == 1
     signal = db.scalar(select(GrowthSignal))
+    outreach = db.scalar(select(OutreachMessage))
     assert signal is not None
+    assert outreach is not None
     assert signal.recipient_email == "agent@example.test"
     assert signal.recipient_role == "listing_agent"
     assert signal.company_name is None
-    assert signal.status == "template-variable-missing"
-    assert db.scalar(select(func.count()).select_from(OutreachMessage)) == 0
+    assert signal.status == "queued"
+    assert outreach.body_text.startswith("Tisztelt Ingatlanközvetítő!")
 
 
 def test_unrelated_incomplete_contact_block_does_not_veto_complete_owner_binding():
@@ -1338,6 +1488,47 @@ def test_evidence_manifest_tamper_blocks_before_provider(db, land_runtime, monke
     assert outreach.last_error == "public_land_source_evidence_manifest_mismatch"
 
 
+@pytest.mark.parametrize("classification_field", ["signal_type", "contact_basis"])
+def test_signed_land_metadata_requires_unchanged_land_classification_before_provider(
+    db, land_runtime, monkeypatch, classification_field
+):
+    public_land.process_public_land_listings(
+        db,
+        route=_route(),
+        attempt=_attempt(),
+        listing_pages=[_page("https://ingatlan.com/35500121-drift", _owner_html())],
+    )
+    signal = db.scalar(select(GrowthSignal))
+    outreach = db.scalar(select(OutreachMessage))
+    assert signal is not None
+    assert outreach is not None
+    assert service._release_matches(outreach) is True
+    setattr(
+        signal,
+        classification_field,
+        "synthetic_non_land"
+        if classification_field == "signal_type"
+        else "public_business_contact",
+    )
+    db.commit()
+    assert service._release_matches(outreach) is True
+    provider_calls = 0
+
+    def provider_must_not_run(*_args, **_kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError("provider must not run after land classification drift")
+
+    monkeypatch.setattr(service.SMTPEmailAdapter, "send", provider_must_not_run)
+
+    result = service.dispatch_outreach(db, _claim_for_dispatch(db, outreach))
+
+    assert result.status == "blocked"
+    assert result.last_error == "public_land_source_evidence_classification_mismatch"
+    assert signal.status == "blocked"
+    assert provider_calls == 0
+
+
 def test_dynamic_html_hash_change_passes_exact_live_fields_and_is_audited(
     db, land_runtime, monkeypatch
 ):
@@ -1690,7 +1881,17 @@ def test_canary_wrong_date_and_ambiguous_slots_stay_closed(db, land_runtime):
         service._land_canary_scope(db, september_first)
 
 
-def test_canary_release_requires_three_verified_sends_and_next_budapest_day(db, land_runtime):
+@pytest.mark.parametrize(
+    "release_time",
+    [
+        datetime(2026, 8, 31, 20, 0, tzinfo=UTC),
+        datetime(2026, 9, 1, 8, 0, tzinfo=UTC),
+    ],
+    ids=["scope-day", "next-day"],
+)
+def test_canary_release_requires_configured_verified_sends_on_scope_day_or_later(
+    db, land_runtime, release_time
+):
     pages = [
         _page(
             f"https://ingatlan.com/{35500160 + index}",
@@ -1758,7 +1959,7 @@ def test_canary_release_requires_three_verified_sends_and_next_budapest_day(db, 
         service.release_land_canary(
             db,
             approved_by="synthetic-reviewer",
-            now=datetime(2026, 9, 1, 8, 0, tzinfo=UTC),
+            now=release_time,
         )
     messages[0].receipt_json = original_receipt
     messages[0].status = "delivered"
@@ -1767,27 +1968,57 @@ def test_canary_release_requires_three_verified_sends_and_next_budapest_day(db, 
 
     with pytest.raises(
         GrowthRegistryError,
+        match="land_outreach_production_canary_releaser_missing",
+    ):
+        service.release_land_canary(
+            db,
+            approved_by="   ",
+            now=release_time,
+        )
+
+    with pytest.raises(
+        GrowthRegistryError,
         match="land_outreach_production_canary_release_too_early",
     ):
         service.release_land_canary(
             db,
             approved_by="synthetic-reviewer",
-            now=datetime(2026, 8, 31, 20, 0, tzinfo=UTC),
+            now=datetime(2026, 8, 30, 20, 0, tzinfo=UTC),
         )
 
-    september_first = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
     released = service.release_land_canary(
         db,
         approved_by="synthetic-reviewer",
-        now=september_first,
+        now=release_time,
     )
 
     assert released.status == "released"
-    assert service._land_canary_scope(db, september_first) == (
+    assert released.released_by == "synthetic-reviewer"
+    assert service._land_canary_scope(db, release_time) == (
         3,
         date(2026, 8, 31),
         False,
     )
+    release_audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "growth_land_production_canary_released"
+        )
+    )
+    assert release_audit is not None
+    release_evidence = json.loads(release_audit.after_json)
+    assert release_evidence["verified_sent"] == 3
+    assert len(release_evidence["verified_delivery_evidence"]) == 3
+    assert all(
+        item["readback_verified"] is True
+        and item["label_ids"] == ["SENT"]
+        and item["readback_mime_sha256"] == item["response_sha256"]
+        and item["provider_message_id"].startswith("SYNTHETIC-CANARY-")
+        and item["rfc_message_id"].startswith("<synthetic-canary-")
+        for item in release_evidence["verified_delivery_evidence"]
+    )
+    assert release_evidence["same_day_release_allowed_after_exact_verification"] is True
+    assert release_evidence["release_not_before_scope_local_date"] is True
+    assert release_evidence["approved_by_present"] is True
 
 
 def test_canary_missing_slot_fails_closed(db, land_runtime):
@@ -2413,7 +2644,7 @@ def test_public_portal_listing_discovery_is_same_host_and_bounded(tmp_path, monk
         if url.endswith("elado+telek"):
             links = "".join(
                 f'<a href="https://www.ingatlan.com/{35500010 + index}">Telek {index}</a>'
-                for index in range(5)
+                for index in range(15)
             )
             body = f"<html><body>{links}</body></html>".encode()
         else:
@@ -2435,12 +2666,13 @@ def test_public_portal_listing_discovery_is_same_host_and_bounded(tmp_path, monk
     )
 
     assert result["status"] == "succeeded"
-    assert len(result["land_listing_pages"]) == 3
+    assert len(result["land_listing_pages"]) == catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
     assert streamed == [
         "https://www.ingatlan.com/elado+telek",
-        "https://www.ingatlan.com/35500010",
-        "https://www.ingatlan.com/35500011",
-        "https://www.ingatlan.com/35500012",
+        *[
+            f"https://www.ingatlan.com/{35500010 + index}"
+            for index in range(catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM)
+        ],
     ]
 
 
@@ -2678,13 +2910,17 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
         route,
         *,
         managed_land=False,
+        discovery_url=None,
         pending_listing_urls=None,
         examined_listing_urls=None,
         replay_only_listing_urls=None,
         listing_fetch_limit=None,
     ):
         assert replay_only_listing_urls is None
-        assert listing_fetch_limit in {None, 3}
+        assert listing_fetch_limit in {
+            None,
+            catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM,
+        }
         nonlocal target_calls
         pending = list(pending_listing_urls or [])
         examined = set(examined_listing_urls or set())
@@ -2792,6 +3028,156 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
     assert by_url[fourth_url].status == "examined"
     assert all(by_url[url].status == "retryable" for url in first_three)
     assert target_calls == 3
+
+
+def test_public_land_pagination_is_exact_same_category_and_bounded():
+    base = "https://dh.hu/elado-ingatlan/telek"
+
+    assert catalog._public_land_pagination_entry(base, "?page=2") == (
+        2,
+        "https://dh.hu/elado-ingatlan/telek?page=2",
+    )
+    assert catalog._public_land_pagination_entry(base, f"{base}?page=317") == (
+        317,
+        "https://dh.hu/elado-ingatlan/telek?page=317",
+    )
+    assert catalog._public_land_pagination_entry(base, f"{base}?page=1") is None
+    assert catalog._public_land_pagination_entry(base, f"{base}?page=1001") is None
+    assert catalog._public_land_pagination_entry(base, f"{base}?page=2&sort=date") is None
+    assert catalog._public_land_pagination_entry(
+        base, "https://www.dh.hu/elado-ingatlan/telek?page=2"
+    ) is None
+    assert catalog._public_land_pagination_entry(
+        base, "https://dh.hu:bad/elado-ingatlan/telek?page=2"
+    ) is None
+    assert catalog._public_land_pagination_entry(
+        base, "https://dh.hu/elado-ingatlan/lakas-haz?page=2"
+    ) is None
+
+
+def test_managed_fetch_uses_observed_page_and_persists_next_page_evidence(
+    land_runtime, monkeypatch
+):
+    base = "https://dh.hu/elado-ingatlan/telek"
+    page_two = f"{base}?page=2"
+    listing_url = "https://dh.hu/ingatlan/TK123456/elado-telek-pest-megye-minta"
+    html = (
+        "<html><body>"
+        f'<a href="{listing_url}">telek</a>'
+        f'<a href="{base}?page=3"><svg aria-label="következő"></svg></a>'
+        f'<a href="{base}?page=317">utolsó</a>'
+        "</body></html>"
+    )
+    fetched: list[str] = []
+    monkeypatch.setattr(catalog, "_fresh_pinned_robots_error", lambda *_a, **_k: None)
+
+    def pinned_get(url, **_kwargs):
+        fetched.append(url)
+        return {
+            "status_code": 200,
+            "headers": {"content-type": "text/html"},
+            "body": html.encode(),
+            "source_ip": "93.184.216.34",
+        }
+
+    monkeypatch.setattr(catalog, "_pinned_https_get", pinned_get)
+    result = catalog._fetch(
+        SimpleNamespace(route_url=base, source_record_json="{}"),
+        managed_land=True,
+        discovery_url=page_two,
+        listing_fetch_limit=0,
+    )
+
+    assert fetched == [page_two]
+    assert result["status"] == "succeeded"
+    assert result["land_listing_candidates"] == [listing_url]
+    assert result["evidence"]["land_discovery_url"] == page_two
+    assert result["evidence"]["land_pagination_candidates"] == [
+        f"{base}?page=3",
+        f"{base}?page=317",
+    ]
+
+
+def test_managed_lane_advances_only_through_observed_contiguous_pages(
+    db, land_runtime, monkeypatch
+):
+    target_key = "LAND-PUBLIC-HTML:dh"
+    seen: list[str] = []
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            timezone="Europe/Budapest",
+            canonical_daily_at="05:30",
+            canonical_route_batch_size=0,
+            canonical_processing_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "active_revision",
+        lambda _db: SimpleNamespace(catalog_sha256="c" * 64),
+    )
+
+    def fake_fetch(
+        route,
+        *,
+        managed_land=False,
+        discovery_url=None,
+        pending_listing_urls=None,
+        examined_listing_urls=None,
+        replay_only_listing_urls=None,
+        listing_fetch_limit=None,
+    ):
+        assert managed_land is True
+        assert replay_only_listing_urls is None
+        assert pending_listing_urls == []
+        assert listing_fetch_limit == catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
+        selected_url = str(discovery_url or route.route_url)
+        if route.route_key == target_key:
+            seen.append(selected_url)
+            if selected_url == route.route_url:
+                pages = [f"{route.route_url}?page=2", f"{route.route_url}?page=317"]
+            elif selected_url.endswith("?page=2"):
+                pages = [f"{route.route_url}?page=3", f"{route.route_url}?page=317"]
+            else:
+                pages = [f"{route.route_url}?page=317"]
+        else:
+            pages = []
+        return {
+            "status": "succeeded",
+            "http_status": 200,
+            "response_sha256": "a" * 64,
+            "evidence": {
+                "land_listing_fetches": [],
+                "land_discovery_url": selected_url,
+                "land_pagination_candidates": pages,
+            },
+            "analysis_text": "",
+            "analysis_links": [],
+            "land_listing_pages": [],
+            "land_listing_candidates": [],
+            "land_listing_exhausted": True,
+        }
+
+    monkeypatch.setattr(catalog, "_fetch", fake_fetch)
+    for minute in range(4):
+        catalog.scan_due_routes(
+            db,
+            now=datetime(2026, 8, 31, 6, minute, tzinfo=UTC),
+        )
+
+    target_route = db.scalar(
+        select(SourceCoverageRoute).where(SourceCoverageRoute.route_key == target_key)
+    )
+    assert target_route is not None
+    assert seen == [
+        target_route.route_url,
+        f"{target_route.route_url}?page=2",
+        f"{target_route.route_url}?page=3",
+    ]
 
 
 def test_policy_replay_preview_apply_is_bounded_idempotent_and_audited(
@@ -2921,6 +3307,7 @@ def test_policy_replay_preview_apply_is_bounded_idempotent_and_audited(
 def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
     db, land_runtime, monkeypatch
 ):
+    monkeypatch.setattr(catalog, "LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET", 30)
     route_key = "LAND-PUBLIC-HTML:ingatlan_com"
     examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
     for index in range(30):
@@ -2978,6 +3365,7 @@ def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
         route,
         *,
         managed_land=False,
+        discovery_url=None,
         pending_listing_urls=None,
         examined_listing_urls=None,
         replay_only_listing_urls=None,
@@ -2989,7 +3377,7 @@ def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
             assert managed_land is True
             assert pending == replay_urls
             assert replay_only_listing_urls == set(replay_urls)
-            assert listing_fetch_limit == 3
+            assert listing_fetch_limit == catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
             return {
                 "status": "succeeded",
                 "http_status": 200,
@@ -3044,6 +3432,7 @@ def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
 def test_over_budget_policy_replay_does_not_expand_category_analysis_links(
     db, land_runtime, monkeypatch
 ):
+    monkeypatch.setattr(catalog, "LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET", 30)
     route_key = "LAND-PUBLIC-HTML:ingatlan_com"
     examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
     for index in range(30):
@@ -3154,6 +3543,7 @@ def test_over_budget_policy_replay_does_not_expand_category_analysis_links(
 def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
     db, land_runtime, monkeypatch
 ):
+    monkeypatch.setattr(catalog, "LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET", 30)
     route_key = "LAND-PUBLIC-HTML:ingatlan_com"
     examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
     for index in range(29):
@@ -3210,6 +3600,7 @@ def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
         route,
         *,
         managed_land=False,
+        discovery_url=None,
         pending_listing_urls=None,
         examined_listing_urls=None,
         replay_only_listing_urls=None,
@@ -3220,7 +3611,7 @@ def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
             target_calls.append(pending)
             assert pending == [replay_url]
             assert replay_only_listing_urls == {replay_url}
-            assert listing_fetch_limit == 3
+            assert listing_fetch_limit == catalog.LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
             return {
                 "status": "succeeded",
                 "http_status": 200,
@@ -3276,6 +3667,7 @@ def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
 def test_ordinary_route_remaining_budget_limits_pending_and_analysis_fetches(
     db, land_runtime, monkeypatch
 ):
+    monkeypatch.setattr(catalog, "LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET", 30)
     route_key = "LAND-PUBLIC-HTML:ingatlan_com"
     examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
     for index in range(29):

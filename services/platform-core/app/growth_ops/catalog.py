@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from threading import Lock
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 from urllib.robotparser import RobotFileParser
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -90,8 +90,9 @@ ROUTE_URL_OVERRIDES = {
 }
 
 DAILY_ROUTE_ATTEMPT_MAXIMUM = 2_000
-LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM = 3
-LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET = 30
+LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM = 10
+LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET = 300
+LAND_PUBLIC_HTML_PAGINATION_PAGE_MAXIMUM = 1_000
 LAND_PUBLIC_HTML_ROUTE_PREFIX = "LAND-PUBLIC-HTML:"
 LAND_RECIPIENT_POLICY_VERSION = "LAND-RECIPIENT-ROLE-EMAIL-V1"
 PORTAL_PUBLIC_HTML_USER_AGENT = (
@@ -429,6 +430,30 @@ class _VisibleText(HTMLParser):
                 self._anchor_parts.append(data)
 
 
+class _PublicLandPaginationLinks(HTMLParser):
+    """Collect hrefs for exact category pagination, including icon-only anchors."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hidden = 0
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        name = tag.casefold()
+        if name in {"script", "style", "noscript", "template"}:
+            self.hidden += 1
+            return
+        if name != "a" or self.hidden:
+            return
+        href = next((value for key, value in attrs if key.casefold() == "href"), None)
+        if href:
+            self.hrefs.append(href.strip())
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() in {"script", "style", "noscript", "template"} and self.hidden:
+            self.hidden -= 1
+
+
 class _QjobTaskCards(HTMLParser):
     """Extract Qjob task cards whose permalink is stored on a div, not an anchor."""
 
@@ -540,6 +565,151 @@ def _page_evidence(
         # remaining capacity after all concrete task permalinks.
         links = task_parser.links + [item for item in links if item["url"] not in task_urls]
     return text, links[:100]
+
+
+def _public_land_pagination_entry(
+    base_url: str,
+    candidate_url: str,
+) -> tuple[int, str] | None:
+    """Return one exact same-category ``?page=N`` discovery URL.
+
+    Pagination is deliberately narrower than ordinary same-portal binding: the
+    scheme, hostname, port and path must remain byte-for-byte equivalent to the
+    managed category route, and ``page`` must be the sole query parameter. This
+    prevents a category page from expanding discovery onto search, login or
+    unrelated portal surfaces.
+    """
+
+    base = urlparse(base_url)
+    candidate = urlparse(urljoin(base_url, candidate_url))
+    try:
+        candidate_port = candidate.port
+    except ValueError:
+        return None
+    if (
+        base.scheme != "https"
+        or candidate.scheme != "https"
+        or not base.hostname
+        or not candidate.hostname
+        or candidate.username
+        or candidate.password
+        or (candidate_port not in {None, 443})
+        or candidate.hostname.casefold() != base.hostname.casefold()
+        or candidate.path.rstrip("/") != base.path.rstrip("/")
+        or candidate.fragment
+    ):
+        return None
+    query = parse_qsl(candidate.query, keep_blank_values=True)
+    if len(query) != 1 or query[0][0].casefold() != "page":
+        return None
+    raw_page = query[0][1]
+    if not raw_page.isascii() or not raw_page.isdigit():
+        return None
+    page = int(raw_page)
+    if not 2 <= page <= LAND_PUBLIC_HTML_PAGINATION_PAGE_MAXIMUM:
+        return None
+    canonical = urlunparse(
+        (
+            "https",
+            base.netloc,
+            base.path,
+            "",
+            f"page={page}",
+            "",
+        )
+    )
+    return page, canonical
+
+
+def _public_land_pagination_candidates(
+    base_url: str,
+    links: list[dict[str, str]],
+) -> list[str]:
+    by_page: dict[int, str] = {}
+    for item in links:
+        entry = _public_land_pagination_entry(base_url, str(item.get("url") or ""))
+        if entry is not None:
+            page, url = entry
+            by_page.setdefault(page, url)
+    return [by_page[page] for page in sorted(by_page)]
+
+
+def _public_land_pagination_candidates_from_html(
+    base_url: str,
+    body_text: str,
+) -> list[str]:
+    # `_page_evidence` deliberately caps ordinary analysis links at 100. Portal
+    # pagination is often rendered after those links, so scan the same bounded
+    # HTML response independently while applying the much narrower URL policy
+    # above.
+    parser = _PublicLandPaginationLinks()
+    try:
+        parser.feed(body_text)
+    except Exception:
+        return []
+    return _public_land_pagination_candidates(
+        base_url,
+        [{"url": href, "label": "pagination"} for href in parser.hrefs],
+    )
+
+
+def _managed_land_next_discovery_url(
+    db: Session,
+    *,
+    route: SourceCoverageRoute,
+    run_id: str,
+) -> str | None:
+    """Return only the next contiguous, observed category page for this run."""
+
+    evidence_rows = list(
+        db.scalars(
+            select(SourceCoverageAttempt.evidence_json)
+            .where(
+                SourceCoverageAttempt.route_key == route.route_key,
+                SourceCoverageAttempt.run_id == run_id,
+            )
+            .order_by(SourceCoverageAttempt.started_at, SourceCoverageAttempt.id)
+        )
+    )
+    if not evidence_rows:
+        return route.route_url
+
+    attempted_pages: set[int] = set()
+    candidate_by_page: dict[int, str] = {}
+    pagination_metadata_seen = False
+    for raw in evidence_rows:
+        try:
+            evidence = json.loads(raw or "{}")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(evidence, dict):
+            continue
+        if "land_discovery_url" not in evidence:
+            continue
+        pagination_metadata_seen = True
+        discovery_url = str(evidence.get("land_discovery_url") or route.route_url)
+        if discovery_url.rstrip("/") == route.route_url.rstrip("/"):
+            attempted_pages.add(1)
+        else:
+            entry = _public_land_pagination_entry(route.route_url, discovery_url)
+            if entry is not None:
+                attempted_pages.add(entry[0])
+        candidates = evidence.get("land_pagination_candidates")
+        if isinstance(candidates, list):
+            for value in candidates:
+                entry = _public_land_pagination_entry(route.route_url, str(value or ""))
+                if entry is not None:
+                    candidate_by_page.setdefault(entry[0], entry[1])
+
+    # A release deployed into an already-running daily ledger must refetch page
+    # one exactly once to bind pagination metadata before it can advance.
+    if not pagination_metadata_seen or 1 not in attempted_pages:
+        return route.route_url
+
+    next_page = 2
+    while next_page in attempted_pages:
+        next_page += 1
+    return candidate_by_page.get(next_page)
 
 
 def _looks_like_blocked_response(
@@ -938,18 +1108,34 @@ def _fetch(
     route: SourceCoverageRoute,
     *,
     managed_land: bool = False,
+    discovery_url: str | None = None,
     pending_listing_urls: list[str] | None = None,
     examined_listing_urls: set[str] | None = None,
     replay_only_listing_urls: set[str] | None = None,
     listing_fetch_limit: int | None = None,
 ) -> dict[str, Any]:
     cfg = settings()
-    parsed = urlparse(route.route_url)
+    fetch_url = route.route_url
+    if discovery_url is not None:
+        if not managed_land:
+            return {"status": "rejected", "error_type": "managed_land_pagination_forbidden"}
+        if discovery_url.rstrip("/") != route.route_url.rstrip("/"):
+            pagination_entry = _public_land_pagination_entry(
+                route.route_url,
+                discovery_url,
+            )
+            if pagination_entry is None:
+                return {
+                    "status": "rejected",
+                    "error_type": "managed_land_pagination_url_invalid",
+                }
+            fetch_url = pagination_entry[1]
+    parsed = urlparse(fetch_url)
     if parsed.scheme != "https" or not parsed.hostname:
         return {"status": "rejected", "error_type": "invalid_route_url"}
     named_portal = is_named_portal_host(parsed.hostname)
     if named_portal:
-        portal_error = _public_html_portal_error(route.route_url)
+        portal_error = _public_html_portal_error(fetch_url)
         if portal_error:
             return {
                 "status": "failed" if portal_error == "portal_registry_unavailable" else "rejected",
@@ -957,7 +1143,7 @@ def _fetch(
             }
     if not named_portal:
         try:
-            assert_public_https_url(route.route_url)
+            assert_public_https_url(fetch_url)
         except UnsafeRouteError as exc:
             return {"status": "rejected", "error_type": str(exc)}
     if contains_no_monitoring_entity(route.source_record_json):
@@ -970,7 +1156,7 @@ def _fetch(
                 monotonic_time.monotonic() + cfg.canonical_route_timeout_seconds
             )
             robots_error = _fresh_pinned_robots_error(
-                route.route_url,
+                fetch_url,
                 deadline_monotonic=deadline,
             )
             if robots_error:
@@ -983,7 +1169,7 @@ def _fetch(
                     "error_type": robots_error,
                 }
             response_data = _pinned_https_get(
-                route.route_url,
+                fetch_url,
                 max_response_bytes=cfg.canonical_route_max_response_bytes,
                 deadline_monotonic=deadline,
             )
@@ -999,7 +1185,7 @@ def _fetch(
                 follow_redirects=False,
                 headers={"User-Agent": "Imperial-Source-Coverage/1.0"},
             ) as client:
-                with client.stream("GET", route.route_url) as response:
+                with client.stream("GET", fetch_url) as response:
                     for chunk in response.iter_bytes():
                         content.extend(chunk)
                         if len(content) > cfg.canonical_route_max_response_bytes:
@@ -1039,12 +1225,12 @@ def _fetch(
     title = re.sub(r"\s+", " ", title_match.group(1)).strip()[:500] if title_match else None
     analysis_text, analysis_links = _page_evidence(
         body_text,
-        base_url=route.route_url,
+        base_url=fetch_url,
         limit=getattr(cfg, "canonical_analysis_text_chars", 6000),
     )
     blocked = _looks_like_blocked_response(
         status_code=status_code,
-        route_url=route.route_url,
+        route_url=fetch_url,
         title=title,
         body_text=body_text,
         visible_text=analysis_text,
@@ -1071,8 +1257,8 @@ def _fetch(
             ]
         else:
             candidate_urls = list(pending_listing_urls or [])
-            if is_specific_listing_permalink(route.route_url):
-                candidate_urls.append(route.route_url)
+            if is_specific_listing_permalink(fetch_url):
+                candidate_urls.append(fetch_url)
             candidate_urls.extend(
                 str(item["url"])
                 for item in analysis_links
@@ -1096,7 +1282,7 @@ def _fetch(
             url for url in all_candidate_urls if url not in (examined_listing_urls or set())
         ][:effective_fetch_limit]
         for listing_url in candidate_urls:
-            if listing_url == route.route_url:
+            if listing_url == fetch_url:
                 listing_result = {
                     "status": "succeeded",
                     "http_status": status_code,
@@ -1134,6 +1320,15 @@ def _fetch(
             "land_listing_fetches": land_listing_fetches,
             "land_listing_candidate_count": (
                 len(all_candidate_urls) if managed_land and named_portal else 0
+            ),
+            "land_discovery_url": fetch_url if managed_land and named_portal else None,
+            "land_pagination_candidates": (
+                _public_land_pagination_candidates_from_html(
+                    route.route_url,
+                    body_text,
+                )
+                if managed_land and named_portal and result_status == "succeeded"
+                else []
             ),
         },
         # Transient only: the worker gives this bounded visible-text sample to the
@@ -1468,6 +1663,7 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
     examined_by_route: dict[str, set[str]] = {}
     replay_only_by_route: dict[str, set[str]] = {}
     listing_fetch_limit_by_route: dict[str, int] = {}
+    discovery_url_by_route: dict[str, str] = {}
     replay_marker = f"policy_replay:{LAND_RECIPIENT_POLICY_VERSION}"
     for route in managed_routes:
         pending = list(
@@ -1563,10 +1759,20 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
                 LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM,
                 LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET - examined_today,
             )
-        if not attempted_once or pending:
-            managed_selected.append(route)
-            pending_by_route[route.route_key] = pending
-            examined_by_route[route.route_key] = examined
+        if policy_replay_pending or pending or not attempted_once:
+            discovery_url = route.route_url
+        else:
+            discovery_url = _managed_land_next_discovery_url(
+                db,
+                route=route,
+                run_id=land_run_id,
+            )
+            if discovery_url is None:
+                continue
+        managed_selected.append(route)
+        discovery_url_by_route[route.route_key] = discovery_url
+        pending_by_route[route.route_key] = pending
+        examined_by_route[route.route_key] = examined
     selected_runs = [
         *((route, run_id, False) for route in selected),
         *((route, land_run_id, True) for route in managed_selected),
@@ -1578,6 +1784,9 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         result = _fetch(
             route,
             managed_land=_managed,
+            discovery_url=(
+                discovery_url_by_route.get(route.route_key) if _managed else None
+            ),
             pending_listing_urls=(pending_by_route.get(route.route_key) if _managed else None),
             examined_listing_urls=(examined_by_route.get(route.route_key) if _managed else None),
             replay_only_listing_urls=(
@@ -1587,6 +1796,14 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
                 listing_fetch_limit_by_route.get(route.route_key) if _managed else None
             ),
         )
+        if _managed:
+            evidence = result.setdefault("evidence", {})
+            if isinstance(evidence, dict):
+                evidence.setdefault(
+                    "land_discovery_url",
+                    discovery_url_by_route.get(route.route_key, route.route_url),
+                )
+                evidence.setdefault("land_pagination_candidates", [])
         completed = datetime.now(UTC)
         return started, result, completed
 

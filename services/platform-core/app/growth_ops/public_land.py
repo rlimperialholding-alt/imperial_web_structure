@@ -623,7 +623,6 @@ def _dh_structured_evidence(
     *,
     listing_url: str,
     html: str,
-    rendered: _ListingHTML,
 ) -> _StructuredListingEvidence:
     reasons: list[str] = []
     scripts = _StructuredScripts()
@@ -641,11 +640,22 @@ def _dh_structured_evidence(
     matches = [match for _, script in scripts.scripts for match in assignment.finditer(script)]
     if len(matches) != 1:
         return _StructuredListingEvidence({}, {}, ("dh_page_cache_not_unique",))
+
+    def reject_duplicate_object_keys(
+        pairs: list[tuple[str, Any]],
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON object key")
+            result[key] = value
+        return result
+
     try:
         decoded = json.loads(matches[0].group(3))
         if not isinstance(decoded, str) or len(decoded) > _STRUCTURED_SCRIPT_MAX_CHARS:
             raise ValueError
-        payload = json.loads(decoded)
+        payload = json.loads(decoded, object_pairs_hook=reject_duplicate_object_keys)
     except (json.JSONDecodeError, TypeError, ValueError):
         return _StructuredListingEvidence({}, {}, ("dh_page_cache_invalid",))
     if not isinstance(payload, dict) or payload.get("status") != "success":
@@ -683,17 +693,15 @@ def _dh_structured_evidence(
     ]
     property_type, _ = _unique(property_candidates)
     name = _clean(agent.get("name"), 500)
-    email = _clean(agent.get("email"), 320)
+    raw_email = agent.get("email")
+    email = (
+        raw_email.strip()
+        if isinstance(raw_email, str) and len(raw_email.strip()) <= 320
+        else None
+    )
     office = _clean(agent.get("office"), 500)
     if not email or not _EMAIL_RE.fullmatch(email.casefold()):
         reasons.append("recipient_email_missing")
-    email_blocks = [
-        block_lines
-        for block_lines, _mailtos, meta_emails in rendered.contact_blocks_with_meta()
-        if [value.casefold() for value in meta_emails].count(str(email).casefold()) == 1
-    ]
-    if not email_blocks:
-        reasons.append("dh_rendered_agent_email_binding_missing")
     if reasons:
         return _StructuredListingEvidence({}, {}, tuple(sorted(set(reasons))))
     assert all((reference, email))
@@ -709,12 +717,11 @@ def _dh_structured_evidence(
             "portal=dh.hu; organization=Duna House"
         ),
     }
-    bound_name = (
-        name
-        if _named_recipient(name)
-        and any(_rendered_value_present(block_lines, name) for block_lines in email_blocks)
-        else None
-    )
+    # `result.agent` is the listing's structured recipient object. Its exact
+    # scalar `email` field plus the object identity proves listing_agent without
+    # a second rendered meta-email/name copy. Footer/support mailboxes are never
+    # consulted here. A name is optional and retained only when it is person-like.
+    bound_name = name if _named_recipient(name) else None
     if bound_name:
         values["recipient_name"] = str(bound_name)
         snippets["recipient_name"] = _json_evidence_snippet(
@@ -910,7 +917,6 @@ def _structured_portal_evidence(
         return _dh_structured_evidence(
             listing_url=listing_url,
             html=html,
-            rendered=rendered,
         )
     if host == "ingatlannet.hu":
         return _ingatlannet_structured_evidence(
