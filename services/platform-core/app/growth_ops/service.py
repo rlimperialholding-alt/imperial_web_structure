@@ -531,6 +531,10 @@ def _finish_land_canary_slot(
         raise GrowthRegistryError("land_outreach_production_canary_outcome_invalid")
     slot.updated_at = utcnow()
     if outcome in {"sent", "consumed"}:
+        # SessionLocal intentionally disables autoflush. Persist the current
+        # slot transition before counting the completed canary deliveries, or
+        # the final slot remains invisible and the singleton stays pending.
+        db.flush()
         state = db.get(GrowthLandCanaryState, 1)
         if state is None:
             raise GrowthRegistryError("land_outreach_production_canary_state_invalid")
