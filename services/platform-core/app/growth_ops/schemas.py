@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -145,6 +145,28 @@ class GrowthSignalIn(BaseModel):
             or self.business_context_evidence_url
         ):
             raise ValueError("Business context is only allowed for referral-partner outreach")
+        return self
+
+
+class PublicLandPolicyReplayIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_version: Literal["LAND-RECIPIENT-ROLE-EMAIL-V1"]
+    scope_local_date: date
+    max_rows: int = Field(default=100, ge=1, le=210)
+    apply: bool = False
+    expected_plan_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    reason: str = Field(min_length=10, max_length=500)
+
+    @model_validator(mode="after")
+    def applied_replay_requires_preview_hash(self):
+        if self.apply and not self.expected_plan_sha256:
+            raise ValueError("Applied policy replay requires the exact dry-run plan hash")
+        if not self.apply and self.expected_plan_sha256:
+            raise ValueError("Dry-run policy replay must not supply an expected plan hash")
         return self
 
 

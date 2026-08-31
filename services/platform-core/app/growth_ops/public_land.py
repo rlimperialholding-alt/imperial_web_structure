@@ -19,6 +19,11 @@ from ..land_acquisition.registry import (
     is_named_portal_host,
     same_named_portal_binding,
 )
+from .canonical_policy import (
+    LAND_AGENT_HARD_GATE_REASONS,
+    contains_no_monitoring_entity,
+    land_agent_hard_gate_reason,
+)
 from .models import (
     GrowthSignal,
     GrowthSignalSourceEvidence,
@@ -457,9 +462,9 @@ class _ListingHTML(HTMLParser):
             self.forbidden_contact_stack.pop()
 
     def handle_data(self, data: str) -> None:
-        if not self.hidden_stack:
+        if not self.hidden_stack and not self.forbidden_contact_stack:
             self.parts.append(data)
-            if self.contact_stack and not self.forbidden_contact_stack:
+            if self.contact_stack:
                 _, block_id = self.contact_stack[-1]
                 self.contact_parts[block_id].append(data)
                 for _, structured_block_id in self.contact_stack:
@@ -556,6 +561,19 @@ class _StructuredListingEvidence:
     reasons: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class _BoundContactRecipient:
+    email: str | None
+    role: Literal["listing_agent", "property_owner"] | None
+    name: str | None
+    email_snippet: str | None
+    role_snippet: str | None
+    name_snippet: str | None
+    fact_lines: tuple[str, ...]
+    screening_blocks: tuple[tuple[str, ...], ...]
+    reasons: tuple[str, ...]
+
+
 def _json_evidence_snippet(locator: str, value: object) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return f"{locator}={encoded}"[:2_000]
@@ -602,7 +620,10 @@ def _rendered_area_present(lines: list[str], area: int) -> bool:
 
 
 def _dh_structured_evidence(
-    *, listing_url: str, html: str, rendered: _ListingHTML
+    *,
+    listing_url: str,
+    html: str,
+    rendered: _ListingHTML,
 ) -> _StructuredListingEvidence:
     reasons: list[str] = []
     scripts = _StructuredScripts()
@@ -660,99 +681,70 @@ def _dh_structured_evidence(
         )
         if value and any(marker in _fold(value) for marker in _BUILDING_PLOT_MARKERS)
     ]
-    property_type, property_ambiguous = _unique(property_candidates)
+    property_type, _ = _unique(property_candidates)
     name = _clean(agent.get("name"), 500)
     email = _clean(agent.get("email"), 320)
-    career = _clean(agent.get("career"), 500)
     office = _clean(agent.get("office"), 500)
-    description = _clean(result.get("description"), 2_000)
-    if not location:
-        reasons.append("listing_location_missing")
-    if area is None:
-        reasons.append("plot_size_missing")
-    if property_ambiguous:
-        reasons.append("building_plot_type_ambiguous")
-    elif not property_type:
-        reasons.append("building_plot_type_not_explicit")
-    if not _named_recipient(name):
-        reasons.append("recipient_name_missing")
     if not email or not _EMAIL_RE.fullmatch(email.casefold()):
         reasons.append("recipient_email_missing")
-    if not career or "ertekesito" not in _fold(career):
-        reasons.append("recipient_role_missing")
-    if not office:
-        reasons.append("agent_office_missing")
-    if not description:
-        reasons.append("dh_listing_description_missing")
-
-    lines = rendered.lines()
-    semantic_pairs = [
-        (rendered.semantic_events[index], rendered.semantic_events[index + 1])
-        for index in range(max(0, len(rendered.semantic_events) - 1))
-    ]
-    if not any(
-        first[0] == "name"
-        and second[0] == "description"
-        and _fold(first[1]) == _fold(name)
-        and _fold(second[1]) == _fold(career)
-        for first, second in semantic_pairs
-    ):
-        reasons.append("dh_rendered_agent_identity_mismatch")
-    bound_contact = any(
-        _rendered_value_present(block_lines, name)
-        and _rendered_value_present(block_lines, career)
-        and _rendered_value_present(block_lines, office)
-        and [value.casefold() for value in meta_emails].count(str(email).casefold()) == 1
+    email_blocks = [
+        block_lines
         for block_lines, _mailtos, meta_emails in rendered.contact_blocks_with_meta()
-    )
-    if not bound_contact:
-        reasons.append("dh_rendered_agent_email_binding_missing")
-    if (
-        not _rendered_value_present(lines, reference)
-        or not _rendered_value_present(lines, location)
-        or area is None
-        or not _rendered_area_present(lines, area)
-        or not _rendered_value_present(lines, property_type)
-    ):
-        reasons.append("dh_rendered_listing_binding_mismatch")
-    publisher_meta = [
-        value
-        for key, value, _ in rendered.meta_values
-        if key in {"publisher", "og site name", "application name"}
-        and _fold(value) == "duna house"
+        if [value.casefold() for value in meta_emails].count(str(email).casefold()) == 1
     ]
-    if len(publisher_meta) != 1 or not _rendered_value_present(lines, "Duna House"):
-        reasons.append("dh_publisher_binding_mismatch")
+    if not email_blocks:
+        reasons.append("dh_rendered_agent_email_binding_missing")
     if reasons:
         return _StructuredListingEvidence({}, {}, tuple(sorted(set(reasons))))
-    assert all((reference, location, area, property_type, name, email, career, office))
+    assert all((reference, email))
     values = {
-        "property_type": str(property_type),
-        "recipient_name": str(name),
         "recipient_email": str(email).casefold(),
         "recipient_role": "listing_agent",
-        "location": str(location),
-        "plot_size_sqm": str(area),
         "recipient_organization_name": "Duna House",
-        "recipient_office_name": str(office),
     }
     snippets = {
-        "property_type": _json_evidence_snippet("$.result.subType", property_type),
-        "recipient_name": _json_evidence_snippet("$.result.agent.name", name),
         "recipient_email": _json_evidence_snippet("$.result.agent.email", email),
-        "recipient_role": _json_evidence_snippet("$.result.agent.career", career),
-        "location": _json_evidence_snippet("$.result.address", address),
-        "plot_size_sqm": _json_evidence_snippet("$.result.area", result.get("area")),
+        "recipient_role": "$.result.agent=listing_agent",
         "recipient_organization_name": (
-            "portal=dh.hu; rendered_publisher=Duna House; meta_publisher=Duna House"
+            "portal=dh.hu; organization=Duna House"
         ),
-        "recipient_office_name": _json_evidence_snippet("$.result.agent.office", office),
     }
+    bound_name = (
+        name
+        if _named_recipient(name)
+        and any(_rendered_value_present(block_lines, name) for block_lines in email_blocks)
+        else None
+    )
+    if bound_name:
+        values["recipient_name"] = str(bound_name)
+        snippets["recipient_name"] = _json_evidence_snippet(
+            "$.result.agent.name", bound_name
+        )
+    for field_name, value, snippet in (
+        ("property_type", property_type, _json_evidence_snippet("$.result.subType", property_type)),
+        ("location", location, _json_evidence_snippet("$.result.address", address)),
+        (
+            "plot_size_sqm",
+            area,
+            _json_evidence_snippet("$.result.area", result.get("area")),
+        ),
+        (
+            "recipient_office_name",
+            office,
+            _json_evidence_snippet("$.result.agent.office", office),
+        ),
+    ):
+        if value is not None:
+            values[field_name] = str(value)
+            snippets[field_name] = snippet
     return _StructuredListingEvidence(values, snippets, ())
 
 
 def _ingatlannet_structured_evidence(
-    *, listing_url: str, html: str, rendered: _ListingHTML
+    *,
+    listing_url: str,
+    html: str,
+    rendered: _ListingHTML,
 ) -> _StructuredListingEvidence:
     scripts = _StructuredScripts()
     try:
@@ -779,12 +771,11 @@ def _ingatlannet_structured_evidence(
     owner = envelope.get("ownerData") if isinstance(envelope, dict) else None
     office_data = envelope.get("officeData") if isinstance(envelope, dict) else None
     query = payload.get("query") if isinstance(payload, dict) else None
-    if not all(isinstance(value, dict) for value in (data, owner, office_data, query)):
+    if not all(isinstance(value, dict) for value in (data, owner, query)):
         return _StructuredListingEvidence({}, {}, ("ingatlannet_listing_schema_invalid",))
     assert isinstance(page_props, dict)
     assert isinstance(data, dict)
     assert isinstance(owner, dict)
-    assert isinstance(office_data, dict)
     assert isinstance(query, dict)
     reasons: list[str] = []
     listing_id = _clean(data.get("id"), 120)
@@ -814,9 +805,6 @@ def _ingatlannet_structured_evidence(
     if str(data.get("advertiserId")) != str(owner.get("id")):
         reasons.append("ingatlannet_owner_binding_mismatch")
     plot_size = _strict_positive_integer(data.get("plotSize"))
-    area_size = _strict_positive_integer(data.get("areaSize"))
-    if plot_size is None or plot_size != area_size:
-        reasons.append("plot_size_missing")
     address = _clean(data.get("address"), 500)
     location = address
     if address and "," in address:
@@ -829,11 +817,9 @@ def _ingatlannet_structured_evidence(
     name = _clean(owner.get("name"), 500)
     email = _clean(owner.get("email"), 320)
     role_raw = _clean(owner.get("type"), 500)
-    office = _clean(office_data.get("name"), 500)
-    description_data = data.get("description")
-    description = (
-        _clean(description_data.get("aboutTheProperty"), 2_000)
-        if isinstance(description_data, dict)
+    office = (
+        _clean(office_data.get("name"), 500)
+        if isinstance(office_data, dict)
         else None
     )
     property_candidates = [
@@ -841,77 +827,83 @@ def _ingatlannet_structured_evidence(
         for heading in rendered.headings
         if any(marker in _fold(heading) for marker in _BUILDING_PLOT_MARKERS)
     ]
-    property_type, property_ambiguous = _unique(property_candidates)
-    if not location:
-        reasons.append("listing_location_missing")
-    if not _named_recipient(name):
-        reasons.append("recipient_name_missing")
+    property_type, _ = _unique(property_candidates)
     if not email or not _EMAIL_RE.fullmatch(email.casefold()):
         reasons.append("recipient_email_missing")
-    if _fold(role_raw) != "ingatlanreferens":
+    folded_role = _fold(role_raw)
+    if folded_role in _AGENT_ROLE_VALUES:
+        recipient_role = "listing_agent"
+    elif folded_role in _OWNER_ROLE_VALUES:
+        recipient_role = "property_owner"
+    else:
+        recipient_role = None
         reasons.append("recipient_role_missing")
-    if not office:
-        reasons.append("agent_office_missing")
-    if not description:
-        reasons.append("ingatlannet_listing_description_missing")
-    if property_ambiguous:
-        reasons.append("building_plot_type_ambiguous")
-    elif not property_type:
-        reasons.append("building_plot_type_not_explicit")
     lines = rendered.lines()
-    for value, reason in (
-        (name, "ingatlannet_rendered_owner_mismatch"),
-        (role_raw, "ingatlannet_rendered_owner_role_mismatch"),
-        (office, "ingatlannet_rendered_office_mismatch"),
-        (location, "ingatlannet_rendered_location_mismatch"),
-        (property_type, "ingatlannet_rendered_property_type_mismatch"),
-    ):
+    rendered_bindings = [(role_raw, "ingatlannet_rendered_owner_role_mismatch")]
+    for value, reason in rendered_bindings:
         if not _rendered_value_present(lines, value):
             reasons.append(reason)
-    if plot_size is None or not _rendered_area_present(lines, plot_size):
-        reasons.append("ingatlannet_rendered_plot_size_mismatch")
     if reasons:
         return _StructuredListingEvidence({}, {}, tuple(sorted(set(reasons))))
-    assert all((location, plot_size, property_type, name, email, role_raw, office))
+    assert all((email, role_raw))
     values = {
-        "property_type": str(property_type),
-        "recipient_name": str(name),
         "recipient_email": str(email).casefold(),
-        "recipient_role": "listing_agent",
-        "location": str(location),
-        "plot_size_sqm": str(plot_size),
-        "recipient_organization_name": str(office),
-        "recipient_office_name": str(office),
+        "recipient_role": str(recipient_role),
     }
     snippets = {
-        "property_type": f"rendered_heading={json.dumps(property_type, ensure_ascii=False)}",
-        "recipient_name": _json_evidence_snippet(
-            "$.props.pageProps.data.ownerData.name", name
-        ),
         "recipient_email": _json_evidence_snippet(
             "$.props.pageProps.data.ownerData.email", email
         ),
         "recipient_role": _json_evidence_snippet(
             "$.props.pageProps.data.ownerData.type", role_raw
         ),
-        "location": _json_evidence_snippet(
-            "$.props.pageProps.data.data.address", address
-        ),
-        "plot_size_sqm": _json_evidence_snippet(
-            "$.props.pageProps.data.data.plotSize", data.get("plotSize")
-        ),
-        "recipient_organization_name": _json_evidence_snippet(
-            "$.props.pageProps.data.officeData.name", office
-        ),
-        "recipient_office_name": _json_evidence_snippet(
-            "$.props.pageProps.data.officeData.name", office
-        ),
     }
+    bound_name = name if _named_recipient(name) and _rendered_value_present(lines, name) else None
+    if bound_name:
+        values["recipient_name"] = str(bound_name)
+        snippets["recipient_name"] = _json_evidence_snippet(
+            "$.props.pageProps.data.ownerData.name", bound_name
+        )
+    for field_name, value, snippet in (
+        (
+            "property_type",
+            property_type,
+            f"rendered_heading={json.dumps(property_type, ensure_ascii=False)}",
+        ),
+        (
+            "location",
+            location,
+            _json_evidence_snippet("$.props.pageProps.data.data.address", address),
+        ),
+        (
+            "plot_size_sqm",
+            plot_size,
+            _json_evidence_snippet(
+                "$.props.pageProps.data.data.plotSize", data.get("plotSize")
+            ),
+        ),
+        (
+            "recipient_organization_name",
+            office,
+            _json_evidence_snippet("$.props.pageProps.data.officeData.name", office),
+        ),
+        (
+            "recipient_office_name",
+            office,
+            _json_evidence_snippet("$.props.pageProps.data.officeData.name", office),
+        ),
+    ):
+        if value is not None:
+            values[field_name] = str(value)
+            snippets[field_name] = snippet
     return _StructuredListingEvidence(values, snippets, ())
 
 
 def _structured_portal_evidence(
-    *, listing_url: str, html: str, rendered: _ListingHTML
+    *,
+    listing_url: str,
+    html: str,
+    rendered: _ListingHTML,
 ) -> _StructuredListingEvidence | None:
     host = (urlparse(listing_url).hostname or "").casefold().removeprefix("www.")
     if host == "dh.hu":
@@ -998,16 +990,32 @@ def _mailto_emails(values: list[str]) -> tuple[list[str], bool]:
     return list(emails.values()), malformed
 
 
-def _bound_contact_emails(
-    parser: _ListingHTML,
-    *,
-    recipient_name: str | None,
-    recipient_role: str | None,
-) -> tuple[list[str], bool, bool]:
-    bound_values: list[str] = []
+def _unique_emails(values: list[str]) -> tuple[str | None, bool]:
+    unique = {
+        value.strip().casefold(): value.strip().casefold()
+        for value in values
+        if value.strip()
+    }
+    if len(unique) != 1:
+        return None, len(unique) > 1
+    return next(iter(unique.values())), False
+
+
+def _bound_contact_recipient(parser: _ListingHTML) -> _BoundContactRecipient:
+    bindings: list[
+        tuple[
+            str,
+            Literal["listing_agent", "property_owner"],
+            str | None,
+            str,
+            str,
+            str | None,
+            tuple[str, ...],
+        ]
+    ] = []
     malformed = False
-    if not recipient_name or not recipient_role:
-        return [], False, False
+    role_ambiguous = False
+    role_seen = False
     for lines, mailtos in parser.contact_blocks():
         block_name_pairs = _label_values(lines, _NAME_LABELS)
         block_name, block_name_ambiguous = _unique(
@@ -1017,33 +1025,9 @@ def _bound_contact_emails(
             [label for label, _, _ in block_name_pairs],
             [value for _, value, _ in _label_values(lines, _ROLE_LABELS)],
         )
-        if (
-            block_name_ambiguous
-            or block_role_ambiguous
-            or _fold(block_name) != _fold(recipient_name)
-            or block_role != recipient_role
-        ):
-            continue
-        if recipient_role == "listing_agent":
-            block_organization, organization_ambiguous = _unique(
-                [
-                    value
-                    for _, value, _ in _label_values(lines, _ORGANIZATION_LABELS)
-                ]
-            )
-            block_office, office_ambiguous = _unique(
-                [value for _, value, _ in _label_values(lines, _OFFICE_LABELS)]
-            )
-            if (
-                organization_ambiguous
-                or office_ambiguous
-                or not block_organization
-                or not block_office
-            ):
-                continue
         email_pairs = _label_values(lines, _EMAIL_LABELS)
         visible_emails = [
-            value
+            value.casefold()
             for _, value, _ in email_pairs
             if _EMAIL_RE.fullmatch(value.casefold())
         ]
@@ -1051,12 +1035,148 @@ def _bound_contact_emails(
             _fold(line) in _EMAIL_LABELS for line in lines
         )
         mailto_emails, mailto_malformed = _mailto_emails(mailtos)
+        block_emails = [
+            *(mailto_emails if email_label_visible else []),
+            *visible_emails,
+        ]
+        block_email, block_email_ambiguous = _unique_emails(block_emails)
+        if block_role_ambiguous and block_email:
+            role_ambiguous = True
+            continue
+        if not block_role:
+            continue
+        role_seen = True
         malformed = malformed or mailto_malformed
-        if email_label_visible:
-            bound_values.extend(mailto_emails)
-        bound_values.extend(visible_emails)
-    unique, ambiguous = _unique(bound_values)
-    return ([unique] if unique else []), malformed, ambiguous
+        if block_email_ambiguous or not block_email:
+            if block_email_ambiguous:
+                bindings.extend(
+                    (
+                        email,
+                        cast(
+                            Literal["listing_agent", "property_owner"],
+                            block_role,
+                        ),
+                        None,
+                        email,
+                        block_role,
+                        None,
+                        tuple(lines),
+                    )
+                    for email in sorted(set(block_emails))
+                )
+            continue
+        role_snippet = next(
+            (
+                snippet
+                for _, value, snippet in _label_values(lines, _ROLE_LABELS)
+                if (
+                    block_role == "listing_agent"
+                    and _fold(value) in _AGENT_ROLE_VALUES
+                )
+                or (
+                    block_role == "property_owner"
+                    and _fold(value) in _OWNER_ROLE_VALUES
+                )
+            ),
+            None,
+        )
+        if role_snippet is None:
+            implied_labels = (
+                _IMPLIED_AGENT_NAME_LABELS
+                if block_role == "listing_agent"
+                else _IMPLIED_OWNER_NAME_LABELS
+            )
+            role_snippet = next(
+                (
+                    snippet
+                    for label, _, snippet in block_name_pairs
+                    if label in implied_labels
+                ),
+                block_role,
+            )
+        email_snippet = next(
+            (
+                href
+                for href in mailtos
+                if unquote(href[7:].split("?", 1)[0]).strip().casefold()
+                == block_email
+            ),
+            None,
+        ) or next(
+            (
+                snippet
+                for _, value, snippet in email_pairs
+                if value.casefold() == block_email
+            ),
+            block_email,
+        )
+        bound_name = (
+            block_name
+            if not block_name_ambiguous and _named_recipient(block_name)
+            else None
+        )
+        bindings.append(
+            (
+                block_email,
+                cast(Literal["listing_agent", "property_owner"], block_role),
+                bound_name,
+                email_snippet,
+                role_snippet,
+                _source_snippet(block_name_pairs, bound_name),
+                tuple(lines),
+            )
+        )
+    emails = {binding[0].casefold(): binding[0] for binding in bindings}
+    roles = {binding[1] for binding in bindings}
+    reasons: list[str] = []
+    if len(roles) > 1:
+        reasons.append("recipient_role_ambiguous")
+    if len(emails) > 1:
+        reasons.append("recipient_email_ambiguous")
+    if not bindings:
+        if malformed:
+            reasons.append("recipient_email_malformed")
+        if role_ambiguous:
+            reasons.append("recipient_role_ambiguous")
+        reasons.append(
+            "recipient_email_missing" if role_seen else "recipient_role_missing"
+        )
+    if reasons:
+        return _BoundContactRecipient(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            (),
+            (),
+            tuple(sorted(set(reasons))),
+        )
+    selected_email = next(iter(emails.values()))
+    selected_role = next(iter(roles))
+    selected = [
+        binding
+        for binding in bindings
+        if binding[0] == selected_email and binding[1] == selected_role
+    ]
+    names = _unique([binding[2] for binding in selected if binding[2]])
+    selected_name = names[0] if not names[1] else None
+    named_binding = next(
+        (binding for binding in selected if binding[2] == selected_name),
+        selected[0],
+    )
+    return _BoundContactRecipient(
+        selected_email,
+        selected_role,
+        selected_name,
+        selected[0][3],
+        selected[0][4],
+        named_binding[5] if selected_name else None,
+        selected[0][6] if len(selected) == 1 else (),
+        tuple(binding[6] for binding in selected),
+        (),
+    )
 
 
 def _plot_size(value: str) -> int | None:
@@ -1233,14 +1353,10 @@ def listing_signal_decision(
                 for heading in parser.headings
                 if any(marker in _fold(heading) for marker in _BUILDING_PLOT_MARKERS)
             ]
-        property_type, property_type_ambiguous = _unique(
+        property_type, _ = _unique(
             [value for value, _ in property_candidates]
         )
-        if property_type_ambiguous:
-            reasons.append("building_plot_type_ambiguous")
-        elif not property_type:
-            reasons.append("building_plot_type_not_explicit")
-        else:
+        if property_type:
             property_snippet = next(
                 snippet
                 for value, snippet in property_candidates
@@ -1248,7 +1364,7 @@ def listing_signal_decision(
             )
             record("property_type", property_type, property_snippet)
 
-    name_pairs: list[tuple[str, str, str]] = []
+    bound_contact: _BoundContactRecipient | None = None
     if structured is not None:
         recipient_name = structured.values.get("recipient_name")
         if recipient_name:
@@ -1258,22 +1374,16 @@ def listing_signal_decision(
                 structured.snippets.get("recipient_name") or recipient_name,
             )
     else:
-        name_pairs = _label_values(lines, _NAME_LABELS)
-        recipient_name, name_ambiguous = _unique(
-            [value for _, value, _ in name_pairs]
-        )
-        if name_ambiguous:
-            reasons.append("recipient_name_ambiguous")
-        elif not _named_recipient(recipient_name):
-            reasons.append("recipient_name_missing")
-        else:
+        bound_contact = _bound_contact_recipient(parser)
+        reasons.extend(bound_contact.reasons)
+        recipient_name = bound_contact.name
+        if recipient_name:
             record(
                 "recipient_name",
-                recipient_name or "",
-                _source_snippet(name_pairs, recipient_name) or recipient_name or "",
+                recipient_name,
+                bound_contact.name_snippet or recipient_name,
             )
 
-    role_pairs: list[tuple[str, str, str]] = []
     if structured is not None:
         recipient_role = structured.values.get("recipient_role")
         if recipient_role:
@@ -1283,41 +1393,14 @@ def listing_signal_decision(
                 structured.snippets.get("recipient_role") or recipient_role,
             )
     else:
-        role_pairs = _label_values(lines, _ROLE_LABELS)
-        recipient_role, role_ambiguous = _recipient_role(
-            [label for label, _, _ in name_pairs], [value for _, value, _ in role_pairs]
-        )
-        if role_ambiguous:
-            reasons.append("recipient_role_ambiguous")
-        elif not recipient_role:
-            reasons.append("recipient_role_missing")
-        else:
-            role_snippet = next(
-                (
-                    snippet
-                    for _, value, snippet in role_pairs
-                    if (
-                        recipient_role == "listing_agent"
-                        and _fold(value) in _AGENT_ROLE_VALUES
-                    )
-                    or (
-                        recipient_role == "property_owner"
-                        and _fold(value) in _OWNER_ROLE_VALUES
-                    )
-                ),
-                None,
+        assert bound_contact is not None
+        recipient_role = bound_contact.role
+        if recipient_role:
+            record(
+                "recipient_role",
+                recipient_role,
+                bound_contact.role_snippet or recipient_role,
             )
-            if role_snippet is None:
-                implied_labels = (
-                    _IMPLIED_AGENT_NAME_LABELS
-                    if recipient_role == "listing_agent"
-                    else _IMPLIED_OWNER_NAME_LABELS
-                )
-                role_snippet = next(
-                    (snippet for label, _, snippet in name_pairs if label in implied_labels),
-                    recipient_role,
-                )
-            record("recipient_role", recipient_role, role_snippet)
 
     if structured is not None:
         recipient_email = structured.values.get("recipient_email")
@@ -1328,42 +1411,67 @@ def listing_signal_decision(
                 structured.snippets.get("recipient_email") or recipient_email,
             )
     else:
-        emails, malformed_mailto, bound_email_ambiguous = _bound_contact_emails(
-            parser,
-            recipient_name=recipient_name,
-            recipient_role=recipient_role,
-        )
-        recipient_email, email_ambiguous = _unique(emails)
-        if malformed_mailto:
-            reasons.append("recipient_email_malformed")
-        if bound_email_ambiguous or email_ambiguous:
-            reasons.append("recipient_email_ambiguous")
-        elif not recipient_email:
-            reasons.append("recipient_email_missing")
-        else:
-            email_snippet = next(
-                (
-                    href
-                    for _, mailtos in parser.contact_blocks()
-                    for href in mailtos
-                    if unquote(href[7:].split("?", 1)[0]).strip().casefold()
-                    == recipient_email
-                ),
-                None,
+        assert bound_contact is not None
+        recipient_email = bound_contact.email
+        if recipient_email:
+            record(
+                "recipient_email",
+                recipient_email,
+                bound_contact.email_snippet or recipient_email,
             )
-            if email_snippet is None:
-                email_snippet = next(
-                    (
-                        snippet
-                        for contact_lines, _ in parser.contact_blocks()
-                        for _, value, snippet in _label_values(
-                            contact_lines, _EMAIL_LABELS
-                        )
-                        if value.casefold() == recipient_email
-                    ),
-                    recipient_email,
+
+    if bound_contact is not None and recipient_email and recipient_role:
+        aggregate_names: list[str] = []
+        aggregate_organizations: list[str] = []
+        aggregate_offices: list[str] = []
+        for screening_block in bound_contact.screening_blocks:
+            screening_text = "\n".join(screening_block)
+            if contains_no_monitoring_entity(screening_text):
+                reasons.append("no_monitoring_hard_gate_blocked")
+            block_names = [
+                value
+                for _, value, _ in _label_values(
+                    list(screening_block), _NAME_LABELS
                 )
-            record("recipient_email", recipient_email, email_snippet)
+                if _named_recipient(value)
+            ]
+            block_organizations = [
+                value
+                for _, value, _ in _label_values(
+                    list(screening_block), _ORGANIZATION_LABELS
+                )
+            ]
+            block_offices = [
+                value
+                for _, value, _ in _label_values(
+                    list(screening_block), _OFFICE_LABELS
+                )
+            ]
+            aggregate_names.extend(block_names)
+            aggregate_organizations.extend(block_organizations)
+            aggregate_offices.extend(block_offices)
+            exclusion_reason = land_agent_hard_gate_reason(
+                recipient_role=recipient_role,
+                contact_name=" ".join(block_names) or recipient_name,
+                organization_name=" ".join(block_organizations) or None,
+                office_name=" ".join(block_offices) or None,
+                recipient_email=recipient_email,
+                public_contact_url=canonical_url,
+                evidence_url=canonical_url,
+            )
+            if exclusion_reason:
+                reasons.append(exclusion_reason)
+        aggregate_exclusion_reason = land_agent_hard_gate_reason(
+            recipient_role=recipient_role,
+            contact_name=" ".join(aggregate_names) or recipient_name,
+            organization_name=" ".join(aggregate_organizations) or None,
+            office_name=" ".join(aggregate_offices) or None,
+            recipient_email=recipient_email,
+            public_contact_url=canonical_url,
+            evidence_url=canonical_url,
+        )
+        if aggregate_exclusion_reason:
+            reasons.append(aggregate_exclusion_reason)
 
     if structured is not None:
         location = structured.values.get("location")
@@ -1374,15 +1482,13 @@ def listing_signal_decision(
                 structured.snippets.get("location") or location,
             )
     else:
-        location_pairs = _label_values(lines, _LOCATION_LABELS)
-        location, location_ambiguous = _unique(
+        assert bound_contact is not None
+        fact_lines = list(bound_contact.fact_lines)
+        location_pairs = _label_values(fact_lines, _LOCATION_LABELS)
+        location, _ = _unique(
             [value for _, value, _ in location_pairs]
         )
-        if location_ambiguous:
-            reasons.append("listing_location_ambiguous")
-        elif not location:
-            reasons.append("listing_location_missing")
-        else:
+        if location:
             record(
                 "location",
                 location,
@@ -1403,18 +1509,16 @@ def listing_signal_decision(
                 structured.snippets.get("plot_size_sqm") or structured_size or "",
             )
     else:
-        size_pairs = _label_values(lines, _PLOT_SIZE_LABELS)
+        assert bound_contact is not None
+        fact_lines = list(bound_contact.fact_lines)
+        size_pairs = _label_values(fact_lines, _PLOT_SIZE_LABELS)
         parsed_sizes = {
             size
             for _, value, _ in size_pairs
             if (size := _plot_size(value)) is not None
         }
         plot_size_sqm = next(iter(parsed_sizes)) if len(parsed_sizes) == 1 else None
-        if len(parsed_sizes) > 1:
-            reasons.append("plot_size_ambiguous")
-        elif plot_size_sqm is None:
-            reasons.append("plot_size_missing")
-        else:
+        if plot_size_sqm is not None:
             size_snippet = next(
                 (
                     snippet
@@ -1445,29 +1549,30 @@ def listing_signal_decision(
                     structured.snippets.get("recipient_office_name") or office,
                 )
         else:
+            assert bound_contact is not None
+            fact_lines = list(bound_contact.fact_lines)
             organization, organization_ambiguous = _unique(
-                [value for _, value, _ in _label_values(lines, _ORGANIZATION_LABELS)]
+                [
+                    value
+                    for _, value, _ in _label_values(
+                        fact_lines, _ORGANIZATION_LABELS
+                    )
+                ]
             )
             office, office_ambiguous = _unique(
-                [value for _, value, _ in _label_values(lines, _OFFICE_LABELS)]
+                [value for _, value, _ in _label_values(fact_lines, _OFFICE_LABELS)]
             )
-            if organization_ambiguous:
-                reasons.append("agent_organization_ambiguous")
-            elif not organization:
-                reasons.append("agent_organization_missing")
-            else:
-                organization_pairs = _label_values(lines, _ORGANIZATION_LABELS)
+            if organization and not organization_ambiguous:
+                organization_pairs = _label_values(
+                    fact_lines, _ORGANIZATION_LABELS
+                )
                 record(
                     "recipient_organization_name",
                     organization,
                     _source_snippet(organization_pairs, organization) or organization,
                 )
-            if office_ambiguous:
-                reasons.append("agent_office_ambiguous")
-            elif not office:
-                reasons.append("agent_office_missing")
-            else:
-                office_pairs = _label_values(lines, _OFFICE_LABELS)
+            if office and not office_ambiguous:
+                office_pairs = _label_values(fact_lines, _OFFICE_LABELS)
                 record(
                     "recipient_office_name",
                     office,
@@ -1662,7 +1767,7 @@ def _normalized_live_value(field_name: str, value: object) -> str:
 
 
 def live_listing_revalidation(db: Session, signal: GrowthSignal) -> LiveListingRevalidation:
-    """Re-identify every critical field and return a durable dispatch audit payload."""
+    """Re-identify the live URL plus bound recipient email and role for dispatch."""
 
     checked_at = datetime.now(UTC)
 
@@ -1697,19 +1802,17 @@ def live_listing_revalidation(db: Session, signal: GrowthSignal) -> LiveListingR
 
     required = {
         "listing_permalink": str(signal.public_contact_url or ""),
-        "recipient_name": str(signal.company_name or ""),
         "recipient_email": str(signal.recipient_email or ""),
         "recipient_role": signal.recipient_role,
-        "location": str(signal.location or ""),
-        "plot_size_sqm": str(signal.plot_size_sqm or ""),
     }
-    if signal.recipient_role == "listing_agent":
-        required.update(
+    live_expected = dict(required)
+    if signal.company_name:
+        live_expected["recipient_name"] = str(signal.company_name)
+    if signal.recipient_role == "property_owner":
+        live_expected.update(
             {
-                "recipient_organization_name": str(
-                    signal.recipient_organization_name or ""
-                ),
-                "recipient_office_name": str(signal.recipient_office_name or ""),
+                "location": str(signal.location or ""),
+                "plot_size_sqm": str(signal.plot_size_sqm or ""),
             }
         )
     rows = list(
@@ -1720,15 +1823,12 @@ def live_listing_revalidation(db: Session, signal: GrowthSignal) -> LiveListingR
         )
     )
     by_field = {row.field_name: row for row in rows}
-    property_evidence = by_field.get("property_type")
-    if property_evidence is not None:
-        required["property_type"] = property_evidence.observed_value
-    if set(by_field) != set(required):
+    if not set(live_expected).issubset(by_field):
         return result("public_land_live_source_evidence_missing")
     snapshot_hashes = {row.snapshot_sha256 for row in rows}
     if len(snapshot_hashes) != 1 or snapshot_hashes != {signal.source_payload_hash}:
         return result("public_land_live_snapshot_binding_mismatch")
-    for field_name, expected in required.items():
+    for field_name, expected in live_expected.items():
         row = by_field[field_name]
         if (
             row.observed_value != expected
@@ -1798,12 +1898,40 @@ def live_listing_revalidation(db: Session, signal: GrowthSignal) -> LiveListingR
         source_id=signal.source_id,
     )
     if decision.signal is None:
+        positive_hard_gate = next(
+            (
+                reason
+                for reason in decision.reasons
+                if reason in LAND_AGENT_HARD_GATE_REASONS
+                or reason == "no_monitoring_hard_gate_blocked"
+                or reason.startswith("canonical_hard_gate_blocked:")
+            ),
+            None,
+        )
         return result(
-            "public_land_live_evidence_missing:" + ",".join(decision.reasons),
+            positive_hard_gate
+            or "public_land_live_evidence_missing:" + ",".join(decision.reasons),
             response_sha256=current_hash,
             records=list(decision.evidence_records),
         )
-    for field_name, expected in required.items():
+    # Optional affiliation fields are not eligibility prerequisites, but any
+    # positively identified exclusion appearing on the fresh listing remains a
+    # non-overridable NO_SEND gate. Re-run the complete canonical screening on
+    # the newly fetched signal before comparing only the rendered fields.
+    from .canonical_templates import CanonicalFirstContactRegistry
+    from .service import _incoming_hard_gate_reason
+
+    fresh_hard_gate = _incoming_hard_gate_reason(
+        decision.signal,
+        CanonicalFirstContactRegistry.load(),
+    )
+    if fresh_hard_gate:
+        return result(
+            fresh_hard_gate,
+            response_sha256=current_hash,
+            records=list(decision.evidence_records),
+        )
+    for field_name, expected in live_expected.items():
         if _normalized_live_value(
             field_name, decision.evidence_fields.get(field_name)
         ) != _normalized_live_value(field_name, expected):

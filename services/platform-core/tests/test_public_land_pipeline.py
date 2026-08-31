@@ -11,6 +11,10 @@ from sqlalchemy import func, select
 
 from app.growth_ops import catalog, public_land, service
 from app.growth_ops import registry as growth_registry
+from app.growth_ops.canonical_policy import (
+    LAND_AGENT_HARD_GATE_GDN,
+    LAND_AGENT_HARD_GATE_OC_II_XII,
+)
 from app.growth_ops.email import EmailDeliveryError, EmailReceipt
 from app.growth_ops.models import (
     GrowthLandCanarySlot,
@@ -29,7 +33,7 @@ from app.land_acquisition.service import (
     managed_public_land_route_set_sha256,
     public_land_route_readiness,
 )
-from app.models import MailSendingDomain
+from app.models import AuditLog, MailSendingDomain
 
 
 class _Registry:
@@ -244,6 +248,30 @@ def _page(url: str, html: str) -> dict[str, str]:
     }
 
 
+def _add_land_cursor(
+    db,
+    *,
+    route_key: str,
+    listing_url: str,
+    status: str,
+    examined_at: datetime | None,
+    last_result: str | None = None,
+) -> GrowthPublicLandListingCursor:
+    row = GrowthPublicLandListingCursor(
+        route_key=route_key,
+        listing_url=listing_url,
+        listing_url_sha256=hashlib.sha256(listing_url.encode()).hexdigest(),
+        status=status,
+        last_result=last_result,
+        attempt_count=1 if examined_at else 0,
+        first_seen_at=datetime(2026, 8, 31, 3, 0, tzinfo=UTC),
+        examined_at=examined_at,
+        updated_at=datetime(2026, 8, 31, 4, 0, tzinfo=UTC),
+    )
+    db.add(row)
+    return row
+
+
 def _set_canary_pending(db) -> None:
     state = db.get(GrowthLandCanaryState, 1)
     assert state is not None
@@ -259,7 +287,12 @@ def _set_canary_pending(db) -> None:
     db.commit()
 
 
-def _dh_html(*, duplicate_payload: bool = False, email: str = "agent@example.test") -> str:
+def _dh_html(
+    *,
+    duplicate_payload: bool = False,
+    email: str = "agent@example.test",
+    name: str = "Minta Anna",
+) -> str:
     payload = {
         "status": "success",
         "result": {
@@ -271,7 +304,7 @@ def _dh_html(*, duplicate_payload: bool = False, email: str = "agent@example.tes
             "area": "900.0",
             "description": "Szintetikus építési telek leírás.",
             "agent": {
-                "name": "Minta Anna",
+                "name": name,
                 "email": email,
                 "career": "Értékesítő",
                 "office": "Duna House Minta Iroda",
@@ -294,7 +327,7 @@ def _dh_html(*, duplicate_payload: bool = False, email: str = "agent@example.tes
       <h1>Építési telek</h1>
       <p>Duna House</p><p>AB123456</p><p>Érd</p><p>900 m²</p>
       <section>
-        <div itemprop="name">Minta Anna</div>
+        <div itemprop="name">{name}</div>
         <div itemprop="description">Értékesítő</div>
         <meta itemprop="email" content="{email}">
         <div>Duna House Minta Iroda</div>
@@ -303,7 +336,12 @@ def _dh_html(*, duplicate_payload: bool = False, email: str = "agent@example.tes
     """
 
 
-def _ingatlannet_html(*, owner_email: str = "owner@example.test") -> str:
+def _ingatlannet_html(
+    *,
+    owner_email: str = "owner@example.test",
+    owner_name: str = "Teszt Elek",
+    owner_type: str = "Ingatlanreferens",
+) -> str:
     url = "https://www.ingatlannet.hu/elado-telek-erd/123456"
     payload = {
         "isFallback": False,
@@ -326,9 +364,9 @@ def _ingatlannet_html(*, owner_email: str = "owner@example.test") -> str:
                     },
                     "ownerData": {
                         "id": 77,
-                        "name": "Teszt Elek",
+                        "name": owner_name,
                         "email": owner_email,
-                        "type": "Ingatlanreferens",
+                        "type": owner_type,
                     },
                     "officeData": {"name": "Minta Ingatlaniroda"},
                 },
@@ -340,7 +378,7 @@ def _ingatlannet_html(*, owner_email: str = "owner@example.test") -> str:
     <html><body>
       <script id="__NEXT_DATA__" type="application/json">{next_data}</script>
       <h1>Eladó építési telek</h1>
-      <p>Teszt Elek</p><p>Ingatlanreferens</p>
+      <p>{owner_name}</p><p>{owner_type}</p>
       <p>Minta Ingatlaniroda</p><p>Érd</p><p>850 m²</p>
     </body></html>
     """
@@ -379,6 +417,54 @@ def test_exact_owner_listing_queues_once_and_persists_field_evidence(db, land_ru
         hashlib.sha256(row.source_snippet.encode()).hexdigest() == row.snippet_sha256
         for row in evidence
     )
+
+
+def test_renderable_agent_queues_without_property_location_size_or_affiliation(
+    db, land_runtime
+):
+    html = """
+    <html><body><section><dl>
+      <dt>Értékesítő</dt><dd>Nagy Anna</dd>
+      <dt>E-mail</dt><dd><a href="mailto:nagy.anna@example.test">E-mail</a></dd>
+    </dl></section></body></html>
+    """
+    result = public_land.process_public_land_listings(
+        db,
+        route=_route(),
+        attempt=_attempt(),
+        listing_pages=[_page("https://ingatlan.com/35500001-agent-minimal", html)],
+    )
+
+    assert result["qualified"] == 1
+    assert result["queued"] == 1
+    signal = db.scalar(select(GrowthSignal))
+    assert signal is not None
+    assert signal.recipient_role == "listing_agent"
+    assert signal.location is None
+    assert signal.plot_size_sqm is None
+    assert signal.recipient_organization_name is None
+    assert signal.recipient_office_name is None
+
+
+def test_renderable_owner_queues_without_explicit_property_type(db, land_runtime):
+    html = _owner_html().replace(
+        "<h1>Eladó építési telek</h1>",
+        "<h1>Eladó ingatlan</h1><p>Ingatlan típusa: nem egységes</p>",
+    )
+    result = public_land.process_public_land_listings(
+        db,
+        route=_route(),
+        attempt=_attempt(),
+        listing_pages=[_page("https://ingatlan.com/35500001-owner-minimal", html)],
+    )
+
+    assert result["qualified"] == 1
+    assert result["queued"] == 1
+    signal = db.scalar(select(GrowthSignal))
+    assert signal is not None
+    assert signal.recipient_role == "property_owner"
+    assert signal.location == "Sülysáp"
+    assert signal.plot_size_sqm == 605
 
 
 def test_land_initial_messages_have_isolated_unsubscribe_tokens(db, land_runtime):
@@ -598,6 +684,88 @@ def test_ingatlannet_next_data_adapter_binds_owner_and_rendered_listing():
     assert "ingatlannet_owner_binding_mismatch" in rejected.reasons
 
 
+@pytest.mark.parametrize("portal", ["dh", "ingatlannet"])
+def test_structured_role_label_is_not_persisted_as_recipient_name(
+    db, land_runtime, portal
+):
+    if portal == "dh":
+        url = "https://www.dh.hu/ingatlan/AB123456/synthetic-building-plot"
+        html = _dh_html(name="Értékesítő")
+        route = SourceCoverageRoute(
+            route_key="LAND-PUBLIC-HTML:dh",
+            route_id="LAND-PUBLIC-DH",
+            catalog_sha256="a" * 64,
+            motor="construction",
+            route_url="https://dh.hu/elado-ingatlan/telek",
+            source_row_sha256="b" * 64,
+            source_record_json="{}",
+        )
+    else:
+        url = "https://www.ingatlannet.hu/elado-telek-erd/123456"
+        html = _ingatlannet_html(owner_name="Ingatlanreferens")
+        route = SourceCoverageRoute(
+            route_key="LAND-PUBLIC-HTML:ingatlannet",
+            route_id="LAND-PUBLIC-INGATLANNET",
+            catalog_sha256="a" * 64,
+            motor="construction",
+            route_url="https://ingatlannet.hu/elado-telek",
+            source_row_sha256="b" * 64,
+            source_record_json="{}",
+        )
+
+    result = public_land.process_public_land_listings(
+        db,
+        route=route,
+        attempt=_attempt(),
+        listing_pages=[_page(url, html)],
+    )
+
+    assert result["qualified"] == 1
+    assert result["queued"] == 0
+    signal = db.scalar(select(GrowthSignal))
+    assert signal is not None
+    assert signal.recipient_email is not None
+    assert signal.company_name is None
+    assert signal.status == "template-variable-missing"
+    assert json.loads(signal.rejection_reasons_json) == [
+        "template-variable-missing:recipient_name"
+    ]
+    assert db.scalar(select(func.count()).select_from(OutreachMessage)) == 0
+
+
+def test_ingatlannet_structured_private_owner_role_queues_owner_template(
+    db, land_runtime
+):
+    url = "https://www.ingatlannet.hu/elado-telek-erd/123456"
+    html = _ingatlannet_html(owner_type="Magánszemély")
+    route = SourceCoverageRoute(
+        route_key="LAND-PUBLIC-HTML:ingatlannet",
+        route_id="LAND-PUBLIC-INGATLANNET",
+        catalog_sha256="a" * 64,
+        motor="construction",
+        route_url="https://ingatlannet.hu/elado-telek",
+        source_row_sha256="b" * 64,
+        source_record_json="{}",
+    )
+
+    result = public_land.process_public_land_listings(
+        db,
+        route=route,
+        attempt=_attempt(),
+        listing_pages=[_page(url, html)],
+    )
+
+    assert result["qualified"] == 1
+    assert result["queued"] == 1
+    signal = db.scalar(select(GrowthSignal))
+    outreach = db.scalar(select(OutreachMessage))
+    assert signal is not None
+    assert signal.recipient_role == "property_owner"
+    assert outreach is not None
+    metadata = json.loads(outreach.receipt_json)["canonical_template"]
+    assert metadata["template_id"] == "LAND_OWNER_FIRST_CONTACT_HU"
+
+
 @pytest.mark.parametrize(
     ("html", "reason"),
     [
@@ -606,8 +774,6 @@ def test_ingatlannet_next_data_adapter_binds_owner_and_rendered_listing():
             "recipient_email_missing",
         ),
         (_owner_html(role="Kapcsolattartó"), "recipient_role_missing"),
-        (_owner_html(extra="<p>Tulajdonos: Másik Ember</p>"), "recipient_name_ambiguous"),
-        (_owner_html(extra="<p>Hirdető típusa: Ingatlanközvetítő</p>"), "recipient_role_ambiguous"),
     ],
 )
 def test_missing_or_ambiguous_listing_fields_fail_closed(html, reason):
@@ -622,6 +788,246 @@ def test_missing_or_ambiguous_listing_fields_fail_closed(html, reason):
 
     assert decision.signal is None
     assert reason in decision.reasons
+
+
+def test_ambiguous_name_persists_role_email_signal_but_template_stays_unqueued(
+    db, land_runtime
+):
+    html = _owner_html().replace(
+        "<dt>Település</dt>",
+        "<dt>Tulajdonos</dt><dd>Másik Ember</dd><dt>Település</dt>",
+    )
+    result = public_land.process_public_land_listings(
+        db,
+        route=_route(),
+        attempt=_attempt(),
+        listing_pages=[_page("https://ingatlan.com/35500002-name", html)],
+    )
+
+    assert result["qualified"] == 1
+    assert result["queued"] == 0
+    signal = db.scalar(select(GrowthSignal))
+    assert signal is not None
+    assert signal.recipient_role == "property_owner"
+    assert signal.recipient_email == "kovacs.peter@example.test"
+    assert signal.status == "template-variable-missing"
+    assert json.loads(signal.rejection_reasons_json) == [
+        "template-variable-missing:recipient_name"
+    ]
+
+
+def test_contact_block_role_email_wins_over_unrelated_conflicting_page_role():
+    html = _owner_html(
+        extra=(
+            "<footer><p>Hirdető típusa: Ingatlanközvetítő</p>"
+            "<p>Értékesítő: Portál Support</p></footer>"
+        )
+    )
+
+    decision = public_land.listing_signal_decision(
+        route=_route(),
+        attempt=_attempt(),
+        listing_url="https://ingatlan.com/35500002-role-binding",
+        html=html,
+        response_sha256=hashlib.sha256(html.encode()).hexdigest(),
+        source_id="construction_public_land_html",
+    )
+
+    assert decision.reasons == ()
+    assert decision.signal is not None
+    assert decision.signal.recipient_role == "property_owner"
+    assert decision.signal.recipient_email == "kovacs.peter@example.test"
+    assert decision.signal.recipient_name == "Kovács Péter"
+
+
+def test_name_from_separate_block_does_not_bind_to_role_email_recipient(
+    db, land_runtime
+):
+    html = """
+    <html><body>
+      <h1>Eladó építési telek</h1>
+      <section><dl>
+        <dt>Kapcsolattartó neve</dt><dd>Másik Ember</dd>
+      </dl></section>
+      <section><dl>
+        <dt>Hirdető szerepe</dt><dd>Ingatlanos</dd>
+        <dt>E-mail</dt><dd><a href="mailto:agent@example.test">E-mail</a></dd>
+      </dl></section>
+    </body></html>
+    """
+
+    result = public_land.process_public_land_listings(
+        db,
+        route=_route(),
+        attempt=_attempt(),
+        listing_pages=[_page("https://ingatlan.com/35500002-two-block", html)],
+    )
+
+    assert result["qualified"] == 1
+    assert result["queued"] == 0
+    signal = db.scalar(select(GrowthSignal))
+    assert signal is not None
+    assert signal.recipient_email == "agent@example.test"
+    assert signal.recipient_role == "listing_agent"
+    assert signal.company_name is None
+    assert signal.status == "template-variable-missing"
+    assert db.scalar(select(func.count()).select_from(OutreachMessage)) == 0
+
+
+def test_unrelated_incomplete_contact_block_does_not_veto_complete_owner_binding():
+    html = _owner_html(
+        extra=(
+            "<section><dl><dt>Kapcsolattartó szerepe</dt><dd>Ismeretlen</dd>"
+            "<dt>E-mail</dt><dd><a href=\"mailto:not-an-email\">E-mail</a>"
+            "</dd></dl></section>"
+        )
+    )
+
+    decision = public_land.listing_signal_decision(
+        route=_route(),
+        attempt=_attempt(),
+        listing_url="https://ingatlan.com/35500002-incomplete-block",
+        html=html,
+        response_sha256=hashlib.sha256(html.encode()).hexdigest(),
+        source_id="construction_public_land_html",
+    )
+
+    assert decision.reasons == ()
+    assert decision.signal is not None
+    assert decision.signal.recipient_role == "property_owner"
+    assert decision.signal.recipient_email == "kovacs.peter@example.test"
+
+
+@pytest.mark.parametrize(
+    ("first_email", "second_email"),
+    [
+        ("agent.one@example.test", "agent-one@example.test"),
+        ("agent+one@example.test", "agent_one@example.test"),
+    ],
+)
+def test_distinct_email_punctuation_is_not_collapsed_during_contact_binding(
+    first_email, second_email
+):
+    html = f"""
+    <html><body>
+      <section><dl>
+        <dt>Értékesítő</dt><dd>Nagy Anna</dd>
+        <dt>E-mail</dt><dd><a href="mailto:{first_email}">E-mail</a></dd>
+      </dl></section>
+      <section><dl>
+        <dt>Értékesítő</dt><dd>Nagy Anna</dd>
+        <dt>E-mail</dt><dd><a href="mailto:{second_email}">E-mail</a></dd>
+      </dl></section>
+    </body></html>
+    """
+
+    decision = public_land.listing_signal_decision(
+        route=_route(),
+        attempt=_attempt(),
+        listing_url="https://ingatlan.com/35500002-email-punctuation",
+        html=html,
+        response_sha256=hashlib.sha256(html.encode()).hexdigest(),
+        source_id="construction_public_land_html",
+    )
+
+    assert decision.signal is None
+    assert "recipient_email_ambiguous" in decision.reasons
+
+
+@pytest.mark.parametrize(
+    ("first_extra", "second_extra", "expected_reason"),
+    [
+        ("", "<dt>Hálózat</dt><dd>GDN Ingatlanhálózat</dd>", LAND_AGENT_HARD_GATE_GDN),
+        (
+            "<dt>Hálózat</dt><dd>Otthon Centrum</dd>",
+            "<dt>Iroda</dt><dd>Bem rakpart</dd>",
+            LAND_AGENT_HARD_GATE_OC_II_XII,
+        ),
+        ("", "<dt>Hálózat</dt><dd>Homes4you</dd>", "no_monitoring_hard_gate_blocked"),
+    ],
+)
+def test_duplicate_responsive_contact_blocks_preserve_positive_exclusions(
+    first_extra, second_extra, expected_reason
+):
+    def block(extra: str) -> str:
+        return f"""
+        <section><dl>
+          <dt>Értékesítő</dt><dd>Nagy Anna</dd>
+          <dt>E-mail</dt><dd><a href="mailto:nagy.anna@example.test">E-mail</a></dd>
+          {extra}
+        </dl></section>
+        """
+
+    html = f"<html><body>{block(first_extra)}{block(second_extra)}</body></html>"
+    decision = public_land.listing_signal_decision(
+        route=_route(),
+        attempt=_attempt(),
+        listing_url="https://ingatlan.com/35500002-responsive",
+        html=html,
+        response_sha256=hashlib.sha256(html.encode()).hexdigest(),
+        source_id="construction_public_land_html",
+    )
+
+    assert decision.signal is None
+    assert expected_reason in decision.reasons
+
+
+def test_forbidden_footer_facts_do_not_render_owner_template_or_reach_provider(
+    db, land_runtime, monkeypatch
+):
+    html = """
+    <html><body>
+      <h1>Eladó építési telek</h1>
+      <section><dl>
+        <dt>Tulajdonos</dt><dd>Kovács Péter</dd>
+        <dt>E-mail</dt>
+        <dd><a href="mailto:kovacs.peter@example.test">E-mail</a></dd>
+      </dl></section>
+      <footer><dl>
+        <dt>Település</dt><dd>Budapest</dd>
+        <dt>Telek mérete</dt><dd>999 m²</dd>
+      </dl></footer>
+    </body></html>
+    """
+    page = _page("https://ingatlan.com/35500002-footer-facts", html)
+    provider_calls = 0
+
+    def provider_must_not_run(*_args, **_kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError("provider must not run for unrenderable owner")
+
+    monkeypatch.setattr(service.SMTPEmailAdapter, "send", provider_must_not_run)
+    result = public_land.process_public_land_listings(
+        db,
+        route=_route(),
+        attempt=_attempt(),
+        listing_pages=[page],
+    )
+
+    assert result["qualified"] == 1
+    assert result["queued"] == 0
+    signal = db.scalar(select(GrowthSignal))
+    assert signal is not None
+    assert signal.location is None
+    assert signal.plot_size_sqm is None
+    assert signal.status == "template-variable-missing"
+    assert db.scalar(select(func.count()).select_from(OutreachMessage)) == 0
+    assert {
+        row.field_name for row in db.scalars(select(GrowthSignalSourceEvidence))
+    }.isdisjoint({"location", "plot_size_sqm"})
+    monkeypatch.setattr(
+        "app.growth_ops.catalog.fetch_public_land_listing_url",
+        lambda _url: {
+            "status": "succeeded",
+            "url": page["url"],
+            "html": html,
+            "response_sha256": page["response_sha256"],
+        },
+    )
+    live = public_land.live_listing_revalidation(db, signal)
+    assert live.rejection_reason == "public_land_live_source_evidence_missing"
+    assert provider_calls == 0
 
 
 def test_contact_binding_accepts_visible_labeled_email_but_rejects_footer_mailto():
@@ -772,7 +1178,7 @@ def test_broad_ancestor_never_cross_binds_recipient_contact_evidence(db, land_ru
     assert result["decisions"][0]["reasons"]
 
 
-def test_hidden_contact_generic_address_and_nav_type_never_supply_evidence():
+def test_hidden_contact_stays_blocked_but_extra_listing_fields_are_optional():
     hidden_email = _owner_html().replace(
         '<a href="mailto:kovacs.peter@example.test">E-mail</a>',
         (
@@ -819,8 +1225,9 @@ def test_hidden_contact_generic_address_and_nav_type_never_supply_evidence():
         response_sha256=hashlib.sha256(generic_location.encode()).hexdigest(),
         source_id="construction_public_land_html",
     )
-    assert location_decision.signal is None
-    assert "listing_location_missing" in location_decision.reasons
+    assert location_decision.signal is not None
+    assert location_decision.signal.location is None
+    assert "location" not in location_decision.evidence_fields
 
     navigation_only = _owner_html().replace(
         "<h1>Eladó építési telek</h1>",
@@ -834,8 +1241,8 @@ def test_hidden_contact_generic_address_and_nav_type_never_supply_evidence():
         response_sha256=hashlib.sha256(navigation_only.encode()).hexdigest(),
         source_id="construction_public_land_html",
     )
-    assert type_decision.signal is None
-    assert "building_plot_type_not_explicit" in type_decision.reasons
+    assert type_decision.signal is not None
+    assert "property_type" not in type_decision.evidence_fields
 
 
 def test_http_200_tombstone_is_ineligible():
@@ -861,9 +1268,8 @@ def test_blocked_agent_is_not_stored_or_queued(db, land_runtime):
         listing_pages=[_page("https://ingatlan.com/35500003", html)],
     )
 
-    assert result["qualified"] == 1 and result["queued"] == 0
-    assert result["decisions"][0]["status"] == "blocked"
-    assert result["decisions"][0]["reasons"] == ["land_agent_gdn_network_hard_gate"]
+    assert result["qualified"] == 0 and result["queued"] == 0
+    assert result["decisions"][0]["reasons"] == [LAND_AGENT_HARD_GATE_GDN]
     assert not db.scalars(select(GrowthSignal)).all()
     assert not db.scalars(select(OutreachMessage)).all()
 
@@ -959,15 +1365,19 @@ def test_dynamic_html_hash_change_passes_exact_live_fields_and_is_audited(
     assert revalidation.rejection_reason is None
     assert revalidation.audit_evidence["response_sha256"] == dynamic_hash
     assert revalidation.audit_evidence["status"] == "passed"
-    assert {item["field_name"] for item in revalidation.audit_evidence["critical_fields"]} == {
+    audited_fields = {
+        item["field_name"]
+        for item in revalidation.audit_evidence["critical_fields"]
+    }
+    assert {
         "listing_permalink",
         "recipient_name",
         "recipient_email",
         "recipient_role",
-        "property_type",
         "location",
         "plot_size_sqm",
-    }
+    }.issubset(audited_fields)
+    assert "property_type" in audited_fields
 
 
 def test_successful_dispatch_persists_attested_live_receipt(db, land_runtime, monkeypatch):
@@ -1043,6 +1453,65 @@ def test_live_refetch_change_blocks_dispatch_before_smtp(db, land_runtime, monke
     assert result.status == "blocked"
     assert result.last_error == "public_land_live_evidence_changed:plot_size_sqm"
     assert signal.status == "blocked"
+
+
+@pytest.mark.parametrize(
+    ("fresh_extra", "expected_reason"),
+    [
+        ("<dt>Hálózat</dt><dd>GDN Ingatlanhálózat</dd>", LAND_AGENT_HARD_GATE_GDN),
+        (
+            "<dt>Hálózat</dt><dd>Otthon Centrum</dd>"
+            "<dt>Iroda</dt><dd>Bem rakpart</dd>",
+            LAND_AGENT_HARD_GATE_OC_II_XII,
+        ),
+        ("<dt>Hálózat</dt><dd>Homes4you</dd>", "no_monitoring_hard_gate_blocked"),
+    ],
+)
+def test_live_positive_affiliation_promotion_blocks_before_provider(
+    db, land_runtime, monkeypatch, fresh_extra, expected_reason
+):
+    listing_url = "https://ingatlan.com/35500004-live-promotion"
+    html = """
+    <html><body><section><dl>
+      <dt>Értékesítő</dt><dd>Nagy Anna</dd>
+      <dt>E-mail</dt><dd><a href="mailto:nagy.anna@example.test">E-mail</a></dd>
+    </dl></section></body></html>
+    """
+    fresh_html = html.replace("</dl>", f"{fresh_extra}</dl>")
+    page = _page(listing_url, html)
+    queued = public_land.process_public_land_listings(
+        db,
+        route=_route(),
+        attempt=_attempt(),
+        listing_pages=[page],
+    )
+    assert queued["queued"] == 1
+    monkeypatch.setattr(
+        "app.growth_ops.catalog.fetch_public_land_listing_url",
+        lambda _url: {
+            "status": "succeeded",
+            "url": listing_url,
+            "html": fresh_html,
+            "response_sha256": hashlib.sha256(fresh_html.encode()).hexdigest(),
+        },
+    )
+    provider_calls = 0
+
+    def provider_must_not_run(*_args, **_kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError("provider must not run after live positive exclusion")
+
+    monkeypatch.setattr(service.SMTPEmailAdapter, "send", provider_must_not_run)
+
+    outreach = service.dispatch_outreach(db, _claim_for_dispatch(db))
+
+    assert outreach.status == "blocked"
+    assert outreach.last_error == expected_reason
+    signal = db.scalar(select(GrowthSignal))
+    assert signal is not None
+    assert signal.status == "blocked"
+    assert provider_calls == 0
 
 
 def test_live_refetch_unavailable_blocks_dispatch_before_smtp(db, land_runtime, monkeypatch):
@@ -2211,7 +2680,11 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
         managed_land=False,
         pending_listing_urls=None,
         examined_listing_urls=None,
+        replay_only_listing_urls=None,
+        listing_fetch_limit=None,
     ):
+        assert replay_only_listing_urls is None
+        assert listing_fetch_limit in {None, 3}
         nonlocal target_calls
         pending = list(pending_listing_urls or [])
         examined = set(examined_listing_urls or set())
@@ -2297,7 +2770,7 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
     )
     third_run = catalog.scan_due_routes(
         db,
-        now=datetime(2026, 9, 1, 6, 5, tzinfo=UTC),
+        now=datetime(2026, 9, 2, 6, 5, tzinfo=UTC),
     )
 
     cursors = list(
@@ -2319,3 +2792,588 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
     assert by_url[fourth_url].status == "examined"
     assert all(by_url[url].status == "retryable" for url in first_three)
     assert target_calls == 3
+
+
+def test_policy_replay_preview_apply_is_bounded_idempotent_and_audited(
+    db, land_runtime, monkeypatch, tmp_path
+):
+    route_key = "LAND-PUBLIC-HTML:ingatlan_com"
+    examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
+    urls = ["https://ingatlan.com/35510001", "https://ingatlan.com/35510002"]
+    for listing_url in urls:
+        _add_land_cursor(
+            db,
+            route_key=route_key,
+            listing_url=listing_url,
+            status="examined",
+            examined_at=examined_at,
+            last_result="recipient_role_missing",
+        )
+    db.commit()
+    marker = tmp_path / "policy-replay-kill-switch"
+    marker.write_text("KILLED\n", encoding="utf-8")
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(runtime_kill_switch_file=str(marker)),
+    )
+    monkeypatch.setattr(catalog, "_budapest_today", lambda: date(2026, 8, 31))
+    arguments = {
+        "policy_version": catalog.LAND_RECIPIENT_POLICY_VERSION,
+        "scope_local_date": date(2026, 8, 31),
+        "max_rows": 10,
+        "reason": "Re-evaluate exact examined cursors under approved role-only policy.",
+        "actor": "test-growth-admin",
+    }
+
+    for invalid_scope in (date(2026, 8, 30), date(2026, 9, 1)):
+        with pytest.raises(
+            GrowthRegistryError,
+            match="public_land_policy_replay_scope_not_current",
+        ):
+            catalog.replay_public_land_policy_cursors(
+                db,
+                **{**arguments, "scope_local_date": invalid_scope},
+                apply=False,
+                expected_plan_sha256=None,
+            )
+
+    preview = catalog.replay_public_land_policy_cursors(
+        db,
+        **arguments,
+        apply=False,
+        expected_plan_sha256=None,
+    )
+
+    assert preview["status"] == "preview"
+    assert preview["selected_count"] == preview["total_matching"] == 2
+    assert preview["truncated"] is False
+    assert len(preview["plan_sha256"]) == 64
+    assert all(
+        row.status == "examined"
+        for row in db.scalars(select(GrowthPublicLandListingCursor))
+    )
+    assert db.scalar(
+        select(func.count())
+        .select_from(AuditLog)
+        .where(AuditLog.action == "growth_public_land_policy_replay_applied")
+    ) == 0
+
+    applied = catalog.replay_public_land_policy_cursors(
+        db,
+        **arguments,
+        apply=True,
+        expected_plan_sha256=preview["plan_sha256"],
+    )
+
+    replay_marker = f"policy_replay:{catalog.LAND_RECIPIENT_POLICY_VERSION}"
+    replay_rows = list(db.scalars(select(GrowthPublicLandListingCursor)))
+    assert applied["status"] == "applied"
+    assert applied["plan_sha256"] == preview["plan_sha256"]
+    assert all(row.status == "pending" for row in replay_rows)
+    assert all(row.last_result == replay_marker for row in replay_rows)
+    audit_rows = list(
+        db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "growth_public_land_policy_replay_applied"
+            )
+        )
+    )
+    assert len(audit_rows) == 1
+    audit_payload = json.loads(audit_rows[0].after_json)
+    assert audit_payload["plan_sha256"] == preview["plan_sha256"]
+    assert audit_rows[0].entity_id == catalog.LAND_RECIPIENT_POLICY_VERSION
+    assert {item["listing_url_sha256"] for item in audit_payload["items"]} == {
+        hashlib.sha256(url.encode()).hexdigest() for url in urls
+    }
+    assert all(item["original_examined_at"] for item in audit_payload["items"])
+    assert all(url not in audit_rows[0].after_json for url in urls)
+
+    next_date_cursor = _add_land_cursor(
+        db,
+        route_key=route_key,
+        listing_url="https://ingatlan.com/35510003",
+        status="examined",
+        examined_at=datetime(2026, 9, 1, 4, 0, tzinfo=UTC),
+        last_result="recipient_role_missing",
+    )
+    db.commit()
+
+    idempotent = catalog.replay_public_land_policy_cursors(
+        db,
+        **{**arguments, "scope_local_date": date(2026, 9, 1)},
+        apply=True,
+        expected_plan_sha256=preview["plan_sha256"],
+    )
+
+    assert idempotent["status"] == "already_applied"
+    assert idempotent["idempotent"] is True
+    assert idempotent["audit_log_id"] == audit_rows[0].id
+    assert next_date_cursor.status == "examined"
+    assert next_date_cursor.last_result == "recipient_role_missing"
+    assert db.scalar(
+        select(func.count())
+        .select_from(AuditLog)
+        .where(AuditLog.action == "growth_public_land_policy_replay_applied")
+    ) == 1
+
+
+def test_only_marked_policy_replay_rows_cross_same_day_route_budget(
+    db, land_runtime, monkeypatch
+):
+    route_key = "LAND-PUBLIC-HTML:ingatlan_com"
+    examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
+    for index in range(30):
+        _add_land_cursor(
+            db,
+            route_key=route_key,
+            listing_url=f"https://ingatlan.com/35511{index:03d}",
+            status="examined",
+            examined_at=examined_at,
+            last_result="no_eligible_public_recipient",
+        )
+    replay_urls = [
+        "https://ingatlan.com/35512001",
+        "https://ingatlan.com/35512002",
+    ]
+    replay_marker = f"policy_replay:{catalog.LAND_RECIPIENT_POLICY_VERSION}"
+    for listing_url in replay_urls:
+        _add_land_cursor(
+            db,
+            route_key=route_key,
+            listing_url=listing_url,
+            status="pending",
+            examined_at=examined_at,
+            last_result=replay_marker,
+        )
+    normal_pending_url = "https://ingatlan.com/35512003"
+    _add_land_cursor(
+        db,
+        route_key=route_key,
+        listing_url=normal_pending_url,
+        status="pending",
+        examined_at=None,
+    )
+    db.commit()
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            timezone="Europe/Budapest",
+            canonical_daily_at="05:30",
+            canonical_route_batch_size=0,
+            canonical_processing_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "active_revision",
+        lambda _db: SimpleNamespace(catalog_sha256="c" * 64),
+    )
+    target_pending: list[str] = []
+
+    def fake_fetch(
+        route,
+        *,
+        managed_land=False,
+        pending_listing_urls=None,
+        examined_listing_urls=None,
+        replay_only_listing_urls=None,
+        listing_fetch_limit=None,
+    ):
+        pending = list(pending_listing_urls or [])
+        if route.route_key == route_key:
+            target_pending.extend(pending)
+            assert managed_land is True
+            assert pending == replay_urls
+            assert replay_only_listing_urls == set(replay_urls)
+            assert listing_fetch_limit == 3
+            return {
+                "status": "succeeded",
+                "http_status": 200,
+                "response_sha256": "a" * 64,
+                "evidence": {
+                    "land_listing_fetches": [
+                        {"url": url, "status": "succeeded", "error_type": None}
+                        for url in replay_urls
+                    ]
+                },
+                "analysis_text": "",
+                "analysis_links": [],
+                "land_listing_pages": [],
+                "land_listing_candidates": replay_urls,
+                "land_listing_exhausted": True,
+            }
+        assert replay_only_listing_urls is None
+        return {
+            "status": "succeeded",
+            "http_status": 200,
+            "response_sha256": "b" * 64,
+            "evidence": {"land_listing_fetches": []},
+            "analysis_text": "",
+            "analysis_links": [],
+            "land_listing_pages": [],
+            "land_listing_candidates": [],
+            "land_listing_exhausted": True,
+        }
+
+    monkeypatch.setattr(catalog, "_fetch", fake_fetch)
+    result = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 31, 6, 0, tzinfo=UTC),
+    )
+
+    rows = {
+        row.listing_url: row
+        for row in db.scalars(
+            select(GrowthPublicLandListingCursor).where(
+                GrowthPublicLandListingCursor.route_key == route_key
+            )
+        )
+    }
+    assert result["land_public_lane"]["examined"] == 2
+    assert target_pending == replay_urls
+    assert all(rows[url].status == "examined" for url in replay_urls)
+    assert all(rows[url].last_result == "succeeded" for url in replay_urls)
+    assert rows[normal_pending_url].status == "pending"
+    assert rows[normal_pending_url].last_result is None
+
+
+def test_over_budget_policy_replay_does_not_expand_category_analysis_links(
+    db, land_runtime, monkeypatch
+):
+    route_key = "LAND-PUBLIC-HTML:ingatlan_com"
+    examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
+    for index in range(30):
+        _add_land_cursor(
+            db,
+            route_key=route_key,
+            listing_url=f"https://ingatlan.com/35513{index:03d}",
+            status="examined",
+            examined_at=examined_at,
+            last_result="no_eligible_public_recipient",
+        )
+    replay_url = "https://ingatlan.com/35514001"
+    _add_land_cursor(
+        db,
+        route_key=route_key,
+        listing_url=replay_url,
+        status="pending",
+        examined_at=examined_at,
+        last_result=f"policy_replay:{catalog.LAND_RECIPIENT_POLICY_VERSION}",
+    )
+    db.commit()
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            timezone="Europe/Budapest",
+            canonical_daily_at="05:30",
+            canonical_route_batch_size=0,
+            canonical_processing_enabled=True,
+            canonical_route_timeout_seconds=5,
+            canonical_route_max_response_bytes=100_000,
+            canonical_analysis_text_chars=6_000,
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "active_revision",
+        lambda _db: SimpleNamespace(catalog_sha256="c" * 64),
+    )
+    target_route = db.scalar(
+        select(SourceCoverageRoute).where(SourceCoverageRoute.route_key == route_key)
+    )
+    assert target_route is not None
+    new_urls = [
+        "https://ingatlan.com/35514002",
+        "https://ingatlan.com/35514003",
+    ]
+    root_html = (
+        "<html><body>"
+        + "".join(f'<a href="{url}">új hirdetés</a>' for url in new_urls)
+        + "</body></html>"
+    )
+    listing_fetches: list[str] = []
+
+    monkeypatch.setattr(catalog, "_fresh_pinned_robots_error", lambda *_a, **_k: None)
+
+    def pinned_get(url, **_kwargs):
+        html = root_html if url == target_route.route_url else "<html><body></body></html>"
+        return {
+            "status_code": 200,
+            "headers": {"content-type": "text/html"},
+            "body": html.encode(),
+            "source_ip": "93.184.216.34",
+        }
+
+    def listing_get(url, **_kwargs):
+        listing_fetches.append(url)
+        html = _agent_html()
+        return {
+            "status": "succeeded",
+            "http_status": 200,
+            "url": url,
+            "html": html,
+            "response_sha256": hashlib.sha256(html.encode()).hexdigest(),
+        }
+
+    monkeypatch.setattr(catalog, "_pinned_https_get", pinned_get)
+    monkeypatch.setattr(catalog, "_fetch_public_land_listing", listing_get)
+
+    result = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 31, 6, 0, tzinfo=UTC),
+    )
+
+    assert result["land_public_lane"]["examined"] == 1
+    assert listing_fetches == [replay_url]
+    assert db.scalar(
+        select(func.count())
+        .select_from(GrowthPublicLandListingCursor)
+        .where(
+            GrowthPublicLandListingCursor.route_key == route_key,
+            GrowthPublicLandListingCursor.listing_url.in_(new_urls),
+        )
+    ) == 0
+    replay_row = db.scalar(
+        select(GrowthPublicLandListingCursor).where(
+            GrowthPublicLandListingCursor.route_key == route_key,
+            GrowthPublicLandListingCursor.listing_url == replay_url,
+        )
+    )
+    assert replay_row is not None
+    assert replay_row.status == "examined"
+    assert replay_row.last_result == "succeeded"
+
+
+def test_replay_is_isolated_before_budget_is_full_and_normal_pending_waits(
+    db, land_runtime, monkeypatch
+):
+    route_key = "LAND-PUBLIC-HTML:ingatlan_com"
+    examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
+    for index in range(29):
+        _add_land_cursor(
+            db,
+            route_key=route_key,
+            listing_url=f"https://ingatlan.com/35515{index:03d}",
+            status="examined",
+            examined_at=examined_at,
+            last_result="no_eligible_public_recipient",
+        )
+    replay_url = "https://ingatlan.com/35516001"
+    _add_land_cursor(
+        db,
+        route_key=route_key,
+        listing_url=replay_url,
+        status="pending",
+        examined_at=datetime(2026, 8, 30, 4, 0, tzinfo=UTC),
+        last_result=f"policy_replay:{catalog.LAND_RECIPIENT_POLICY_VERSION}",
+    )
+    normal_urls = [
+        "https://ingatlan.com/35516002",
+        "https://ingatlan.com/35516003",
+    ]
+    for listing_url in normal_urls:
+        _add_land_cursor(
+            db,
+            route_key=route_key,
+            listing_url=listing_url,
+            status="pending",
+            examined_at=None,
+        )
+    db.commit()
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            timezone="Europe/Budapest",
+            canonical_daily_at="05:30",
+            canonical_route_batch_size=0,
+            canonical_processing_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "active_revision",
+        lambda _db: SimpleNamespace(catalog_sha256="c" * 64),
+    )
+    target_calls: list[list[str]] = []
+
+    def fake_fetch(
+        route,
+        *,
+        managed_land=False,
+        pending_listing_urls=None,
+        examined_listing_urls=None,
+        replay_only_listing_urls=None,
+        listing_fetch_limit=None,
+    ):
+        pending = list(pending_listing_urls or [])
+        if route.route_key == route_key:
+            target_calls.append(pending)
+            assert pending == [replay_url]
+            assert replay_only_listing_urls == {replay_url}
+            assert listing_fetch_limit == 3
+            return {
+                "status": "succeeded",
+                "http_status": 200,
+                "response_sha256": "a" * 64,
+                "evidence": {
+                    "land_listing_fetches": [
+                        {"url": replay_url, "status": "succeeded", "error_type": None}
+                    ]
+                },
+                "analysis_text": "",
+                "analysis_links": [],
+                "land_listing_pages": [],
+                "land_listing_candidates": [replay_url],
+                "land_listing_exhausted": True,
+            }
+        return {
+            "status": "succeeded",
+            "http_status": 200,
+            "response_sha256": "b" * 64,
+            "evidence": {"land_listing_fetches": []},
+            "analysis_text": "",
+            "analysis_links": [],
+            "land_listing_pages": [],
+            "land_listing_candidates": [],
+            "land_listing_exhausted": True,
+        }
+
+    monkeypatch.setattr(catalog, "_fetch", fake_fetch)
+    first = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 31, 6, 0, tzinfo=UTC),
+    )
+    second = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 31, 6, 5, tzinfo=UTC),
+    )
+
+    rows = {
+        row.listing_url: row
+        for row in db.scalars(
+            select(GrowthPublicLandListingCursor).where(
+                GrowthPublicLandListingCursor.route_key == route_key
+            )
+        )
+    }
+    assert first["land_public_lane"]["examined"] == 1
+    assert second["land_public_lane"]["examined"] == 0
+    assert target_calls == [[replay_url]]
+    assert rows[replay_url].status == "examined"
+    assert all(rows[url].status == "pending" for url in normal_urls)
+
+
+def test_ordinary_route_remaining_budget_limits_pending_and_analysis_fetches(
+    db, land_runtime, monkeypatch
+):
+    route_key = "LAND-PUBLIC-HTML:ingatlan_com"
+    examined_at = datetime(2026, 8, 31, 4, 0, tzinfo=UTC)
+    for index in range(29):
+        _add_land_cursor(
+            db,
+            route_key=route_key,
+            listing_url=f"https://ingatlan.com/35517{index:03d}",
+            status="examined",
+            examined_at=examined_at,
+            last_result="no_eligible_public_recipient",
+        )
+    pending_urls = [
+        "https://ingatlan.com/35518001",
+        "https://ingatlan.com/35518002",
+        "https://ingatlan.com/35518003",
+    ]
+    for listing_url in pending_urls:
+        _add_land_cursor(
+            db,
+            route_key=route_key,
+            listing_url=listing_url,
+            status="pending",
+            examined_at=None,
+        )
+    db.commit()
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            timezone="Europe/Budapest",
+            canonical_daily_at="05:30",
+            canonical_route_batch_size=0,
+            canonical_processing_enabled=True,
+            canonical_route_timeout_seconds=5,
+            canonical_route_max_response_bytes=100_000,
+            canonical_analysis_text_chars=6_000,
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "active_revision",
+        lambda _db: SimpleNamespace(catalog_sha256="c" * 64),
+    )
+    target_route = db.scalar(
+        select(SourceCoverageRoute).where(SourceCoverageRoute.route_key == route_key)
+    )
+    assert target_route is not None
+    new_urls = [
+        "https://ingatlan.com/35518004",
+        "https://ingatlan.com/35518005",
+    ]
+    root_html = (
+        "<html><body>"
+        + "".join(f'<a href="{url}">új hirdetés</a>' for url in new_urls)
+        + "</body></html>"
+    )
+    listing_fetches: list[str] = []
+    monkeypatch.setattr(catalog, "_fresh_pinned_robots_error", lambda *_a, **_k: None)
+
+    def pinned_get(url, **_kwargs):
+        html = root_html if url == target_route.route_url else "<html><body></body></html>"
+        return {
+            "status_code": 200,
+            "headers": {"content-type": "text/html"},
+            "body": html.encode(),
+            "source_ip": "93.184.216.34",
+        }
+
+    def listing_get(url, **_kwargs):
+        listing_fetches.append(url)
+        html = _agent_html()
+        return {
+            "status": "succeeded",
+            "http_status": 200,
+            "url": url,
+            "html": html,
+            "response_sha256": hashlib.sha256(html.encode()).hexdigest(),
+        }
+
+    monkeypatch.setattr(catalog, "_pinned_https_get", pinned_get)
+    monkeypatch.setattr(catalog, "_fetch_public_land_listing", listing_get)
+
+    result = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 31, 6, 0, tzinfo=UTC),
+    )
+
+    rows = {
+        row.listing_url: row
+        for row in db.scalars(
+            select(GrowthPublicLandListingCursor).where(
+                GrowthPublicLandListingCursor.route_key == route_key
+            )
+        )
+    }
+    assert result["land_public_lane"]["examined"] == 1
+    assert listing_fetches == [pending_urls[0]]
+    assert rows[pending_urls[0]].status == "examined"
+    assert all(rows[url].status == "pending" for url in [*pending_urls[1:], *new_urls])

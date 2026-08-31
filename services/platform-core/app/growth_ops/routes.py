@@ -17,6 +17,7 @@ from .schemas import (
     GrowthSignalIn,
     OutreachEventIn,
     OutreachReleaseIn,
+    PublicLandPolicyReplayIn,
 )
 from .service import (
     ingest_signal,
@@ -146,6 +147,26 @@ def growth_signal_ingest(data: GrowthSignalIn, db: Session = Depends(get_db)):  
     except GrowthRegistryError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/internal/growth-ops/public-land/policy-replay",
+    dependencies=[Depends(require_internal_token)],
+)
+def public_land_policy_replay(
+    data: PublicLandPolicyReplayIn,
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    from .catalog import replay_public_land_policy_cursors
+
+    try:
+        return replay_public_land_policy_cursors(
+            db,
+            **data.model_dump(),
+            actor="growth-admin",
+        )
+    except GrowthRegistryError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 

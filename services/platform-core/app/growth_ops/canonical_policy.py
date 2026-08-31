@@ -287,9 +287,9 @@ NO_MONITORING_HARD_GATE = (
 )
 
 # Owner-mandated land-agent exclusions, approved 2026-08-25. These are evaluated
-# independently from scoring and global email suppression. An Otthon Centrum agent
-# must carry verified office affiliation so the II./II/A. and XII. district office
-# exclusions cannot be bypassed by an incomplete source record.
+# independently from scoring and global email suppression. Missing affiliation is
+# not itself an exclusion; a positively identified named network or office remains
+# blocked.
 LAND_AGENT_BLOCKED_OC_OFFICE_ALIASES = (
     "bem rakpart",
     "tdg",
@@ -303,15 +303,11 @@ LAND_AGENT_BLOCKED_OC_OFFICE_ALIASES = (
 LAND_AGENT_HARD_GATE_TURCZER = "land_agent_turczer_jozsef_hard_gate"
 LAND_AGENT_HARD_GATE_GDN = "land_agent_gdn_network_hard_gate"
 LAND_AGENT_HARD_GATE_OC_II_XII = "land_agent_otthon_centrum_ii_xii_office_hard_gate"
-LAND_AGENT_HARD_GATE_OC_UNVERIFIED = "land_agent_otthon_centrum_office_unverified_hard_gate"
-LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED = "land_agent_affiliation_unverified_hard_gate"
 LAND_AGENT_HARD_GATE_REASONS = frozenset(
     {
         LAND_AGENT_HARD_GATE_TURCZER,
         LAND_AGENT_HARD_GATE_GDN,
         LAND_AGENT_HARD_GATE_OC_II_XII,
-        LAND_AGENT_HARD_GATE_OC_UNVERIFIED,
-        LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED,
     }
 )
 
@@ -468,15 +464,11 @@ def land_agent_hard_gate_reason(
         return LAND_AGENT_HARD_GATE_TURCZER
     if re.search(r"\bg\s*d\s*n\b", identity):
         return LAND_AGENT_HARD_GATE_GDN
-    if not organization_name or not organization_name.strip():
-        return LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED
     is_otthon_centrum = bool(
         re.search(r"\botthon\s+centrum\b|\boc\s+hu\b", identity)
     )
-    if not is_otthon_centrum:
+    if not is_otthon_centrum or not office_name or not office_name.strip():
         return None
-    if not office_name or not office_name.strip():
-        return LAND_AGENT_HARD_GATE_OC_UNVERIFIED
     if _blocked_oc_office(office_name):
         return LAND_AGENT_HARD_GATE_OC_II_XII
     return None
