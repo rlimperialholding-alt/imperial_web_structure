@@ -1736,6 +1736,68 @@ def test_managed_scanner_refuses_non_exact_route_set(
     assert result["land_public_lane"]["route_readiness"]["ready"] is False
 
 
+def test_managed_scanner_persists_all_non_success_portal_attempts(
+    db, land_runtime, monkeypatch
+):
+    monkeypatch.setattr(
+        catalog,
+        "settings",
+        lambda: SimpleNamespace(
+            canonical_wide_enabled=True,
+            canonical_route_scanning_enabled=True,
+            timezone="Europe/Budapest",
+            canonical_daily_at="05:30",
+            canonical_route_batch_size=0,
+            canonical_processing_enabled=True,
+            canonical_route_timeout_seconds=5,
+            canonical_route_max_response_bytes=100_000,
+            canonical_analysis_text_chars=6_000,
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "active_revision",
+        lambda _db: SimpleNamespace(catalog_sha256="c" * 64),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_fresh_pinned_robots_error",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def pinned(url, **_kwargs):
+        failed = "dh.hu" in url
+        return {
+            "status_code": 500 if failed else 403,
+            "headers": {"content-type": "text/html; charset=utf-8"},
+            "body": b"<html><title>Unavailable</title></html>"
+            if failed
+            else b"<html><title>Forbidden</title></html>",
+            "source_ip": "93.184.216.34",
+        }
+
+    monkeypatch.setattr(catalog, "_pinned_https_get", pinned)
+
+    result = catalog.scan_due_routes(
+        db,
+        now=datetime(2026, 8, 31, 4, 0, tzinfo=UTC),
+    )
+    attempts = list(
+        db.scalars(
+            select(SourceCoverageAttempt).where(
+                SourceCoverageAttempt.run_id == "LAND-PUBLIC-20260831-V1"
+            )
+        )
+    )
+
+    assert result["land_public_lane"]["attempted"] == 7
+    assert result["land_public_lane"]["blocked"] == 6
+    assert result["land_public_lane"]["failed"] == 1
+    assert len(attempts) == 7
+    assert {attempt.status for attempt in attempts} == {"blocked", "failed"}
+    assert all(attempt.analysis_status == "skipped" for attempt in attempts)
+
+
 def test_public_land_send_readiness_needs_no_json_or_rss_source(db, land_runtime):
     ensure_public_html_land_routes(db, dry_run=False)
     source = dict(_Registry.sources["construction_public_land_html"])
@@ -1911,6 +1973,71 @@ def test_public_portal_listing_discovery_is_same_host_and_bounded(tmp_path, monk
         "https://www.ingatlan.com/35500011",
         "https://www.ingatlan.com/35500012",
     ]
+
+
+@pytest.mark.parametrize(
+    ("status_code", "body", "expected_status"),
+    [
+        (403, b"<html><title>Forbidden</title><body>Access denied</body></html>", "blocked"),
+        (500, b"<html><title>Unavailable</title><body>Try later</body></html>", "failed"),
+    ],
+)
+def test_managed_public_portal_non_success_has_empty_candidate_state(
+    tmp_path, monkeypatch, status_code, body, expected_status
+):
+    registry_path = tmp_path / "portals.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "portals": [
+                    {
+                        "key": "ingatlan_com",
+                        "domains": ["ingatlan.com"],
+                        "category_url": "https://www.ingatlan.com/elado+telek",
+                        "discovery_mode": "public_html",
+                        "publish_mode": "manual",
+                        "discovery_enabled": True,
+                        "publish_enabled": False,
+                        "adapter_module": None,
+                        "respect_robots_txt": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LAND_ACQUISITION_PORTAL_REGISTRY_FILE", str(registry_path))
+    monkeypatch.setattr(
+        catalog,
+        "_fresh_pinned_robots_error",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        catalog,
+        "_pinned_https_get",
+        lambda *_args, **_kwargs: {
+            "status_code": status_code,
+            "headers": {"content-type": "text/html; charset=utf-8"},
+            "body": body,
+            "source_ip": "93.184.216.34",
+        },
+    )
+
+    result = catalog._fetch(
+        SimpleNamespace(
+            route_url="https://www.ingatlan.com/elado+telek",
+            source_record_json="{}",
+        ),
+        managed_land=True,
+    )
+
+    assert result["status"] == expected_status
+    assert result["evidence"]["land_listing_candidate_count"] == 0
+    assert result["evidence"]["land_listing_fetches"] == []
+    assert result["land_listing_pages"] == []
+    assert result["land_listing_candidates"] == []
+    assert result["land_listing_exhausted"] is True
 
 
 def test_pinned_fetch_resolves_once_and_preserves_original_tls_host(monkeypatch):
