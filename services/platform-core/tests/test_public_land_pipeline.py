@@ -79,7 +79,6 @@ class _Registry:
             config={
                 "brand_name": "Imperial Holding",
                 "recipient_cooldown_days": 30,
-                "max_daily_messages": 100,
             },
         )
 
@@ -112,8 +111,13 @@ def land_runtime(db, monkeypatch, tmp_path):
             poll_seconds=30,
             enabled=True,
             timezone="Europe/Budapest",
-            outreach_max_per_hour=5,
-            outreach_max_per_day=50,
+            outreach_send_start_local="08:00",
+            outreach_send_end_local="18:00",
+            outreach_account_rolling_24h_max=2000,
+            outreach_send_concurrency=1,
+            outreach_reputation_bootstrap_messages_per_window=100,
+            outreach_reputation_max_growth_factor=1.25,
+            outreach_reputation_jitter_fraction=0.20,
             land_outreach_production_canary_max_total=3,
             land_outreach_production_canary_local_date="2026-08-31",
             runtime_kill_switch_file=str(tmp_path / "runtime-growth-kill-switch"),
@@ -1813,7 +1817,7 @@ def test_invalid_canary_cap_configuration_fails_closed(monkeypatch, configured_c
         service._land_canary_limit()
 
 
-def test_land_canary_stops_at_three_without_changing_normal_rate_limits(db, land_runtime):
+def test_land_canary_stops_at_three_without_changing_account_pacing(db, land_runtime):
     canary_now = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
     _set_canary_pending(db)
     for index in range(3):
@@ -1841,7 +1845,7 @@ def test_land_canary_stops_at_three_without_changing_normal_rate_limits(db, land
     state = db.get(GrowthLandCanaryState, 1)
     assert state is not None
     assert state.status == "completed"
-    assert service._outreach_send_capacity(db) == 5
+    assert service._outreach_send_capacity(db) == 1
 
 
 def test_canary_wrong_date_and_ambiguous_slots_stay_closed(db, land_runtime):
@@ -2141,8 +2145,9 @@ def test_transport_attempted_unknown_consumes_canary_slot(db, land_runtime, monk
         assert pre_send_guard is not None
         pre_send_guard()
         raise EmailDeliveryError(
-            "gmail_api_http_500",
+            "accepted_but_unverified",
             retry_safe=False,
+            accepted_but_unverified=True,
             transport_attempted=True,
         )
 

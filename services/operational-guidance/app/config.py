@@ -267,6 +267,14 @@ class Settings(BaseSettings):
                 errors.append(
                     "PROCESS_CARD_GMAIL_DELEGATED_USER is required when Gmail approval is enabled"
                 )
+            elif (
+                self.process_card_gmail_delegated_user.strip().casefold()
+                == "info@imperialholding.hu"
+            ):
+                errors.append(
+                    "PROCESS_CARD_GMAIL_DELEGATED_USER may not use the centrally gated "
+                    "info@imperialholding.hu account"
+                )
             for label, value in {
                 "PROCESS_CARD_APPROVER_EMAIL": self.process_card_approver_email,
                 "PROCESS_CARD_GMAIL_DELEGATED_USER": self.process_card_gmail_delegated_user,

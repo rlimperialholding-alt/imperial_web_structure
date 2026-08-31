@@ -14,11 +14,11 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import UTC, datetime, time, timedelta
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
-from email.utils import formatdate
+from email.utils import formatdate, parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -312,8 +312,8 @@ def _text_bodies(message: EmailMessage) -> tuple[str, str | None]:
             continue
         content_type = part.get_content_type()
         disposition = part.get_content_disposition()
-        if disposition == "attachment":
-            raise _GmailReadbackError("gmail_readback_unexpected_attachment")
+        if disposition in {"attachment", "inline"} or part.get_filename() is not None:
+            continue
         if content_type not in {"text/plain", "text/html"}:
             raise _GmailReadbackError("gmail_readback_unexpected_mime_part")
         try:
@@ -329,6 +329,35 @@ def _text_bodies(message: EmailMessage) -> tuple[str, str | None]:
     if len(plain_parts) != 1 or len(html_parts) > 1:
         raise _GmailReadbackError("gmail_readback_body_part_count")
     return plain_parts[0], html_parts[0] if html_parts else None
+
+
+def _attachment_fingerprints(message: EmailMessage) -> list[tuple[str, str, str, str, str]]:
+    fingerprints: list[tuple[str, str, str, str, str]] = []
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+        disposition = part.get_content_disposition()
+        filename = part.get_filename()
+        if disposition not in {"attachment", "inline"} and filename is None:
+            continue
+        if disposition not in {"attachment", "inline"} or not filename:
+            raise _GmailReadbackError("gmail_readback_attachment_metadata_invalid")
+        try:
+            payload = part.get_payload(decode=True)
+        except (LookupError, UnicodeError, ValueError) as exc:
+            raise _GmailReadbackError("gmail_readback_attachment_decode_failed") from exc
+        if not isinstance(payload, bytes):
+            raise _GmailReadbackError("gmail_readback_attachment_decode_failed")
+        fingerprints.append(
+            (
+                str(filename),
+                part.get_content_type(),
+                disposition,
+                str(part.get("Content-ID") or ""),
+                hashlib.sha256(payload).hexdigest(),
+            )
+        )
+    return sorted(fingerprints)
 
 
 def _verify_gmail_readback(
@@ -359,6 +388,9 @@ def _verify_gmail_readback(
     for header in ("Subject", "X-Imperial-Idempotency-Key", "X-Imperial-Content-SHA256"):
         if _single_header(returned, header) != _single_header(expected, header):
             raise _GmailReadbackError(f"gmail_readback_{header.lower()}_mismatch")
+    for header in ("List-Unsubscribe", "List-Unsubscribe-Post"):
+        if returned.get_all(header, []) != expected.get_all(header, []):
+            raise _GmailReadbackError(f"gmail_readback_{header.lower()}_mismatch")
     expected_reply_to = expected.get_all("Reply-To", [])
     returned_reply_to = returned.get_all("Reply-To", [])
     if len(expected_reply_to) != len(returned_reply_to):
@@ -380,6 +412,8 @@ def _verify_gmail_readback(
         raise _GmailReadbackError("gmail_readback_plain_body_mismatch")
     if returned_html != expected_html:
         raise _GmailReadbackError("gmail_readback_html_body_mismatch")
+    if _attachment_fingerprints(returned) != _attachment_fingerprints(expected):
+        raise _GmailReadbackError("gmail_readback_attachment_mismatch")
     return (
         hashlib.sha256(raw_mime).hexdigest(),
         _single_header(returned, "Message-ID"),
@@ -394,6 +428,17 @@ def _verified_gmail_resource(
     labels = resource.get("labelIds")
     if not isinstance(labels, list) or "SENT" not in labels:
         raise _GmailReadbackError("gmail_readback_sent_label_missing")
+    internal_date_raw = resource.get("internalDate")
+    try:
+        internal_date_ms = int(str(internal_date_raw))
+        if internal_date_ms <= 0:
+            raise ValueError
+        provider_internal_date = datetime.fromtimestamp(
+            internal_date_ms / 1000,
+            tz=UTC,
+        )
+    except (TypeError, ValueError, OSError, OverflowError) as exc:
+        raise _GmailReadbackError("gmail_readback_internal_date_invalid") from exc
     readback_raw = resource.get("raw")
     if not isinstance(readback_raw, str) or not readback_raw:
         raise _GmailReadbackError("gmail_readback_raw_missing")
@@ -409,6 +454,7 @@ def _verified_gmail_resource(
         "rfc_message_id": rfc_message_id,
         "readback_mime_sha256": readback_mime_sha256,
         "label_ids": labels,
+        "provider_internal_date": provider_internal_date.isoformat(),
     }
 
 
@@ -426,6 +472,10 @@ class EmailDeliveryError(RuntimeError):
         authentication_failure: bool = False,
         accepted_but_unverified: bool = False,
         transport_attempted: bool = False,
+        rate_limited: bool = False,
+        retry_after_seconds: float | None = None,
+        provider_reason: str | None = None,
+        http_status: int | None = None,
         provider_message_id: str | None = None,
         detail: dict[str, Any] | None = None,
     ) -> None:
@@ -435,8 +485,78 @@ class EmailDeliveryError(RuntimeError):
         self.authentication_failure = authentication_failure
         self.accepted_but_unverified = accepted_but_unverified
         self.transport_attempted = transport_attempted
+        self.rate_limited = rate_limited
+        self.retry_after_seconds = retry_after_seconds
+        self.provider_reason = provider_reason
+        self.http_status = http_status
         self.provider_message_id = provider_message_id
         self.detail = dict(detail or {})
+
+
+def _http_retry_after_seconds(exc: urllib.error.HTTPError) -> float | None:
+    raw = str(exc.headers.get("Retry-After") or "").strip() if exc.headers else ""
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(raw)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        return max(0.0, (when.astimezone(UTC) - datetime.now(UTC)).total_seconds())
+
+
+def _gmail_http_error_metadata(exc: urllib.error.HTTPError) -> dict[str, Any]:
+    provider_reason = ""
+    provider_message = ""
+    try:
+        payload = json.loads(exc.read(1_000_000))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, TypeError):
+        payload = {}
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, str):
+            provider_reason = error
+        elif isinstance(error, dict):
+            provider_message = str(error.get("message") or "")
+            candidates = error.get("errors")
+            if isinstance(candidates, list):
+                for candidate in candidates:
+                    if isinstance(candidate, dict) and candidate.get("reason"):
+                        provider_reason = str(candidate["reason"])
+                        break
+            provider_reason = provider_reason or str(error.get("status") or "")
+    normalized_reason = provider_reason.casefold()
+    rate_limited = exc.code == 429 or normalized_reason in {
+        "dailylimitexceeded",
+        "mailratelimitexceeded",
+        "ratelimitexceeded",
+        "userratelimitexceeded",
+    }
+    authentication_failure = exc.code == 401 or normalized_reason in {
+        "access_denied",
+        "autherror",
+        "domainpolicy",
+        "forbidden",
+        "insufficientpermissions",
+        "invalid_client",
+        "invalidcredentials",
+        "invalid_grant",
+        "unauthenticated",
+        "unauthorized_client",
+    }
+    retry_after_seconds = _http_retry_after_seconds(exc)
+    return {
+        "http_status": int(exc.code),
+        "provider_reason": provider_reason or None,
+        "provider_message": provider_message or None,
+        "rate_limited": rate_limited,
+        "authentication_failure": authentication_failure,
+        "retry_after_seconds": retry_after_seconds,
+    }
 
 
 @dataclass(frozen=True)
@@ -448,16 +568,133 @@ class EmailReceipt:
     detail: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class GmailRolling24hUsage:
+    provider_ids: frozenset[str]
+    limit: int
+    cutoff: datetime
+    observed_at: datetime
+    pages: int
+
+    @property
+    def sent_messages(self) -> int:
+        return len(self.provider_ids)
+
+    @property
+    def headroom(self) -> int:
+        return max(0, self.limit - self.sent_messages)
+
+    @property
+    def snapshot_sha256(self) -> str:
+        return hashlib.sha256("\n".join(sorted(self.provider_ids)).encode()).hexdigest()
+
+
+def _gmail_sent_rolling_24h_usage(
+    *,
+    access_token: str,
+    now: datetime | None = None,
+) -> GmailRolling24hUsage:
+    """Count all mailbox SENT messages in the preceding rolling 24 hours."""
+
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    current = current.astimezone(UTC)
+    cutoff = current - timedelta(hours=24)
+    config = growth_settings()
+    limit = int(getattr(config, "outreach_account_rolling_24h_max", 2000))
+    if not 1 <= limit <= 2000:
+        raise GrowthRegistryError("outreach_account_rolling_24h_max_invalid_no_send")
+
+    authorization = {"Authorization": f"Bearer {access_token}"}
+    seen_ids: set[str] = set()
+    seen_page_tokens: set[str] = set()
+    page_token: str | None = None
+    pages = 0
+    while True:
+        params = {
+            "labelIds": "SENT",
+            # Whole-second epoch boundaries make the scan stable across pages.
+            # Including the snapshot second is conservative for concurrent UI
+            # sends while excluding all later seconds.
+            "q": (
+                # Gmail's second-granularity search boundary is widened by
+                # one second so a message exactly on the rolling cutoff can
+                # never be missed.  The slight overcount is fail-safe.
+                f"after:{int(cutoff.timestamp()) - 1} "
+                f"before:{int(current.timestamp()) + 1}"
+            ),
+            "maxResults": "500",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        url = (
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages?"
+            + urllib.parse.urlencode(params)
+        )
+        with urllib.request.urlopen(
+            urllib.request.Request(url, headers=authorization),
+            timeout=30,
+        ) as response:
+            payload = json.loads(response.read(2_000_000))
+        if not isinstance(payload, dict):
+            raise _GmailReadbackError("gmail_rolling_24h_list_result_invalid")
+        messages = payload.get("messages", [])
+        if not isinstance(messages, list):
+            raise _GmailReadbackError("gmail_rolling_24h_list_result_invalid")
+        for candidate in messages:
+            if not isinstance(candidate, dict) or not str(candidate.get("id") or ""):
+                raise _GmailReadbackError("gmail_rolling_24h_message_id_missing")
+            seen_ids.add(str(candidate["id"]))
+        pages += 1
+        if pages > 100:
+            raise _GmailReadbackError("gmail_rolling_24h_pagination_limit_exceeded")
+        next_page_token = str(payload.get("nextPageToken") or "")
+        if not next_page_token:
+            break
+        if next_page_token in seen_page_tokens:
+            raise _GmailReadbackError("gmail_rolling_24h_pagination_cycle")
+        seen_page_tokens.add(next_page_token)
+        page_token = next_page_token
+    return GmailRolling24hUsage(
+        provider_ids=frozenset(seen_ids),
+        limit=limit,
+        cutoff=cutoff,
+        observed_at=current,
+        pages=pages,
+    )
+
+
+def _validated_one_click_unsubscribe_url(value: str | None) -> str:
+    candidate = str(value or "")
+    parsed = urllib.parse.urlsplit(candidate)
+    if (
+        candidate != candidate.strip()
+        or parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        raise GrowthRegistryError("outbound_https_unsubscribe_url_required_no_send")
+    return candidate
+
+
 class SMTPEmailAdapter:
     def __init__(self, binding: BrandBinding) -> None:
         self.binding = binding
         self.secret = binding.secret
 
     def preflight(self, *, delivery_scope: str | None = None) -> None:
-        if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER and not GMAIL_OAUTH_FIELDS.issubset(
-            self.secret
-        ):
-            raise GrowthRegistryError("external_customer_gmail_oauth_required_no_send")
+        account_scoped_delivery = (
+            delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER
+            or (
+                delivery_scope == DELIVERY_SCOPE_INTERNAL
+                and self.binding.sender_email == "info@imperialholding.hu"
+            )
+        )
+        if account_scoped_delivery and not GMAIL_OAUTH_FIELDS.issubset(self.secret):
+            raise GrowthRegistryError("account_scoped_gmail_oauth_required_no_send")
         if GMAIL_OAUTH_FIELDS.issubset(self.secret):
             scopes = str(self.secret.get("scope") or "").split()
             if not any(
@@ -465,7 +702,7 @@ class SMTPEmailAdapter:
                 for scope in scopes
             ):
                 raise GrowthRegistryError("Gmail compose/send OAuth scope is required")
-            if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER and not any(
+            if account_scoped_delivery and not any(
                 scope.endswith(GMAIL_READ_SCOPE_SUFFIXES) for scope in scopes
             ):
                 raise GrowthRegistryError("Gmail read OAuth scope is required")
@@ -569,8 +806,10 @@ class SMTPEmailAdapter:
         to_email: str,
         message: EmailMessage,
         message_id: str,
+        delivery_scope: str,
         reconcile_only: bool = False,
         pre_send_guard: Callable[[], None] | None = None,
+        account_quota_guard: Callable[[GmailRolling24hUsage], None] | None = None,
     ) -> EmailReceipt:
         token_body = urllib.parse.urlencode(
             {
@@ -600,11 +839,16 @@ class SMTPEmailAdapter:
                     authentication_failure=True,
                 )
         except urllib.error.HTTPError as exc:
-            authentication_failure = exc.code in {400, 401, 403}
+            metadata = _gmail_http_error_metadata(exc)
             raise EmailDeliveryError(
                 f"gmail_oauth_http_{exc.code}",
-                retry_safe=exc.code >= 500 or exc.code == 429,
-                authentication_failure=authentication_failure,
+                retry_safe=exc.code >= 500 or bool(metadata["rate_limited"]),
+                authentication_failure=bool(metadata["authentication_failure"]),
+                rate_limited=bool(metadata["rate_limited"]),
+                retry_after_seconds=metadata["retry_after_seconds"],
+                provider_reason=metadata["provider_reason"],
+                http_status=exc.code,
+                detail=metadata,
             ) from exc
         except (
             OSError,
@@ -640,10 +884,16 @@ class SMTPEmailAdapter:
         except EmailDeliveryError:
             raise
         except urllib.error.HTTPError as exc:
+            metadata = _gmail_http_error_metadata(exc)
             raise EmailDeliveryError(
                 f"gmail_oauth_profile_http_{exc.code}",
-                retry_safe=exc.code >= 500 or exc.code == 429,
-                authentication_failure=exc.code in {400, 401, 403},
+                retry_safe=exc.code >= 500 or bool(metadata["rate_limited"]),
+                authentication_failure=bool(metadata["authentication_failure"]),
+                rate_limited=bool(metadata["rate_limited"]),
+                retry_after_seconds=metadata["retry_after_seconds"],
+                provider_reason=metadata["provider_reason"],
+                http_status=exc.code,
+                detail=metadata,
             ) from exc
         except (
             OSError,
@@ -659,6 +909,7 @@ class SMTPEmailAdapter:
 
         idempotency_key = _single_header(message, "X-Imperial-Idempotency-Key")
         existing_provider_id: str | None = None
+        existing_provider_id_is_strong = False
         try:
             candidate_ids: list[str] = []
             strong_candidate_ids: list[str] = []
@@ -699,6 +950,7 @@ class SMTPEmailAdapter:
             verified_candidates: list[tuple[str, dict[str, Any]]] = []
             for candidate_id in candidate_ids:
                 existing_provider_id = candidate_id
+                existing_provider_id_is_strong = candidate_id in strong_candidate_ids
                 existing_url = (
                     "https://gmail.googleapis.com/gmail/v1/users/me/messages/"
                     f"{urllib.parse.quote(candidate_id, safe='')}?format=raw"
@@ -720,6 +972,7 @@ class SMTPEmailAdapter:
                 verified_candidates.append((candidate_id, existing_detail))
             if len(verified_candidates) > 1:
                 existing_provider_id = verified_candidates[0][0]
+                existing_provider_id_is_strong = True
                 raise _GmailReadbackError("gmail_pre_send_multiple_exact_candidates")
             if verified_candidates:
                 existing_provider_id, existing_detail = verified_candidates[0]
@@ -742,6 +995,7 @@ class SMTPEmailAdapter:
                 )
             if strong_candidate_ids:
                 existing_provider_id = strong_candidate_ids[0]
+                existing_provider_id_is_strong = True
                 raise _GmailReadbackError("gmail_existing_delivery_identity_payload_mismatch")
             existing_provider_id = None
             if reconcile_only:
@@ -752,20 +1006,33 @@ class SMTPEmailAdapter:
                     detail={"reason": "gmail_reconcile_no_exact_message_no_send"},
                 )
         except urllib.error.HTTPError as exc:
-            if existing_provider_id is None:
+            metadata = _gmail_http_error_metadata(exc)
+            if existing_provider_id is None or not existing_provider_id_is_strong:
                 raise EmailDeliveryError(
                     "pre_send_verification_failed_no_send",
-                    retry_safe=False,
-                    authentication_failure=exc.code in {400, 401, 403},
-                    detail={"reason": f"gmail_pre_send_search_http_{exc.code}"},
+                    retry_safe=exc.code >= 500 or bool(metadata["rate_limited"]),
+                    authentication_failure=bool(metadata["authentication_failure"]),
+                    rate_limited=bool(metadata["rate_limited"]),
+                    retry_after_seconds=metadata["retry_after_seconds"],
+                    provider_reason=metadata["provider_reason"],
+                    http_status=exc.code,
+                    detail={
+                        **metadata,
+                        "reason": f"gmail_pre_send_search_http_{exc.code}",
+                    },
                 ) from exc
             raise EmailDeliveryError(
                 "accepted_but_unverified",
                 retry_safe=False,
-                authentication_failure=exc.code in {400, 401, 403},
+                authentication_failure=bool(metadata["authentication_failure"]),
                 accepted_but_unverified=True,
+                rate_limited=bool(metadata["rate_limited"]),
+                retry_after_seconds=metadata["retry_after_seconds"],
+                provider_reason=metadata["provider_reason"],
+                http_status=exc.code,
                 provider_message_id=existing_provider_id,
                 detail={
+                    **metadata,
                     "reason": f"gmail_pre_send_search_http_{exc.code}",
                     "provider_message_id": existing_provider_id,
                 },
@@ -778,10 +1045,10 @@ class SMTPEmailAdapter:
             UnicodeDecodeError,
             _GmailReadbackError,
         ) as exc:
-            if existing_provider_id is None:
+            if existing_provider_id is None or not existing_provider_id_is_strong:
                 raise EmailDeliveryError(
                     "pre_send_verification_failed_no_send",
-                    retry_safe=False,
+                    retry_safe=True,
                     detail={"reason": str(exc)},
                 ) from exc
             raise EmailDeliveryError(
@@ -797,14 +1064,65 @@ class SMTPEmailAdapter:
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).rstrip(b"=").decode("ascii")
         send_body = json.dumps({"raw": raw}, separators=(",", ":")).encode()
-        _assert_external_transport_window_open()
+        if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
+            _assert_external_transport_window_open()
         if pre_send_guard is None:
             raise GrowthRegistryError("external_customer_pre_send_guard_required_no_send")
         pre_send_guard()
         # Capacity verification may perform database work. Re-read the
         # authoritative clock after it so the window check is the final local
         # operation before the Gmail transport POST.
-        _assert_external_transport_window_open()
+        if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
+            _assert_external_transport_window_open()
+        try:
+            quota_usage = _gmail_sent_rolling_24h_usage(access_token=access_token)
+        except urllib.error.HTTPError as exc:
+            metadata = _gmail_http_error_metadata(exc)
+            raise EmailDeliveryError(
+                "gmail_account_quota_verification_failed_no_send",
+                retry_safe=exc.code >= 500 or bool(metadata["rate_limited"]),
+                authentication_failure=bool(metadata["authentication_failure"]),
+                rate_limited=bool(metadata["rate_limited"]),
+                retry_after_seconds=metadata["retry_after_seconds"],
+                provider_reason=metadata["provider_reason"],
+                http_status=exc.code,
+                detail={
+                    **metadata,
+                    "reason": f"gmail_rolling_24h_list_http_{exc.code}",
+                },
+            ) from exc
+        except (
+            OSError,
+            urllib.error.URLError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            _GmailReadbackError,
+        ) as exc:
+            raise EmailDeliveryError(
+                "gmail_account_quota_verification_failed_no_send",
+                retry_safe=True,
+                detail={"reason": str(exc)},
+            ) from exc
+        if quota_usage.headroom <= 0:
+            raise EmailDeliveryError(
+                "gmail_account_rolling_24h_limit_reached_no_send",
+                retry_safe=True,
+                rate_limited=True,
+                retry_after_seconds=900,
+                detail={
+                    "sent_messages": quota_usage.sent_messages,
+                    "limit": quota_usage.limit,
+                    "cutoff": quota_usage.cutoff.isoformat(),
+                    "pages": quota_usage.pages,
+                    "retry_after_seconds": 900,
+                },
+            )
+        if account_quota_guard is None:
+            raise GrowthRegistryError("external_customer_account_quota_guard_required_no_send")
+        account_quota_guard(quota_usage)
+        if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
+            _assert_external_transport_window_open()
         try:
             with urllib.request.urlopen(
                 urllib.request.Request(
@@ -819,12 +1137,27 @@ class SMTPEmailAdapter:
             ) as response:
                 sent_response = response.read(1_000_000)
         except urllib.error.HTTPError as exc:
-            authentication_failure = exc.code in {400, 401, 403}
+            metadata = _gmail_http_error_metadata(exc)
+            ambiguous_server_failure = (
+                exc.code == 408 or exc.code >= 500
+            ) and not metadata["rate_limited"]
             raise EmailDeliveryError(
-                f"gmail_api_http_{exc.code}",
-                retry_safe=False,
-                authentication_failure=authentication_failure,
+                (
+                    "accepted_but_unverified"
+                    if ambiguous_server_failure
+                    else "gmail_api_rate_limited"
+                    if metadata["rate_limited"]
+                    else f"gmail_api_http_{exc.code}"
+                ),
+                retry_safe=bool(metadata["rate_limited"]),
+                authentication_failure=bool(metadata["authentication_failure"]),
+                accepted_but_unverified=ambiguous_server_failure,
                 transport_attempted=True,
+                rate_limited=bool(metadata["rate_limited"]),
+                retry_after_seconds=metadata["retry_after_seconds"],
+                provider_reason=metadata["provider_reason"],
+                http_status=exc.code,
+                detail=metadata,
             ) from exc
         except (OSError, urllib.error.URLError, http.client.HTTPException) as exc:
             raise EmailDeliveryError(
@@ -882,14 +1215,20 @@ class SMTPEmailAdapter:
                 expected=message,
             )
         except urllib.error.HTTPError as exc:
+            metadata = _gmail_http_error_metadata(exc)
             raise EmailDeliveryError(
                 "accepted_but_unverified",
                 retry_safe=False,
-                authentication_failure=exc.code in {400, 401, 403},
+                authentication_failure=bool(metadata["authentication_failure"]),
                 accepted_but_unverified=True,
                 transport_attempted=True,
+                rate_limited=bool(metadata["rate_limited"]),
+                retry_after_seconds=metadata["retry_after_seconds"],
+                provider_reason=metadata["provider_reason"],
+                http_status=exc.code,
                 provider_message_id=provider_id,
                 detail={
+                    **metadata,
                     "reason": f"gmail_readback_http_{exc.code}",
                     "provider_message_id": provider_id,
                 },
@@ -924,6 +1263,13 @@ class SMTPEmailAdapter:
                 "outbound_rfc_message_id": message_id,
                 "oauth_profile_email": profile_email,
                 "recovered_existing_sent": False,
+                "account_rolling_24h": {
+                    "sent_messages_before_send": quota_usage.sent_messages,
+                    "limit": quota_usage.limit,
+                    "headroom_before_send": quota_usage.headroom,
+                    "cutoff": quota_usage.cutoff.isoformat(),
+                    "pages": quota_usage.pages,
+                },
             },
         )
 
@@ -940,6 +1286,8 @@ class SMTPEmailAdapter:
         reply_to: str | None = None,
         attachments: list[tuple[str, bytes, str]] | None = None,
         pre_send_guard: Callable[[], None] | None = None,
+        account_quota_guard: Callable[[GmailRolling24hUsage], None] | None = None,
+        unsubscribe_url: str | None = None,
     ) -> EmailReceipt:
         if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
             _assert_customer_facing_outbound_allowed(
@@ -951,6 +1299,7 @@ class SMTPEmailAdapter:
                 attachments=attachments,
                 reply_to=reply_to,
             )
+            unsubscribe_url = _validated_one_click_unsubscribe_url(unsubscribe_url)
         elif delivery_scope == DELIVERY_SCOPE_INTERNAL:
             _assert_internal_outbound_allowed(
                 binding=self.binding,
@@ -977,6 +1326,9 @@ class SMTPEmailAdapter:
         message["X-Imperial-Content-SHA256"] = hashlib.sha256(
             (subject + "\0" + body_text + "\0" + (body_html or "")).encode("utf-8")
         ).hexdigest()
+        if delivery_scope == DELIVERY_SCOPE_EXTERNAL_CUSTOMER:
+            message["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+            message["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
         if reply_to:
             message["Reply-To"] = reply_to
         message.set_content(body_text)
@@ -990,8 +1342,10 @@ class SMTPEmailAdapter:
                 to_email=to_email,
                 message=message,
                 message_id=message_id,
+                delivery_scope=delivery_scope,
                 reconcile_only=reconcile_only,
                 pre_send_guard=pre_send_guard,
+                account_quota_guard=account_quota_guard,
             )
         if reconcile_only:
             raise EmailDeliveryError(

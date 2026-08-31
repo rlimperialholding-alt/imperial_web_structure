@@ -20,6 +20,7 @@ from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..audit import audit
 from ..autonomous_publishing.models import PublishingChannelState, PublishingJobRecord
 from ..autonomous_publishing.registry import PublishingRegistry, RegistryError
 from ..autonomous_publishing.schemas import (
@@ -2991,6 +2992,48 @@ def send_publication_digest(
             "idempotency_key": server_idempotency_key,
         }
 
+    quota_attestation: dict[str, Any] = {}
+    claimed_lease_token = delivery.lease_token
+
+    def immediate_transport_guard() -> None:
+        from .service import (
+            _assert_gmail_account_pacing_due,
+            _lock_outreach_transport_account,
+        )
+
+        _lock_outreach_transport_account(db)
+        _assert_gmail_account_pacing_due(db)
+        current_delivery = db.scalar(
+            select(CanonicalEmailDelivery)
+            .where(CanonicalEmailDelivery.identity_sha256 == delivery_identity)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        current_now = datetime.now(UTC)
+        lease_expires_at = current_delivery.lease_expires_at if current_delivery else None
+        if lease_expires_at and lease_expires_at.tzinfo is None:
+            lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
+        if (
+            current_delivery is None
+            or current_delivery.status != "sending"
+            or not claimed_lease_token
+            or current_delivery.lease_token != claimed_lease_token
+            or lease_expires_at is None
+            or lease_expires_at <= current_now
+        ):
+            raise GrowthRegistryError("canonical_email_delivery_reservation_invalid_no_send")
+
+    def immediate_account_quota_guard(usage: Any) -> None:
+        from .service import _assert_gmail_account_quota_reserved
+
+        quota_attestation.update(
+            _assert_gmail_account_quota_reserved(
+                db,
+                current_reservation_key=f"canonical:{delivery_identity}",
+                usage=usage,
+            )
+        )
+
     try:
         receipt = SMTPEmailAdapter(_smtp_binding()).send(
             to_email=recipient,
@@ -2999,8 +3042,21 @@ def send_publication_digest(
             idempotency_key=server_idempotency_key,
             delivery_scope="internal",
             reconcile_only=reconcile_only,
+            pre_send_guard=immediate_transport_guard,
+            account_quota_guard=immediate_account_quota_guard,
         )
     except (GrowthRegistryError, EmailDeliveryError) as exc:
+        account_next_at = None
+        if isinstance(exc, EmailDeliveryError) and (exc.retry_safe or exc.rate_limited):
+            from .service import _record_outreach_pacing_backoff
+
+            account_next_at = _record_outreach_pacing_backoff(
+                db, error=exc, now=datetime.now(UTC)
+            )
+        if isinstance(exc, EmailDeliveryError) and exc.authentication_failure:
+            from .service import _require_runtime_kill_switch
+
+            _require_runtime_kill_switch(db, reason="provider_authentication_failure")
         fail_global_recipient_delivery(
             db,
             recipients=[recipient],
@@ -3026,6 +3082,12 @@ def send_publication_digest(
             )
         )
         error_name = exc.error_type if isinstance(exc, EmailDeliveryError) else type(exc).__name__
+        if (
+            isinstance(exc, EmailDeliveryError)
+            and exc.retry_safe
+            and (not exc.transport_attempted or exc.rate_limited)
+        ):
+            delivery.attempt_count = max(0, delivery.attempt_count - 1)
         if isinstance(exc, EmailDeliveryError) and exc.accepted_but_unverified:
             delivery.status = "accepted_unverified"
             delivery.provider_message_id = exc.provider_message_id
@@ -3037,7 +3099,10 @@ def send_publication_digest(
         elif isinstance(exc, EmailDeliveryError) and exc.retry_safe and not reconcile_only:
             delivery.status = "failed_retryable"
             delay_minutes = min(60, 2 ** min(delivery.attempt_count, 5))
-            delivery.next_attempt_at = current + timedelta(minutes=delay_minutes)
+            delivery.next_attempt_at = max(
+                current + timedelta(minutes=delay_minutes),
+                account_next_at or current,
+            )
             row.status = "failed"
         else:
             delivery.status = "failed_terminal"
@@ -3048,6 +3113,19 @@ def send_publication_digest(
         delivery.lease_expires_at = None
         row.attempt_count = delivery.attempt_count
         row.last_error = error_name
+        if quota_attestation:
+            audit(
+                db,
+                actor="growth-worker",
+                action="gmail_account_transport_attempt_held",
+                entity_type="canonical_email_delivery",
+                entity_id=delivery.delivery_id,
+                after={
+                    "error_type": error_name,
+                    "provider_message_id": delivery.provider_message_id,
+                    "account_quota_attestation": quota_attestation,
+                },
+            )
         db.commit()
         return {
             "status": delivery.status,
@@ -3092,13 +3170,46 @@ def send_publication_digest(
             "idempotency_key": server_idempotency_key,
         }
 
+    receipt_detail = getattr(receipt, "detail", {}) or {}
+    provider_internal_date = receipt_detail.get("provider_internal_date")
+    try:
+        completed_at = _aware_utc(
+            datetime.fromisoformat(str(provider_internal_date))
+            if provider_internal_date
+            else current
+        )
+    except (TypeError, ValueError):
+        completed_at = current
+    if receipt_detail.get("recovered_existing_sent") is not True:
+        from .service import _record_outreach_pacing_success
+
+        _record_outreach_pacing_success(db, now=completed_at)
+    # The global-guard finalizer commits.  Put the provider identity and
+    # readback timestamp on the durable sending reservation first so that the
+    # same commit closes any Gmail-listing-lag gap before the account lock is
+    # released.
+    delivery = db.scalar(
+        select(CanonicalEmailDelivery).where(
+            CanonicalEmailDelivery.identity_sha256 == delivery_identity
+        )
+    )
+    row = db.scalar(
+        select(CanonicalInternalHandoff).where(
+            CanonicalInternalHandoff.handoff_id == row.handoff_id
+        )
+    )
+    delivery.provider_message_id = receipt.provider_message_id
+    delivery.accepted_at = completed_at
+    delivery.verified_at = completed_at if receipt_detail.get("readback_verified") else None
+    row.provider_message_id = receipt.provider_message_id
+    row.sent_at = completed_at
     finalize_global_recipient_delivery(
         db,
         recipients=[recipient],
         identity_sha256=server_idempotency_key,
         claim_token=global_guard.claim_token,
         provider_message_id=receipt.provider_message_id,
-        now=current,
+        now=completed_at,
     )
     delivery = db.scalar(
         select(CanonicalEmailDelivery).where(
@@ -3112,9 +3223,8 @@ def send_publication_digest(
     )
     delivery.status = "sent"
     delivery.provider_message_id = receipt.provider_message_id
-    delivery.accepted_at = current
-    receipt_detail = getattr(receipt, "detail", {}) or {}
-    delivery.verified_at = current if receipt_detail.get("readback_verified") else None
+    delivery.accepted_at = completed_at
+    delivery.verified_at = completed_at if receipt_detail.get("readback_verified") else None
     delivery.last_error = None
     delivery.next_attempt_at = None
     delivery.lease_token = None
@@ -3122,8 +3232,20 @@ def send_publication_digest(
     row.attempt_count = delivery.attempt_count
     row.status = "sent"
     row.provider_message_id = receipt.provider_message_id
-    row.sent_at = current
+    row.sent_at = completed_at
     row.last_error = None
+    audit(
+        db,
+        actor="growth-worker",
+        action="gmail_account_send_verified",
+        entity_type="canonical_email_delivery",
+        entity_id=delivery.delivery_id,
+        after={
+            "provider_message_id": receipt.provider_message_id,
+            "readback_verified": bool(receipt_detail.get("readback_verified")),
+            "account_quota_attestation": quota_attestation,
+        },
+    )
     db.commit()
     return {
         "status": "sent",

@@ -107,7 +107,6 @@ class FakeRegistry:
             config={
                 "brand_name": "Imperial Holding",
                 "recipient_cooldown_days": 30,
-                "max_daily_messages": 100,
             },
         )
 
@@ -142,8 +141,11 @@ def growth_runtime(monkeypatch, db):
             canonical_daily_at="05:30",
             outreach_send_start_local="08:00",
             outreach_send_end_local="18:00",
-            outreach_max_per_hour=5,
-            outreach_max_per_day=50,
+            outreach_account_rolling_24h_max=2000,
+            outreach_send_concurrency=1,
+            outreach_reputation_bootstrap_messages_per_window=100,
+            outreach_reputation_max_growth_factor=1.25,
+            outreach_reputation_jitter_fraction=0.20,
         ),
     )
     db.add(
@@ -347,26 +349,34 @@ def test_dispatch_batch_does_not_claim_outside_sending_window(db, growth_runtime
     assert service.dispatch_batch(db) == 0
 
 
-def test_outreach_send_capacity_enforces_hourly_and_daily_limits(db, growth_runtime, monkeypatch):
+def test_outreach_send_capacity_enforces_single_concurrency_and_pacing(
+    db, growth_runtime, monkeypatch
+):
     local_now = datetime(2026, 8, 29, 10, 15, tzinfo=ZoneInfo("Europe/Budapest"))
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: service.OutreachCapacityUsage(2, 47, 0, 0, 0, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(1999, 800, 0, 0, 50, None),
     )
-    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 3
+    monkeypatch.setattr(service, "_outreach_pacing_next_at", lambda _db: None)
+    assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 1
 
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: service.OutreachCapacityUsage(5, 12, 0, 0, 0, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(2, 2, 1, 0, 50, None),
     )
     assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 
     monkeypatch.setattr(
         service,
         "_outreach_capacity_usage",
-        lambda _db, _now=None: service.OutreachCapacityUsage(1, 50, 0, 0, 0, 0, {}),
+        lambda _db, _now=None: service.OutreachCapacityUsage(2, 2, 0, 0, 50, None),
+    )
+    monkeypatch.setattr(
+        service,
+        "_outreach_pacing_next_at",
+        lambda _db: local_now.astimezone(UTC) + timedelta(seconds=30),
     )
     assert service._outreach_send_capacity(db, local_now.astimezone(UTC)) == 0
 
@@ -377,6 +387,12 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
     from app.growth_ops import wide_service
 
     events = []
+    monkeypatch.setattr(
+        service,
+        "automatic_public_land_transient_block_promotion",
+        lambda _db: events.append("transient_promotion")
+        or {"status": "applied", "queued": 0},
+    )
     monkeypatch.setattr(
         service,
         "automatic_public_land_name_fallback_promotion",
@@ -393,7 +409,7 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
     with pytest.raises(RuntimeError, match="unrelated pipeline failure"):
         service.run_once(db)
 
-    assert events == ["promotion", "mail", "wide"]
+    assert events == ["transient_promotion", "promotion", "mail", "wide"]
 
 
 def test_readiness_accepts_fresh_non_send_critical_degraded_worker_as_serving(
@@ -485,8 +501,11 @@ def test_platform_health_readiness_skips_external_provider_preflight(
         ("canonical_daily_at", "08:00"),
         ("outreach_send_start_local", "07:00"),
         ("outreach_send_end_local", "19:00"),
-        ("outreach_max_per_hour", 6),
-        ("outreach_max_per_day", 51),
+        ("outreach_account_rolling_24h_max", 1999),
+        ("outreach_send_concurrency", 2),
+        ("outreach_reputation_bootstrap_messages_per_window", 101),
+        ("outreach_reputation_max_growth_factor", 1.20),
+        ("outreach_reputation_jitter_fraction", 0.10),
     ],
 )
 def test_production_daily_automation_contract_fails_closed_on_config_drift(
@@ -648,10 +667,11 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
         "GROWTH_OPS_TIMEZONE": "Europe/Budapest",
         "GROWTH_OPS_OUTREACH_SEND_START_LOCAL": "08:00",
         "GROWTH_OPS_OUTREACH_SEND_END_LOCAL": "18:00",
-        "GROWTH_OPS_OUTREACH_MAX_PER_HOUR": "5",
-        "GROWTH_OPS_OUTREACH_MAX_PER_DAY": "50",
-        "LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL": "3",
-        "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE": "2026-08-31",
+        "GROWTH_OPS_OUTREACH_ACCOUNT_ROLLING_24H_MAX": "2000",
+        "GROWTH_OPS_OUTREACH_SEND_CONCURRENCY": "1",
+        "GROWTH_OPS_OUTREACH_REPUTATION_BOOTSTRAP_MESSAGES_PER_WINDOW": "100",
+        "GROWTH_OPS_OUTREACH_REPUTATION_MAX_GROWTH_FACTOR": "1.25",
+        "GROWTH_OPS_OUTREACH_REPUTATION_JITTER_FRACTION": "0.20",
     }
     text = override.read_text(encoding="utf-8")
     for key, value in expected_environment.items():
@@ -661,14 +681,15 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
 
     root_compose = Path(__file__).resolve().parents[3] / "docker-compose.yml"
     root_text = root_compose.read_text(encoding="utf-8")
-    assert (
-        "LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL: "
-        "${LAND_OUTREACH_PRODUCTION_CANARY_MAX_TOTAL:-3}"
-    ) in root_text
-    assert (
-        "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE: "
-        "${LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE:-2026-08-31}"
-    ) in root_text
+    for legacy_key in (
+        "GROWTH_OPS_OUTREACH_MAX_PER_HOUR",
+        "GROWTH_OPS_OUTREACH_MAX_PER_DAY",
+        "GROWTH_OPS_OUTREACH_MAX_PER_RECIPIENT_ROOT_DOMAIN_PER_DAY",
+    ):
+        assert legacy_key not in text
+        assert legacy_key not in root_text
+    assert "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE" not in text
+    assert "LAND_OUTREACH_PRODUCTION_CANARY_LOCAL_DATE" not in root_text
 
 
 def test_verified_business_role_signal_queues_once(db, growth_runtime):
@@ -777,6 +798,58 @@ def test_queued_payload_is_bound_to_the_canonical_registry(db, growth_runtime):
     assert metadata["registry_sha256"]
     assert service._payload_matches(message)
     assert service._canonical_metadata_sha256(metadata)
+
+
+def test_rfc8058_one_click_unsubscribe_is_strict_and_idempotent(
+    db, client, growth_runtime
+):
+    result = service.ingest_signal(
+        db, _signal(external_key="ETDR-RFC8058-ONE-CLICK")
+    )
+    message = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
+    )
+    assert message is not None
+    unsubscribe_url = service._canonical_metadata(message)["render_input"][
+        "unsubscribe_url"
+    ]
+    token = unsubscribe_url.rsplit("/", 1)[-1]
+
+    invalid = client.post(
+        f"/growth/unsubscribe/{token}",
+        content="List-Unsubscribe=Wrong",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert invalid.status_code == 400
+
+    for _ in range(2):
+        response = client.post(
+            f"/growth/unsubscribe/{token}",
+            content="List-Unsubscribe=One-Click",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert response.status_code == 204
+
+    db.expire_all()
+    refreshed = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
+    )
+    suppression = db.scalar(
+        select(MailSuppression).where(
+            MailSuppression.email == refreshed.recipient_email
+        )
+    )
+    assert refreshed.status == "unsubscribed"
+    assert suppression is not None and suppression.active is True
+
+
+def test_rfc8058_one_click_unsubscribe_rejects_unknown_token(client):
+    response = client.post(
+        "/growth/unsubscribe/not-a-real-token",
+        content="List-Unsubscribe=One-Click",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert response.status_code == 404
 
 
 def test_canonical_metadata_tampering_invalidates_payload_and_release(db, growth_runtime):
@@ -1002,7 +1075,7 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
     assert receipt["delivery_verification"]["retry_safe"] is False
     assert second.status == "claimed"
     assert sends == 1
-    assert kill_switch_trips == 1
+    assert kill_switch_trips == 0
 
 
 def test_expired_claim_is_held_pending_verification_and_never_requeued(
@@ -1040,7 +1113,7 @@ def test_expired_claim_is_held_pending_verification_and_never_requeued(
     assert receipt["delivery_verification"]["detail"] == {
         "reason": "worker_lease_expired_delivery_ambiguous"
     }
-    assert kill_switch_trips == 1
+    assert kill_switch_trips == 0
 
     message.claimed_by = "verification-worker"
     message.claimed_at = datetime.now(UTC) - timedelta(minutes=10)
@@ -1051,7 +1124,7 @@ def test_expired_claim_is_held_pending_verification_and_never_requeued(
     assert message.status == "claimed"
     assert message.claimed_by is None and message.lease_expires_at is None
     assert service._delivery_verification_pending(message)
-    assert kill_switch_trips == 1
+    assert kill_switch_trips == 0
 
 
 def test_verified_referral_partner_queues_only_the_canonical_locked_template(db, growth_runtime):
@@ -1329,6 +1402,297 @@ def test_public_listing_missing_name_queues_role_salutation_without_name_evidenc
         "recipient_role": recipient_role,
         "evidence_recipient_name_present": False,
     }
+
+
+def test_more_than_fifty_unique_public_land_contacts_all_queue_before_dispatch(
+    db, growth_runtime, monkeypatch
+):
+    original_brand_binding = growth_runtime.brand_binding
+
+    def queue_limited_brand_binding(brand_id: str) -> BrandBinding:
+        binding = original_brand_binding(brand_id)
+        return BrandBinding(
+            brand_id=binding.brand_id,
+            sender_email=binding.sender_email,
+            domain_key=binding.domain_key,
+            secret=binding.secret,
+            config={**binding.config, "max_daily_messages": 50},
+        )
+
+    monkeypatch.setattr(growth_runtime, "brand_binding", queue_limited_brand_binding)
+    receipts = []
+    for index in range(51):
+        url = f"https://property-listing.example.test/QUEUE-{index:03d}"
+        data = _public_land_signal(
+            external_key=f"LAND-QUEUE-{index:03d}",
+            signal_type="residential_building_plot",
+            company_name=f"Minta Hirdető {index:03d}",
+            company_registration_id=None,
+            recipient_organization_name="Független Ingatlaniroda",
+            subject_type="organization",
+            recipient_role="listing_agent",
+            recipient_type="real_estate_agent",
+            recipient_name=f"Minta Hirdető {index:03d}",
+            sender_company_name=None,
+            reference_names=[],
+            reference_names_verified=False,
+            recipient_classification_verified=True,
+            exclusion_screening_verified=True,
+            recipient_email=f"queue-{index:03d}@example.test",
+            recipient_email_type="named",
+            contact_basis="public_property_listing",
+            public_contact_url=url,
+            location="Sülysáp",
+            evidence_url=url,
+            source_payload_hash=hashlib.sha256(f"queue-{index}".encode()).hexdigest(),
+        )
+        receipts.append(
+            service.ingest_signal(
+                db,
+                data,
+                source_evidence=_public_land_source_evidence(data),
+            )
+        )
+
+    assert len(receipts) == 51
+    assert all(receipt.status == "queued" for receipt in receipts)
+    assert all("brand_daily_rate_limit" not in receipt.reasons for receipt in receipts)
+    assert len(db.scalars(select(OutreachMessage)).all()) == 51
+    # The legacy registry value is intentionally not a queue reservation. The
+    # account-wide rolling Gmail quota and persisted pacing are transport gates.
+    assert service._rate_errors(
+        db,
+        queue_limited_brand_binding("imperial"),
+        "new-recipient@example.test",
+    ) == []
+
+
+def test_transient_public_land_blocks_auto_promote_and_are_idempotent(
+    db, growth_runtime, monkeypatch
+):
+    legacy_receipts = []
+    for index, reason in enumerate(sorted(service.PUBLIC_LAND_TRANSIENT_QUEUE_REASONS)):
+        url = f"https://property-listing.example.test/TRANSIENT-{index}"
+        data = _public_land_signal(
+            external_key=f"LAND-TRANSIENT-{index}",
+            signal_type="residential_building_plot",
+            company_name=f"Régi Hirdető {index}",
+            company_registration_id=None,
+            recipient_organization_name="Független Ingatlaniroda",
+            subject_type="organization",
+            recipient_role="listing_agent",
+            recipient_type="real_estate_agent",
+            recipient_name=f"Régi Hirdető {index}",
+            sender_company_name=None,
+            reference_names=[],
+            reference_names_verified=False,
+            recipient_classification_verified=True,
+            exclusion_screening_verified=True,
+            recipient_email=f"transient-{index}@example.test",
+            recipient_email_type="named",
+            contact_basis="public_property_listing",
+            public_contact_url=url,
+            location="Sülysáp",
+            evidence_url=url,
+            source_payload_hash=hashlib.sha256(f"transient-{index}".encode()).hexdigest(),
+        )
+        with monkeypatch.context() as queue_block:
+            queue_block.setattr(
+                service,
+                "_queue_message",
+                lambda *_args, _reason=reason, **_kwargs: (_ for _ in ()).throw(
+                    GrowthRegistryError(_reason)
+                ),
+            )
+            legacy_receipts.append(
+                service.ingest_signal(
+                    db,
+                    data,
+                    source_evidence=_public_land_source_evidence(data),
+                )
+            )
+
+    assert {receipt.reasons[0] for receipt in legacy_receipts} == set(
+        service.PUBLIC_LAND_TRANSIENT_QUEUE_REASONS
+    )
+    assert all(receipt.status == "blocked" for receipt in legacy_receipts)
+
+    applied = service.automatic_public_land_transient_block_promotion(db)
+
+    assert applied["selected_count"] == 2
+    assert applied["queued"] == 2
+    assert applied["blocked"] == 0
+    assert applied["suppressed"] == 0
+    for receipt in legacy_receipts:
+        signal = db.scalar(
+            select(GrowthSignal).where(GrowthSignal.signal_id == receipt.signal_id)
+        )
+        outreach = db.scalar(
+            select(OutreachMessage).where(OutreachMessage.signal_id == receipt.signal_id)
+        )
+        assert signal is not None and signal.status == "queued"
+        assert outreach is not None and outreach.release_token_hash
+        assert outreach.release_approved_by == "owner-policy:land-public-listing-v3:2026-08-28"
+        metadata = service._canonical_metadata(outreach)
+        assert metadata["recipient_name_render_policy"]["origin"] == (
+            "VERIFIED_LISTING_EVIDENCE"
+        )
+        assert metadata["source_evidence_manifest_sha256"] == (
+            service._persisted_source_evidence_manifest_sha256(db, receipt.signal_id)
+        )
+
+    replay = service.automatic_public_land_transient_block_promotion(db)
+    assert replay == {
+        "status": "applied",
+        "selected_count": 0,
+        "queued": 0,
+        "blocked": 0,
+        "suppressed": 0,
+        "idempotent": True,
+    }
+    assert len(db.scalars(select(OutreachMessage)).all()) == 2
+    assert db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "growth_public_land_transient_block_promotion_applied"
+        )
+    )
+
+
+def test_transient_promotion_rechecks_cooldown_suppression_and_exact_reason_only(
+    db, growth_runtime, monkeypatch
+):
+    cooldown_email = "transient-cooldown@example.test"
+    seed_url = "https://property-listing.example.test/TRANSIENT-COOLDOWN-SEED"
+    seed_data = _public_land_signal(
+        external_key="LAND-TRANSIENT-COOLDOWN-SEED",
+        signal_type="residential_building_plot",
+        company_name="Korábbi Hirdető",
+        company_registration_id=None,
+        recipient_organization_name="Független Ingatlaniroda",
+        subject_type="organization",
+        recipient_role="listing_agent",
+        recipient_type="real_estate_agent",
+        recipient_name="Korábbi Hirdető",
+        sender_company_name=None,
+        reference_names=[],
+        reference_names_verified=False,
+        recipient_classification_verified=True,
+        exclusion_screening_verified=True,
+        recipient_email=cooldown_email,
+        recipient_email_type="named",
+        contact_basis="public_property_listing",
+        public_contact_url=seed_url,
+        location="Sülysáp",
+        evidence_url=seed_url,
+        source_payload_hash=hashlib.sha256(b"transient-cooldown-seed").hexdigest(),
+    )
+    seed = service.ingest_signal(
+        db,
+        seed_data,
+        source_evidence=_public_land_source_evidence(seed_data),
+    )
+    assert seed.status == "queued"
+
+    legacy: dict[str, object] = {}
+    cases = (
+        ("cooldown", "brand_daily_rate_limit", cooldown_email),
+        ("suppression", "growth_writes_locked", "transient-suppressed@example.test"),
+        (
+            "combined",
+            "brand_daily_rate_limit;recipient_brand_cooldown",
+            "transient-combined@example.test",
+        ),
+    )
+    for index, (case, reason, email) in enumerate(cases):
+        url = f"https://property-listing.example.test/TRANSIENT-GATE-{index}"
+        data = _public_land_signal(
+            external_key=f"LAND-TRANSIENT-GATE-{index}",
+            signal_type="residential_building_plot",
+            company_name=f"Kapuzott Hirdető {index}",
+            company_registration_id=None,
+            recipient_organization_name="Független Ingatlaniroda",
+            subject_type="organization",
+            recipient_role="listing_agent",
+            recipient_type="real_estate_agent",
+            recipient_name=f"Kapuzott Hirdető {index}",
+            sender_company_name=None,
+            reference_names=[],
+            reference_names_verified=False,
+            recipient_classification_verified=True,
+            exclusion_screening_verified=True,
+            recipient_email=email,
+            recipient_email_type="named",
+            contact_basis="public_property_listing",
+            public_contact_url=url,
+            location="Sülysáp",
+            evidence_url=url,
+            source_payload_hash=hashlib.sha256(f"transient-gate-{index}".encode()).hexdigest(),
+        )
+        with monkeypatch.context() as queue_block:
+            queue_block.setattr(
+                service,
+                "_queue_message",
+                lambda *_args, _reason=reason, **_kwargs: (_ for _ in ()).throw(
+                    GrowthRegistryError(_reason)
+                ),
+            )
+            legacy[case] = service.ingest_signal(
+                db,
+                data,
+                source_evidence=_public_land_source_evidence(data),
+            )
+
+    db.add(
+        MailSuppression(
+            email="transient-suppressed@example.test",
+            reason="unsubscribe",
+            source="test",
+            active=True,
+        )
+    )
+    db.commit()
+
+    applied = service.automatic_public_land_transient_block_promotion(db)
+
+    assert applied["selected_count"] == 2
+    assert applied["queued"] == 0
+    assert applied["blocked"] == 1
+    assert applied["suppressed"] == 1
+    cooldown = db.scalar(
+        select(GrowthSignal).where(
+            GrowthSignal.signal_id == legacy["cooldown"].signal_id
+        )
+    )
+    suppressed = db.scalar(
+        select(GrowthSignal).where(
+            GrowthSignal.signal_id == legacy["suppression"].signal_id
+        )
+    )
+    combined = db.scalar(
+        select(GrowthSignal).where(
+            GrowthSignal.signal_id == legacy["combined"].signal_id
+        )
+    )
+    assert cooldown is not None and cooldown.status == "blocked"
+    assert json.loads(cooldown.rejection_reasons_json) == ["recipient_brand_cooldown"]
+    assert suppressed is not None and suppressed.status == "suppressed"
+    assert json.loads(suppressed.rejection_reasons_json) == ["Recipient is suppressed"]
+    assert combined is not None and combined.status == "blocked"
+    assert json.loads(combined.rejection_reasons_json) == [
+        "brand_daily_rate_limit;recipient_brand_cooldown"
+    ]
+    assert not db.scalars(
+        select(OutreachMessage).where(
+            OutreachMessage.signal_id.in_(
+                [
+                    legacy["cooldown"].signal_id,
+                    legacy["suppression"].signal_id,
+                    legacy["combined"].signal_id,
+                ]
+            )
+        )
+    ).all()
+    assert service.automatic_public_land_transient_block_promotion(db)["idempotent"] is True
 
 
 def test_name_fallback_promotion_preview_apply_is_bounded_idempotent_and_audited(
@@ -1989,7 +2353,7 @@ def test_smtp_adapter_sends_internal_html_as_multipart_alternative(monkeypatch):
     base_binding = FakeRegistry().brand_binding("imperial")
     binding = BrandBinding(
         brand_id=base_binding.brand_id,
-        sender_email="info@imperialholding.hu",
+        sender_email="reports@imperialholding.hu",
         domain_key=base_binding.domain_key,
         secret=base_binding.secret,
         config=base_binding.config,

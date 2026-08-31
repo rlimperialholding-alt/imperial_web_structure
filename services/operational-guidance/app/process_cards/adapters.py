@@ -167,6 +167,10 @@ class GmailApprovalNotifier:
     approver_email: str
 
     def notify(self, *, process_key: str, title: str, version: int, role: str, artifact_links: dict[str, str], checklist_template_id: str | None = None) -> str:
+        if self.delegated_user.strip().casefold() == "info@imperialholding.hu":
+            raise RuntimeError(
+                "info@imperialholding.hu sends must use the central account quota gate"
+            )
         import base64
         from email.message import EmailMessage
 
