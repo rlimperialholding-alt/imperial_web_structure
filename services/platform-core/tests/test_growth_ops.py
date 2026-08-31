@@ -16,10 +16,8 @@ from sqlalchemy import select
 from app.database import SessionLocal
 from app.growth_ops import service
 from app.growth_ops.canonical_policy import (
-    LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED,
     LAND_AGENT_HARD_GATE_GDN,
     LAND_AGENT_HARD_GATE_OC_II_XII,
-    LAND_AGENT_HARD_GATE_OC_UNVERIFIED,
     LAND_AGENT_HARD_GATE_TURCZER,
     land_agent_hard_gate_reason,
 )
@@ -1391,11 +1389,6 @@ def test_land_copy_assertion_failure_cannot_leave_a_partial_queued_message(
             },
             LAND_AGENT_HARD_GATE_OC_II_XII,
         ),
-        (
-            {"organization_name": "Otthon Centrum", "office_name": None},
-            LAND_AGENT_HARD_GATE_OC_UNVERIFIED,
-        ),
-        ({"organization_name": None}, LAND_AGENT_HARD_GATE_AFFILIATION_UNVERIFIED),
     ],
 )
 def test_land_agent_named_network_and_office_hard_gates(changes, expected):
@@ -1423,6 +1416,12 @@ def test_land_agent_gate_allows_verified_nonblocked_office_and_does_not_cover_ow
         "public_contact_url": "https://www.oc.hu/iroda/xi-kerulet-bartok-bela-ut",
         "evidence_url": "https://www.oc.hu/ingatlanok/UAT123",
     }
+    assert land_agent_hard_gate_reason(**values) is None
+
+    values.update(organization_name="Otthon Centrum", office_name=None)
+    assert land_agent_hard_gate_reason(**values) is None
+
+    values.update(organization_name=None, office_name=None)
     assert land_agent_hard_gate_reason(**values) is None
 
     values.update(

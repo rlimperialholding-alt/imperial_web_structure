@@ -167,28 +167,49 @@ def _validated_source_evidence(
         or urlsplit(data.public_contact_url).scheme != "https"
     ):
         raise GrowthRegistryError("public_land_listing_url_binding_mismatch")
-    expected: dict[str, str] = {
+    expected_required: dict[str, str] = {
         "listing_permalink": str(data.public_contact_url or ""),
-        "recipient_name": str(data.recipient_name or ""),
         "recipient_email": str(data.recipient_email or ""),
         "recipient_role": data.recipient_role,
-        "property_type": "",
-        "location": str(data.location or ""),
-        "plot_size_sqm": str(data.plot_size_sqm or ""),
     }
-    if data.recipient_role == "listing_agent":
-        expected.update(
-            {
-                "recipient_organization_name": str(data.recipient_organization_name or ""),
-                "recipient_office_name": str(data.recipient_office_name or ""),
-            }
-        )
+    expected_known = {
+        **expected_required,
+        **(
+            {"recipient_name": data.recipient_name}
+            if data.recipient_name is not None
+            else {}
+        ),
+        **({"location": data.location} if data.location is not None else {}),
+        **(
+            {"plot_size_sqm": str(data.plot_size_sqm)}
+            if data.plot_size_sqm is not None
+            else {}
+        ),
+        **(
+            {"recipient_organization_name": data.recipient_organization_name}
+            if data.recipient_organization_name is not None
+            else {}
+        ),
+        **(
+            {"recipient_office_name": data.recipient_office_name}
+            if data.recipient_office_name is not None
+            else {}
+        ),
+    }
+    allowed_fields = set(expected_required) | {
+        "recipient_name",
+        "property_type",
+        "location",
+        "plot_size_sqm",
+        "recipient_organization_name",
+        "recipient_office_name",
+    }
     supplied: dict[str, dict[str, Any]] = {}
     for item in source_evidence:
         if not isinstance(item, dict):
             raise GrowthRegistryError("public_land_source_evidence_invalid")
         field_name = str(item.get("field_name") or "")
-        if field_name in supplied or field_name not in expected:
+        if field_name in supplied or field_name not in allowed_fields:
             raise GrowthRegistryError("public_land_source_evidence_field_invalid")
         observed_value = str(item.get("observed_value") or "")
         snippet = str(item.get("source_snippet") or "")
@@ -196,8 +217,8 @@ def _validated_source_evidence(
         snapshot_sha256 = str(item.get("snapshot_sha256") or "")
         fetched_at = item.get("fetched_at")
         if (
-            (field_name != "property_type" and observed_value != expected[field_name])
-            or (field_name == "property_type" and not observed_value.strip())
+            (field_name in expected_known and observed_value != expected_known[field_name])
+            or not observed_value.strip()
             or not snippet.strip()
             or len(snippet) > 2_000
             or source_url != data.evidence_url
@@ -214,7 +235,7 @@ def _validated_source_evidence(
             "snapshot_sha256": snapshot_sha256,
             "fetched_at": _aware(fetched_at),
         }
-    if set(supplied) != set(expected):
+    if not set(expected_required).issubset(supplied):
         raise GrowthRegistryError("public_land_source_evidence_incomplete")
     return [supplied[field_name] for field_name in sorted(supplied)]
 
@@ -943,9 +964,12 @@ def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
     public_land_contact = _is_public_land_listing_contact(data)
     if data.motor_key == "ivs":
         reasons.append("iora_internal_executive_review_only")
-    if score < 55:
+    if not public_land_contact and score < 55:
         reasons.append("score_below_55")
-    if utcnow() - _aware(data.detected_at) > timedelta(days=30):
+    if (
+        not public_land_contact
+        and utcnow() - _aware(data.detected_at) > timedelta(days=30)
+    ):
         reasons.append("signal_older_than_30_days")
     if not data.recipient_email:
         reasons.append("recipient_email_missing")
@@ -969,16 +993,17 @@ def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
         reasons.append("named_or_unknown_mailbox_requires_consent_or_request")
     if data.contact_basis == "public_property_listing" and not public_land_contact:
         reasons.append("invalid_public_property_listing_contact")
-    if data.signal_type == "residential_building_plot" and data.recipient_role == "property_owner":
-        if not data.location or data.plot_size_sqm is None:
-            reasons.append("template-variable-missing")
     if data.recipient_type == "unknown":
         reasons.append("recipient_type_unclassified_no_send")
     if not data.recipient_classification_verified:
         reasons.append("recipient_classification_not_verified_no_send")
     if not data.exclusion_screening_verified:
         reasons.append("exclusion_screening_not_verified_no_send")
-    if data.recipient_type != "unknown" and not data.recipient_name:
+    if (
+        not public_land_contact
+        and data.recipient_type != "unknown"
+        and not data.recipient_name
+    ):
         reasons.append("recipient_name_missing")
     if data.recipient_type == "architect_office" and not data.sender_company_name:
         reasons.append("sender_company_name_missing")
@@ -1275,6 +1300,11 @@ def ingest_signal(
         if validated_source_evidence
         else None
     )
+    public_land_template_fields: set[str] = set()
+    if _is_public_land_listing_contact(data):
+        public_land_template_fields.add("recipient_name")
+        if data.recipient_role == "property_owner":
+            public_land_template_fields.update({"location", "plot_size_sqm"})
     registry = GrowthRegistry.load()
     registry.validate_signal_source(
         source_id=data.source_id,
@@ -1386,6 +1416,21 @@ def ingest_signal(
     outreach: OutreachMessage | None = None
     if not reasons:
         try:
+            if public_land_template_fields:
+                evidenced_fields = {
+                    str(item["field_name"]) for item in validated_source_evidence
+                }
+                missing_template_fields = sorted(
+                    field_name
+                    for field_name in public_land_template_fields
+                    if field_name not in evidenced_fields
+                    or not str(getattr(data, field_name, None) or "").strip()
+                )
+                if missing_template_fields:
+                    raise GrowthRegistryError(
+                        "template-variable-missing:"
+                        + ",".join(missing_template_fields)
+                    )
             binding = registry.brand_binding(brand_id)
             _verified_sender(db, binding)
             if not writes_unlocked() or not _control_enabled(db, data.motor_key):
@@ -1402,11 +1447,17 @@ def ingest_signal(
             )
             row.status = "queued"
         except (GrowthRegistryError, ValueError) as exc:
-            reasons.append(str(exc))
-            if "template-variable-missing" in str(exc):
+            error = str(exc)
+            render_missing_prefix = "Canonical render field is missing: "
+            if error.startswith(render_missing_prefix):
+                error = "template-variable-missing:" + error.removeprefix(
+                    render_missing_prefix
+                )
+            reasons.append(error)
+            if "template-variable-missing" in error:
                 row.status = "template-variable-missing"
             else:
-                row.status = "suppressed" if "suppressed" in str(exc) else "blocked"
+                row.status = "suppressed" if "suppressed" in error else "blocked"
             row.rejection_reasons_json = canonical_json(sorted(set(reasons)))
     registry_sources = getattr(registry, "sources", {})
     source = registry_sources.get(row.source_id) if isinstance(registry_sources, dict) else None

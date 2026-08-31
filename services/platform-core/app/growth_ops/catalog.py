@@ -11,7 +11,7 @@ import threading
 import time as monotonic_time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from html.parser import HTMLParser
 from pathlib import Path
 from threading import Lock
@@ -27,12 +27,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from ..audit import audit
 from ..land_acquisition.registry import (
     LandRegistryError,
     PortalRegistry,
     is_named_portal_host,
     same_named_portal_binding,
 )
+from ..models import AuditLog
 from .canonical_policy import (
     DAILY_UNIQUE_LEAD_MINIMUM,
     SOURCE_LEDGER_ROUTE_COUNT,
@@ -91,6 +93,7 @@ DAILY_ROUTE_ATTEMPT_MAXIMUM = 2_000
 LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM = 3
 LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET = 30
 LAND_PUBLIC_HTML_ROUTE_PREFIX = "LAND-PUBLIC-HTML:"
+LAND_RECIPIENT_POLICY_VERSION = "LAND-RECIPIENT-ROLE-EMAIL-V1"
 PORTAL_PUBLIC_HTML_USER_AGENT = (
     "Imperial-Land-PublicHTML/1.0 (+https://imperialholding.hu; info@imperialholding.hu)"
 )
@@ -937,6 +940,8 @@ def _fetch(
     managed_land: bool = False,
     pending_listing_urls: list[str] | None = None,
     examined_listing_urls: set[str] | None = None,
+    replay_only_listing_urls: set[str] | None = None,
+    listing_fetch_limit: int | None = None,
 ) -> dict[str, Any]:
     cfg = settings()
     parsed = urlparse(route.route_url)
@@ -1055,24 +1060,41 @@ def _fetch(
     all_candidate_urls: list[str] = []
     if managed_land and named_portal and result_status == "succeeded":
         route_host = (parsed.hostname or "").casefold()
-        candidate_urls: list[str] = list(pending_listing_urls or [])
-        if is_specific_listing_permalink(route.route_url):
-            candidate_urls.append(route.route_url)
-        candidate_urls.extend(
-            str(item["url"])
-            for item in analysis_links
-            if is_specific_listing_permalink(item.get("url"))
-            and same_named_portal_binding(
-                urlparse(str(item.get("url") or "")).hostname or "",
-                route_host,
+        if replay_only_listing_urls is not None:
+            # A same-day policy replay may re-fetch only the cursor rows named by
+            # its audit-bound marker. The category response remains observable,
+            # but must not expand the replay into newly discovered URLs.
+            candidate_urls = [
+                url
+                for url in pending_listing_urls or []
+                if url in replay_only_listing_urls
+            ]
+        else:
+            candidate_urls = list(pending_listing_urls or [])
+            if is_specific_listing_permalink(route.route_url):
+                candidate_urls.append(route.route_url)
+            candidate_urls.extend(
+                str(item["url"])
+                for item in analysis_links
+                if is_specific_listing_permalink(item.get("url"))
+                and same_named_portal_binding(
+                    urlparse(str(item.get("url") or "")).hostname or "",
+                    route_host,
+                )
             )
-        )
         all_candidate_urls = list(dict.fromkeys(candidate_urls))
+        effective_fetch_limit = min(
+            LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM,
+            max(
+                0,
+                LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
+                if listing_fetch_limit is None
+                else listing_fetch_limit,
+            ),
+        )
         candidate_urls = [
             url for url in all_candidate_urls if url not in (examined_listing_urls or set())
-        ][
-            :LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
-        ]
+        ][:effective_fetch_limit]
         for listing_url in candidate_urls:
             if listing_url == route.route_url:
                 listing_result = {
@@ -1130,10 +1152,200 @@ def _fetch(
                     if url not in (examined_listing_urls or set())
                 ]
             )
-            <= LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
+            <= (
+                LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
+                if listing_fetch_limit is None
+                else min(
+                    LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM,
+                    max(0, listing_fetch_limit),
+                )
+            )
             if managed_land and named_portal
             else True
         ),
+    }
+
+
+def _budapest_today() -> date:
+    return datetime.now(UTC).astimezone(ZoneInfo("Europe/Budapest")).date()
+
+
+def replay_public_land_policy_cursors(
+    db: Session,
+    *,
+    policy_version: str,
+    scope_local_date: date,
+    max_rows: int,
+    apply: bool,
+    expected_plan_sha256: str | None,
+    reason: str,
+    actor: str,
+) -> dict[str, Any]:
+    """Preview or reset examined cursors for one bounded, audited policy replay.
+
+    This operation never fetches a listing and never dispatches outreach. Applied
+    rows become pending so the normal managed route scanner performs the next live
+    fetch, evidence extraction, ingest, suppression and queueing flow.
+    """
+
+    if policy_version != LAND_RECIPIENT_POLICY_VERSION:
+        raise GrowthRegistryError("public_land_policy_replay_version_invalid")
+    if max_rows < 1 or max_rows > 210:
+        raise GrowthRegistryError("public_land_policy_replay_limit_invalid")
+    if len(reason.strip()) < 10:
+        raise GrowthRegistryError("public_land_policy_replay_reason_required")
+
+    audit_entity_id = policy_version
+    existing_audit = db.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.action == "growth_public_land_policy_replay_applied",
+            AuditLog.entity_type == "growth_public_land_policy_replay",
+            AuditLog.entity_id == audit_entity_id,
+        )
+        .order_by(AuditLog.id.desc())
+    )
+    if existing_audit is not None:
+        try:
+            recorded = json.loads(existing_audit.after_json or "{}")
+        except json.JSONDecodeError as exc:
+            raise GrowthRegistryError(
+                "public_land_policy_replay_audit_unreadable"
+            ) from exc
+        return {
+            **recorded,
+            "status": "already_applied",
+            "apply": apply,
+            "idempotent": True,
+            "audit_log_id": existing_audit.id,
+        }
+    if scope_local_date != _budapest_today():
+        raise GrowthRegistryError("public_land_policy_replay_scope_not_current")
+
+    from ..land_acquisition.service import public_land_route_readiness
+
+    route_state = public_land_route_readiness(db)
+    if route_state.get("ready") is not True:
+        raise GrowthRegistryError("public_land_policy_replay_routes_not_ready")
+    route_keys = sorted(str(item["route_key"]) for item in route_state.get("routes", []))
+    timezone = ZoneInfo("Europe/Budapest")
+    start_local = datetime.combine(scope_local_date, time.min, tzinfo=timezone)
+    end_local = start_local + timedelta(days=1)
+    start_utc = start_local.astimezone(UTC)
+    end_utc = end_local.astimezone(UTC)
+    filters = (
+        GrowthPublicLandListingCursor.route_key.in_(route_keys),
+        GrowthPublicLandListingCursor.status == "examined",
+        GrowthPublicLandListingCursor.examined_at >= start_utc,
+        GrowthPublicLandListingCursor.examined_at < end_utc,
+    )
+    total = int(
+        db.scalar(
+            select(func.count())
+            .select_from(GrowthPublicLandListingCursor)
+            .where(*filters)
+        )
+        or 0
+    )
+    row_query = (
+        select(GrowthPublicLandListingCursor)
+        .where(*filters)
+        .order_by(
+            GrowthPublicLandListingCursor.route_key,
+            GrowthPublicLandListingCursor.id,
+        )
+        .limit(max_rows)
+    )
+    if apply:
+        row_query = row_query.with_for_update()
+    rows = list(db.scalars(row_query))
+    items = [
+        {
+            "cursor_id": row.id,
+            "route_key": row.route_key,
+            "listing_url_sha256": row.listing_url_sha256,
+            "original_examined_at": (
+                row.examined_at.isoformat() if row.examined_at else None
+            ),
+        }
+        for row in rows
+    ]
+    plan = {
+        "policy_version": policy_version,
+        "scope_local_date": scope_local_date.isoformat(),
+        "route_set_sha256": route_state.get("route_set_sha256"),
+        "selected_count": len(items),
+        "total_matching": total,
+        "truncated": total > max_rows,
+        "items": items,
+    }
+    plan_sha256 = hashlib.sha256(_canonical_json(plan).encode("utf-8")).hexdigest()
+    result = {
+        "status": "preview" if not apply else "applied",
+        "apply": apply,
+        "idempotent": False,
+        "plan_sha256": plan_sha256,
+        **plan,
+    }
+    if not apply:
+        return result
+    if plan["truncated"]:
+        raise GrowthRegistryError("public_land_policy_replay_limit_too_small")
+    if expected_plan_sha256 != plan_sha256:
+        raise GrowthRegistryError("public_land_policy_replay_plan_changed")
+    marker = Path(settings().runtime_kill_switch_file)
+    try:
+        marker_value = marker.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise GrowthRegistryError(
+            "public_land_policy_replay_runtime_kill_switch_required"
+        ) from exc
+    if marker_value != "KILLED":
+        raise GrowthRegistryError(
+            "public_land_policy_replay_runtime_kill_switch_required"
+        )
+    changed_at = datetime.now(UTC)
+    for row in rows:
+        row.status = "pending"
+        row.last_result = f"policy_replay:{policy_version}"
+        row.next_retry_at = None
+        row.updated_at = changed_at
+    audit_payload = {
+        **result,
+        "items": [
+            {
+                "cursor_id": item["cursor_id"],
+                "route_key": item["route_key"],
+                "listing_url_sha256": item["listing_url_sha256"],
+                "original_examined_at": item["original_examined_at"],
+            }
+            for item in items
+        ],
+        "reason": reason.strip(),
+        "changed_at": changed_at.isoformat(),
+    }
+    audit(
+        db,
+        actor=actor,
+        action="growth_public_land_policy_replay_applied",
+        entity_type="growth_public_land_policy_replay",
+        entity_id=audit_entity_id,
+        before={"examined": len(rows), "pending": 0},
+        after=audit_payload,
+    )
+    db.commit()
+    recorded_audit = db.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.action == "growth_public_land_policy_replay_applied",
+            AuditLog.entity_type == "growth_public_land_policy_replay",
+            AuditLog.entity_id == audit_entity_id,
+        )
+        .order_by(AuditLog.id.desc())
+    )
+    return {
+        **result,
+        "audit_log_id": recorded_audit.id if recorded_audit else None,
     }
 
 
@@ -1254,6 +1466,9 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
     managed_selected: list[SourceCoverageRoute] = []
     pending_by_route: dict[str, list[str]] = {}
     examined_by_route: dict[str, set[str]] = {}
+    replay_only_by_route: dict[str, set[str]] = {}
+    listing_fetch_limit_by_route: dict[str, int] = {}
+    replay_marker = f"policy_replay:{LAND_RECIPIENT_POLICY_VERSION}"
     for route in managed_routes:
         pending = list(
             db.scalars(
@@ -1272,9 +1487,24 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
                     ),
                 )
                 .order_by(
+                    case(
+                        (GrowthPublicLandListingCursor.last_result == replay_marker, 0),
+                        else_=1,
+                    ),
                     GrowthPublicLandListingCursor.next_retry_at.asc().nulls_first(),
                     GrowthPublicLandListingCursor.first_seen_at,
                 )
+            )
+        )
+        policy_replay_pending = list(
+            db.scalars(
+                select(GrowthPublicLandListingCursor.listing_url)
+                .where(
+                    GrowthPublicLandListingCursor.route_key == route.route_key,
+                    GrowthPublicLandListingCursor.status == "pending",
+                    GrowthPublicLandListingCursor.last_result == replay_marker,
+                )
+                .order_by(GrowthPublicLandListingCursor.id)
             )
         )
         examined = set(
@@ -1313,8 +1543,26 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
                 .limit(1)
             )
         )
-        if examined_today >= LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET:
+        if policy_replay_pending:
+            # Replay work is isolated for the whole route poll, even while the
+            # ordinary daily budget still has room. Normal pending and newly
+            # discovered URLs wait for a later ordinary-budget poll.
+            pending = policy_replay_pending
+            replay_only_by_route[route.route_key] = set(policy_replay_pending)
+            listing_fetch_limit_by_route[route.route_key] = (
+                LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM
+            )
+        elif examined_today >= LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET:
+            # A bounded policy replay is a re-evaluation of already-budgeted URLs,
+            # not new discovery. Only explicitly marked replay rows may cross the
+            # ordinary same-day discovery ceiling, and the marker is consumed by
+            # the normal fetch result below.
             continue
+        else:
+            listing_fetch_limit_by_route[route.route_key] = min(
+                LAND_PUBLIC_HTML_LISTING_FETCH_MAXIMUM,
+                LAND_PUBLIC_HTML_LISTING_DAILY_ROUTE_BUDGET - examined_today,
+            )
         if not attempted_once or pending:
             managed_selected.append(route)
             pending_by_route[route.route_key] = pending
@@ -1332,6 +1580,12 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
             managed_land=_managed,
             pending_listing_urls=(pending_by_route.get(route.route_key) if _managed else None),
             examined_listing_urls=(examined_by_route.get(route.route_key) if _managed else None),
+            replay_only_listing_urls=(
+                replay_only_by_route.get(route.route_key) if _managed else None
+            ),
+            listing_fetch_limit=(
+                listing_fetch_limit_by_route.get(route.route_key) if _managed else None
+            ),
         )
         completed = datetime.now(UTC)
         return started, result, completed
