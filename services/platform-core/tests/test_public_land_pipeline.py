@@ -1838,6 +1838,9 @@ def test_land_canary_stops_at_three_without_changing_normal_rate_limits(db, land
         )
         == 3
     )
+    state = db.get(GrowthLandCanaryState, 1)
+    assert state is not None
+    assert state.status == "completed"
     assert service._outreach_send_capacity(db) == 5
 
 
@@ -2741,7 +2744,9 @@ def test_managed_public_portal_non_success_has_empty_candidate_state(
     assert result["land_listing_exhausted"] is True
 
 
-def test_pinned_fetch_resolves_once_and_preserves_original_tls_host(monkeypatch):
+def test_pinned_fetch_resolves_once_preserves_tls_host_and_encodes_unicode_target(
+    monkeypatch,
+):
     dns_calls = 0
     connected: list[tuple[str, int]] = []
     requests: list[tuple[str, str, dict[str, str]]] = []
@@ -2806,7 +2811,7 @@ def test_pinned_fetch_resolves_once_and_preserves_original_tls_host(monkeypatch)
     monkeypatch.setattr(catalog.http.client, "HTTPSConnection", Connection)
 
     result = catalog._pinned_https_get(
-        "https://www.ingatlan.com/35500150",
+        "https://www.ingatlan.com/35500150/1200²?unit=m²&sort=ár",
         max_response_bytes=10_000,
         deadline_monotonic=catalog.monotonic_time.monotonic() + 5,
     )
@@ -2814,6 +2819,10 @@ def test_pinned_fetch_resolves_once_and_preserves_original_tls_host(monkeypatch)
     assert dns_calls == 1
     assert connected == [("93.184.216.34", 443)]
     assert result["source_ip"] == "93.184.216.34"
+    assert requests[0][1] == (
+        "/35500150/1200%C2%B2?unit=m%C2%B2&sort=%C3%A1r"
+    )
+    assert requests[0][1].isascii()
     assert requests[0][2]["Host"] == "www.ingatlan.com"
     assert requests[0][2]["Accept-Encoding"] == "identity"
 

@@ -240,6 +240,16 @@ def _pinned_https_get(
         raise UnsafeRouteError("invalid_route_url") from exc
     if parsed_port not in {None, 443}:
         raise UnsafeRouteError("non_standard_https_port")
+    try:
+        # ``http.client`` requires an ASCII request target. Public listing URLs
+        # occasionally expose unescaped Unicode characters (for example ``²``
+        # in a size slug). HTTPX applies RFC 3986 UTF-8 percent encoding while
+        # the separately validated host, pinned IP and TLS SNI remain unchanged.
+        request_target = httpx.URL(url).raw_path.decode("ascii")
+    except (httpx.InvalidURL, UnicodeError) as exc:
+        raise UnsafeRouteError("invalid_route_url") from exc
+    if not request_target.startswith("/"):
+        raise UnsafeRouteError("invalid_route_url")
     host = parsed.hostname.casefold().rstrip(".")
     port = parsed.port or 443
     outcome: dict[str, Any] = {}
@@ -294,12 +304,9 @@ def _pinned_https_get(
             context=context,
         )
         connection.sock = tls_socket
-        path = parsed.path or "/"
-        if parsed.query:
-            path = f"{path}?{parsed.query}"
         connection.request(
             "GET",
-            path,
+            request_target,
             headers={
                 "Host": host if parsed.port is None else f"{host}:{port}",
                 "User-Agent": PORTAL_PUBLIC_HTML_USER_AGENT,
