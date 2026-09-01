@@ -24,6 +24,7 @@ from ..audit import audit
 from ..config import settings as platform_settings
 from ..global_email_guard import (
     claim_global_recipient_delivery,
+    claimed_global_recipient_token,
     fail_global_recipient_delivery,
     finalize_global_recipient_delivery,
 )
@@ -52,6 +53,9 @@ from .models import (
     GrowthSignalSourceEvidence,
     GrowthWorkerHeartbeat,
     OutreachMessage,
+    ScheduledGmailEscrowPermit,
+    ScheduledGmailLease,
+    ScheduledGmailLeaseRequest,
 )
 from .official_source import (
     OFFICIAL_SOURCE_MAX_RESPONSE_BYTES,
@@ -61,7 +65,16 @@ from .official_source import (
     normalize_official_source_marker,
 )
 from .registry import BrandBinding, GrowthRegistry, GrowthRegistryError, settings, writes_unlocked
-from .schemas import GrowthSignalIn, GrowthSignalReceipt, OutreachEventIn, OutreachReleaseIn
+from .scheduled_gmail_auth import ScheduledGmailClientPrincipal
+from .schemas import (
+    GrowthSignalIn,
+    GrowthSignalReceipt,
+    OutreachEventIn,
+    OutreachReleaseIn,
+    ScheduledGmailAbortIn,
+    ScheduledGmailFinalizeIn,
+    ScheduledGmailLeaseIn,
+)
 
 LAND_RECIPIENT_TYPES_BY_ROLE = {
     "listing_agent": "real_estate_agent",
@@ -79,6 +92,11 @@ PUBLIC_LAND_TRANSIENT_QUEUE_REASONS = frozenset(
 OUTREACH_CAPACITY_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_252
 OUTREACH_TRANSPORT_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_253
 OUTREACH_PACING_STATE_KEY = "transport:gmail:info@imperialholding.hu"
+CENTRAL_GMAIL_TRANSPORT_STATE_KEY = "transport:central-gmail:info@imperialholding.hu"
+SCHEDULED_GMAIL_CLAIM_PREFIX = "scheduled-gmail:"
+SCHEDULED_GMAIL_LEASE_SECONDS = 180
+SCHEDULED_GMAIL_PROVIDER_ACCEPTANCE_GRACE_SECONDS = 30
+SCHEDULED_GMAIL_MIN_TRANSPORT_WINDOW_SECONDS = 60
 OUTREACH_COMPLAINT_STOP_RATE = 0.003
 OUTREACH_BOUNCE_STOP_RATE = 0.05
 OUTREACH_BOUNCE_STOP_MINIMUM = 3
@@ -103,6 +121,59 @@ def canonical_json(value: Any) -> str:
 
 def sha(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
+
+
+def _scheduled_gmail_claimed_by(client_id: str) -> str:
+    value = f"{SCHEDULED_GMAIL_CLAIM_PREFIX}{client_id}"
+    if len(value) > 160:
+        raise GrowthRegistryError("scheduled_gmail_client_id_too_long")
+    return value
+
+
+def _verify_scheduled_gmail_escrow_client_event(
+    event_manifest: dict[str, Any],
+    *,
+    expected_sha256: str,
+    signature: str,
+    public_key_pem: str,
+) -> None:
+    """Verify an offline event at a stable coordination seam."""
+    from .scheduled_gmail_escrow import escrow_sha256, verify_client_event_signature
+
+    if escrow_sha256(event_manifest) != expected_sha256:
+        raise GrowthRegistryError("scheduled_gmail_escrow_event_hash_mismatch")
+
+    verify_client_event_signature(
+        event_manifest,
+        signature=signature,
+        public_key_pem=public_key_pem,
+    )
+
+
+def _scheduled_gmail_lease_token(
+    *, lease_id: str, client_id: str, outreach_id: str, token_nonce: str
+) -> str:
+    key = platform_settings.imperial_release_hmac_key
+    if len(key) < 32:
+        raise GrowthRegistryError("scheduled_gmail_lease_hmac_key_missing")
+    payload = (
+        f"scheduled-gmail\0{lease_id}\0{client_id}\0{outreach_id}\0{token_nonce}"
+    )
+    signature = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{lease_id}.{signature}"
+
+
+def _scheduled_gmail_token_matches(lease: ScheduledGmailLease, supplied: str) -> bool:
+    expected = _scheduled_gmail_lease_token(
+        lease_id=lease.lease_id,
+        client_id=lease.client_id,
+        outreach_id=lease.outreach_id,
+        token_nonce=lease.token_nonce,
+    )
+    return hmac.compare_digest(expected, supplied) and hmac.compare_digest(
+        lease.lease_token_sha256,
+        hashlib.sha256(supplied.encode()).hexdigest(),
+    )
 
 
 def _official_source_receipt_hmac(payload: dict[str, Any]) -> str:
@@ -351,6 +422,7 @@ def _is_recipient_hard_gate_error(exc: Exception) -> bool:
         or reason.startswith("cross_brand_customer_facing_content_no_send:")
         or reason.startswith("public_land_live_")
         or reason.startswith("public_land_source_evidence_")
+        or reason == "outreach_payload_hash_mismatch"
     )
 
 
@@ -1205,19 +1277,34 @@ def _recipient_suppressed(db: Session, email: str) -> bool:
     )
 
 
-def _rate_errors(db: Session, binding: BrandBinding, recipient: str) -> list[str]:
+def _rate_errors(
+    db: Session,
+    binding: BrandBinding,
+    recipient: str,
+    *,
+    exclude_outreach_id: str | None = None,
+) -> list[str]:
     now = utcnow()
-    recent_recipient = db.scalar(
-        select(OutreachMessage.id)
-        .where(
-            OutreachMessage.brand_id == binding.brand_id,
-            OutreachMessage.recipient_email == recipient,
-            OutreachMessage.created_at
-            >= now - timedelta(days=int(binding.config.get("recipient_cooldown_days", 30))),
-            OutreachMessage.status.in_(("queued", "claimed", "sent", "delivered", "responded")),
-        )
-        .limit(1)
+    cooldown_days = max(
+        30,
+        int(binding.config.get("recipient_cooldown_days", 30)),
     )
+    recent_query = select(OutreachMessage.id).where(
+        OutreachMessage.sequence_step == 0,
+        func.lower(OutreachMessage.recipient_email) == recipient.strip().casefold(),
+        func.coalesce(
+            OutreachMessage.sent_at,
+            OutreachMessage.claimed_at,
+            OutreachMessage.created_at,
+        )
+        >= now - timedelta(days=cooldown_days),
+        OutreachMessage.status.in_(("queued", "claimed", "sent", "delivered", "responded")),
+    )
+    if exclude_outreach_id:
+        recent_query = recent_query.where(
+            OutreachMessage.outreach_id != exclude_outreach_id
+        )
+    recent_recipient = db.scalar(recent_query.limit(1))
     errors: list[str] = []
     if recent_recipient:
         errors.append("recipient_brand_cooldown")
@@ -2210,14 +2297,23 @@ def _motor_is_due(now: datetime, last: GrowthRun | None, config: dict[str, Any])
 
 
 def _release_expired_claims(db: Session) -> None:
+    _lock_outreach_claim_capacity(db)
     now = utcnow()
     for row in db.scalars(
-        select(OutreachMessage).where(
+        select(OutreachMessage)
+        .where(
             OutreachMessage.status == "claimed",
             OutreachMessage.lease_expires_at.is_not(None),
             OutreachMessage.lease_expires_at <= now,
         )
+        .order_by(OutreachMessage.id)
+        .with_for_update(skip_locked=True)
     ).all():
+        scheduled_lease = db.scalar(
+            select(ScheduledGmailLease)
+            .where(ScheduledGmailLease.outreach_id == row.outreach_id)
+            .with_for_update()
+        )
         if not _delivery_verification_pending(row):
             try:
                 receipt = json.loads(row.receipt_json or "{}")
@@ -2251,6 +2347,64 @@ def _release_expired_claims(db: Session) -> None:
         row.claimed_by = None
         row.lease_expires_at = None
         row.last_error = "delivery_ambiguous_pending_verification"
+        if scheduled_lease is not None and scheduled_lease.status == "authorized":
+            guard_token = (
+                scheduled_lease.global_guard_claim_token
+                or claimed_global_recipient_token(
+                    db,
+                    recipient=row.recipient_email,
+                    identity_sha256=row.idempotency_key,
+                )
+            )
+            if guard_token:
+                try:
+                    fail_global_recipient_delivery(
+                        db,
+                        recipients=[row.recipient_email],
+                        identity_sha256=row.idempotency_key,
+                        claim_token=guard_token,
+                        error="scheduled_gmail_lease_expired_delivery_ambiguous",
+                        accepted_unverified=True,
+                        provider_message_id=row.provider_message_id,
+                        now=now,
+                        commit=False,
+                    )
+                except RuntimeError as exc:
+                    # The outreach row remains a permanent no-resend hold even
+                    # if an older global-guard row is inconsistent. Isolate the
+                    # bad guard so unrelated recipients continue safely.
+                    audit(
+                        db,
+                        actor="scheduled-gmail-coordinator",
+                        action="growth_scheduled_gmail_expiry_guard_inconsistent",
+                        entity_type="growth_outreach",
+                        entity_id=row.outreach_id,
+                        after={"error": str(exc), "continued_fail_closed": True},
+                    )
+            scheduled_lease.status = "accepted_unverified"
+            scheduled_lease.accepted_at = now
+            scheduled_lease.quota_local_date = now.astimezone(
+                ZoneInfo("Europe/Budapest")
+            ).date()
+            scheduled_lease.updated_at = now
+            for lease_request in db.scalars(
+                select(ScheduledGmailLeaseRequest)
+                .where(
+                    ScheduledGmailLeaseRequest.lease_id
+                    == scheduled_lease.lease_id,
+                    ScheduledGmailLeaseRequest.status == "authorized",
+                )
+                .with_for_update()
+            ):
+                lease_request.status = "accepted_unverified"
+                lease_request.updated_at = now
+            _finish_land_canary_slot(
+                db,
+                row.outreach_id,
+                outcome="consumed",
+                provider_message_id=row.provider_message_id,
+            )
+            _record_outreach_pacing_success(db, now=now)
 
 
 def _preclaim_outreach_readiness_reason(
@@ -2558,15 +2712,55 @@ def _assert_gmail_account_pacing_due(
 ) -> None:
     current = _aware(now or utcnow())
     next_at = _outreach_pacing_next_at(db)
-    if next_at is None or current >= next_at:
+    if next_at is not None and current < next_at:
+        retry_after = max(1.0, (next_at - current).total_seconds())
+        raise EmailDeliveryError(
+            "gmail_account_pacing_not_due_no_send",
+            retry_safe=True,
+            retry_after_seconds=retry_after,
+            detail={
+                "next_send_not_before": next_at.isoformat(),
+                "retry_after_seconds": retry_after,
+            },
+        )
+    _assert_no_scheduled_gmail_escrow_slot_conflict(db, now=current)
+
+
+def _assert_no_scheduled_gmail_escrow_slot_conflict(
+    db: Session,
+    *,
+    now: datetime,
+) -> None:
+    gap_seconds = _outreach_reputation_gap_seconds(
+        _outreach_capacity_usage(db, now),
+        now=now,
+    )
+    lower_bound = now - timedelta(seconds=gap_seconds)
+    upper_bound = now + timedelta(seconds=gap_seconds)
+    conflict = db.scalar(
+        select(ScheduledGmailEscrowPermit)
+        .where(
+            ScheduledGmailEscrowPermit.status.in_(
+                {"reserved", "consuming", "accepted_unverified"}
+            ),
+            ScheduledGmailEscrowPermit.slot_not_before <= upper_bound,
+            ScheduledGmailEscrowPermit.slot_not_after >= lower_bound,
+        )
+        .order_by(ScheduledGmailEscrowPermit.slot_not_before)
+        .limit(1)
+    )
+    if conflict is None:
         return
-    retry_after = max(1.0, (next_at - current).total_seconds())
+    retry_at = _aware(conflict.slot_not_after) + timedelta(seconds=gap_seconds)
+    retry_after = max(1.0, (retry_at - now).total_seconds())
     raise EmailDeliveryError(
-        "gmail_account_pacing_not_due_no_send",
+        "scheduled_gmail_escrow_slot_reserved_no_send",
         retry_safe=True,
         retry_after_seconds=retry_after,
         detail={
-            "next_send_not_before": next_at.isoformat(),
+            "permit_id": conflict.permit_id,
+            "slot_not_before": _aware(conflict.slot_not_before).isoformat(),
+            "slot_not_after": _aware(conflict.slot_not_after).isoformat(),
             "retry_after_seconds": retry_after,
         },
     )
@@ -2706,6 +2900,7 @@ def _outreach_budapest_day_usage(
     # that invariant was violated by an older release.
     sent_first_contacts = len(sent_rows)
     verified_first_contacts = sum(_gmail_sent_mime_verified(row) for row in sent_rows)
+    sent_reservation_keys = {f"outreach:{row.outreach_id}" for row in sent_rows}
 
     reservation_keys: set[str] = set()
     active_claims = 0
@@ -2713,7 +2908,7 @@ def _outreach_budapest_day_usage(
     for reserved in db.scalars(
         select(OutreachMessage).where(
             OutreachMessage.sequence_step == 0,
-            OutreachMessage.status == "claimed",
+            OutreachMessage.sent_at.is_(None),
         )
     ):
         # A crash can leave the business row claimed after sent_at was already
@@ -2740,9 +2935,93 @@ def _outreach_budapest_day_usage(
                 continue
         elif not is_active:
             continue
-        reservation_keys.add(f"outreach:{reserved.outreach_id}")
+        reservation_key = f"outreach:{reserved.outreach_id}"
+        if reservation_key in sent_reservation_keys or reservation_key in reservation_keys:
+            continue
+        reservation_keys.add(reservation_key)
         pending_verification += int(is_pending)
         active_claims += int(is_active and not is_pending)
+
+    # Provider events are allowed to move an accepted-but-unverified outreach
+    # row to bounced/unsubscribed/etc.  The durable scheduled lease is therefore
+    # the independent quota ledger: its slot remains consumed for the entire
+    # Budapest day even when the mutable business status no longer says claimed.
+    local_date = current.astimezone(ZoneInfo("Europe/Budapest")).date()
+    for scheduled_reservation in db.scalars(
+        select(ScheduledGmailLease).where(
+            ScheduledGmailLease.status == "accepted_unverified",
+            ScheduledGmailLease.quota_local_date == local_date,
+        )
+    ):
+        reservation_key = f"outreach:{scheduled_reservation.outreach_id}"
+        if reservation_key in sent_reservation_keys or reservation_key in reservation_keys:
+            continue
+        reservation_keys.add(reservation_key)
+        pending_verification += 1
+
+    # Offline permits reserve the same first-contact day quota before the
+    # remote task loses connectivity.  Keep that reservation independent of
+    # the mutable outreach status and dedupe it by outreach identity.
+    for escrow_reservation in db.scalars(
+        select(ScheduledGmailEscrowPermit).where(
+            ScheduledGmailEscrowPermit.status.in_(
+                {
+                    "reserved",
+                    "consuming",
+                    "accepted_unverified",
+                    "expired_unreconciled",
+                }
+            ),
+            ScheduledGmailEscrowPermit.quota_local_date == local_date,
+        )
+    ):
+        reservation_key = f"outreach:{escrow_reservation.outreach_id}"
+        if reservation_key in sent_reservation_keys or reservation_key in reservation_keys:
+            continue
+        reservation_keys.add(reservation_key)
+        if escrow_reservation.status in {"accepted_unverified", "expired_unreconciled"}:
+            pending_verification += 1
+        else:
+            active_claims += 1
+
+    # An authorization made immediately before local midnight may still be
+    # accepted by Gmail during the bounded provider clock/transport grace
+    # after its nominal expiry.  Reserve that identity in the following
+    # Budapest day as well, so advance escrow allocation cannot fill all 2,000
+    # slots and then be overtaken by the boundary acceptance.  Identity sets
+    # keep this conservative bridge from double-counting the same outreach.
+    previous_local_date = local_date - timedelta(days=1)
+    boundary_cutoff = day_start - timedelta(
+        seconds=SCHEDULED_GMAIL_PROVIDER_ACCEPTANCE_GRACE_SECONDS
+    )
+    for boundary_lease in db.scalars(
+        select(ScheduledGmailLease).where(
+            ScheduledGmailLease.status == "authorized",
+            ScheduledGmailLease.quota_local_date == previous_local_date,
+            ScheduledGmailLease.expires_at >= boundary_cutoff,
+            ScheduledGmailLease.lease_id.not_in(
+                select(ScheduledGmailEscrowPermit.lease_id)
+            ),
+        )
+    ):
+        reservation_key = f"outreach:{boundary_lease.outreach_id}"
+        if reservation_key in sent_reservation_keys or reservation_key in reservation_keys:
+            continue
+        reservation_keys.add(reservation_key)
+        active_claims += 1
+
+    for boundary_permit in db.scalars(
+        select(ScheduledGmailEscrowPermit).where(
+            ScheduledGmailEscrowPermit.status.in_({"reserved", "consuming"}),
+            ScheduledGmailEscrowPermit.quota_local_date == previous_local_date,
+            ScheduledGmailEscrowPermit.slot_not_after >= boundary_cutoff,
+        )
+    ):
+        reservation_key = f"outreach:{boundary_permit.outreach_id}"
+        if reservation_key in sent_reservation_keys or reservation_key in reservation_keys:
+            continue
+        reservation_keys.add(reservation_key)
+        active_claims += 1
 
     ready_queued = int(
         db.scalar(
@@ -2817,12 +3096,17 @@ def _assert_outreach_budapest_day_quota_reserved(
 
 
 def _outreach_transport_capacity_reserved(
-    db: Session, row: OutreachMessage, now: datetime | None = None
+    db: Session,
+    row: OutreachMessage,
+    now: datetime | None = None,
+    *,
+    claimed_by: str | None = None,
 ) -> bool:
     current = _aware(now or utcnow())
+    expected_claimed_by = claimed_by or settings().worker_id
     if (
         row.status != "claimed"
-        or row.claimed_by != settings().worker_id
+        or row.claimed_by != expected_claimed_by
         or row.lease_expires_at is None
         or _aware(row.lease_expires_at) <= current
         or _delivery_verification_pending(row)
@@ -3151,58 +3435,133 @@ def _release_matches(row: OutreachMessage) -> bool:
     )
 
 
-def _trip_runtime_kill_switch() -> bool:
+def _central_gmail_transport_detail(
+    db: Session,
+    *,
+    lock: bool = False,
+) -> tuple[GrowthControlState | None, dict[str, Any]]:
+    query = select(GrowthControlState).where(
+        GrowthControlState.key == CENTRAL_GMAIL_TRANSPORT_STATE_KEY
+    )
+    if lock:
+        query = query.with_for_update()
+    row = db.scalar(query)
+    if row is None or not row.reason:
+        return row, {}
     try:
-        Path(settings().runtime_kill_switch_file).write_text("KILLED\n", encoding="utf-8")
-    except OSError:
-        return False
-    return True
+        detail = json.loads(row.reason)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise GrowthRegistryError("central_gmail_transport_state_invalid_no_send") from exc
+    if not isinstance(detail, dict):
+        raise GrowthRegistryError("central_gmail_transport_state_invalid_no_send")
+    return row, detail
 
 
-def _persist_database_emergency_stop(db: Session, *, reason: str) -> None:
-    changed_at = utcnow()
-    for motor_key in sorted(GrowthRegistry.REQUIRED_MOTORS):
-        key = f"motor:{motor_key}"
-        row = db.get(GrowthControlState, key)
-        if row is None:
-            row = GrowthControlState(key=key)
-            db.add(row)
-        row.enabled = False
-        row.reason = reason
-        row.changed_by = "growth-worker-emergency-stop"
-        row.changed_at = changed_at
+def _record_central_gmail_authentication_failure(
+    db: Session,
+    *,
+    reason: str,
+    now: datetime | None = None,
+) -> datetime:
+    current = _aware(now or utcnow())
+    row, prior = _central_gmail_transport_detail(db, lock=True)
+    failures = min(10, max(0, int(prior.get("consecutive_failures") or 0)) + 1)
+    retry_seconds = min(3600, 60 * (2 ** min(failures - 1, 6)))
+    blocked_until = current + timedelta(seconds=retry_seconds)
+    if row is None:
+        row = GrowthControlState(key=CENTRAL_GMAIL_TRANSPORT_STATE_KEY)
+        db.add(row)
+    row.enabled = False
+    row.reason = canonical_json(
+        {
+            "reason": reason,
+            "consecutive_failures": failures,
+            "blocked_until": blocked_until.isoformat(),
+            "last_failure_at": current.isoformat(),
+            "scope": "central_gmail_adapter_only",
+            "scheduled_gmail_clients_unaffected": True,
+        }
+    )
+    row.changed_by = "growth-worker-central-gmail-circuit"
+    row.changed_at = current
     audit(
         db,
-        actor="growth-worker-emergency-stop",
-        action="growth_runtime_kill_switch_persist_failed",
+        actor=row.changed_by,
+        action="growth_central_gmail_transport_backoff_recorded",
         entity_type="growth_control",
-        entity_id="all-motors",
-        after={"reason": reason, "writes_disabled": True},
+        entity_id=CENTRAL_GMAIL_TRANSPORT_STATE_KEY,
+        after={
+            "reason": reason,
+            "blocked_until": blocked_until.isoformat(),
+            "consecutive_failures": failures,
+            "scheduled_gmail_clients_unaffected": True,
+            "runtime_marker_created": False,
+        },
     )
-    db.commit()
+    return blocked_until
 
 
-def _require_runtime_kill_switch(db: Session, *, reason: str) -> None:
-    if _trip_runtime_kill_switch():
+def _assert_central_gmail_transport_available(
+    db: Session,
+    *,
+    now: datetime | None = None,
+) -> None:
+    current = _aware(now or utcnow())
+    row, detail = _central_gmail_transport_detail(db)
+    if row is None or row.enabled:
         return
+    raw_until = detail.get("blocked_until")
     try:
-        _persist_database_emergency_stop(db, reason=reason)
-    except Exception as exc:
-        _PROCESS_EMERGENCY_SEND_STOP.set()
-        try:
-            db.rollback()
-        except Exception:
-            # The process-local latch is authoritative when both durable
-            # emergency stops and even transaction cleanup are unavailable.
-            pass
-        raise RuntimeError(
-            "runtime_kill_switch_and_database_emergency_stop_failed"
-        ) from exc
-    raise GrowthRegistryError("runtime_kill_switch_persist_failed_emergency_db_stop")
+        blocked_until = _aware(datetime.fromisoformat(str(raw_until)))
+    except (TypeError, ValueError) as exc:
+        raise GrowthRegistryError("central_gmail_transport_state_invalid_no_send") from exc
+    if current >= blocked_until:
+        return
+    retry_after = max(1.0, (blocked_until - current).total_seconds())
+    raise EmailDeliveryError(
+        "central_gmail_authentication_backoff_no_send",
+        retry_safe=True,
+        retry_after_seconds=retry_after,
+        detail={
+            "blocked_until": blocked_until.isoformat(),
+            "retry_after_seconds": retry_after,
+            "scheduled_gmail_clients_unaffected": True,
+        },
+    )
+
+
+def _record_central_gmail_transport_success(
+    db: Session,
+    *,
+    now: datetime | None = None,
+) -> None:
+    current = _aware(now or utcnow())
+    row, prior = _central_gmail_transport_detail(db, lock=True)
+    if row is None or row.enabled:
+        return
+    row.enabled = True
+    row.reason = canonical_json(
+        {
+            **prior,
+            "recovered_at": current.isoformat(),
+            "blocked_until": None,
+            "consecutive_failures": 0,
+        }
+    )
+    row.changed_by = "growth-worker-central-gmail-circuit"
+    row.changed_at = current
+    audit(
+        db,
+        actor=row.changed_by,
+        action="growth_central_gmail_transport_recovered",
+        entity_type="growth_control",
+        entity_id=CENTRAL_GMAIL_TRANSPORT_STATE_KEY,
+        after={"recovered_at": current.isoformat(), "runtime_marker_created": False},
+    )
 
 
 def _delivery_verification_pending(row: OutreachMessage) -> bool:
-    if row.status != "claimed" or not row.receipt_json:
+    if not row.receipt_json:
         return False
     try:
         receipt = json.loads(row.receipt_json)
@@ -3213,8 +3572,6 @@ def _delivery_verification_pending(row: OutreachMessage) -> bool:
 
 
 def _delivery_acceptance_ambiguous(row: OutreachMessage) -> bool:
-    if row.status != "claimed":
-        return False
     try:
         receipt = json.loads(row.receipt_json or "{}")
     except (TypeError, json.JSONDecodeError):
@@ -4019,6 +4376,7 @@ def _assert_outreach_pre_send_guard(
     signal: GrowthSignal,
     *,
     official_required: bool,
+    claimed_by: str | None = None,
 ) -> None:
     locked_row = db.scalar(
         select(OutreachMessage)
@@ -4038,12 +4396,24 @@ def _assert_outreach_pre_send_guard(
         raise GrowthRegistryError("outreach_pre_send_state_invalid_no_send")
     if not _outreach_sending_window_open():
         raise GrowthRegistryError("outreach_sending_window_closed_no_send")
-    if not _outreach_transport_capacity_reserved(db, locked_row):
+    expected_claimed_by = claimed_by or settings().worker_id
+    # Preserve the established central-worker call contract.  Scheduled Gmail
+    # clients need an explicit claimant identity, while the central worker must
+    # continue through the original two-argument seam used by its production
+    # path and regression fixtures.
+    capacity_reserved = (
+        _outreach_transport_capacity_reserved(db, locked_row)
+        if claimed_by is None
+        else _outreach_transport_capacity_reserved(
+            db, locked_row, claimed_by=expected_claimed_by
+        )
+    )
+    if not capacity_reserved:
         raise GrowthRegistryError("outreach_transport_capacity_not_reserved_no_send")
     if (
         not writes_unlocked()
         or locked_row.status != "claimed"
-        or locked_row.claimed_by != settings().worker_id
+        or locked_row.claimed_by != expected_claimed_by
         or locked_row.lease_expires_at is None
         or _aware(locked_row.lease_expires_at) <= utcnow()
         or locked_row.provider_message_id is not None
@@ -4167,6 +4537,14 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         _verified_sender(db, binding)
         if binding.sender_email != row.sender_email:
             raise GrowthRegistryError("brand_sender_changed_after_queue")
+        cooldown_errors = _rate_errors(
+            db,
+            binding,
+            row.recipient_email,
+            exclude_outreach_id=row.outreach_id,
+        )
+        if cooldown_errors:
+            raise GrowthRegistryError(";".join(cooldown_errors))
         readiness_reason = _authoritative_send_readiness_reason(db, registry, signal)
         if readiness_reason:
             raise GrowthRegistryError(readiness_reason)
@@ -4225,6 +4603,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             # recheck through Gmail SENT/MIME readback. The committed claim is
             # the crash-safe reservation if the process dies mid-transport.
             _lock_outreach_transport_account(db)
+            _assert_central_gmail_transport_available(db)
             _assert_gmail_account_pacing_due(db)
             account_reputation_attestation.update(
                 _assert_outreach_reputation_healthy(db)
@@ -4243,6 +4622,14 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             _verified_sender(db, immediate_binding)
             if immediate_binding.sender_email != row.sender_email:
                 raise GrowthRegistryError("brand_sender_changed_after_queue")
+            immediate_cooldown_errors = _rate_errors(
+                db,
+                immediate_binding,
+                row.recipient_email,
+                exclude_outreach_id=row.outreach_id,
+            )
+            if immediate_cooldown_errors:
+                raise GrowthRegistryError(";".join(immediate_cooldown_errors))
             immediate_official_required = _official_source_required(
                 db, row, signal, immediate_registry
             )
@@ -4338,6 +4725,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         row.sent_at = provider_accepted_at
         if receipt.detail.get("recovered_existing_sent") is not True:
             _record_outreach_pacing_success(db, now=completed_at)
+        _record_central_gmail_transport_success(db, now=completed_at)
         try:
             finalize_global_recipient_delivery(
                 db,
@@ -4413,8 +4801,9 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             if isinstance(exc, EmailDeliveryError) and exc.rate_limited:
                 _record_outreach_pacing_backoff(db, error=exc, now=utcnow())
             if isinstance(exc, EmailDeliveryError) and exc.authentication_failure:
-                _require_runtime_kill_switch(
-                    db, reason="provider_authentication_failure"
+                _record_central_gmail_authentication_failure(
+                    db,
+                    reason="provider_authentication_failure",
                 )
             try:
                 pending_receipt = json.loads(row.receipt_json or "{}")
@@ -4501,15 +4890,13 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                 utcnow() + timedelta(minutes=2 ** min(row.attempt_count, 8)),
                 next_at or utcnow(),
             )
-        authentication_failure = isinstance(exc, EmailDeliveryError) and exc.authentication_failure
-        if authentication_failure or "payload_hash" in str(exc):
-            _require_runtime_kill_switch(
+        authentication_failure = (
+            isinstance(exc, EmailDeliveryError) and exc.authentication_failure
+        )
+        if authentication_failure:
+            _record_central_gmail_authentication_failure(
                 db,
-                reason=(
-                    "provider_authentication_failure"
-                    if authentication_failure
-                    else "outreach_payload_hash_failure"
-                ),
+                reason="provider_authentication_failure",
             )
     db.commit()
     return row
@@ -4558,6 +4945,1467 @@ def _contain_unexpected_dispatch_exception(
         },
     )
     db.commit()
+
+
+def _scheduled_gmail_request_record(
+    db: Session,
+    *,
+    request_id: str | None = None,
+    lease_id: str | None = None,
+    active_only: bool = False,
+    lock: bool = False,
+) -> ScheduledGmailLeaseRequest | None:
+    if (request_id is None) == (lease_id is None):
+        raise ValueError("exactly one scheduled Gmail request selector is required")
+    query = select(ScheduledGmailLeaseRequest)
+    if request_id is not None:
+        query = query.where(ScheduledGmailLeaseRequest.request_id == request_id)
+    else:
+        query = query.where(ScheduledGmailLeaseRequest.lease_id == lease_id)
+    if active_only:
+        query = query.where(ScheduledGmailLeaseRequest.status == "authorized")
+    query = query.order_by(ScheduledGmailLeaseRequest.id.desc()).limit(1)
+    if lock:
+        query = query.with_for_update()
+    return db.scalar(query)
+
+
+def _scheduled_gmail_lease_response(
+    row: OutreachMessage,
+    lease: ScheduledGmailLease,
+    *,
+    include_token: bool,
+    request_id: str | None = None,
+    request_status: str | None = None,
+) -> dict[str, Any]:
+    metadata = _canonical_metadata(row)
+    render_input = metadata.get("render_input")
+    if not isinstance(render_input, dict):
+        raise GrowthRegistryError("canonical_render_input_missing")
+    binding = GrowthRegistry.load().brand_binding(row.brand_id)
+    result: dict[str, Any] = {
+        "lease_id": lease.lease_id,
+        "request_id": request_id,
+        "status": lease.status,
+        "client_id": lease.client_id,
+        "outreach_id": row.outreach_id,
+        "signal_id": row.signal_id,
+        "motor_key": row.motor_key,
+        "brand_id": row.brand_id,
+        "sequence_step": row.sequence_step,
+        "sender_email": row.sender_email,
+        "recipient_email": row.recipient_email,
+        "subject": row.subject,
+        "body_text": row.body_text,
+        "body_html": row.body_html or str(metadata.get("body_html") or ""),
+        "reply_to": str(binding.config.get("reply_to") or binding.sender_email),
+        "unsubscribe_url": str(render_input.get("unsubscribe_url") or ""),
+        "idempotency_key": row.idempotency_key,
+        "payload_sha256": row.payload_sha256,
+        "authorized_at": lease.authorized_at,
+        "expires_at": lease.expires_at,
+        "quota_local_date": lease.quota_local_date,
+        "provider_message_id": lease.provider_message_id,
+        "provider_internal_date": lease.provider_internal_date,
+        "readback_mime_sha256": lease.readback_mime_sha256,
+        "send_authorized": lease.status == "authorized" and include_token,
+        "transport_contract": {
+            "send_with_registered_connected_gmail": True,
+            "draft_forbidden": True,
+            "exact_subject_plain_html_required": True,
+            "report_provider_message_id_immediately": True,
+            "automatic_retry_after_transport_attempt_forbidden": True,
+        },
+    }
+    if request_status is not None:
+        result["request_status"] = request_status
+        if request_status != "authorized":
+            result["status"] = request_status
+            result["send_authorized"] = False
+    result["payload"] = {
+        "outreach_id": row.outreach_id,
+        "sender_email": row.sender_email,
+        "recipient_email": row.recipient_email,
+        "subject": row.subject,
+        "body_text": row.body_text,
+        "body_html": result["body_html"],
+        "reply_to": result["reply_to"],
+        "unsubscribe_url": result["unsubscribe_url"],
+        "idempotency_key": row.idempotency_key,
+        "payload_sha256": row.payload_sha256,
+    }
+    if include_token:
+        result["lease_token"] = _scheduled_gmail_lease_token(
+            lease_id=lease.lease_id,
+            client_id=lease.client_id,
+            outreach_id=lease.outreach_id,
+            token_nonce=lease.token_nonce,
+        )
+    return result
+
+
+def _scheduled_gmail_authorization_preflight(
+    db: Session,
+    *,
+    row: OutreachMessage,
+    signal: GrowthSignal,
+    claimed_by: str,
+) -> tuple[BrandBinding, dict[str, Any], dict[str, Any] | None, bool]:
+    registry = GrowthRegistry.load()
+    if not writes_unlocked() or not _control_enabled(db, row.motor_key):
+        raise GrowthRegistryError("growth_writes_locked")
+    if not _payload_matches(row):
+        raise GrowthRegistryError("outreach_payload_hash_mismatch")
+    canonical_metadata, _body_html = _assert_canonical_payload(row)
+    _assert_current_canonical_screening(signal, canonical_metadata)
+    _assert_public_land_evidence_manifest(db, signal, canonical_metadata)
+    if signal.signal_type == "residential_building_plot":
+        required_recipient_type = LAND_RECIPIENT_TYPES_BY_ROLE.get(signal.recipient_role)
+        if (
+            not required_recipient_type
+            or canonical_metadata.get("recipient_type") != required_recipient_type
+        ):
+            raise GrowthRegistryError("land_recipient_role_type_mismatch_no_send")
+    if not _release_matches(row):
+        raise GrowthRegistryError("outreach_exact_payload_release_missing_or_invalid")
+    if _recipient_suppressed(db, row.recipient_email):
+        raise GrowthRegistryError("global_suppression")
+    binding = registry.brand_binding(row.brand_id)
+    _verified_sender(db, binding)
+    # A scheduled client may use its own Gmail transport, but the coordinator
+    # must prove *before* authorizing that its independent readback credential
+    # is live.  Static OAuth-field validation alone would permit a send that
+    # could never be proven afterwards.
+    SMTPEmailAdapter(binding).live_preflight(delivery_scope="external_customer")
+    if binding.sender_email != row.sender_email:
+        raise GrowthRegistryError("brand_sender_changed_after_queue")
+    cooldown_errors = _rate_errors(
+        db,
+        binding,
+        row.recipient_email,
+        exclude_outreach_id=row.outreach_id,
+    )
+    if cooldown_errors:
+        raise GrowthRegistryError(";".join(cooldown_errors))
+    readiness_reason = _authoritative_send_readiness_reason(db, registry, signal)
+    if readiness_reason:
+        raise GrowthRegistryError(readiness_reason)
+    official_required = _refresh_official_source_evidence(
+        db,
+        row,
+        signal,
+        registry,
+        canonical_metadata,
+    )
+    if official_required:
+        _assert_official_source_evidence_fresh(
+            db,
+            row,
+            signal,
+            official_required=True,
+        )
+    live_listing_evidence: dict[str, Any] | None = None
+    land_canary_claimed = False
+    if _public_land_signal(signal):
+        from .public_land import live_listing_revalidation
+
+        live_validation = live_listing_revalidation(db, signal)
+        live_listing_evidence = _attest_live_listing_evidence(
+            row, live_validation.audit_evidence
+        )
+        audit(
+            db,
+            actor="scheduled-gmail-coordinator",
+            action=(
+                "growth_land_live_revalidation_blocked"
+                if live_validation.rejection_reason
+                else "growth_land_live_revalidation_passed"
+            ),
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after=live_listing_evidence,
+        )
+        if live_validation.rejection_reason:
+            raise GrowthRegistryError(live_validation.rejection_reason)
+        land_canary_claimed = _claim_land_canary_slot(db, row.outreach_id)
+
+    _lock_outreach_transport_account(db)
+    _assert_gmail_account_pacing_due(db)
+    _assert_outreach_reputation_healthy(db)
+    _assert_outreach_pre_send_guard(
+        db,
+        row,
+        signal,
+        official_required=official_required,
+        claimed_by=claimed_by,
+    )
+    immediate_registry = GrowthRegistry.load()
+    immediate_reason = _authoritative_send_readiness_reason(
+        db, immediate_registry, signal
+    )
+    if immediate_reason:
+        raise GrowthRegistryError(immediate_reason)
+    immediate_binding = immediate_registry.brand_binding(row.brand_id)
+    _verified_sender(db, immediate_binding)
+    if immediate_binding.sender_email != row.sender_email:
+        raise GrowthRegistryError("brand_sender_changed_after_queue")
+    immediate_cooldown = _rate_errors(
+        db,
+        immediate_binding,
+        row.recipient_email,
+        exclude_outreach_id=row.outreach_id,
+    )
+    if immediate_cooldown:
+        raise GrowthRegistryError(";".join(immediate_cooldown))
+    immediate_official_required = _official_source_required(
+        db, row, signal, immediate_registry
+    )
+    if immediate_official_required:
+        _assert_official_source_evidence_fresh(
+            db,
+            row,
+            signal,
+            official_required=True,
+            registry=immediate_registry,
+        )
+    _assert_public_land_evidence_manifest(db, signal, canonical_metadata)
+    if live_listing_evidence is not None:
+        _assert_live_listing_evidence_attestation(row, live_listing_evidence)
+    _assert_outreach_budapest_day_quota_reserved(db, row)
+    return binding, canonical_metadata, live_listing_evidence, land_canary_claimed
+
+
+def _defer_scheduled_gmail_candidate_no_send(
+    db: Session,
+    *,
+    outreach_id: str,
+    claimed_by: str,
+    reason: str,
+    continue_to_next: bool,
+) -> None:
+    """Isolate one unsendable row without starving later eligible rows."""
+
+    db.rollback()
+    failed_row = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.outreach_id == outreach_id)
+        .with_for_update()
+    )
+    if failed_row is None or failed_row.provider_message_id is not None:
+        db.commit()
+        return
+    if failed_row.status == "claimed" and failed_row.claimed_by != claimed_by:
+        db.commit()
+        return
+    if failed_row.status not in {"queued", "claimed"}:
+        db.commit()
+        return
+    if failed_row.status == "claimed":
+        failed_row.attempt_count = max(0, failed_row.attempt_count - 1)
+    failed_row.status = "queued"
+    failed_row.claimed_by = None
+    failed_row.claimed_at = None
+    failed_row.lease_expires_at = None
+    failed_row.last_error = "scheduled_gmail_authorization_failed_no_send"
+    failed_row.available_at = max(
+        _aware(failed_row.available_at),
+        utcnow() + timedelta(minutes=15),
+    )
+    audit(
+        db,
+        actor=claimed_by,
+        action="growth_scheduled_gmail_candidate_deferred_no_send",
+        entity_type="growth_outreach",
+        entity_id=failed_row.outreach_id,
+        after={
+            "reason": reason,
+            "available_at": failed_row.available_at.isoformat(),
+            "next_candidate_continues": continue_to_next,
+        },
+    )
+    db.commit()
+
+
+def lease_scheduled_gmail_outreach(
+    db: Session,
+    data: ScheduledGmailLeaseIn,
+    principal: ScheduledGmailClientPrincipal,
+    *,
+    _remaining_candidates: int = 25,
+) -> dict[str, Any]:
+    principal.assert_scope(permission="lease")
+    if not _outreach_sending_window_open():
+        raise GrowthRegistryError("outreach_sending_window_closed_no_send")
+    _release_expired_claims(db)
+    now = utcnow()
+    _lock_outreach_claim_capacity(db)
+
+    prior_request = _scheduled_gmail_request_record(
+        db,
+        request_id=data.request_id,
+        lock=True,
+    )
+    if prior_request is not None:
+        if prior_request.client_id != principal.client_id:
+            raise GrowthRegistryError("scheduled_gmail_request_owned_by_other_client")
+        prior_lease = db.scalar(
+            select(ScheduledGmailLease)
+            .where(ScheduledGmailLease.lease_id == prior_request.lease_id)
+            .with_for_update()
+        )
+        prior_row = db.scalar(
+            select(OutreachMessage)
+            .where(OutreachMessage.outreach_id == prior_request.outreach_id)
+            .with_for_update()
+        )
+        if prior_lease is None or prior_row is None:
+            raise GrowthRegistryError("scheduled_gmail_request_state_missing")
+        principal.assert_scope(
+            permission="lease",
+            sender_email=prior_row.sender_email,
+            motor_key=prior_row.motor_key,
+        )
+        if data.outreach_id and data.outreach_id != prior_row.outreach_id:
+            raise GrowthRegistryError("scheduled_gmail_request_outreach_conflict")
+        if (
+            data.expected_payload_sha256
+            and data.expected_payload_sha256 != prior_row.payload_sha256
+        ):
+            raise GrowthRegistryError("scheduled_gmail_payload_hash_mismatch")
+        if prior_request.status == "authorized":
+            if (
+                prior_lease.status != "authorized"
+                or prior_row.status != "claimed"
+                or prior_row.claimed_by
+                != _scheduled_gmail_claimed_by(principal.client_id)
+                or prior_row.lease_expires_at is None
+                or _aware(prior_row.lease_expires_at) <= now
+            ):
+                raise GrowthRegistryError("scheduled_gmail_active_request_inconsistent")
+            db.commit()
+            return _scheduled_gmail_lease_response(
+                prior_row,
+                prior_lease,
+                include_token=True,
+                request_id=prior_request.request_id,
+            )
+        db.commit()
+        return _scheduled_gmail_lease_response(
+            prior_row,
+            prior_lease,
+            include_token=False,
+            request_id=prior_request.request_id,
+            request_status=prior_request.status,
+        )
+
+    if data.outreach_id:
+        existing_row = db.scalar(
+            select(OutreachMessage)
+            .where(OutreachMessage.outreach_id == data.outreach_id)
+            .with_for_update()
+        )
+        existing_lease = db.scalar(
+            select(ScheduledGmailLease)
+            .where(ScheduledGmailLease.outreach_id == data.outreach_id)
+            .with_for_update()
+        )
+        if existing_lease is not None:
+            if existing_row is None:
+                raise GrowthRegistryError("scheduled_gmail_outreach_missing")
+            principal.assert_scope(
+                permission="lease",
+                sender_email=existing_row.sender_email,
+                motor_key=existing_row.motor_key,
+            )
+            if (
+                existing_lease.status != "aborted"
+                and existing_lease.client_id != principal.client_id
+            ):
+                raise GrowthRegistryError("scheduled_gmail_lease_owned_by_other_client")
+            if (
+                data.expected_payload_sha256
+                and data.expected_payload_sha256 != existing_row.payload_sha256
+            ):
+                raise GrowthRegistryError("scheduled_gmail_payload_hash_mismatch")
+            if existing_lease.status in {"sent", "accepted_unverified"}:
+                latest_request = _scheduled_gmail_request_record(
+                    db,
+                    lease_id=existing_lease.lease_id,
+                )
+                db.commit()
+                return _scheduled_gmail_lease_response(
+                    existing_row,
+                    existing_lease,
+                    include_token=False,
+                    request_id=(latest_request.request_id if latest_request else None),
+                )
+            if (
+                existing_lease.status == "authorized"
+                and existing_row.status == "claimed"
+                and existing_row.claimed_by
+                == _scheduled_gmail_claimed_by(principal.client_id)
+                and existing_row.lease_expires_at
+                and _aware(existing_row.lease_expires_at) > now
+            ):
+                raise GrowthRegistryError(
+                    "scheduled_gmail_active_lease_request_id_mismatch"
+                )
+
+    if _outreach_send_capacity(db, now) <= 0:
+        db.commit()
+        raise GrowthRegistryError("scheduled_gmail_no_send_capacity")
+    query = (
+        select(OutreachMessage)
+        .outerjoin(GrowthSignal, GrowthSignal.signal_id == OutreachMessage.signal_id)
+        .where(
+            OutreachMessage.sequence_step == 0,
+            OutreachMessage.status == "queued",
+            OutreachMessage.available_at <= now,
+            OutreachMessage.attempt_count < OutreachMessage.max_attempts,
+            func.lower(OutreachMessage.sender_email).in_(
+                sorted(principal.sender_emails)
+            ),
+            func.lower(OutreachMessage.motor_key).in_(
+                sorted(principal.motor_keys)
+            ),
+        )
+    )
+    if data.outreach_id:
+        query = query.where(OutreachMessage.outreach_id == data.outreach_id)
+    row = db.scalar(
+        query.order_by(OutreachMessage.available_at, OutreachMessage.id)
+        .with_for_update(skip_locked=True, of=OutreachMessage)
+        .limit(1)
+    )
+    if row is None:
+        db.commit()
+        raise GrowthRegistryError("scheduled_gmail_no_eligible_outreach")
+    if data.expected_payload_sha256 and data.expected_payload_sha256 != row.payload_sha256:
+        db.rollback()
+        raise GrowthRegistryError("scheduled_gmail_payload_hash_mismatch")
+    principal.assert_scope(
+        permission="lease",
+        sender_email=row.sender_email,
+        motor_key=row.motor_key,
+    )
+    registry = GrowthRegistry.load()
+    preclaim_reason = _preclaim_outreach_readiness_reason(db, registry, row)
+    if preclaim_reason:
+        _defer_scheduled_gmail_candidate_no_send(
+            db,
+            outreach_id=row.outreach_id,
+            claimed_by=_scheduled_gmail_claimed_by(principal.client_id),
+            reason=preclaim_reason,
+            continue_to_next=(data.outreach_id is None and _remaining_candidates > 1),
+        )
+        if data.outreach_id is None and _remaining_candidates > 1:
+            return lease_scheduled_gmail_outreach(
+                db,
+                data,
+                principal,
+                _remaining_candidates=_remaining_candidates - 1,
+            )
+        raise GrowthRegistryError(preclaim_reason)
+    signal = db.scalar(
+        select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id)
+    )
+    if signal is None:
+        db.rollback()
+        raise GrowthRegistryError("growth_signal_missing")
+    hard_gate_reason = _land_agent_gate_reason(signal)
+    if hard_gate_reason:
+        row.status = "blocked"
+        row.last_error = hard_gate_reason
+        signal.status = "blocked"
+        signal.rejection_reasons_json = canonical_json([hard_gate_reason])
+        db.commit()
+        raise GrowthRegistryError(hard_gate_reason)
+
+    claimed_by = _scheduled_gmail_claimed_by(principal.client_id)
+    provisional_expires_at = now + timedelta(
+        seconds=max(
+            SCHEDULED_GMAIL_LEASE_SECONDS,
+            int(getattr(settings(), "lease_seconds", 300)),
+            600,
+        )
+    )
+    row.status = "claimed"
+    row.claimed_by = claimed_by
+    row.claimed_at = now
+    row.lease_expires_at = provisional_expires_at
+    row.attempt_count += 1
+    row.last_error = None
+    lease = db.scalar(
+        select(ScheduledGmailLease)
+        .where(ScheduledGmailLease.outreach_id == row.outreach_id)
+        .with_for_update()
+    )
+    lease_id = lease.lease_id if lease is not None else "SGL-" + uuid4().hex.upper()
+    token_nonce = token_urlsafe(32)
+    lease_token = _scheduled_gmail_lease_token(
+        lease_id=lease_id,
+        client_id=principal.client_id,
+        outreach_id=row.outreach_id,
+        token_nonce=token_nonce,
+    )
+    local_date = now.astimezone(ZoneInfo("Europe/Budapest")).date()
+    if lease is None:
+        lease = ScheduledGmailLease(
+            lease_id=lease_id,
+            outreach_id=row.outreach_id,
+            client_id=principal.client_id,
+            token_nonce=token_nonce,
+            lease_token_sha256=hashlib.sha256(lease_token.encode()).hexdigest(),
+            payload_sha256=row.payload_sha256,
+            quota_local_date=local_date,
+            status="authorized",
+            expires_at=provisional_expires_at,
+            authorized_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(lease)
+    else:
+        if lease.status != "aborted":
+            db.rollback()
+            raise GrowthRegistryError("scheduled_gmail_lease_state_conflict")
+        lease.client_id = principal.client_id
+        lease.token_nonce = token_nonce
+        lease.lease_token_sha256 = hashlib.sha256(lease_token.encode()).hexdigest()
+        lease.payload_sha256 = row.payload_sha256
+        lease.quota_local_date = local_date
+        lease.status = "authorized"
+        lease.global_guard_claim_token = None
+        lease.provider_message_id = None
+        lease.provider_internal_date = None
+        lease.readback_mime_sha256 = None
+        lease.expires_at = provisional_expires_at
+        lease.authorized_at = now
+        lease.accepted_at = None
+        lease.verified_at = None
+        lease.aborted_at = None
+        lease.abort_reason = None
+        lease.updated_at = now
+    lease_request = ScheduledGmailLeaseRequest(
+        request_id=data.request_id,
+        client_id=principal.client_id,
+        lease_id=lease_id,
+        outreach_id=row.outreach_id,
+        status="authorized",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(lease_request)
+    # The session factory deliberately has autoflush disabled. Expose the
+    # uncommitted claim and lease to the quota/concurrency attestations before
+    # they query; the surrounding transaction is still atomic.
+    db.flush()
+    try:
+        _binding, _metadata, live_evidence, canary_claimed = (
+            _scheduled_gmail_authorization_preflight(
+                db,
+                row=row,
+                signal=signal,
+                claimed_by=claimed_by,
+            )
+        )
+        guard = claim_global_recipient_delivery(
+            db,
+            recipients=[row.recipient_email],
+            identity_sha256=row.idempotency_key,
+            message_type="growth_outreach",
+            tenant_scope="imperial-holding",
+            now=now,
+            commit=False,
+        )
+        if not guard.may_send or not guard.claim_token:
+            raise GrowthRegistryError(
+                f"global_recipient_guard_no_send:{guard.decision}"
+            )
+        lease.global_guard_claim_token = guard.claim_token
+        authorized_at = utcnow()
+        _quota_day_start, quota_day_end = _budapest_day_bounds(authorized_at)
+        seconds_until_quota_day_end = (
+            quota_day_end - authorized_at
+        ).total_seconds()
+        if seconds_until_quota_day_end < SCHEDULED_GMAIL_MIN_TRANSPORT_WINDOW_SECONDS:
+            raise GrowthRegistryError(
+                "scheduled_gmail_quota_day_boundary_too_close_no_send"
+            )
+        expires_at = min(
+            authorized_at + timedelta(seconds=SCHEDULED_GMAIL_LEASE_SECONDS),
+            quota_day_end
+            - timedelta(seconds=SCHEDULED_GMAIL_PROVIDER_ACCEPTANCE_GRACE_SECONDS),
+        )
+        row.lease_expires_at = expires_at
+        lease.authorized_at = authorized_at
+        lease.expires_at = expires_at
+        lease.quota_local_date = authorized_at.astimezone(
+            ZoneInfo("Europe/Budapest")
+        ).date()
+        db.flush()
+        if not _outreach_sending_window_open(authorized_at) or not writes_unlocked():
+            raise GrowthRegistryError("scheduled_gmail_final_authorization_closed")
+        _assert_outreach_budapest_day_quota_reserved(db, row, now=authorized_at)
+        audit(
+            db,
+            actor=claimed_by,
+            action="growth_scheduled_gmail_lease_authorized",
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after={
+                "lease_id": lease.lease_id,
+                "client_id": principal.client_id,
+                "payload_sha256": row.payload_sha256,
+                "quota_local_date": lease.quota_local_date.isoformat(),
+                "expires_at": expires_at.isoformat(),
+                "live_listing_revalidation": live_evidence,
+                "land_canary_claimed": canary_claimed,
+                "provider_transport_called": False,
+            },
+        )
+        db.commit()
+    except (GrowthRegistryError, EmailDeliveryError, RuntimeError, ValueError) as exc:
+        _defer_scheduled_gmail_candidate_no_send(
+            db,
+            outreach_id=row.outreach_id,
+            claimed_by=claimed_by,
+            reason=str(exc),
+            continue_to_next=(data.outreach_id is None and _remaining_candidates > 1),
+        )
+        if data.outreach_id is None and _remaining_candidates > 1:
+            return lease_scheduled_gmail_outreach(
+                db,
+                data,
+                principal,
+                _remaining_candidates=_remaining_candidates - 1,
+            )
+        raise
+    return _scheduled_gmail_lease_response(
+        row,
+        lease,
+        include_token=True,
+        request_id=data.request_id,
+    )
+
+
+def _hold_scheduled_gmail_delivery_unverified(
+    db: Session,
+    *,
+    lease_id: str,
+    provider_message_id: str | None,
+    reason: str,
+    detail: dict[str, Any] | None = None,
+    delivery_error: EmailDeliveryError | None = None,
+) -> dict[str, Any]:
+    db.rollback()
+    lease_lookup = db.scalar(
+        select(ScheduledGmailLease).where(ScheduledGmailLease.lease_id == lease_id)
+    )
+    if lease_lookup is None:
+        raise GrowthRegistryError("scheduled_gmail_lease_missing")
+    row = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.outreach_id == lease_lookup.outreach_id)
+        .with_for_update()
+    )
+    if row is None:
+        raise GrowthRegistryError("scheduled_gmail_outreach_missing")
+    lease = db.scalar(
+        select(ScheduledGmailLease)
+        .where(ScheduledGmailLease.lease_id == lease_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if lease is None or lease.outreach_id != row.outreach_id:
+        raise GrowthRegistryError("scheduled_gmail_lease_state_conflict")
+    if lease.status == "sent":
+        db.commit()
+        return _scheduled_gmail_lease_response(row, lease, include_token=False)
+    if (
+        lease.status != "accepted_unverified"
+        or lease.provider_message_id != provider_message_id
+        or row.provider_message_id != provider_message_id
+    ):
+        raise GrowthRegistryError("scheduled_gmail_pending_state_conflict")
+    contained_at = utcnow()
+    try:
+        receipt = json.loads(row.receipt_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        receipt = {}
+    receipt.update(
+        {
+            "provider": "gmail_api",
+            "accepted": True,
+            "scheduled_gmail": {
+                "lease_id": lease.lease_id,
+                "client_id": lease.client_id,
+            },
+            "delivery_verification": {
+                "status": "pending_verification",
+                "retry_safe": False,
+                "provider_message_id": provider_message_id,
+                # When Gmail acceptance time cannot be verified, reserve the
+                # containment day. This prevents a just-after-midnight send
+                # from being charged to the prior, already closed day.
+                "reserved_at": contained_at.isoformat(),
+                "detail": {"reason": reason, **(detail or {})},
+            },
+        }
+    )
+    row.status = "claimed"
+    row.claimed_by = None
+    row.lease_expires_at = None
+    row.provider_message_id = provider_message_id
+    row.receipt_json = canonical_json(receipt)
+    row.last_error = reason
+    lease.status = "accepted_unverified"
+    lease.provider_message_id = provider_message_id
+    lease.accepted_at = contained_at
+    lease.quota_local_date = contained_at.astimezone(
+        ZoneInfo("Europe/Budapest")
+    ).date()
+    lease.updated_at = contained_at
+    pacing_backoff_error: str | None = None
+    if delivery_error is not None and (
+        delivery_error.rate_limited or delivery_error.authentication_failure
+    ):
+        try:
+            next_at = _record_outreach_pacing_backoff(
+                db,
+                error=delivery_error,
+                now=contained_at,
+            )
+            receipt["delivery_verification"]["detail"][
+                "account_pacing_backoff_until"
+            ] = next_at.isoformat()
+            row.receipt_json = canonical_json(receipt)
+        except (GrowthRegistryError, RuntimeError, ValueError) as exc:
+            # The already durable no-resend hold remains authoritative.  A bad
+            # pacing ledger is itself fail-closed for subsequent permits.
+            pacing_backoff_error = str(exc)
+    _finish_land_canary_slot(
+        db,
+        row.outreach_id,
+        outcome="consumed",
+        provider_message_id=provider_message_id,
+    )
+    audit(
+        db,
+        actor=_scheduled_gmail_claimed_by(lease.client_id),
+        action="growth_scheduled_gmail_delivery_pending_verification",
+        entity_type="growth_outreach",
+        entity_id=row.outreach_id,
+        after={
+            "lease_id": lease.lease_id,
+            "provider_message_id": provider_message_id,
+            "reason": reason,
+            "retry_safe": False,
+            "pacing_backoff_error": pacing_backoff_error,
+        },
+    )
+    db.commit()
+    return _scheduled_gmail_lease_response(row, lease, include_token=False)
+
+
+def finalize_scheduled_gmail_outreach(
+    db: Session,
+    lease_id: str,
+    data: ScheduledGmailFinalizeIn,
+    principal: ScheduledGmailClientPrincipal,
+) -> dict[str, Any]:
+    principal.assert_scope(permission="finalize")
+    lease_lookup = db.scalar(
+        select(ScheduledGmailLease).where(ScheduledGmailLease.lease_id == lease_id)
+    )
+    if lease_lookup is None:
+        raise GrowthRegistryError("scheduled_gmail_lease_missing")
+    row = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.outreach_id == lease_lookup.outreach_id)
+        .with_for_update()
+    )
+    if row is None:
+        raise GrowthRegistryError("scheduled_gmail_outreach_missing")
+    lease = db.scalar(
+        select(ScheduledGmailLease)
+        .where(ScheduledGmailLease.lease_id == lease_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if lease is None or lease.outreach_id != row.outreach_id:
+        raise GrowthRegistryError("scheduled_gmail_lease_state_conflict")
+    lease_request = _scheduled_gmail_request_record(
+        db,
+        lease_id=lease.lease_id,
+        lock=True,
+    )
+    if lease_request is None or lease_request.client_id != principal.client_id:
+        raise GrowthRegistryError("scheduled_gmail_lease_request_missing")
+    principal.assert_scope(
+        permission="finalize",
+        sender_email=row.sender_email,
+        motor_key=row.motor_key,
+    )
+    if lease.client_id != principal.client_id:
+        raise GrowthRegistryError("scheduled_gmail_lease_owned_by_other_client")
+    if not _scheduled_gmail_token_matches(lease, data.lease_token):
+        raise GrowthRegistryError("scheduled_gmail_lease_token_invalid")
+    if lease.status == "sent":
+        if lease.provider_message_id != data.provider_message_id:
+            raise GrowthRegistryError("scheduled_gmail_finalize_provider_id_conflict")
+        db.commit()
+        return _scheduled_gmail_lease_response(row, lease, include_token=False)
+    if lease.status == "aborted":
+        raise GrowthRegistryError("scheduled_gmail_lease_aborted")
+    if lease.provider_message_id and lease.provider_message_id != data.provider_message_id:
+        raise GrowthRegistryError("scheduled_gmail_finalize_provider_id_conflict")
+    _lock_outreach_transport_account(db)
+    duplicate_provider = db.scalar(
+        select(ScheduledGmailLease.id).where(
+            ScheduledGmailLease.provider_message_id == data.provider_message_id,
+            ScheduledGmailLease.lease_id != lease.lease_id,
+        )
+    )
+    duplicate_outreach_provider = db.scalar(
+        select(OutreachMessage.id).where(
+            OutreachMessage.provider_message_id == data.provider_message_id,
+            OutreachMessage.outreach_id != row.outreach_id,
+        )
+    )
+    provider_reuse_conflict = bool(duplicate_provider or duplicate_outreach_provider)
+    # A reused id cannot be stored in the unique provider-id columns, but the
+    # caller has still declared that Gmail transport was invoked.  Hold the row
+    # permanently with the reported id in its receipt rather than permitting an
+    # abort/requeue that could duplicate the real, different message.
+    stored_provider_message_id = (
+        None if provider_reuse_conflict else data.provider_message_id
+    )
+
+    # The provider id itself is sufficient evidence that transport was
+    # attempted.  Persist the irreversible no-resend hold in a deliberately
+    # minimal transaction *before* guard, canary, audit or remote Gmail work.
+    # The pacing timestamp is included in this first commit so another sender
+    # cannot slip through between the containment commit and reputation update.
+    # An inconsistent ancillary ledger can reduce availability, but it must
+    # never make this row sendable again.
+    if lease.status not in {"authorized", "accepted_unverified"}:
+        raise GrowthRegistryError("scheduled_gmail_finalize_state_conflict")
+    newly_contained = lease.status == "authorized"
+    reported_at = _aware(lease.accepted_at) if lease.accepted_at else utcnow()
+    if newly_contained:
+        try:
+            pending_receipt = json.loads(row.receipt_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            pending_receipt = {}
+        pending_receipt.update(
+            {
+                "provider": "gmail_api",
+                "accepted": True,
+                "scheduled_gmail": {
+                    "lease_id": lease.lease_id,
+                    "client_id": lease.client_id,
+                    "coordination_effects_complete": False,
+                },
+                "delivery_verification": {
+                    "status": "pending_verification",
+                    "retry_safe": False,
+                    "provider_message_id": data.provider_message_id,
+                    "reserved_at": reported_at.isoformat(),
+                    "detail": {
+                        "reason": (
+                            "scheduled_gmail_provider_message_reused"
+                            if provider_reuse_conflict
+                            else "scheduled_gmail_provider_reported_pending_readback"
+                        ),
+                        "reported_provider_message_id": data.provider_message_id,
+                    },
+                },
+            }
+        )
+        row.status = "claimed"
+        row.claimed_by = None
+        row.lease_expires_at = None
+        row.provider_message_id = stored_provider_message_id
+        row.receipt_json = canonical_json(pending_receipt)
+        row.last_error = (
+            "scheduled_gmail_provider_message_reused"
+            if provider_reuse_conflict
+            else "scheduled_gmail_provider_reported_pending_readback"
+        )
+        lease.status = "accepted_unverified"
+        lease.provider_message_id = stored_provider_message_id
+        lease.accepted_at = reported_at
+        lease.quota_local_date = reported_at.astimezone(
+            ZoneInfo("Europe/Budapest")
+        ).date()
+        lease.updated_at = reported_at
+        if lease_request.status != "authorized":
+            raise GrowthRegistryError("scheduled_gmail_request_state_conflict")
+        lease_request.status = "accepted_unverified"
+        lease_request.updated_at = reported_at
+        db.flush()
+        try:
+            _record_outreach_pacing_success(db, now=reported_at)
+            pending_receipt["scheduled_gmail"][
+                "pacing_advanced_at"
+            ] = reported_at.isoformat()
+        except (GrowthRegistryError, RuntimeError, ValueError) as exc:
+            pending_receipt["scheduled_gmail"]["pacing_advance_error"] = str(exc)
+        row.receipt_json = canonical_json(pending_receipt)
+        db.commit()
+    else:
+        try:
+            existing_receipt = json.loads(row.receipt_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            existing_receipt = {}
+        existing_verification = existing_receipt.get("delivery_verification")
+        reported_id_matches = bool(
+            isinstance(existing_verification, dict)
+            and existing_verification.get("provider_message_id")
+            == data.provider_message_id
+        )
+        if (
+            lease.provider_message_id != stored_provider_message_id
+            or row.provider_message_id != stored_provider_message_id
+            or row.status != "claimed"
+            or not _delivery_verification_pending(row)
+            or not reported_id_matches
+        ):
+            raise GrowthRegistryError("scheduled_gmail_pending_state_conflict")
+        db.commit()
+
+    # Bring the other ledgers into the same fail-closed state.  These effects
+    # are retriable and intentionally happen after the durable transport hold.
+    row = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.outreach_id == lease_lookup.outreach_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if row is None:
+        raise GrowthRegistryError("scheduled_gmail_outreach_missing")
+    lease = db.scalar(
+        select(ScheduledGmailLease)
+        .where(ScheduledGmailLease.lease_id == lease_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if lease is None:
+        raise GrowthRegistryError("scheduled_gmail_lease_missing")
+    coordination_errors: list[str] = []
+    try:
+        current_receipt = json.loads(row.receipt_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        current_receipt = {}
+    scheduled_detail = current_receipt.get("scheduled_gmail")
+    if not isinstance(scheduled_detail, dict):
+        scheduled_detail = {
+            "lease_id": lease.lease_id,
+            "client_id": lease.client_id,
+        }
+    effects_complete = bool(
+        scheduled_detail.get("coordination_effects_complete") is True
+    )
+    if not effects_complete:
+        guard_token = lease.global_guard_claim_token or claimed_global_recipient_token(
+            db,
+            recipient=row.recipient_email,
+            identity_sha256=row.idempotency_key,
+        )
+        if guard_token:
+            try:
+                fail_global_recipient_delivery(
+                    db,
+                    recipients=[row.recipient_email],
+                    identity_sha256=row.idempotency_key,
+                    claim_token=guard_token,
+                    error="scheduled_gmail_provider_reported_pending_readback",
+                    accepted_unverified=True,
+                    provider_message_id=stored_provider_message_id,
+                    now=reported_at,
+                    commit=False,
+                )
+                lease.global_guard_claim_token = guard_token
+            except RuntimeError as exc:
+                coordination_errors.append(f"global_guard:{exc}")
+        else:
+            coordination_errors.append("global_guard:claim_missing")
+        try:
+            if not scheduled_detail.get("pacing_advanced_at"):
+                _record_outreach_pacing_success(db, now=reported_at)
+                scheduled_detail["pacing_advanced_at"] = reported_at.isoformat()
+        except (GrowthRegistryError, RuntimeError, ValueError) as exc:
+            coordination_errors.append(f"pacing:{exc}")
+        try:
+            _finish_land_canary_slot(
+                db,
+                row.outreach_id,
+                outcome="consumed",
+                provider_message_id=stored_provider_message_id,
+            )
+        except (GrowthRegistryError, RuntimeError, ValueError) as exc:
+            coordination_errors.append(f"canary:{exc}")
+        scheduled_detail["coordination_effects_complete"] = not coordination_errors
+        scheduled_detail["coordination_errors"] = coordination_errors
+        current_receipt["scheduled_gmail"] = scheduled_detail
+        row.receipt_json = canonical_json(current_receipt)
+        audit(
+            db,
+            actor=_scheduled_gmail_claimed_by(lease.client_id),
+            action="growth_scheduled_gmail_provider_reported_pending_readback",
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after={
+                "lease_id": lease.lease_id,
+                "provider_message_id": data.provider_message_id,
+                "retry_safe": False,
+                "coordination_effects_complete": not coordination_errors,
+                "coordination_errors": coordination_errors,
+            },
+        )
+        db.commit()
+
+    if provider_reuse_conflict:
+        return _scheduled_gmail_lease_response(row, lease, include_token=False)
+
+    signal = db.scalar(
+        select(GrowthSignal)
+        .where(GrowthSignal.signal_id == row.signal_id)
+        .with_for_update()
+    )
+    if signal is None:
+        raise GrowthRegistryError("growth_signal_missing")
+    try:
+        _lock_outreach_transport_account(db)
+        if (
+            lease.payload_sha256 != row.payload_sha256
+            or not _payload_matches(row)
+            or not _release_matches(row)
+        ):
+            raise GrowthRegistryError(
+                "scheduled_gmail_finalize_payload_release_drift"
+            )
+        binding = GrowthRegistry.load().brand_binding(row.brand_id)
+        _verified_sender(db, binding)
+        metadata = _canonical_metadata(row)
+        render_input = metadata.get("render_input")
+        if not isinstance(render_input, dict):
+            raise GrowthRegistryError("canonical_render_input_missing")
+        receipt = SMTPEmailAdapter(binding).verify_scheduled_gmail_delivery(
+            provider_message_id=data.provider_message_id,
+            to_email=row.recipient_email,
+            subject=row.subject,
+            body_text=row.body_text,
+            body_html=row.body_html or str(metadata.get("body_html") or ""),
+            reply_to=str(binding.config.get("reply_to") or binding.sender_email),
+            unsubscribe_url=str(render_input.get("unsubscribe_url") or ""),
+            idempotency_key=row.idempotency_key,
+        )
+        if (
+            receipt.provider != "gmail_api"
+            or receipt.provider_message_id != data.provider_message_id
+            or receipt.detail.get("readback_verified") is not True
+            or not receipt.detail.get("readback_mime_sha256")
+            or not receipt.detail.get("rfc_message_id")
+        ):
+            raise EmailDeliveryError(
+                "scheduled_gmail_readback_unverified",
+                retry_safe=False,
+                accepted_but_unverified=True,
+                provider_message_id=data.provider_message_id,
+            )
+        provider_accepted_at = _aware(
+            datetime.fromisoformat(
+                str(receipt.detail["provider_internal_date"]).replace("Z", "+00:00")
+            )
+        )
+        authorized_at = _aware(lease.authorized_at)
+        expires_at = _aware(lease.expires_at)
+        if (
+            provider_accepted_at < authorized_at - timedelta(minutes=5)
+            or provider_accepted_at
+            > expires_at
+            + timedelta(seconds=SCHEDULED_GMAIL_PROVIDER_ACCEPTANCE_GRACE_SECONDS)
+            or provider_accepted_at > reported_at + timedelta(minutes=5)
+            or provider_accepted_at.astimezone(ZoneInfo("Europe/Budapest")).date()
+            != lease.quota_local_date
+        ):
+            raise EmailDeliveryError(
+                "scheduled_gmail_provider_internal_date_outside_lease",
+                retry_safe=False,
+                accepted_but_unverified=True,
+                provider_message_id=data.provider_message_id,
+                detail={
+                    "provider_internal_date": provider_accepted_at.isoformat(),
+                    "authorized_at": authorized_at.isoformat(),
+                    "expires_at": expires_at.isoformat(),
+                    "reported_at": reported_at.isoformat(),
+                },
+            )
+        row = db.scalar(
+            select(OutreachMessage)
+            .where(OutreachMessage.outreach_id == lease.outreach_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if row is None:
+            raise GrowthRegistryError("scheduled_gmail_outreach_missing")
+        lease = db.scalar(
+            select(ScheduledGmailLease)
+            .where(ScheduledGmailLease.lease_id == lease_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        signal = db.scalar(
+            select(GrowthSignal)
+            .where(GrowthSignal.signal_id == row.signal_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if lease is None or signal is None:
+            raise GrowthRegistryError("scheduled_gmail_finalize_state_missing")
+        if (
+            lease.client_id != principal.client_id
+            or not _scheduled_gmail_token_matches(lease, data.lease_token)
+            or lease.status != "accepted_unverified"
+            or lease.provider_message_id != data.provider_message_id
+            or row.status != "claimed"
+            or row.provider_message_id != data.provider_message_id
+            or not _delivery_verification_pending(row)
+        ):
+            raise GrowthRegistryError("scheduled_gmail_finalize_state_conflict")
+        if (
+            lease.payload_sha256 != row.payload_sha256
+            or not _payload_matches(row)
+            or not _release_matches(row)
+        ):
+            raise GrowthRegistryError("scheduled_gmail_finalize_payload_release_drift")
+        try:
+            pending_receipt = json.loads(row.receipt_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            pending_receipt = {}
+        pending_verification = pending_receipt.get("delivery_verification")
+        if not isinstance(pending_verification, dict):
+            raise GrowthRegistryError("scheduled_gmail_pending_verification_missing")
+        pending_verification["reserved_at"] = provider_accepted_at.isoformat()
+        pending_receipt["delivery_verification"] = pending_verification
+        row.receipt_json = canonical_json(pending_receipt)
+        lease.quota_local_date = provider_accepted_at.astimezone(
+            ZoneInfo("Europe/Budapest")
+        ).date()
+        db.flush()
+        quota_attestation = _assert_outreach_budapest_day_quota_reserved(
+            db,
+            row,
+            now=provider_accepted_at,
+        )
+        completed_at = utcnow()
+        verified_receipt_json = canonical_json(
+            {
+                "provider": receipt.provider,
+                "accepted_recipient": receipt.accepted_recipient,
+                "response_sha256": receipt.response_sha256,
+                "accepted": True,
+                "delivery_detail": receipt.detail,
+                "account_quota_attestation": quota_attestation,
+                "canonical_template": metadata,
+                "scheduled_gmail": {
+                    "lease_id": lease.lease_id,
+                    "client_id": lease.client_id,
+                    "transport": "registered_connected_gmail",
+                },
+            }
+        )
+        guard_token = lease.global_guard_claim_token or claimed_global_recipient_token(
+            db,
+            recipient=row.recipient_email,
+            identity_sha256=row.idempotency_key,
+        )
+        if not guard_token:
+            raise EmailDeliveryError(
+                "scheduled_gmail_global_guard_claim_missing",
+                retry_safe=False,
+                accepted_but_unverified=True,
+                provider_message_id=data.provider_message_id,
+            )
+        finalize_global_recipient_delivery(
+            db,
+            recipients=[row.recipient_email],
+            identity_sha256=row.idempotency_key,
+            claim_token=guard_token,
+            provider_message_id=data.provider_message_id,
+            now=completed_at,
+            commit=False,
+        )
+        row.status = "sent"
+        row.provider_message_id = data.provider_message_id
+        row.receipt_json = verified_receipt_json
+        row.sent_at = provider_accepted_at
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+        row.last_error = None
+        signal.status = "contacted"
+        lease.status = "sent"
+        lease.provider_message_id = data.provider_message_id
+        lease.provider_internal_date = provider_accepted_at
+        lease.readback_mime_sha256 = str(receipt.detail["readback_mime_sha256"])
+        lease.accepted_at = provider_accepted_at
+        lease.verified_at = completed_at
+        lease.quota_local_date = provider_accepted_at.astimezone(
+            ZoneInfo("Europe/Budapest")
+        ).date()
+        lease.updated_at = completed_at
+        sent_request = _scheduled_gmail_request_record(
+            db,
+            lease_id=lease.lease_id,
+            lock=True,
+        )
+        if sent_request is None or sent_request.status != "accepted_unverified":
+            raise GrowthRegistryError("scheduled_gmail_request_state_conflict")
+        sent_request.status = "sent"
+        sent_request.updated_at = completed_at
+        _finish_land_canary_slot(
+            db,
+            row.outreach_id,
+            outcome="sent",
+            provider_message_id=data.provider_message_id,
+        )
+        audit(
+            db,
+            actor=_scheduled_gmail_claimed_by(lease.client_id),
+            action="growth_scheduled_gmail_outreach_sent",
+            entity_type="growth_outreach",
+            entity_id=row.outreach_id,
+            after={
+                "lease_id": lease.lease_id,
+                "client_id": lease.client_id,
+                "provider_message_id": data.provider_message_id,
+                "readback_mime_sha256": lease.readback_mime_sha256,
+                "provider_internal_date": provider_accepted_at.isoformat(),
+            },
+        )
+        db.commit()
+        return _scheduled_gmail_lease_response(row, lease, include_token=False)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, KeyError, ValueError) as exc:
+        detail = exc.detail if isinstance(exc, EmailDeliveryError) else {}
+        return _hold_scheduled_gmail_delivery_unverified(
+            db,
+            lease_id=lease_id,
+            provider_message_id=data.provider_message_id,
+            reason=(
+                exc.error_type
+                if isinstance(exc, EmailDeliveryError)
+                else f"scheduled_gmail_finalize_{type(exc).__name__}"
+            ),
+            detail=detail,
+            delivery_error=(exc if isinstance(exc, EmailDeliveryError) else None),
+        )
+
+
+def abort_scheduled_gmail_outreach(
+    db: Session,
+    lease_id: str,
+    data: ScheduledGmailAbortIn,
+    principal: ScheduledGmailClientPrincipal,
+) -> dict[str, Any]:
+    principal.assert_scope(permission="abort")
+    _release_expired_claims(db)
+    lease_lookup = db.scalar(
+        select(ScheduledGmailLease).where(ScheduledGmailLease.lease_id == lease_id)
+    )
+    if lease_lookup is None:
+        raise GrowthRegistryError("scheduled_gmail_lease_missing")
+    row = db.scalar(
+        select(OutreachMessage)
+        .where(OutreachMessage.outreach_id == lease_lookup.outreach_id)
+        .with_for_update()
+    )
+    if row is None:
+        raise GrowthRegistryError("scheduled_gmail_outreach_missing")
+    lease = db.scalar(
+        select(ScheduledGmailLease)
+        .where(ScheduledGmailLease.lease_id == lease_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if lease is None or lease.outreach_id != row.outreach_id:
+        raise GrowthRegistryError("scheduled_gmail_lease_state_conflict")
+    principal.assert_scope(
+        permission="abort",
+        sender_email=row.sender_email,
+        motor_key=row.motor_key,
+    )
+    if lease.client_id != principal.client_id:
+        raise GrowthRegistryError("scheduled_gmail_lease_owned_by_other_client")
+    if not _scheduled_gmail_token_matches(lease, data.lease_token):
+        raise GrowthRegistryError("scheduled_gmail_lease_token_invalid")
+    if lease.status == "aborted":
+        db.commit()
+        return _scheduled_gmail_lease_response(row, lease, include_token=False)
+    if lease.status != "authorized":
+        raise GrowthRegistryError("scheduled_gmail_abort_not_pre_transport")
+    lease_request = _scheduled_gmail_request_record(
+        db,
+        lease_id=lease.lease_id,
+        active_only=True,
+        lock=True,
+    )
+    if lease_request is None or lease_request.client_id != principal.client_id:
+        raise GrowthRegistryError("scheduled_gmail_active_request_missing")
+    now = utcnow()
+    if (
+        data.provider_transport_called is not False
+        or row.status != "claimed"
+        or row.claimed_by != _scheduled_gmail_claimed_by(lease.client_id)
+        or row.lease_expires_at is None
+        or _aware(row.lease_expires_at) <= now
+        or _aware(lease.expires_at) <= now
+        or row.provider_message_id is not None
+        or _delivery_verification_pending(row)
+    ):
+        raise GrowthRegistryError("scheduled_gmail_abort_not_pre_transport")
+    guard_token = lease.global_guard_claim_token or claimed_global_recipient_token(
+        db,
+        recipient=row.recipient_email,
+        identity_sha256=row.idempotency_key,
+    )
+    if guard_token:
+        fail_global_recipient_delivery(
+            db,
+            recipients=[row.recipient_email],
+            identity_sha256=row.idempotency_key,
+            claim_token=guard_token,
+            error=data.reason,
+            accepted_unverified=False,
+            now=utcnow(),
+            commit=False,
+        )
+    _finish_land_canary_slot(db, row.outreach_id, outcome="release")
+    row.status = "queued"
+    row.claimed_by = None
+    row.claimed_at = None
+    row.lease_expires_at = None
+    row.attempt_count = max(0, row.attempt_count - 1)
+    row.last_error = "scheduled_gmail_pre_transport_abort"
+    lease.status = "aborted"
+    lease.aborted_at = now
+    lease.abort_reason = data.reason
+    lease.global_guard_claim_token = None
+    lease.updated_at = now
+    lease_request.status = "aborted"
+    lease_request.updated_at = now
+    audit(
+        db,
+        actor=_scheduled_gmail_claimed_by(lease.client_id),
+        action="growth_scheduled_gmail_lease_aborted_pre_transport",
+        entity_type="growth_outreach",
+        entity_id=row.outreach_id,
+        after={
+            "lease_id": lease.lease_id,
+            "client_id": lease.client_id,
+            "provider_transport_called": False,
+            "reason": data.reason,
+        },
+    )
+    db.commit()
+    return _scheduled_gmail_lease_response(row, lease, include_token=False)
+
+
+def scheduled_gmail_lease_status(
+    db: Session,
+    lease_id: str,
+    principal: ScheduledGmailClientPrincipal,
+) -> dict[str, Any]:
+    principal.assert_scope(permission="read")
+    lease = db.scalar(
+        select(ScheduledGmailLease).where(ScheduledGmailLease.lease_id == lease_id)
+    )
+    if lease is None:
+        raise GrowthRegistryError("scheduled_gmail_lease_missing")
+    row = db.scalar(
+        select(OutreachMessage).where(OutreachMessage.outreach_id == lease.outreach_id)
+    )
+    if row is None:
+        raise GrowthRegistryError("scheduled_gmail_outreach_missing")
+    principal.assert_scope(
+        permission="read",
+        sender_email=row.sender_email,
+        motor_key=row.motor_key,
+    )
+    if lease.client_id != principal.client_id:
+        raise GrowthRegistryError("scheduled_gmail_lease_owned_by_other_client")
+    return _scheduled_gmail_lease_response(row, lease, include_token=False)
+
+
+def scheduled_gmail_coordination_readiness(
+    db: Session,
+    principal: ScheduledGmailClientPrincipal,
+) -> dict[str, Any]:
+    """Return a mutation-free coordination preflight for registered clients."""
+    principal.assert_scope(permission="read")
+    GrowthRegistry.load()
+    current = utcnow()
+    usage = _outreach_budapest_day_usage(db, current)
+    active_claims = int(
+        db.scalar(
+            select(func.count())
+            .select_from(OutreachMessage)
+            .where(
+                OutreachMessage.sequence_step == 0,
+                OutreachMessage.status == "claimed",
+                OutreachMessage.claimed_by.is_not(None),
+                OutreachMessage.lease_expires_at.is_not(None),
+                OutreachMessage.lease_expires_at > current,
+            )
+        )
+        or 0
+    )
+    writes_available = writes_unlocked()
+    window_open = _outreach_sending_window_open(current)
+    quota_remaining = max(0, usage.limit - usage.effective_reserved_count)
+    ready = writes_available and window_open and quota_remaining > 0 and active_claims == 0
+    offline_escrow: dict[str, Any] = {
+        "enabled": bool(getattr(principal, "offline_escrow_enabled", False)),
+        "ready": False,
+    }
+    if offline_escrow["enabled"]:
+        try:
+            from .scheduled_gmail_escrow import escrow_signing_readiness
+
+            offline_escrow.update(escrow_signing_readiness())
+            offline_escrow["client_key_id"] = principal.client_key_id
+            offline_escrow["max_permits_per_bundle"] = principal.offline_max_permits
+            offline_escrow["max_horizon_days"] = principal.offline_max_horizon_days
+        except (RuntimeError, ValueError) as exc:
+            offline_escrow["error"] = str(exc)
+    return {
+        "status": "ready" if ready else "not_ready",
+        "ready": ready,
+        "client_id": principal.client_id,
+        "registry_version": principal.registry_version,
+        "registry_sha256": principal.registry_sha256,
+        "sender_emails": sorted(principal.sender_emails),
+        "motor_keys": sorted(principal.motor_keys),
+        "writes_unlocked": writes_available,
+        "sending_window_open": window_open,
+        "active_transport_reservations": active_claims,
+        "offline_escrow": offline_escrow,
+        "budapest_day": {
+            "local_date": usage.day_start.astimezone(
+                ZoneInfo("Europe/Budapest")
+            ).date().isoformat(),
+            "limit": usage.limit,
+            "sent_first_contacts": usage.sent_first_contacts,
+            "active_claim_reservations": usage.active_claim_reservations,
+            "pending_verification_reservations": (
+                usage.pending_verification_reservations
+            ),
+            "effective_reserved_count": usage.effective_reserved_count,
+            "remaining": quota_remaining,
+        },
+    }
 
 
 def dispatch_batch(db: Session, *, limit: int = 20) -> int:

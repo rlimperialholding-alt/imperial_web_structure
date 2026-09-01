@@ -10,8 +10,22 @@ from sqlalchemy.orm import Session
 from ..config import settings as platform_settings
 from ..database import get_db
 from .canonical_templates import CanonicalFirstContactRegistry
+from .email import EmailDeliveryError
 from .models import GrowthRun, OutreachMessage
 from .registry import GrowthRegistryError
+from .scheduled_gmail_auth import (
+    ScheduledGmailAuthError,
+    ScheduledGmailAuthorizationError,
+    ScheduledGmailClientPrincipal,
+    ScheduledGmailPermission,
+    authenticate_scheduled_gmail_client,
+)
+from .scheduled_gmail_escrow_service import (
+    abort_scheduled_gmail_escrow_permit,
+    issue_scheduled_gmail_escrow_bundle,
+    scheduled_gmail_escrow_bundle_status,
+    sync_scheduled_gmail_escrow_events,
+)
 from .schemas import (
     CanonicalFirstContactRenderIn,
     GrowthControlIn,
@@ -20,14 +34,25 @@ from .schemas import (
     OutreachReleaseIn,
     PublicLandNameFallbackPromotionIn,
     PublicLandPolicyReplayIn,
+    ScheduledGmailAbortIn,
+    ScheduledGmailEscrowAbortIn,
+    ScheduledGmailEscrowBundleIn,
+    ScheduledGmailEscrowSyncIn,
+    ScheduledGmailFinalizeIn,
+    ScheduledGmailLeaseIn,
 )
 from .service import (
+    abort_scheduled_gmail_outreach,
+    finalize_scheduled_gmail_outreach,
     ingest_signal,
+    lease_scheduled_gmail_outreach,
     promote_public_land_name_fallback_signals,
     readiness,
     record_outreach_event,
     release_outreach,
     run_motor,
+    scheduled_gmail_coordination_readiness,
+    scheduled_gmail_lease_status,
     set_control_state,
     unsubscribe,
 )
@@ -47,6 +72,29 @@ def require_internal_token(
         or not hmac.compare_digest(expected, x_internal_job_token)
     ):
         raise HTTPException(status_code=401, detail="invalid internal token")
+
+
+def _scheduled_gmail_principal(
+    authorization: str | None,
+    *,
+    permission: ScheduledGmailPermission,
+) -> ScheduledGmailClientPrincipal:
+    try:
+        return authenticate_scheduled_gmail_client(
+            authorization,
+            required_permission=permission,
+        )
+    except ScheduledGmailAuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ScheduledGmailAuthError as exc:
+        status = 503 if str(exc) != "scheduled_gmail_client_authentication_failed" else 401
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
+def _scheduled_gmail_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ScheduledGmailAuthorizationError):
+        return HTTPException(status_code=403, detail=str(exc))
+    return HTTPException(status_code=409, detail=str(exc))
 
 
 def _run(row: GrowthRun) -> dict:
@@ -270,6 +318,154 @@ def growth_outreach_artifact(
     if not row:
         raise HTTPException(status_code=404, detail="unknown outreach")
     return _outreach_artifact(row)
+
+
+@router.post("/api/internal/growth-ops/scheduled-gmail/lease")
+def scheduled_gmail_lease(
+    data: ScheduledGmailLeaseIn,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(authorization, permission="lease")
+    try:
+        return lease_scheduled_gmail_outreach(db, data, principal)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
+
+
+@router.get("/api/internal/growth-ops/scheduled-gmail/readiness")
+def scheduled_gmail_readiness(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(authorization, permission="read")
+    try:
+        return scheduled_gmail_coordination_readiness(db, principal)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
+
+
+@router.post("/api/internal/growth-ops/scheduled-gmail/escrow/bundles")
+def scheduled_gmail_escrow_bundle_issue(
+    data: ScheduledGmailEscrowBundleIn,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(
+        authorization,
+        permission="escrow_prefetch",
+    )
+    try:
+        return issue_scheduled_gmail_escrow_bundle(db, data, principal)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
+
+
+@router.get(
+    "/api/internal/growth-ops/scheduled-gmail/escrow/bundles/{bundle_id}"
+)
+def scheduled_gmail_escrow_bundle_read(
+    bundle_id: str,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(authorization, permission="read")
+    try:
+        return scheduled_gmail_escrow_bundle_status(db, bundle_id, principal)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
+
+
+@router.post("/api/internal/growth-ops/scheduled-gmail/escrow/sync")
+def scheduled_gmail_escrow_sync(
+    data: ScheduledGmailEscrowSyncIn,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(
+        authorization,
+        permission="escrow_sync",
+    )
+    try:
+        return sync_scheduled_gmail_escrow_events(db, data, principal)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
+
+
+@router.post(
+    "/api/internal/growth-ops/scheduled-gmail/escrow/bundles/{bundle_id}/sync"
+)
+def scheduled_gmail_escrow_bundle_sync(
+    bundle_id: str,
+    data: ScheduledGmailEscrowSyncIn,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    if data.bundle_id != bundle_id:
+        raise HTTPException(status_code=409, detail="scheduled_gmail_escrow_bundle_conflict")
+    return scheduled_gmail_escrow_sync(data, authorization, db)
+
+
+@router.post(
+    "/api/internal/growth-ops/scheduled-gmail/escrow/permits/{permit_id}/abort"
+)
+def scheduled_gmail_escrow_permit_abort(
+    permit_id: str,
+    data: ScheduledGmailEscrowAbortIn,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(authorization, permission="abort")
+    try:
+        return abort_scheduled_gmail_escrow_permit(
+            db,
+            permit_id,
+            data,
+            principal,
+        )
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
+
+
+@router.get("/api/internal/growth-ops/scheduled-gmail/{lease_id}")
+def scheduled_gmail_status(
+    lease_id: str,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(authorization, permission="read")
+    try:
+        return scheduled_gmail_lease_status(db, lease_id, principal)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
+
+
+@router.post("/api/internal/growth-ops/scheduled-gmail/{lease_id}/finalize")
+def scheduled_gmail_finalize(
+    lease_id: str,
+    data: ScheduledGmailFinalizeIn,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(authorization, permission="finalize")
+    try:
+        return finalize_scheduled_gmail_outreach(db, lease_id, data, principal)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
+
+
+@router.post("/api/internal/growth-ops/scheduled-gmail/{lease_id}/abort")
+def scheduled_gmail_abort(
+    lease_id: str,
+    data: ScheduledGmailAbortIn,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),  # noqa: B008
+):
+    principal = _scheduled_gmail_principal(authorization, permission="abort")
+    try:
+        return abort_scheduled_gmail_outreach(db, lease_id, data, principal)
+    except (EmailDeliveryError, GrowthRegistryError, RuntimeError, ValueError) as exc:
+        raise _scheduled_gmail_error(exc) from exc
 
 
 @router.get(

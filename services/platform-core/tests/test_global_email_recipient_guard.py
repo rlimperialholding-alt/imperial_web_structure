@@ -115,3 +115,53 @@ def test_multi_recipient_claim_is_all_or_nothing(db):
     assert blocked.decision == "blocked_rolling_24h"
     second_state = db.get(GlobalEmailRecipientGuard, "two@imperialholding.hu")
     assert second_state is None or second_state.status == "idle"
+
+
+def test_commit_false_keeps_guard_and_business_transition_in_one_transaction(db):
+    current = datetime(2026, 8, 31, 10, tzinfo=UTC)
+    recipient = "scheduled.coordination@imperialholding.hu"
+    identity = guard_identity("scheduled-gmail-atomic-claim")
+
+    rolled_back = claim_global_recipient_delivery(
+        db,
+        recipients=[recipient],
+        identity_sha256=identity,
+        message_type="growth_outreach",
+        now=current,
+        commit=False,
+    )
+    assert rolled_back.decision == "claimed"
+    assert db.get(GlobalEmailRecipientGuard, recipient) is not None
+    db.rollback()
+    db.expire_all()
+    assert db.get(GlobalEmailRecipientGuard, recipient) is None
+
+    claimed = claim_global_recipient_delivery(
+        db,
+        recipients=[recipient],
+        identity_sha256=identity,
+        message_type="growth_outreach",
+        now=current,
+        commit=False,
+    )
+    finalize_global_recipient_delivery(
+        db,
+        recipients=[recipient],
+        identity_sha256=identity,
+        claim_token=str(claimed.claim_token),
+        provider_message_id="SCHEDULED-GMAIL-ATOMIC-1",
+        now=current,
+        commit=False,
+    )
+    db.commit()
+
+    state = db.get(GlobalEmailRecipientGuard, recipient)
+    assert state is not None
+    assert state.status == "sent"
+    assert state.provider_message_id == "SCHEDULED-GMAIL-ATOMIC-1"
+    events = db.scalars(
+        select(GlobalEmailGuardEvent).where(
+            GlobalEmailGuardEvent.recipient_normalized == recipient
+        )
+    ).all()
+    assert [event.event_type for event in events] == ["claimed", "sent"]

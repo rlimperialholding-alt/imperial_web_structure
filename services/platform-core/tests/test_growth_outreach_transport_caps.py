@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, SessionLocal, engine
 from app.global_email_guard import GlobalEmailRecipientGuard
-from app.growth_ops import registry, service
+from app.growth_ops import service
 from app.growth_ops.email import EmailDeliveryError
 from app.growth_ops.models import CanonicalEmailDelivery, GrowthControlState, OutreachMessage
 from app.growth_ops.registry import GrowthRegistryError
@@ -284,98 +284,58 @@ def test_reputation_pacing_policy_cannot_be_turned_into_a_shadow_cap(
         growth_settings()
 
 
-def test_runtime_trip_uses_configured_writable_path_and_closes_writes(tmp_path, monkeypatch):
-    owner_gate = tmp_path / "owner-gate"
-    runtime_gate = tmp_path / "runtime" / "growth-kill-switch"
-    runtime_gate.parent.mkdir()
-    owner_gate.write_text("ALLOW_STAGING_WRITES\n", encoding="utf-8")
-    monkeypatch.setenv("ENVIRONMENT", "staging")
-    monkeypatch.setenv("GROWTH_OPS_KILL_SWITCH_FILE", str(owner_gate))
+def test_central_gmail_auth_failure_uses_markerless_scoped_backoff(db, tmp_path, monkeypatch):
+    runtime_gate = tmp_path / "growth-kill-switch"
     monkeypatch.setenv("GROWTH_OPS_RUNTIME_KILL_SWITCH_FILE", str(runtime_gate))
+    current = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
 
-    config = growth_settings()
-    assert config.kill_switch_file == str(owner_gate)
-    assert config.runtime_kill_switch_file == str(runtime_gate)
-    assert registry.writes_unlocked()
+    blocked_until = service._record_central_gmail_authentication_failure(
+        db,
+        reason="provider_authentication_failure",
+        now=current,
+    )
+    db.commit()
 
-    assert service._trip_runtime_kill_switch()
-    assert runtime_gate.read_text(encoding="utf-8") == "KILLED\n"
-    assert not registry.writes_unlocked()
-
-    runtime_gate.unlink()
-    assert registry.writes_unlocked()
-    owner_gate.write_text("OWNER_STOP\n", encoding="utf-8")
-    assert not registry.writes_unlocked()
-
-
-def test_runtime_kill_write_failure_persists_database_emergency_stop(db, monkeypatch):
-    service._PROCESS_EMERGENCY_SEND_STOP.clear()
-    monkeypatch.setattr(service, "_trip_runtime_kill_switch", lambda: False)
+    state = db.get(
+        service.GrowthControlState,
+        service.CENTRAL_GMAIL_TRANSPORT_STATE_KEY,
+    )
+    assert state is not None and state.enabled is False
+    assert blocked_until == current + timedelta(minutes=1)
+    assert not runtime_gate.exists()
+    assert all(
+        db.get(service.GrowthControlState, f"motor:{motor_key}") is None
+        for motor_key in service.GrowthRegistry.REQUIRED_MOTORS
+    )
 
     with pytest.raises(
-        GrowthRegistryError,
-        match="runtime_kill_switch_persist_failed_emergency_db_stop",
-    ):
-        service._require_runtime_kill_switch(
+        EmailDeliveryError,
+        match="central_gmail_authentication_backoff",
+    ) as blocked:
+        service._assert_central_gmail_transport_available(
             db,
-            reason="provider_acceptance_ambiguous_no_send",
+            now=current + timedelta(seconds=30),
         )
+    assert blocked.value.retry_safe is True
 
-    for motor_key in sorted(service.GrowthRegistry.REQUIRED_MOTORS):
-        row = db.get(service.GrowthControlState, f"motor:{motor_key}")
-        assert row is not None
-        assert row.enabled is False
-        assert row.reason == "provider_acceptance_ambiguous_no_send"
-        assert row.changed_by == "growth-worker-emergency-stop"
-    assert not service._PROCESS_EMERGENCY_SEND_STOP.is_set()
-
-
-def test_double_emergency_stop_failure_latches_process_and_aborts_batch(db, monkeypatch):
-    first = _message(90, "first@example.hu", status="claimed")
-    second = _message(91, "second@example.net", status="claimed")
-    pending = [first, second]
-    dispatch_calls: list[str] = []
-    service._PROCESS_EMERGENCY_SEND_STOP.clear()
-    monkeypatch.setattr(service, "_trip_runtime_kill_switch", lambda: False)
-
-    def fail_database_stop(_db, *, reason):
-        raise OSError(reason)
-
-    monkeypatch.setattr(service, "_persist_database_emergency_stop", fail_database_stop)
-    monkeypatch.setattr(
+    # Expiry admits one central recovery attempt; scheduled-client paths never
+    # consult this central-adapter-only circuit at all.
+    service._assert_central_gmail_transport_available(
         db,
-        "rollback",
-        lambda: (_ for _ in ()).throw(OSError("database connection unavailable")),
+        now=blocked_until,
     )
-    monkeypatch.setattr(service, "_outreach_sending_window_open", lambda: True)
-    monkeypatch.setattr(service, "_outreach_send_capacity", lambda _db: 100)
-    monkeypatch.setattr(
-        service,
-        "claim_outreach",
-        lambda _db: pending.pop(0) if pending else None,
-    )
-    monkeypatch.setattr(
-        service,
-        "_contain_unexpected_dispatch_exception",
-        lambda *_args, **_kwargs: None,
-    )
+    service._record_central_gmail_transport_success(db, now=blocked_until)
+    db.commit()
+    db.refresh(state)
+    assert state.enabled is True
+    assert not runtime_gate.exists()
 
-    def dispatch_once(_db, row):
-        dispatch_calls.append(row.outreach_id)
-        service._require_runtime_kill_switch(
-            _db,
-            reason="provider_acceptance_ambiguous_no_send",
-        )
-        raise AssertionError("unreachable")
 
-    monkeypatch.setattr(service, "dispatch_outreach", dispatch_once)
-    try:
-        assert service.dispatch_batch(db, limit=20) == 0
-        assert dispatch_calls == [first.outreach_id]
-        assert service._PROCESS_EMERGENCY_SEND_STOP.is_set()
-        assert pending == [second]
-    finally:
-        service._PROCESS_EMERGENCY_SEND_STOP.clear()
+def test_payload_hash_failure_is_row_local_hard_gate_without_global_stop():
+    assert service._is_recipient_hard_gate_error(
+        GrowthRegistryError("outreach_payload_hash_mismatch")
+    )
+    assert not service._PROCESS_EMERGENCY_SEND_STOP.is_set()
 
 
 @pytest.mark.parametrize(

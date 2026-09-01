@@ -1075,15 +1075,7 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
                 detail={"reason": "gmail_readback_plain_body_mismatch"},
             )
 
-    kill_switch_trips = 0
-
-    def fake_trip():
-        nonlocal kill_switch_trips
-        kill_switch_trips += 1
-        return True
-
     monkeypatch.setattr(service, "SMTPEmailAdapter", AcceptedUnverifiedAdapter)
-    monkeypatch.setattr(service, "_trip_runtime_kill_switch", fake_trip)
     monkeypatch.setattr(
         service,
         "_authoritative_send_readiness_reason",
@@ -1103,22 +1095,12 @@ def test_dispatch_holds_gmail_accepted_unverified_without_second_send(
     assert receipt["delivery_verification"]["retry_safe"] is False
     assert second.status == "claimed"
     assert sends == 1
-    assert kill_switch_trips == 0
 
 
 def test_expired_claim_is_held_pending_verification_and_never_requeued(
     db,
     growth_runtime,
-    monkeypatch,
 ):
-    kill_switch_trips = 0
-
-    def fake_trip():
-        nonlocal kill_switch_trips
-        kill_switch_trips += 1
-        return True
-
-    monkeypatch.setattr(service, "_trip_runtime_kill_switch", fake_trip)
     result = service.ingest_signal(db, _signal(external_key="ETDR-EXPIRED-CLAIM"))
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
@@ -1141,7 +1123,6 @@ def test_expired_claim_is_held_pending_verification_and_never_requeued(
     assert receipt["delivery_verification"]["detail"] == {
         "reason": "worker_lease_expired_delivery_ambiguous"
     }
-    assert kill_switch_trips == 0
 
     message.claimed_by = "verification-worker"
     message.claimed_at = datetime.now(UTC) - timedelta(minutes=10)
@@ -1152,7 +1133,6 @@ def test_expired_claim_is_held_pending_verification_and_never_requeued(
     assert message.status == "claimed"
     assert message.claimed_by is None and message.lease_expires_at is None
     assert service._delivery_verification_pending(message)
-    assert kill_switch_trips == 0
 
 
 def test_verified_referral_partner_queues_only_the_canonical_locked_template(db, growth_runtime):

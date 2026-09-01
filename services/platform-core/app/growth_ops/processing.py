@@ -3070,10 +3070,6 @@ def send_publication_digest(
             account_next_at = _record_outreach_pacing_backoff(
                 db, error=exc, now=datetime.now(UTC)
             )
-        if isinstance(exc, EmailDeliveryError) and exc.authentication_failure:
-            from .service import _require_runtime_kill_switch
-
-            _require_runtime_kill_switch(db, reason="provider_authentication_failure")
         fail_global_recipient_delivery(
             db,
             recipients=[recipient],
