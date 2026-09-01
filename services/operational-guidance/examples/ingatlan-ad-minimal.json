@@ -1,0 +1,9 @@
+{
+  "ownId": "IMP000001",
+  "listingType": 1,
+  "propertyType": 1,
+  "propertySubtype": 1,
+  "priceHuf": 89900000,
+  "description": "Mintaadat az ingatlan.com apitest validációjához. Az éles mezőkészletet a projekt és az ingatlantípus szerint kell kitölteni.",
+  "city": 1
+}

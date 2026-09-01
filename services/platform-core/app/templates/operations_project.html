@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} | PM Cockpit{% endblock %}
+{% block content %}
+<section class="project-hero ops-project-hero">
+  <div><a class="backlink dark" href="/operations">← PM Cockpit</a><span class="eyebrow">PROJECT OPERATIONS</span><h1>{{ project.name }}</h1><p>{{ project.project_id }} · {{ project.customer_name or 'Nincs ügyfélnév' }} · {{ project.responsible or 'Nincs felelős' }}</p></div>
+  <div class="project-risk"><span class="risk-label {{ project.risk_level }}">{{ project.risk_level }}</span><b>{{ metrics.progress_pct }}%</b><small>összesített munkacsomag-készültség</small></div>
+</section>
+
+<section class="project-kpis ops-project-kpis">
+  <article><span>Költségkeret</span><b>{{ metrics.budget_huf|huf }}</b><small>forrásmodul-vetület</small></article>
+  <article><span>Lekötve</span><b>{{ metrics.committed_huf|huf }}</b><small>kötelezettség</small></article>
+  <article><span>Tényköltség</span><b>{{ metrics.actual_huf|huf }}</b><small>utolsó szinkron</small></article>
+  <article class="{% if metrics.blocked_packages %}danger-card{% endif %}"><span>Blokkolt csomag</span><b>{{ metrics.blocked_packages }}</b><small>{{ metrics.open_issues }} nyitott ügy</small></article>
+  <article class="{% if metrics.pending_gates %}warning-card{% endif %}"><span>Függő kapu</span><b>{{ metrics.pending_gates }}</b><small>{{ metrics.pending_delivery_docs }} dokumentumblokk</small></article>
+</section>
+
+<div class="project-tabs ops-tabs" role="tablist">
+  <button class="active" data-tab="phases">Fázisok</button>
+  <button data-tab="packages">Munkacsomagok</button>
+  <button data-tab="gates">Indulási kapuk</button>
+  <button data-tab="reports">Napi jelentések</button>
+  <button data-tab="issues">Helyszíni ügyek</button>
+  <button data-tab="procurement">Beszerzés</button>
+  <button data-tab="partners">Alvállalkozók</button>
+</div>
+
+<section class="project-panel active" data-panel="phases">
+  <div class="panel elevated"><div class="panel-title"><div><span class="eyebrow">FÁZISTERV</span><h2>Projektfázisok</h2></div><a href="/projects/{{ project.project_id }}">Projekt 360°</a></div>
+    <div class="phase-roadmap">
+    {% for phase in phases %}<article class="phase-card {{ phase.status }}"><span>{{ phase.sequence }}</span><div><b>{{ phase.name }}</b><small>{{ phase.status }} · készültség: {{ phase.progress_pct }}% · readiness: {{ phase.readiness_status }}</small><div class="ops-progress"><span><i style="width:{{ phase.progress_pct }}%"></i></span></div></div></article>{% else %}<div class="empty-state compact"><b>Nincs fázisvetület.</b></div>{% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="project-panel" data-panel="packages">
+  <div class="panel elevated"><div class="panel-title"><div><span class="eyebrow">MUNKACSOMAGOK</span><h2>Napi operatív kontroll</h2></div><span class="muted-chip">{{ packages|length }} csomag</span></div>
+  <div class="work-package-grid">
+  {% for wp in packages %}<article class="work-package-card {% if wp.blocked %}is-blocked{% endif %}">
+    <div class="wp-head"><div><span class="status-badge {{ wp.status }}">{{ wp.status }}</span><b>{{ wp.name }}</b><small>{{ wp.work_package_id }} · {{ wp.trade or 'nincs szakág' }}</small></div><strong>{{ wp.progress_pct }}%</strong></div>
+    <div class="ops-progress"><span><i style="width:{{ wp.progress_pct }}%"></i></span></div>
+    <dl class="wp-facts"><div><dt>Felelős</dt><dd>{{ wp.assignee or '—' }}</dd></div><div><dt>Keret</dt><dd>{{ wp.budget_huf|huf }}</dd></div><div><dt>Tény</dt><dd>{{ wp.actual_huf|huf }}</dd></div></dl>
+    {% if wp.blocked %}<div class="block-note"><b>Blokkoló ok</b><span>{{ wp.block_reason }}</span></div>{% endif %}
+    <form class="wp-update" method="post" action="/operations/work-packages/{{ wp.work_package_id }}">
+      <input type="hidden" name="project_id" value="{{ project.project_id }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="expected_updated_at" value="{{ wp.updated_at.isoformat() if wp.updated_at else '' }}">
+      <select name="status"><option value="planned" {% if wp.status=='planned' %}selected{% endif %}>Tervezett</option><option value="ready" {% if wp.status=='ready' %}selected{% endif %}>Indítható</option><option value="in_progress" {% if wp.status=='in_progress' %}selected{% endif %}>Folyamatban</option><option value="done" {% if wp.status=='done' %}selected{% endif %}>Kész</option><option value="blocked" {% if wp.status=='blocked' %}selected{% endif %}>Blokkolt</option></select>
+      <input name="progress_pct" type="number" min="0" max="100" value="{{ wp.progress_pct }}">
+      <select name="blocked"><option value="false" {% if not wp.blocked %}selected{% endif %}>Nem blokkolt</option><option value="true" {% if wp.blocked %}selected{% endif %}>Blokkolt</option></select>
+      <input name="block_reason" value="{{ wp.block_reason or '' }}" placeholder="Blokkoló ok">
+      <input name="next_action" value="{{ wp.next_action or '' }}" placeholder="Következő lépés">
+      <button>Mentés</button>
+    </form>
+  </article>{% else %}<div class="empty-state"><b>Nincs munkacsomag.</b></div>{% endfor %}
+  </div></div>
+</section>
+
+<section class="project-panel" data-panel="gates">
+  <div class="panel elevated"><div class="panel-title"><div><span class="eyebrow">START READINESS</span><h2>Indulási kapuk</h2></div><span class="muted-chip">Automatikus felülírás nélkül</span></div>
+  <div class="gate-groups">
+  {% for wp in packages %}<article class="gate-group"><header><b>{{ wp.name }}</b><small>{{ wp.work_package_id }}</small></header>
+    {% for gate in gate_map.get(wp.work_package_id, []) %}<form method="post" action="/operations/gates/{{ gate.gate_id }}" class="gate-row {{ gate.status }}"><input type="hidden" name="project_id" value="{{ project.project_id }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_updated_at" value="{{ gate.updated_at.isoformat() if gate.updated_at else '' }}"><span class="gate-icon">{% if gate.status=='passed' %}✓{% elif gate.status=='failed' %}!{% else %}·{% endif %}</span><div><b>{{ gate.label }}</b><small>{{ gate.checked_by or 'Nincs ellenőrző' }}{% if gate.evidence_url %} · bizonyíték rögzítve{% endif %}</small></div><select name="status"><option value="pending" {% if gate.status=='pending' %}selected{% endif %}>Függő</option><option value="passed" {% if gate.status=='passed' %}selected{% endif %}>Megfelelt</option><option value="failed" {% if gate.status=='failed' %}selected{% endif %}>Nem felelt meg</option><option value="waived" {% if gate.status=='waived' %}selected{% endif %}>Felmentve</option></select><input name="evidence_url" value="{{ gate.evidence_url or '' }}" placeholder="Drive bizonyíték"><input name="notes" value="{{ gate.notes or '' }}" placeholder="Döntési megjegyzés"><button>Rögzít</button></form>{% endfor %}
+  </article>{% endfor %}
+  </div></div>
+</section>
+
+<section class="project-panel" data-panel="reports">
+  <div class="panel elevated"><div class="panel-title"><div><span class="eyebrow">HELYSZÍN</span><h2>Napi jelentések</h2></div><a class="button gold" href="/field/{{ project.project_id }}">Új helyszíni jelentés</a></div>
+  <div class="report-list">{% for report in reports %}<article><div class="report-date"><b>{{ report.report_date|dt }}</b><small>{{ report.reporter }} · {{ report.workers_total }} fő</small></div><div><p>{{ report.summary }}</p>{% if report.blockers %}<div class="block-note"><b>Akadály</b><span>{{ report.blockers }}</span></div>{% endif %}</div><span class="status-badge {{ report.status }}">{{ report.status }}</span></article>{% else %}<div class="empty-state"><b>Nincs napi jelentés.</b></div>{% endfor %}</div>
+  </div>
+</section>
+
+<section class="project-panel" data-panel="issues">
+  <div class="panel elevated"><div class="panel-title"><div><span class="eyebrow">PROBLÉMÁK</span><h2>Helyszíni ügyek</h2></div><a href="/field/{{ project.project_id }}#issue-form">Új ügy</a></div>
+  <div class="issue-board">{% for issue in issues %}<article class="{{ issue.severity }}"><span class="priority-badge {{ issue.severity }}">{{ issue.severity }}</span><div><b>{{ issue.title }}</b><p>{{ issue.description or 'Nincs leírás.' }}</p><small>{{ issue.issue_type }} · {{ issue.responsible or 'nincs felelős' }} · hatás: {{ issue.financial_impact_huf|huf }}, {{ issue.deadline_impact_days }} nap</small></div><span class="status-badge {{ issue.status }}">{{ issue.status }}</span></article>{% else %}<div class="empty-state"><b>Nincs helyszíni ügy.</b></div>{% endfor %}</div>
+  </div>
+</section>
+
+<section class="project-panel" data-panel="procurement">
+  <div class="panel elevated"><div class="panel-title"><div><span class="eyebrow">PROCUREMENT PROJECTION</span><h2>Beszerzési helyzet</h2></div><a class="button gold" href="/procurement/projects/{{ project.project_id }}">Munkapad megnyitása</a></div>
+  <div class="procure-mini-grid"><div><span>Rendelések</span><b>{{ orders|length }}</b></div><div><span>Szállítólevelek</span><b>{{ deliveries|length }}</b></div><div><span>Anyaglotok</span><b>{{ lots|length }}</b></div><div><span>Kontrollok</span><b>{{ controls|length }}</b></div></div>
+  <table><thead><tr><th>Rendelés</th><th>Szállító</th><th>Tartalom</th><th>Összeg</th><th>Szállítás</th><th>Dokumentum</th></tr></thead><tbody>{% for order in orders %}<tr><td>{{ order.order_id }}</td><td>{{ order.supplier_name }}</td><td>{{ order.item_summary }}</td><td>{{ order.total_huf|huf }}</td><td><span class="status-badge {{ order.delivery_status }}">{{ order.delivery_status }}</span></td><td><span class="status-badge {{ order.document_status }}">{{ order.document_status }}</span></td></tr>{% else %}<tr><td colspan="6">Nincs beszerzési vetület.</td></tr>{% endfor %}</tbody></table>
+  </div>
+</section>
+
+
+<section class="project-panel" data-panel="partners">
+  <div class="panel elevated"><div class="panel-title"><div><span class="eyebrow">PARTNER FIELD</span><h2>Alvállalkozói helyszíni portál</h2></div><span class="muted-chip">{{ partner_metrics.present_now }} fő jelen</span></div>
+  <div class="procure-mini-grid"><div><span>Aktív hozzáférés</span><b>{{ partner_metrics.active_accesses }}</b></div><div><span>Jelen most</span><b>{{ partner_metrics.present_now }}</b></div><div><span>Ellenőrzendő haladás</span><b>{{ partner_metrics.pending_progress }}</b></div><div><span>Nyitott változás</span><b>{{ partner_metrics.open_changes }}</b></div></div>
+  <div class="field-columns">
+    <section class="field-form-card"><span class="eyebrow">ÚJ HOZZÁFÉRÉS</span><h2>Projekt- és munkacsomag-korlátozott belépés</h2><form method="post" action="/operations/projects/{{ project.project_id }}/partner-accesses" class="operations-form one-col"><label>Cégnév<input name="company_name" required></label><label>Kapcsolattartó<input name="contact_name"></label><label>Telefon<input name="contact_phone"></label><label>Adószám<input name="company_tax_number"></label><label>Munkacsomag<select name="work_package_id"><option value="">Projekt szintű</option>{% for wp in packages %}<option value="{{ wp.work_package_id }}">{{ wp.name }}</option>{% endfor %}</select></label><label>Hatjegyű belépési kód<input name="access_code" minlength="6" required inputmode="numeric"></label><label>Érvényesség vége<input type="date" name="valid_until"></label><label>Munkatársak — soronként egy név<textarea name="worker_names" rows="5" required></textarea></label><button>Hozzáférés létrehozása</button></form></section>
+    <section class="field-form-card"><span class="eyebrow">AKTÍV PARTNEREK</span><h2>Hozzáférések</h2><div class="partner-history">{% for pa in partner_accesses %}<article><div><b>{{ pa.company_name }}</b><small>{{ pa.contact_name or 'nincs kapcsolattartó' }} · {{ pa.work_package_id or 'projekt szintű' }} · {% if pa.active %}aktív{% else %}lezárt{% endif %}</small></div>{% if pa.active %}<form method="post" action="/operations/partner-accesses/{{ pa.access_id }}/deactivate"><input type="hidden" name="project_id" value="{{ project.project_id }}"><button class="small-button">Lezárás</button></form>{% endif %}</article>{% else %}<p>Nincs partnerhozzáférés.</p>{% endfor %}</div></section>
+  </div>
+  <section class="field-history"><div class="panel-title"><div><span class="eyebrow">MAI JELENLÉT</span><h2>Elektronikus jelenléti ív</h2></div></div><table><thead><tr><th>Név</th><th>Cég</th><th>Érkezés</th><th>Távozás</th><th>Állapot</th></tr></thead><tbody>{% for att in partner_attendance %}<tr><td>{{ partner_workers_by_id.get(att.worker_id).name if partner_workers_by_id.get(att.worker_id) else att.worker_id }}</td><td>{{ partner_access_by_id.get(att.access_id).company_name if partner_access_by_id.get(att.access_id) else '—' }}</td><td>{{ att.check_in_at|dt }}</td><td>{{ att.check_out_at|dt if att.check_out_at else '—' }}</td><td><span class="status-badge {{ att.status }}">{{ att.status }}</span></td></tr>{% else %}<tr><td colspan="5">Ma még nincs jelenléti adat.</td></tr>{% endfor %}</tbody></table></section>
+  <section class="field-history"><div class="panel-title"><div><span class="eyebrow">HALADÁSI JELENTÉSEK</span><h2>PM-ellenőrzésre vár</h2></div></div>{% for pr in partner_progress %}<article><div><b>{{ pr.report_date }} · {{ pr.reported_progress_pct if pr.reported_progress_pct is not none else '—' }}%</b><small>{{ pr.summary }}{% if pr.problem_text %} · Akadály: {{ pr.problem_text }}{% endif %}</small></div>{% if pr.status=='pending_review' %}<form method="post" action="/operations/partner-progress/{{ pr.progress_report_id }}/review"><input type="hidden" name="project_id" value="{{ project.project_id }}"><button name="decision" value="approved" class="small-button">Jóváhagyás</button><button name="decision" value="rejected" class="small-button danger-action">Elutasítás</button></form>{% else %}<span class="status-badge {{ pr.status }}">{{ pr.status }}</span>{% endif %}</article>{% else %}<p>Nincs alvállalkozói jelentés.</p>{% endfor %}</section>
+  <section class="field-history"><div class="panel-title"><div><span class="eyebrow">VÁLTOZÁSBEJELENTÉSEK</span><h2>ChangeControl intake</h2></div></div>{% for ch in partner_changes %}<article><div><b>{{ ch.title }}</b><small>{{ ch.change_type }} · {{ ch.description }} · határidőhatás: {{ ch.deadline_impact_days }} nap</small></div><span class="status-badge {{ ch.status }}">{{ ch.status }}</span></article>{% else %}<p>Nincs változásbejelentés.</p>{% endfor %}</section>
+  </div>
+</section>
+
+<script>
+document.querySelectorAll('.ops-tabs button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.ops-tabs button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.project-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active'); document.querySelector(`[data-panel="${btn.dataset.tab}"]`).classList.add('active');
+}));
+const requestedTab = {{ requested_tab|tojson }};
+if (requestedTab) { const button=document.querySelector(`[data-tab="${requestedTab}"]`); if(button) button.click(); }
+const operationsCsrfToken = {{ csrf_token|tojson }};
+document.querySelectorAll('form[method="post"]').forEach(form => {
+  if (!form.querySelector('input[name="csrf_token"]')) {
+    const input = document.createElement('input');
+    input.type = 'hidden'; input.name = 'csrf_token'; input.value = operationsCsrfToken;
+    form.prepend(input);
+  }
+});
+</script>
+{% endblock %}

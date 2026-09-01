@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Typehouse Factory | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="ops-hero"><div><span class="eyebrow light">HOUSEVISION · TYPEHOUSE FACTORY V1.0</span><h1>Típusház-források feldolgozási sora</h1><p>Egy forrásoldal = egy ház = egy izolált job. A listaimport csak a tartós FIFO sort tölti fel; a generátor mindig egyesével dolgozik.</p><p><a class="button secondary" href="/housevision">Vissza a HouseVision munkasorhoz</a></p></div></section>
+
+{% if notice %}<section class="panel"><p><b>{{ notice }}</b></p></section>{% endif %}
+
+<section class="ops-kpis">
+  <article><span>Összes factory job</span><b>{{ factory_metrics.total }}</b></article>
+  <article><span>Függő / aktív</span><b>{{ factory_metrics.pending }} / {{ factory_metrics.active }}</b></article>
+  <article><span>Két QA-val kész</span><b>{{ factory_metrics.completed }}</b></article>
+  <article class="{% if factory_metrics.needs_review %}warning-card{% endif %}"><span>Szakértői javítás kell</span><b>{{ factory_metrics.needs_review }}</b></article>
+  <article class="{% if factory_metrics.blocked or factory_metrics.failed %}danger-card{% endif %}"><span>Blokkolt / hibás</span><b>{{ factory_metrics.blocked }} / {{ factory_metrics.failed }}</b></article>
+</section>
+
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">RUNTIME</span><h2>Feldolgozó állapota</h2></div></div>
+  <p><b>{{ "AKTÍV" if factory_processing_enabled else "LEÁLLÍTVA" }}</b> · concurrency: 1 · provider: {{ factory_render_provider }}</p>
+  <p class="muted">A COMPLETED állapot csak az azonos csomagmanifesten lefutott két, egymást követő, független teljes QA PASS után lehetséges. Jogbizonyíték vagy kötelező artefaktum hiányában a rendszer fail-closed.</p>
+  <p><b>Automatikusan jóváhagyott forrásdomainek:</b> {{ factory_auto_approved_domains|join(', ') }}</p>
+</section>
+
+<div class="procurement-layout">
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">ONE HOUSE API</span><h2>Egy kanonikus forrásoldal</h2></div></div>
+  <form method="post" action="/housevision/typehouse-factory/jobs" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="catalog_id" value="imperial-typehouses-hu" required>
+    <input name="rights_grant_id" value="auto" required>
+    <input type="url" name="source_url" placeholder="https://forras.example/haz-tipus" required>
+    <button>Forrás-job sorba állítása</button>
+  </form>
+</section>
+
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">BULK REGISTER</span><h2>Forráslista importálása</h2></div></div>
+  <form method="post" action="/housevision/typehouse-factory/imports" enctype="multipart/form-data" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="catalog_id" value="imperial-typehouses-hu" required>
+    <input name="rights_grant_id" value="auto" required>
+    <input type="file" name="source_file" accept=".txt,.csv,.json" required>
+    <button>Lista regisztrálása</button>
+  </form>
+  <p class="muted">UTF-8 TXT, CSV vagy JSON; 1–1000 HTTPS URL. A lista nem lesz egyetlen generátorhívásba összevonva.</p>
+</section>
+</div>
+
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">SERIAL STREAMS</span><h2>Katalógusfolyamok</h2></div></div>
+  <table><thead><tr><th>Katalógus</th><th>Stream</th><th>Állapot</th><th>Művelet</th></tr></thead><tbody>
+  {% for stream in factory_streams %}<tr><td><b>{{ stream.catalog_id }}</b></td><td>{{ stream.stream_id }}</td><td>{{ "SZÜNETEL" if stream.paused else "FUT" }}{% if stream.pause_reason %}<br><small>{{ stream.pause_reason }}</small>{% endif %}</td><td>
+    <form method="post" action="/housevision/typehouse-factory/streams/{{ stream.stream_id }}/{{ 'resume' if stream.paused else 'pause' }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>{{ "Folytatás" if stream.paused else "Szüneteltetés" }}</button>
+    </form>
+  </td></tr>{% else %}<tr><td colspan="4">Még nincs katalógusfolyam.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">IMPORTS</span><h2>Legutóbbi forráslisták</h2></div></div>
+  <table><thead><tr><th>Import</th><th>Katalógus</th><th>Regisztrált</th><th>Duplikátum</th><th>Állapot</th></tr></thead><tbody>
+  {% for item in factory_imports %}<tr><td>{{ item.import_id }}<br><small>{{ item.source_file_name or "API" }}</small></td><td>{{ item.catalog_id }}</td><td>{{ item.registered_count }} / {{ item.requested_count }}</td><td>{{ item.duplicate_count }}</td><td>{{ item.status }}</td></tr>{% else %}<tr><td colspan="5">Nincs import.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">JOBS</span><h2>Egyház-jobok</h2></div></div>
+  <table><thead><tr><th>Job és kimenetek</th><th>Forrás</th><th>Állapot</th><th>Próba / javítás</th><th>Vizuális ellenőrzés</th><th>Megjegyzés</th></tr></thead><tbody>
+  {% for job in factory_jobs %}<tr><td><b>{{ job.job_id }}</b><br><small>rev {{ job.job_revision }}</small>{% if job.housevision_job_id %}<br><a class="button secondary" href="/housevision/jobs/{{ job.housevision_job_id }}">Kimenetek megnyitása</a>{% endif %}{% if job.status in ['NEEDS_REVIEW', 'FAILED'] %}<form method="post" action="/housevision/typehouse-factory/jobs/{{ job.job_id }}/retry"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Új revízió indítása</button></form>{% endif %}</td><td>{{ job.catalog_id }}<br><small><a href="{{ job.canonical_url }}" target="_blank" rel="noopener noreferrer">{{ job.canonical_url }}</a></small></td><td><span class="status-badge {{ job.status|lower }}">{{ job.status }}</span><br><small>{{ job.stage }}</small></td><td>{{ job.attempt_count }} / {{ job.repair_count }}</td><td>{% if job.housevision_job_id %}Automatikus QA után kézi jóváhagyás{% else %}Még nincs kimenet{% endif %}<br><small>Publikálás: blokkolva</small></td><td>{{ job.last_error_code or "—" }}{% if job.last_error_message %}<br><small>{{ job.last_error_message }}</small>{% endif %}</td></tr>{% else %}<tr><td colspan="6">Nincs factory job.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endblock %}

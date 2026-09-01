@@ -1,4 +1,18 @@
-* text=auto eol=lf
-
-*.bat text eol=crlf
-*.cmd text eol=crlf
+# The protected acceptance corpus is verified byte-exactly against
+# .imperial-adas/protected-corpus-manifest.json, so its checked-out bytes must be
+# identical on every platform regardless of core.autocrlf.
+.imperial-adas/acceptance/** text eol=lf
+services/platform-core/app/static/prevalidated-commercial-sources/*.json text eol=lf
+services/platform-core/data/copy_gate/*.json text eol=lf
+services/platform-core/app/static/brand-assets/*.json text eol=lf
+services/platform-core/app/static/brand-assets/**/*.svg text eol=lf
+*.sh text eol=lf
+# Task66 review-remediáció: a semgrep 1.172 dockerfile-grammarja a CRLF
+# sorvégződésű Dockerfile-okon PartialParsing hibát ad; a repó blobjai LF
+# ugyan, de egy core.autocrlf=true checkout (helyi Windows proof-path,
+# illetve bármely autocrlf-öt bekapcsoló runner) CRLF bájtokat ír a
+# munkafába, és a dockerfile-parse hibázik. Az eol=lf minden platformon és
+# minden autocrlf-beállítás mellett LF checkoutot garantál (a *.sh-hez
+# hasonlóan), így a scanok a helyi proof-path-on is a Linux-runner
+# viselkedést tükrözik.
+Dockerfile* text eol=lf

@@ -1,0 +1,49 @@
+{
+  "name": "@imperial-intelligence/itep-core",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:package-age": "node scripts/check-package-age.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "start": "node dist/src/api/main.js",
+    "dev": "node --watch --import tsx src/api/main.ts",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "worker": "node dist/src/workers/main.js",
+    "dev:worker": "node --watch --import tsx src/workers/main.ts",
+    "seed": "tsx prisma/seed.ts",
+    "smoke:test": "sh scripts/smoke-test.sh",
+    "backup": "sh scripts/backup.sh",
+    "restore": "sh scripts/restore.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "prisma": "^6.2.0",
+    "tsx": "^4.19.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.2.0",
+    "fastify": "^5.2.1",
+    "zod": "^3.24.1",
+    "@fastify/rate-limit": "^10.2.0",
+    "@fastify/swagger": "^9.4.2",
+    "@fastify/swagger-ui": "^5.2.2"
+  },
+  "overrides": {
+    "@fastify/static": "10.1.2",
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.2"
+    }
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

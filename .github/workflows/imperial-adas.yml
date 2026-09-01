@@ -1,0 +1,27 @@
+# Managed by Imperial AI ADAS v2.3.3. Do not edit this generated file directly.
+name: Imperial ADAS
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deterministic-gates:
+    name: Deterministic gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Run Phase 1 and Phase 2 deterministic checks
+        shell: pwsh
+        run: ./.imperial-adas/ci/Invoke-ADASCI.ps1
+      - name: Upload CI attestation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: imperial-adas-ci-attestation
+          path: ci-attestation.json
+          if-no-files-found: error

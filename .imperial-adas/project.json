@@ -1,0 +1,178 @@
+{
+  "schemaVersion": "2.1",
+  "projectName": "imperial-intelligence",
+  "generatorVersion": "2.3.4-imperial-intelligence-profile",
+  "generatedBy": "Imperial Intelligence recovery reconciliation 2026-08-20",
+  "stacks": ["python-fastapi", "alembic", "monorepo"],
+  "codeqlLanguages": ["python"],
+  "riskFloor": "R0",
+  "failClosed": true,
+  "thresholds": {
+    "maxChangedLines": {"R0": 300, "R1": 1200, "R2": 3500, "R3": 6000},
+    "minimumCoveragePercent": {"R0": 0, "R1": 60, "R2": 70, "R3": 80},
+    "maxErrorRatePercent": 1,
+    "maxP95LatencyMs": 1500,
+    "maxExternalApiFailurePercent": 2,
+    "maxCostIncreasePercent": 20
+  },
+  "protectedPaths": [
+    "(^|/)\\.imperial-adas/",
+    "(^|/)\\.github/workflows/",
+    "(?i)(auth|identity|permission|role|acl|oauth|sso|session)",
+    "(?i)(payment|billing|invoice|price|margin|financial|ledger)",
+    "(?i)(migration|schema|deploy|terraform|kubernetes|helm)",
+    "(?i)(secret|credential|token|certificate|private-key)",
+    "(?i)(regulatory|ot[eé]k|t[eé]ka|h[eé]sz|legal|contract)"
+  ],
+  "commands": {
+    "restore": [
+      {
+        "name": "platform-core dependency restore",
+        "command": "python -m pip install --disable-pip-version-check --no-binary mypy -r services/platform-core/requirements.txt -r services/platform-core/requirements-dev.txt",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
+    "build": [
+      {
+        "name": "platform-core compile",
+        "command": "python -m compileall -q services/platform-core/app services/platform-core/alembic",
+        "requiredAtRisk": ["R1", "R2", "R3"],
+        "timeoutSeconds": 1200
+      }
+    ],
+    "format": [],
+    "lint": [
+      {
+        "name": "platform-core high-signal static check",
+        "command": "python -m ruff check services/platform-core/app services/platform-core/alembic --select E9,F",
+        "requiredAtRisk": ["R1", "R2", "R3"],
+        "timeoutSeconds": 1200
+      }
+    ],
+    "typecheck": [
+      {
+        "name": "platform-core full application mypy",
+        "command": "cd services/platform-core && python -m mypy app --config-file pyproject.toml",
+        "requiredAtRisk": ["R1", "R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
+    "unit": [
+      {
+        "name": "platform-core full pytest suite",
+        "command": "cd services/platform-core && python -m pytest -q",
+        "requiredAtRisk": ["R1", "R2", "R3"],
+        "timeoutSeconds": 3600
+      }
+    ],
+    "integration": [
+      {
+        "name": "critical cross-module integration suite",
+        "command": "cd services/platform-core && python -m pytest -q tests/test_canonical_sync_routes.py tests/test_house_designer_submission.py tests/test_imperial_care.py tests/test_tender_portal.py tests/test_autonomous_publishing.py tests/test_growth_ops.py",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 2400
+      }
+    ],
+    "contract": [
+      {
+        "name": "critical contract suite",
+        "command": "cd services/platform-core && python -m pytest -q tests/test_contract_suite.py",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
+    "e2e": [
+      {
+        "name": "browserless critical-journey e2e suite",
+        "command": "cd services/platform-core && python -m pytest -q tests/test_e2e_suite.py",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
+    "coverage": [
+      {
+        "name": "platform-core full application coverage",
+        "command": "cd services/platform-core && python -m pytest -q --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=80",
+        "requiredAtRisk": ["R1", "R2", "R3"],
+        "timeoutSeconds": 4200
+      }
+    ],
+    "dependencyAudit": [
+      {
+        "name": "platform-core dependency audit",
+        "command": "python -m pip install --disable-pip-version-check pip-audit && python -m pip_audit -r services/platform-core/requirements.txt",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
+    "sast": [
+      {
+        "name": "tracked-secret baseline verification",
+        "command": "cd services/platform-core && python scripts/check_secret_baseline.py",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1200
+      }
+    ],
+    "staging": [
+      {
+        "name": "local synthetic staging-smoke: auth/scope/CSRF, Market OFF external writes, HD/Tender/Care critical paths",
+        "command": "cd services/platform-core && python -m pytest -q tests/test_contract_suite.py tests/test_e2e_suite.py",
+        "executionScope": "local-dry-run",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1800
+      }
+    ],
+    "migration": [
+      {
+        "name": "single alembic head",
+        "command": "cd services/platform-core && python scripts/check_single_alembic_head.py",
+        "executionScope": "local-dry-run",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 600
+      }
+    ],
+    "rollback": [
+      {
+        "name": "rollback dry-run: checkpoint ref integrity and clean-tree restore plan",
+        "command": "python scripts/rollback_dry_run.py",
+        "executionScope": "read-only",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 600
+      }
+    ],
+    "forwardRecovery": [
+      {
+        "name": "forward-recovery dry-run: head connectivity and reproducible candidate diff",
+        "command": "python scripts/forward_recovery_dry_run.py",
+        "executionScope": "read-only",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 600
+      }
+    ],
+    "reconciliation": [
+      {
+        "name": "platform-core local synthetic reconciliation",
+        "command": "cd services/platform-core && python scripts/reconciliation.py",
+        "executionScope": "local-dry-run",
+        "requiredAtRisk": ["R2", "R3"],
+        "timeoutSeconds": 1200
+      }
+    ],
+    "performance": [],
+    "cost": []
+  },
+  "ci": {
+    "provider": "github",
+    "required": true,
+    "remoteAvailable": true,
+    "requiredChecks": [
+      "Imperial ADAS / Deterministic gates",
+      "Imperial ADAS Semgrep / Semgrep",
+      "Imperial ADAS CodeQL / Analyze"
+    ],
+    "branchProtectionRequired": true,
+    "remoteCiRequiredForR3": true,
+    "repository": "rlimperialholding-alt/imperial_web_structure"
+  }
+}

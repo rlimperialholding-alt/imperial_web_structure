@@ -1,0 +1,30 @@
+{
+  "version": "2026-08-20T00:00:00Z",
+  "source": "server-managed",
+  "brands": {
+    "FESZEK-TUZEP": {
+      "domain": "staging.feszektuzep.hu",
+      "cms_route": "WORDPRESS",
+      "channels": {
+        "nim_cms": {"enabled": false},
+        "wordpress": {
+          "enabled": true,
+          "base_url": "https://staging.feszektuzep.hu/",
+          "allowed_hosts": ["staging.feszektuzep.hu"],
+          "secret_ref": "feszek-staging-wordpress.json",
+          "max_media_bytes": 10485760,
+          "min_image_dimensions": [600, 315]
+        },
+        "facebook": {"enabled": false},
+        "instagram": {"enabled": false},
+        "linkedin": {"enabled": false},
+        "analytics": {"enabled": false},
+        "crm": {"enabled": false},
+        "forum": {
+          "enabled": true,
+          "mode": "draft_only"
+        }
+      }
+    }
+  }
+}

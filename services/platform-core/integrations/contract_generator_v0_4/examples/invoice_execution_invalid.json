@@ -1,0 +1,59 @@
+{
+  "invoice_number": "MSZ-2026-0002",
+  "invoice_type": "INVOICE",
+  "issue_date": "2026-09-20",
+  "performance_date": "2026-09-15",
+  "received_date": "2026-09-20",
+  "due_date": "2026-09-25",
+  "currency": "HUF",
+  "payment_method": "banki átutalás",
+  "supplier": {
+    "name": "Minta Szakipari Kft.",
+    "address": "1111 Budapest, Minta utca 1.",
+    "tax_number": "HIBÁS",
+    "bank_account": "11700000-00000002-00000002"
+  },
+  "buyer": {
+    "name": "Imperial Teszt Megrendelő Kft. (MINTAADAT)",
+    "address": "1037 Budapest, Teszt köz 1.",
+    "tax_number": "10000001-2-41"
+  },
+  "net_amount": 787401.57,
+  "vat_percent": 27,
+  "vat_amount": 212598.43,
+  "gross_amount": 1000000,
+  "contract_number": "AV-2026-0001",
+  "project_id": "PRJ-AV-2026-0001",
+  "performance_certificate": {
+    "id": "TIG-2026-0001",
+    "contract_number": "AV-2026-0001",
+    "project_id": "PRJ-AV-2026-0001",
+    "status": "DRAFT",
+    "accepted_date": "2026-09-18",
+    "accepted_by_name": "Minta Műszaki Ellenőr",
+    "accepted_by_title": "műszaki ellenőr",
+    "supplier_signed": true,
+    "authorized_acceptor_signed": false,
+    "accepted_gross_amount": 1000000
+  },
+  "line_items": [
+    {
+      "description": "Belső vakolási munkák – 1. részszámla",
+      "quantity": 1,
+      "unit": "átalány",
+      "unit_net_price": 787401.57,
+      "net_amount": 787401.57,
+      "vat_percent": 27,
+      "vat_amount": 212598.43,
+      "gross_amount": 1000000
+    }
+  ],
+  "file_present": true,
+  "file_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "document_readable": false,
+  "content_integrity_verified": true,
+  "duplicate_invoice": false,
+  "upstream_customer_tig_signed": true,
+  "upstream_invoice_accepted": true,
+  "upstream_invoice_paid": true
+}

@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imperial-itep-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: imperial-itep-api
+  template:
+    metadata:
+      labels:
+        app: imperial-itep-api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/imperial-holding/itep-core:1.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: imperial-itep-secrets
+            - configMapRef:
+                name: imperial-itep-config
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: imperial-itep-api
+spec:
+  selector:
+    app: imperial-itep-api
+  ports:
+    - port: 80
+      targetPort: 3000

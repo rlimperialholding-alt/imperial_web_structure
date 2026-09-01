@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="heading"><div><h1>Tulajdonosi és ügyvezetői kivételcockpit</h1><p>Csak azok az ügyek, amelyek pénzt, határidőt, felelősséget vagy döntést érintenek.</p></div></div>
+<section class="kpis">
+  <div><span>Modulok</span><b>{{ metrics.module_healthy }}/{{ metrics.module_count }}</b><small>egészséges kapcsolat</small></div>
+  <div><span>Blokkolt projektek</span><b>{{ metrics.blocked_projects }}</b><small>{{ metrics.project_count }} projektből</small></div>
+  <div><span>Kritikus esemény</span><b>{{ metrics.critical_events }}</b><small>{{ metrics.executive_events }} vezetői relevanciájú</small></div>
+  <div><span>Érintett összeg</span><b>{{ metrics.financial_impact_huf|huf }}</b><small>nyitott események</small></div>
+  <div><span>Adateltérések</span><b>{{ metrics.open_consistency_issues }}</b><small>{{ metrics.critical_consistency_issues }} kritikus</small></div>
+  <div><span>Dead-letter</span><b>{{ metrics.dead_letters }}</b><small>{{ metrics.outbox_pending }} függő továbbítás</small></div>
+</section>
+<div class="grid-2">
+<section class="panel"><h2>Azonnali vezetői események</h2>
+{% if events %}<table><thead><tr><th>Projekt</th><th>Esemény</th><th>Hatás</th><th>Teendő</th></tr></thead><tbody>
+{% for e in events %}<tr><td><a href="/projects/{{ e.project_id }}">{{ e.project_id }}</a></td><td><span class="badge {{ e.severity }}">{{ e.severity }}</span> {{ e.event_type }}</td><td>{{ e.financial_impact_huf|huf }} / {{ e.deadline_impact_days }} nap</td><td>{{ e.next_action or '—' }}<br><small>{{ e.responsible or 'Nincs felelős' }}</small></td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="empty">Nincs nyitott vezetői esemény.</p>{% endif %}</section>
+<section class="panel"><h2>Adatkonzisztencia-eltérések</h2>
+{% if issues %}<table><thead><tr><th>Projekt</th><th>Eltérés</th><th>Összeg</th></tr></thead><tbody>
+{% for i in issues %}<tr><td><a href="/projects/{{ i.project_id }}">{{ i.project_id }}</a></td><td><span class="badge {{ i.severity }}">{{ i.severity }}</span> {{ i.title }}</td><td>{{ i.financial_impact_huf|huf }}</td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="empty">Nincs nyitott rendszerközi eltérés.</p>{% endif %}</section>
+</div>
+<section class="panel"><h2>Projektportfólió</h2><table><thead><tr><th>Projekt</th><th>Kockázat</th><th>Blokk</th><th>Pénzügyi hatás</th><th>Késés</th><th>Következő intézkedés</th></tr></thead><tbody>
+{% for p in projects %}<tr><td><a href="/projects/{{ p.project_id }}"><strong>{{ p.name }}</strong><br><small>{{ p.project_id }}</small></a></td><td><span class="badge {{ p.risk_level }}">{{ p.risk_level }}</span></td><td>{{ 'IGEN' if p.blocked else 'nem' }}</td><td>{{ p.financial_impact_huf|huf }}</td><td>{{ p.deadline_impact_days }} nap</td><td>{{ p.next_action or '—' }}</td></tr>{% endfor %}
+</tbody></table></section>
+{% endblock %}

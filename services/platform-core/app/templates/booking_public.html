@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ experience.display_name }}{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">{{ experience.brand_id }}</span><h1>{{ experience.display_name }}</h1><p>{{ experience.trust_copy }}</p></div></div>
+{% if 'prefab' in experience.brand_id|lower %}<div class="process-rail"><div class="done"><b>1</b> Technológiai igény</div><i></i><div><b>2</b> Gyártási egyeztetés</div><i></i><div><b>3</b> Műszaki szemle</div></div><div class="principle-strip"><b>Prefab biztonsági út</b><span>A konzultáció műszaki alkalmasságot készít elő; fizetést vagy szerződést önmagában nem hoz létre.</span></div>
+{% elif 'danish' in experience.brand_id|lower %}<div class="metric-grid four"><article><span>1. lépés</span><strong>Válasszon</strong><small>csomagot és időpontot</small></article><article><span>2. lépés</span><strong>Egyeztessünk</strong><small>online vagy személyesen</small></article><article><span>3. lépés</span><strong>Ellenőrizzük</strong><small>a telek alkalmasságát</small></article><article><span>4. lépés</span><strong>Indulhat</strong><small>a következő döntés</small></article></div>
+{% elif 'red-property' in experience.brand_id|lower or experience.brand_id|lower == 'red' %}<div class="page-hero compact-hero"><div><span class="eyebrow light">GYORS PROJEKTINDÍTÁS</span><h1>A legkorábbi megfelelő időpontot mutatjuk.</h1><p>Időpont, ár-előkészítés és következő lépés rövid, egyenes folyamatban.</p></div><div class="hero-status"><small>Foglalható időpont</small><b>{{ slots|length }}</b></div></div>
+{% elif 'property360' in experience.brand_id|lower %}<div class="key-value-grid"><div><span>Telek</span><b>helyzet és közmű</b></div><div><span>Finanszírozás</span><b>keret és ütem</b></div><div><span>Építés</span><b>tervezés és kivitelezés</b></div><div><span>Otthon</span><b>bútorozásig követve</b></div></div>
+{% else %}<div class="metric-grid four"><article><span>Mérnöki rend</span><strong>01</strong><small>ellenőrzött műszaki út</small></article><article><span>Átláthatóság</span><strong>02</strong><small>egyértelmű következő lépés</small></article><article><span>Biztonság</span><strong>03</strong><small>dokumentált döntések</small></article><article><span>Teljes folyamat</span><strong>04</strong><small>telektől az átadásig</small></article></div>{% endif %}
+{% if error %}<div class="alert critical">{{ error }}</div>{% endif %}
+{% if booking %}
+<section class="panel"><h2>Az idősávot zároltuk</h2><p>{{ experience.confirmation_copy }}</p><div class="key-value-grid"><div><span>BookingID</span><b>{{ booking.booking_id }}</b></div><div><span>Állapot</span><b>{{ booking.status }}</b></div><div><span>Külső naptár</span><b>{{ booking.external_sync_status }}</b></div><div><span>Kezelés</span><b><a href="/booking/manage/{{ booking.cancellation_token }}">módosítás vagy lemondás</a></b></div></div><div class="alert">A foglalás még nem CONFIRMED: az ügyfél-visszaigazolás csak a külső naptáresemény sikeres létrehozása után küldhető.</div></section>
+{% else %}
+<section class="panel"><form method="post" class="form-card">
+  <label>Időpont<select name="slot_id" required>{% for row in slots %}<option value="{{ row.slot_id }}">{{ row.starts_at|dt }} · {% if row.booking_type == 'online' %}online{% elif row.booking_type == 'site_visit' %}helyszíni szemle{% else %}személyes{% endif %}</option>{% endfor %}</select></label>
+  <div class="form-grid three"><label>Név<input name="customer_name" required></label><label>E-mail<input type="email" name="customer_email" required></label><label>Telefon<input name="customer_phone" required></label><label>Telek státusza<input name="plot_status" required></label><label>Tervezett kezdés<input name="planned_start" required placeholder="például 6–12 hónap"></label><label>Dokumentumhivatkozás<input type="url" name="document_url"></label></div>
+  <label>Projekt rövid leírása<textarea name="project_description" minlength="10" required></textarea></label>
+  <h3>Helyszíni szemle esetén</h3><div class="form-grid three"><label>Irányítószám<input name="postal_code"></label><label>Település<input name="city"></label><label>Cím / helyrajzi szám<input name="street_address"></label></div><label>Megközelíthetőség<textarea name="access_notes"></textarea></label>
+  <input type="hidden" name="consent_version_id" value="CONSENT-BOOKING-V1"><label class="check"><input type="checkbox" name="consent" required> Elfogadom az adatkezelési tájékoztató aktuális verzióját.</label>
+  <button class="button primary" type="submit">{{ experience.cta_label }}</button>
+</form></section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,15 @@
+{
+  "name": "@imperial-intelligence/itep-core",
+  "version": "1.4.0",
+  "release": "Finance and CRM Connector Release",
+  "connectors": [
+    "GMAIL",
+    "CALENDAR",
+    "DRIVE",
+    "BILLINGO",
+    "BANK",
+    "CRM"
+  ],
+  "migration": "20260724143000_add_finance_crm_connectors",
+  "generatedAt": "2026-07-24T14:30:00+02:00"
+}

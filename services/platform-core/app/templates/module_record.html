@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ record.title }} · {{ profile.name }}{% endblock %}
+{% block content %}
+<div class="record-titlebar">
+  <div>
+    <a href="/workbench/{{ profile.module_key }}">← {{ profile.name }}</a>
+    <span class="eyebrow">{{ record.record_id }} · v{{ record.version }}</span>
+    <h1>{{ record.title }}</h1>
+    <p>{{ record.description or 'Nincs részletes leírás.' }}</p>
+  </div>
+  <div><span class="status-badge {{ record.status }}">{{ record.status|replace('_', ' ') }}</span></div>
+</div>
+
+<section class="workspace-card action-strip">
+  <div><span class="eyebrow">ÜZLETI FOLYAMAT</span><h2>Elérhető műveletek</h2></div>
+  <div class="action-buttons">
+    {% for action in profile.actions %}
+    {% if record.status in action.fromStatuses %}
+    <form method="post" action="/workbench/{{ profile.module_key }}/records/{{ record.record_id }}/actions/{{ action.id }}">
+      <input type="hidden" name="note" value="{{ action.label }}">
+      <button type="submit">{{ action.label }} → {{ action.nextStatus|replace('_', ' ') }}</button>
+    </form>
+    {% endif %}
+    {% endfor %}
+  </div>
+</section>
+
+<div class="business-grid">
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">ADATOK</span><h2>Szerkesztés</h2></div></div>
+    <form class="business-form" method="post" action="/workbench/{{ profile.module_key }}/records/{{ record.record_id }}">
+      <label>Megnevezés<input name="title" required value="{{ record.title }}"></label>
+      <label>Leírás<textarea name="description" rows="4">{{ record.description or '' }}</textarea></label>
+      <div class="form-grid-2">
+        <label>Projektazonosító<input name="project_id" value="{{ record.project_id or '' }}"></label>
+        <label>Ügyfélhivatkozás<input name="customer_reference" value="{{ record.customer_reference or '' }}"></label>
+        <label>Felelős<input name="assignee" value="{{ record.assignee or '' }}"></label>
+        <label>Határidő<input type="datetime-local" name="due_at" value="{{ record.due_at.strftime('%Y-%m-%dT%H:%M') if record.due_at else '' }}"></label>
+        <label>Prioritás<select name="priority">{% for value in ['low','normal','high','critical'] %}<option value="{{ value }}" {% if record.priority==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+        <label>Állapot<input value="{{ record.status|replace('_', ' ') }}" readonly><small>Csak naplózott üzleti művelettel módosítható.</small></label>
+        <label>Összeg / pénzügyi hatás (Ft)<input type="number" step="0.01" name="amount_huf" value="{{ record.amount_huf }}"></label>
+        <label>Archivált<select name="archived"><option value="false" {% if not record.archived %}selected{% endif %}>nem</option><option value="true" {% if record.archived %}selected{% endif %}>igen</option></select></label>
+      </div>
+      {% for field in profile.fields %}
+      <label>{{ field.label }}<input name="data_{{ field.key }}" value="{{ record_data.get(field.key, '') }}"></label>
+      {% endfor %}
+      <button class="primary-button" type="submit">Módosítások mentése</button>
+    </form>
+  </section>
+
+  <div class="business-side-stack">
+    <section class="workspace-card" id="communication">
+      <div class="card-heading"><div><span class="eyebrow">BELSŐ KOMMUNIKÁCIÓ</span><h2>Megjegyzések</h2></div></div>
+      <div class="thread-list">
+        {% for comment in record.comments|sort(attribute='created_at') %}
+        <article><b>{{ comment.author }}</b><p>{{ comment.body }}</p><small>{{ comment.created_at|dt }}</small></article>
+        {% else %}<p class="empty">Még nincs megjegyzés.</p>{% endfor %}
+      </div>
+      <form class="business-form compact-form" method="post" action="/workbench/{{ profile.module_key }}/records/{{ record.record_id }}/comments">
+        <label>Új megjegyzés<textarea name="body" required rows="3"></textarea></label>
+        <button type="submit">Megjegyzés hozzáadása</button>
+      </form>
+    </section>
+
+    <section class="workspace-card" id="approvals">
+      <div class="card-heading"><div><span class="eyebrow">KONTROLL</span><h2>Jóváhagyások</h2></div></div>
+      <div class="approval-list">
+        {% for approval in record.approvals|sort(attribute='requested_at') %}
+        <article><span class="status-badge {{ approval.decision }}">{{ approval.decision }}</span><div><b>{{ approval.stage }}</b><p>{{ approval.note or 'Nincs megjegyzés.' }}</p><small>{{ approval.decided_by or approval.requested_by }} · {{ (approval.decided_at or approval.requested_at)|dt }}</small></div></article>
+        {% else %}<p class="empty">Még nincs jóváhagyási bejegyzés.</p>{% endfor %}
+      </div>
+      <form class="business-form compact-form" method="post" action="/workbench/{{ profile.module_key }}/records/{{ record.record_id }}/approvals">
+        <label>Jóváhagyási szint<input name="stage" value="business_approval" required></label>
+        <label>Döntés<select name="decision"><option value="pending">függőben</option><option value="approved">jóváhagyva</option><option value="rejected">elutasítva</option></select></label>
+        <label>Indoklás<textarea name="note" rows="2"></textarea></label>
+        <button type="submit">Jóváhagyás rögzítése</button>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

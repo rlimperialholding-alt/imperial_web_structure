@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}PM Cockpit 2.0 | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="ops-hero">
+  <div>
+    <span class="eyebrow light">OPERATIONS WORKSPACE</span>
+    <h1>PM Cockpit 2.0</h1>
+    <p>Portfóliószintű ütem-, kapu-, helyszíni és költségkontroll. A hiteles üzleti tranzakció továbbra is a forrásmodulban zárul; ez a felület közös operatív vetületet és vezérelt parancsokat biztosít.</p>
+  </div>
+  <div class="ops-hero-actions">
+    <a class="button gold" href="/field">Helyszíni mobil</a>
+    <a class="button soft" href="/procurement/workbench">Beszerzési munkapad</a>
+  </div>
+</section>
+
+<section class="ops-kpis">
+  <article><span>Aktív projektek</span><b>{{ summary.active_projects }}</b><small>{{ summary.blocked_projects }} blokkolt projekt</small></article>
+  <article class="{% if summary.blocked_packages %}danger-card{% endif %}"><span>Blokkolt munkacsomag</span><b>{{ summary.blocked_packages }}</b><small>{{ summary.overdue_packages }} lejárt munkacsomag</small></article>
+  <article><span>Nyitott helyszíni ügy</span><b>{{ summary.open_issues }}</b><small>feladat- és eseménykapcsolattal</small></article>
+  <article><span>Függő indulási kapu</span><b>{{ summary.pending_gates }}</b><small>terv, előzmény, kapacitás, anyag, terület</small></article>
+  <article class="{% if summary.pending_delivery_docs %}warning-card{% endif %}"><span>Dokumentumblokk</span><b>{{ summary.pending_delivery_docs }}</b><small>szállítólevél / nyilatkozat / e-napló</small></article>
+  <article><span>Kimutatott készletérték</span><b>{{ summary.inventory_value_huf|huf }}</b><small>csak ismert egységáras lotok</small></article>
+</section>
+
+<section class="panel elevated">
+  <div class="panel-title">
+    <div><span class="eyebrow">PROJEKTPORTFÓLIÓ</span><h2>Hol kell ma beavatkozni?</h2></div>
+    <span class="muted-chip">{{ portfolio|length }} projekt</span>
+  </div>
+  <div class="ops-project-list">
+    {% for row in portfolio %}
+    <article class="ops-project-card {% if row.project.blocked %}is-blocked{% endif %}">
+      <div class="ops-project-main">
+        <div class="ops-project-title">
+          <span class="risk-label {{ row.project.risk_level }}">{{ row.project.risk_level }}</span>
+          <div><a href="/operations/projects/{{ row.project.project_id }}"><b>{{ row.project.name }}</b></a><small>{{ row.project.project_id }} · {{ row.project.responsible or 'Nincs felelős' }}</small></div>
+        </div>
+        <div class="ops-progress"><span><i style="width:{{ row.progress_pct }}%"></i></span><b>{{ row.progress_pct }}%</b></div>
+        <p>{{ row.project.next_action or 'Nincs rögzített következő lépés.' }}</p>
+      </div>
+      <div class="ops-project-stats">
+        <div><span>Munkacsomag</span><b>{{ row.packages|length }}</b></div>
+        <div><span>Blokkolt</span><b>{{ row.blocked_packages }}</b></div>
+        <div><span>Nyitott ügy</span><b>{{ row.open_issues|length }}</b></div>
+        <div><span>Keret</span><b>{{ row.budget_huf|huf }}</b></div>
+        <div><span>Tény</span><b>{{ row.actual_huf|huf }}</b></div>
+      </div>
+      <a class="card-arrow" href="/operations/projects/{{ row.project.project_id }}">→</a>
+    </article>
+    {% else %}<div class="empty-state"><b>Nincs projektadat.</b><span>A PM Cockpit adapter vagy az Import Center töltheti fel a portfóliót.</span></div>{% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,66 @@
+{
+  "platform_version": "5.0.0",
+  "application_version": "1.5.0",
+  "partner_field_version": "1.0.0",
+  "release_date": "2026-07-19",
+  "alembic_head": "20260816_0072",
+  "calculation_sources": [
+    {
+      "file": "Generalkivitelezo_ArTukor_Munkadij_Anyag_2026_07.xlsx",
+      "size_bytes": 261987,
+      "sha256": "93bfcfe63437ff6be24eb54a770823863a6f144e3819d2fbad577aac5dc21f36"
+    },
+    {
+      "file": "HouseMatch_catalog_score_v0.1.xlsx",
+      "size_bytes": 18726,
+      "sha256": "05ceddb57b39e6b36f7ec35b405ac05f1ce142ae28dd5f00accc9f5eefd81b07"
+    },
+    {
+      "file": "Imperial sávos kalkulátor.xlsx",
+      "size_bytes": 194549,
+      "sha256": "f73729d7adc688d5b93afc12b44dec67dbde2ad3ece218aee0d1089a661d28e7"
+    },
+    {
+      "file": "Imperial_100m2_Technologia_Keszultseg_Armodell_2026_07.xlsx",
+      "size_bytes": 280480,
+      "sha256": "49b76433fe97da468092d55fcc8290b56e8d801daaf11235a0b76b033e791ab7"
+    },
+    {
+      "file": "Kalkuláció_oldalakhoz_frissített_minden_weboldal_2026-07.xlsx",
+      "size_bytes": 26235,
+      "sha256": "d5f69604709882ba6469ecaaf1be2a622328c6e896e2da572260f50bb782cabc"
+    }
+  ],
+  "business_rules": [
+    "partner_access_is_project_and_work_package_scoped",
+    "partner_progress_requires_pm_approval_before_authoritative_update",
+    "partner_change_notice_never_auto_changes_scope_price_or_deadline",
+    "attendance_requires_explicit_truth_declaration",
+    "partner_cannot_view_financial_customer_or_other_partner_data",
+    "photos_require_signature_validation_size_limit_sha256_and_scoped_access",
+    "attendance_is_internal_evidence_not_legal_enaplo_or_payroll_substitute",
+    "no_duplicate_module_screen_workflow_data_model_engine_agent_template_or_integration",
+    "drive_module_release_traceability_and_source_search_required_before_development",
+    "release_requires_approved_reuse_discovery_or_owner_exception",
+    "workspace_may_project_but_may_not_finalize_source_module_transaction",
+    "canonical_source_version_and_hash_must_be_recorded_where_available"
+  ],
+  "commercial_integration_version": "1.0.0",
+  "canonical_commercial_sources": [
+    {
+      "module_key": "contract_generator",
+      "version": "0.4.0",
+      "drive_file_id": "1kL92i1Z8Zk5V_1W4wmTbJB0pRAVVhSHV",
+      "sha256": "3634378bbc90f885b54e787f6de06e57cabf4d6a594e1351463388814e191a42",
+      "decision": "integrate",
+      "business_engine_modified": false
+    },
+    {
+      "module_key": "change_control",
+      "version": "0.1.0",
+      "drive_file_id": "1h-_5X0-zHZmVSKYdg5t13rZQQktZRHlcXYWUZYyvXCo",
+      "decision": "integrate",
+      "workspace_projection_only": true
+    }
+  ]
+}

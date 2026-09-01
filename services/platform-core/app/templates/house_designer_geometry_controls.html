@@ -1,0 +1,86 @@
+<details>
+  <summary>Fal rajzolása</summary>
+  <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="command_id">
+    <input type="hidden" name="command_type" value="add_wall">
+    <input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}">
+    <input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}">
+    <label>Szint<select name="levelId">{% for row in geo.levels %}<option>{{ row.id }}</option>{% endfor %}</select></label>
+    <label>Kezdő X (mm)<input type="number" name="x1Mm" value="0" required></label>
+    <label>Kezdő Y (mm)<input type="number" name="y1Mm" value="4000" required></label>
+    <label>Vég X (mm)<input type="number" name="x2Mm" value="10000" required></label>
+    <label>Vég Y (mm)<input type="number" name="y2Mm" value="4000" required></label>
+    <label>Falvastagság (mm)<input type="number" name="thicknessMm" min="80" max="800" value="150" required></label>
+    <label>Fal típusa<select name="wallKind"><option value="partition">Válaszfal</option><option value="structural">Teherhordó</option><option value="service">Gépészeti</option></select></label>
+    <button type="submit">Fal hozzáadása</button>
+  </form>
+</details>
+{% for row in geo.levels %}
+  {% if row.wallSegments %}
+  <details>
+    <summary>{{ row.id }} falak és nyílások</summary>
+    {% for wall in row.wallSegments %}
+      <h3>{{ wall.id }} · {{ wall.kind }}</h3>
+      <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="move_wall"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="wallId" value="{{ wall.id }}">
+        <label>Kezdő X (mm)<input type="number" name="x1Mm" value="{{ wall['from'].x }}" required></label><label>Kezdő Y (mm)<input type="number" name="y1Mm" value="{{ wall['from'].y }}" required></label><label>Vég X (mm)<input type="number" name="x2Mm" value="{{ wall.to.x }}" required></label><label>Vég Y (mm)<input type="number" name="y2Mm" value="{{ wall.to.y }}" required></label><button type="submit">Fal mozgatása</button>
+      </form>
+      <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="split_wall"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="wallId" value="{{ wall.id }}">
+        <label>Hasítás X (mm)<input type="number" name="xMm" required></label><label>Hasítás Y (mm)<input type="number" name="yMm" required></label><button type="submit">Fal hasítása</button>
+      </form>
+      <form class="hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands" data-confirm="Biztosan törli ezt a falat?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="remove_wall"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="wallId" value="{{ wall.id }}"><button type="submit">Fal törlése</button></form>
+    {% endfor %}
+    <h3>Ajtó vagy ablak hozzáadása</h3>
+    <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="add_opening"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}">
+      <label>Fal<select name="wallId">{% for wall in row.wallSegments %}<option>{{ wall.id }}</option>{% endfor %}</select></label><label>Típus<select name="openingKind"><option value="door">Ajtó</option><option value="window">Ablak</option></select></label><label>Eltolás (mm)<input type="number" name="offsetMm" min="100" value="1000" required></label><label>Szélesség (mm)<input type="number" name="widthMm" min="300" value="900" required></label><label>Magasság (mm)<input type="number" name="heightMm" min="300" value="2100" required></label><label>Parapet (mm)<input type="number" name="sillHeightMm" min="0" value="0" required></label><button type="submit">Nyílás hozzáadása</button>
+    </form>
+    {% for opening in row.openings %}
+      <h3>{{ opening.id }} · {{ opening.kind }} · {{ opening.wallId }}</h3>
+      <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="move_opening"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="openingId" value="{{ opening.id }}"><label>Fal<select name="wallId">{% for wall in row.wallSegments %}<option{% if wall.id == opening.wallId %} selected{% endif %}>{{ wall.id }}</option>{% endfor %}</select></label><label>Eltolás (mm)<input type="number" name="offsetMm" value="{{ opening.offsetMm }}" required></label><button type="submit">Nyílás mozgatása</button></form>
+      <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="resize_opening"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="openingId" value="{{ opening.id }}"><label>Szélesség (mm)<input type="number" name="widthMm" value="{{ opening.widthMm }}" required></label><label>Magasság (mm)<input type="number" name="heightMm" value="{{ opening.heightMm }}" required></label><label>Parapet (mm)<input type="number" name="sillHeightMm" value="{{ opening.sillHeightMm }}" required></label><button type="submit">Nyílás méretezése</button></form>
+      <form class="hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands" data-confirm="Biztosan törli ezt a nyílást?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="remove_opening"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="openingId" value="{{ opening.id }}"><button type="submit">Nyílás törlése</button></form>
+    {% endfor %}
+    {% if row.rooms and row.openings %}
+      <h3>Helyiségkapcsolat hozzáadása</h3>
+      <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="add_connection"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}">
+        <label>Első helyiség<select name="roomA">{% for room in row.rooms %}<option>{{ room.id }}</option>{% endfor %}</select></label><label>Második helyiség<select name="roomB">{% for room in row.rooms %}<option>{{ room.id }}</option>{% endfor %}<option value="outside">Kültér</option></select></label><label>Ajtó<select name="openingId">{% for opening in row.openings %}<option>{{ opening.id }}</option>{% endfor %}</select></label><button type="submit">Kapcsolat hozzáadása</button>
+      </form>
+    {% endif %}
+    {% for connection in row.connections %}
+      <p>{{ connection.id }} · {{ connection.roomA }} ↔ {{ connection.roomB }} · {{ connection.openingId }}</p>
+      <form class="hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands" data-confirm="Biztosan törli ezt a helyiségkapcsolatot?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="remove_connection"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="connectionId" value="{{ connection.id }}"><button type="submit">Kapcsolat törlése</button></form>
+    {% endfor %}
+  </details>
+  {% endif %}
+{% endfor %}
+{% if geo.verticalCores %}
+<details>
+  <summary>Lépcsőgeometria</summary>
+  {% for core in geo.verticalCores if core.kind == 'stair' %}
+  <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="set_stair_geometry"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="coreId" value="{{ core.id }}">
+    <label>Szabad szélesség (mm)<input type="number" name="clearWidthMm" value="{{ core.stairGeometry.clearWidthMm }}" required></label><label>Fellépő (mm)<input type="number" name="riserMm" value="{{ core.stairGeometry.riserMm }}" required></label><label>Belépő (mm)<input type="number" name="treadMm" value="{{ core.stairGeometry.treadMm }}" required></label><label>Fejmagasság (mm)<input type="number" name="headroomMm" value="{{ core.stairGeometry.headroomMm }}" required></label><label>Pihenőmélység (mm)<input type="number" name="landingDepthMm" value="{{ core.stairGeometry.landingDepthMm }}" required></label><button type="submit">Lépcsőgeometria mentése</button>
+  </form>
+  {% endfor %}
+</details>
+{% endif %}
+{% for row in geo.levels %}
+<details>
+  <summary>{{ row.id }} bútor-segédréteg</summary>
+  <p>A segédréteg csak berendezési tájékozódást szolgál; nem része a gyártási vagy árazási mennyiségkimutatásnak.</p>
+  <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="add_furniture"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}">
+    <label>Típus<select name="furnitureKind"><option value="sofa">Kanapé</option><option value="bed">Ágy</option><option value="dining_table">Étkezőasztal</option><option value="chair">Szék</option><option value="cabinet">Szekrény</option><option value="kitchen_unit">Konyhabútor</option><option value="sanitary">Szaniter</option><option value="appliance">Gép</option><option value="custom">Egyedi</option></select></label><label>Megnevezés<input name="label" maxlength="120" value="Bútorsegéd" required></label><label>X (mm)<input type="number" name="xMm" value="1000" required></label><label>Y (mm)<input type="number" name="yMm" value="1000" required></label><label>Szélesség (mm)<input type="number" name="widthMm" min="100" max="20000" value="2000" required></label><label>Mélység (mm)<input type="number" name="depthMm" min="100" max="20000" value="900" required></label><label>Forgatás<select name="rotationDeg"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label><button type="submit">Bútorsegéd hozzáadása</button>
+  </form>
+  {% for item in row.furnitureLayer|default([]) %}
+    <h3>{{ item.label }} · {{ item.id }}</h3>
+    <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="move_furniture"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="furnitureId" value="{{ item.id }}"><label>X (mm)<input type="number" name="xMm" value="{{ item.xMm }}" required></label><label>Y (mm)<input type="number" name="yMm" value="{{ item.yMm }}" required></label><label>Forgatás<select name="rotationDeg">{% for angle in [0,90,180,270] %}<option value="{{ angle }}"{% if angle == item.rotationDeg %} selected{% endif %}>{{ angle }}°</option>{% endfor %}</select></label><button type="submit">Bútorsegéd mozgatása</button></form>
+    <form class="hd-form hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="resize_furniture"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="furnitureId" value="{{ item.id }}"><label>Szélesség (mm)<input type="number" name="widthMm" min="100" max="20000" value="{{ item.widthMm }}" required></label><label>Mélység (mm)<input type="number" name="depthMm" min="100" max="20000" value="{{ item.depthMm }}" required></label><button type="submit">Bútorsegéd méretezése</button></form>
+    <form class="hd-command" method="post" action="/house-designer/sessions/{{ design.sessionId }}/commands" data-confirm="Biztosan törli ezt a bútorsegédet?"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id"><input type="hidden" name="command_type" value="remove_furniture"><input type="hidden" name="base_revision_id" value="{{ rev.revisionId }}"><input type="hidden" name="base_canonical_sha256" value="{{ rev.canonicalSha256 }}"><input type="hidden" name="levelId" value="{{ row.id }}"><input type="hidden" name="furnitureId" value="{{ item.id }}"><button type="submit">Bútorsegéd törlése</button></form>
+  {% endfor %}
+</details>
+{% endfor %}

@@ -1,12 +1,23 @@
-.env
-.env.*
-!.env.example
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
 
-.idea/
-.vscode/
-.DS_Store
-Thumbs.db
-
-*.log
-tmp/
-coverage/
+services/platform-core/data/*
+!services/platform-core/data/platform_demo_seed.json
+!services/platform-core/data/copy_gate/
+!services/platform-core/data/copy_gate/imperial_pilot_v1.json
+!services/platform-core/data/calculation_sources/
+!services/platform-core/data/calculation_sources/**
+services/platform-core/runtime/
+services/platform-core/integrations/contract_generator_v0_4/sample_output/
+**/.coverage*
+# Helyi Semgrep-bizonyítékok (a CI futásban keletkeznek, commitba nem tartoznak)
+semgrep.json
+semgrep-platform-core.json
+semgrep-npm.json
+semgrep-rest.json
+# Ephemerális CI/local secret bind-source fájlok (openssl rand értékek;
+# soha nem commitolandók — Task65)
+secrets/

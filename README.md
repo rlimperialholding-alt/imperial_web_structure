@@ -1,29 +1,92 @@
-# Imperial Holding web staging
+# Imperial Intelligence — vizuális tesztplatform
 
-Egységes, biztonságos kiindulópont az Imperial Holding webhelyeinek helyi és
-CI-alapú staging ellenőrzéséhez. A repository statikus helyőrző oldalakat,
-Docker Compose futtatást, nginx host-alapú routingot és GitHub Actions
-füsttesztet tartalmaz.
+Az Imperial Holding 12 márkájához készült, lokálisan futtatható webes
+tesztkörnyezet. A platform elsődleges célja a vizuálisan megnyitható,
+kattintható prototípusok egy helyen történő áttekintése, reszponzív
+ellenőrzése és szekciószintű review-zása.
 
 > [!IMPORTANT]
-> Ez a projekt **nem éles telepítés**. Nincs benne publikus TLS-lezárás,
-> éles domain, secret, adatbázis, tartós adat vagy automatikus production
-> deployment. Alapértelmezetten kizárólag a `127.0.0.1` címen figyel.
+> Ez **nem production rendszer**. Nem használ valódi ügyféladatot, külső API-t,
+> production secretet, production adatbázist vagy automatikus élesítést. A helyi
+> demoállapot elkülönített PostgreSQL-adatbázisban és JSON runtime-ban marad. A Compose stack
+> alapértelmezetten kizárólag a `127.0.0.1` címen figyel, minden oldal
+> `noindex,nofollow` jelölést kap.
 
-## Branch-modell
+Az összevont, CRM-et, ITEP-et, Integration Hubot és Digital PM-et is elindító
+helyi rendszerjelölt leírása:
+[teljes tesztkörnyezet](docs/complete-test-environment.md).
 
-- `main`: ellenőrzött, kiadható staging-alap. Közvetlen fejlesztés helyett
-  pull requesttel frissítendő.
-- `staging`: integrációs ág; a feature branchek elsődleges célága.
-- `feature/<rövid-név>`: rövid életű fejlesztési ág a `staging` ágból.
+## Mit tartalmaz?
 
-Javasolt folyamat:
+- központi Imperial Intelligence admin dashboard;
+- weboldalak modul az Imperial cégcsoport mind a 12 márkájával;
+- márka- és oldalválasztó, összesen 50 kattintható tesztoldallal;
+- elkülönített, forrásazonosítóval követhető Google Drive HTML-importok;
+- desktop (1440), tablet (834) és mobile (390) nézet;
+- teljes Imperial Holding főoldalprototípus sötétkék–arany–fehér arculattal;
+- nyolc stabil, JSON-ban is dokumentált tartalmi szekcióazonosító;
+- review panel szekcióhoz kötött, lokálisan tárolt megjegyzésekkel;
+- JSON review export, külső továbbítás nélkül;
+- lokális, szintetikus JSON tesztadatok;
+- közös design tokenek és újrahasznosítható komponensosztályok;
+- biztonságos, read-only nginx Docker Compose futtatás;
+- szerkezeti, adat- és HTTP smoke tesztek GitHub Actionsben.
 
-1. `staging` frissítése és `feature/<rövid-név>` létrehozása.
-2. Pull request `feature/*` → `staging`, sikeres CI után merge.
-3. Ellenőrzött staging csomag esetén pull request `staging` → `main`.
-4. A `main` és `staging` ágakon érdemes branch protectiont beállítani:
-   kötelező PR, legalább egy review és kötelező `Staging CI` ellenőrzés.
+## Imperial Intelligence integrációs munkaterület
+
+A vizuális weboldal-review mellett a repository egy 47 modulból álló, kattintható
+Imperial Intelligence rendszerdemót is tartalmaz. Minden modul közös, JSON-alapú
+backend runtime-hoz kapcsolódik, szintetikus rekorddal és végrehajtható
+tesztművelettel rendelkezik. Nyisd meg közvetlenül:
+
+- szerepkörös kezdőlap: [http://localhost:8080/workspace/](http://localhost:8080/workspace/)
+- modul- és konzisztenciaközpont: [http://localhost:8080/control-center/](http://localhost:8080/control-center/)
+- helyi event/outbox teszt: [http://localhost:8080/integration-control-room/](http://localhost:8080/integration-control-room/)
+- HouseBuild ügynök: [http://localhost:8080/housebuild-agent/](http://localhost:8080/housebuild-agent/)
+- kampánykészítő: [http://localhost:8080/campaign-factory/](http://localhost:8080/campaign-factory/)
+- digitális projektmenedzserek: [http://localhost:8080/digital-project-managers/](http://localhost:8080/digital-project-managers/)
+- Operations Workspace: [http://localhost:8080/operations-workspace/](http://localhost:8080/operations-workspace/)
+- Finance Intelligence: [http://localhost:8080/finance-intelligence/](http://localhost:8080/finance-intelligence/)
+- Enterprise Import Center: [http://localhost:8080/import-center/](http://localhost:8080/import-center/)
+
+A felső szerepkörválasztó 12 munkakört szimulál. Ez felület- és
+folyamatdemonstráció, nem valódi jogosultsági rendszer. A modulok a statikus
+`system.json` minták mellett a `platform-core` FastAPI backend közös
+`ProjectID`-, `CorrelationID`-, idempotency-, audit- és outbox-rétegét használják.
+A backend állapota Docker volume-ban marad meg, és a Workspace felületén bármikor
+visszaállítható az eredeti szintetikus állapotra.
+
+Két teljes E2E tesztút futtatható egyetlen kattintással:
+
+- lead → HouseMatch → PlotCheck → BuildConfig → PlanCheck → árlekötés →
+  szerződés → projekt → partner/beszerzés/helyszín → pénzügy → MyImperial →
+  Imperial Care;
+- kampánybrief → négykapus QA → ClaimID/PriceSnapshotID/TermsVersionID →
+  csatornaexport/PublicationProof → lead → CRM → szerződés → profit-attribúció.
+
+A Drive-ról beemelt kiadások és az integrációs döntések tételes jegyzéke:
+[modulforrás-provenance](docs/imported-module-releases.md).
+
+A Content Factory, Campaign Factory és webes publikáció kötelező Copy Gate-je a
+Marketing Quality Gate része. A 92/100 alatti vagy kritikus hibás tartalom blokkolt;
+publikáció csak a négy gépi kapu, emberi szerkesztő és tulajdonosi approval után
+lehetséges. A külső publikációs adapter alapértelmezetten tiltott. Részletek:
+[Copy Gate v1.0](services/platform-core/docs/COPY_GATE_V1_AS_BUILT.md).
+
+A Digitális Kálmán, Máté és Misi kezelőfelület mögötti opcionális FastAPI,
+PostgreSQL és Redis/RQ szolgáltatás a `digital-pm` Compose profilban fut. Az
+ügynökök projektmemóriája elkülönített, minden módosítás auditált, az R4–R5
+lépések emberi jóváhagyást kérnek, az R6–R7 külső kötelezettségvállalások pedig
+blokkoltak. Részletek:
+[Digital Project Managers v0.2.0](docs/integrations/digital-project-managers-v0.2.0.md).
+
+A HouseBuild különálló generáló ügynök. Jóváhagyott forráspillanatképből
+verziózott `HousePlan`-jelöltet készít, majd kötelezően PlanCheck és emberi review
+következik. A jóváhagyott eredmény BuildConfig, HouseVision és HouseMatch felé
+adható tovább; az ügynök nem publikálhat automatikusan. A részletes határok és
+event contractok a [HouseBuild leírásban](docs/housebuild-agent.md), a teljes
+modul- és szerepkörtérkép pedig az
+[integrációs architektúrában](docs/system-integration.md) található.
 
 ## Gyorsindítás
 
@@ -33,7 +96,6 @@ PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
-docker compose pull
 docker compose up --detach --wait
 ```
 
@@ -41,16 +103,17 @@ Bash:
 
 ```bash
 cp .env.example .env
-docker compose pull
 docker compose up --detach --wait
 ```
 
-A staging portál ezután a
-[http://localhost:8080](http://localhost:8080) címen érhető el. A `.localhost`
-aldomainek modern böngészőkben automatikusan a loopback címre oldódnak fel,
-így helyi hosts fájl módosítása általában nem szükséges.
-Ha a `HTTP_PORT` értékét módosítod, a portál linkjei helyett közvetlenül a
-kívánt `http://<site>.localhost:<port>` címet nyisd meg.
+Ezután nyisd meg:
+
+- admin dashboard: [http://localhost:8080](http://localhost:8080)
+- Imperial főoldal közvetlenül:
+  [http://imperial.localhost:8080](http://imperial.localhost:8080)
+- health check: [http://localhost:8080/healthz](http://localhost:8080/healthz)
+- közös backend health: [http://localhost:8080/core/health/ready](http://localhost:8080/core/health/ready)
+- közvetlen backend UI: [http://localhost:8091](http://localhost:8091)
 
 Leállítás:
 
@@ -58,11 +121,125 @@ Leállítás:
 docker compose down --remove-orphans
 ```
 
-## Webhelyek
+### Automatikus helyi indítás
 
-| Márka | Könyvtár | Helyi staging URL |
+A `scripts/start-local-platform.ps1` szükség esetén elindítja a Docker Desktopot,
+megvárja a Docker engine-t, felállítja az Imperial Intelligence és a
+`digital-pm` profilt, majd megnyitja a Workspace oldalt:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\start-local-platform.ps1
+```
+
+Az összes backenddel és egy külön jóváhagyott helyi CRM-állapottal:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\start-complete-test.ps1 `
+  -CrmStatePath 'C:\path\to\approved-crm-state' `
+  -CrmWorkspaceId 'imperial-live'
+```
+
+Ez a mód a CRM-et a `18787`, az ITEP-et a `13000`, az Integration Hubot a
+`18080` porton indítja, így nem ütközik a vizuális platform `8080`, `8090` és
+`8091` portjaival. A CRM-adatkönyvtárat nem másolja és nem commitolja.
+
+Bejelentkezéskori automatikus futtatáshoz a helyi gépen az
+`Imperial Intelligence Local Platform` ütemezett feladat használható. A
+konténerek `unless-stopped` restart policyval futnak, ezért Docker Desktop
+újraindulása után is automatikusan helyreállnak.
+
+Ha a `HTTP_PORT` értékét megváltoztatod, ugyanazt a portot használd a fenti
+URL-ekben. A `.localhost` hostok modern böngészőben a loopback címre oldódnak
+fel, hosts fájl módosítása általában nem szükséges.
+
+## Admin dashboard használata
+
+1. A **Weboldalak / Portfólió** modulban válassz márkát a selectből vagy a 12
+   márkakártya egyikével.
+2. Az **Oldal vagy részprototípus** listában válaszd ki az adott márka
+   főoldalát, aloldalát, kalkulátorát vagy tudásoldalát.
+3. A preview eszköztáron válts **Desktop**, **Tablet** vagy **Mobile** nézetre.
+4. Kattints a preview bármely kijelölhető tartalmi szekciójára. Az importált
+   oldalakon a review bridge determinisztikus azonosítót ad az azonosító nélküli
+   szekcióknak is.
+5. Írd be a megjegyzés címét, részleteit és prioritását, majd rögzítsd.
+6. A megjegyzések oldalútvonalhoz és szekcióazonosítóhoz kötve, a böngésző
+   `localStorage` tárában maradnak.
+7. A **JSON export** gombbal letölthető egy hordozható tesztfájl.
+
+Jelenleg négy márkához van futtatható webes anyag: Imperial Holding (10 oldal),
+Bautica (6 oldal), Prefab (19 oldal) és Budapesti Magasépítő Vállalat
+(15 oldalas webhely). A másik nyolc márkához a Drive-on tartalmi és
+komponensforrások találhatók, de önállóan futtatható HTML még nem; ezek a
+márkák ezért továbbra is egyértelműen jelölt staging állapotot mutatnak.
+
+## Stabil tartalmi szekcióazonosítók
+
+| ID | Jelentés |
+| --- | --- |
+| `hero` | Nyitó szekció |
+| `trust` | Bizalmi mutatók |
+| `portfolio` | Márkaportfólió |
+| `capabilities` | Komplex szakértelem |
+| `projects` | Kiemelt projektek |
+| `sustainability` | Fenntartható jövőkép |
+| `news` | Hírek és perspektívák |
+| `contact` | Kapcsolati felhívás |
+
+Az ID-k egyszerre szerepelnek a `sites/imperial/index.html` DOM-jában és a
+`sites/_shared/assets/data/imperial-home.json` `sections` listájában. A
+validáció hibával leáll, ha a két forrás eltér.
+
+## Mappastruktúra
+
+```text
+sites/
+├── _portal/
+│   ├── index.html                 # központi admin dashboard
+│   └── data/
+│       ├── brands.json            # a 12 márka lokális tesztadata
+│       └── artifacts.json         # 50 tesztoldal és Drive-forrásazonosító
+├── _shared/assets/
+│   ├── tokens.css                 # közös szín-, térköz-, tipó- és radius tokenek
+│   ├── components.css             # közös gomb, ikon, logó és accessibility alapok
+│   ├── admin.css / admin.js       # dashboard megjelenés és működés
+│   ├── imperial.css / imperial.js # főoldal megjelenés és működés
+│   ├── review-bridge.*             # szekciókijelölés minden importált oldalon
+│   ├── preview-bootstrap.css       # lokális kompatibilitási stílus, CDN nélkül
+│   └── data/imperial-home.json    # szintetikus főoldaladatok
+├── imperial/index.html            # teljes Imperial Holding prototípus
+├── <aktív márka>/drive/            # változatlan Drive HTML/CSS/JS források
+└── <további márka>/index.html      # elkülönített staging állapot
+```
+
+Az admin JavaScript kizárólag same-origin JSON fájlokat tölt be. Nincs
+analytics, cookie-alapú követés, külső font, futásidejű CDN, API vagy
+adatküldés. A Drive csak fejlesztési forrásként szolgált; a böngésző nem
+kapcsolódik a Drive-hoz.
+
+## Drive-import és forráskövetés
+
+A `sites/_portal/data/artifacts.json` az egyetlen tesztoldal-katalógus. Minden
+Drive-ból importált elemhez tartozik:
+
+- márkaazonosító és helyi útvonal;
+- felhasználóbarát oldalnév;
+- típus (`drive-full-site`, `drive-partial` vagy `drive-knowledge`);
+- az eredeti Google Drive fájlazonosító.
+
+Csak futtatható webes artefaktumok kerültek a repositoryba. Ügyféladatot,
+értékesítési adatbázist, üzleti spreadsheetet, production secretet és
+operatív dokumentumot a rendszer nem importál. A Drive-ról származó oldalak
+`noindex,nofollow` jelölést és közös review bridge-et kapnak; az űrlapok
+tesztmódban nem továbbítanak adatot.
+
+## A 12 márka
+
+| Márka | Könyvtár | Helyi URL |
 | --- | --- | --- |
-| Imperial | `sites/imperial` | `http://imperial.localhost:8080` |
+| Imperial Holding | `sites/imperial` | `http://imperial.localhost:8080` |
 | Danish Fabrik | `sites/danish-fabrik` | `http://danish-fabrik.localhost:8080` |
 | Bautica | `sites/bautica` | `http://bautica.localhost:8080` |
 | Prefab | `sites/prefab` | `http://prefab.localhost:8080` |
@@ -70,58 +247,84 @@ docker compose down --remove-orphans
 | Family Homes | `sites/family-homes` | `http://family-homes.localhost:8080` |
 | Everyday Homes | `sites/everyday-homes` | `http://everyday-homes.localhost:8080` |
 | Property 360 | `sites/property-360` | `http://property-360.localhost:8080` |
-| Budapesti magasépítő vállalat | `sites/budapesti-magasepito-vallalat` | `http://budapesti-magasepito-vallalat.localhost:8080` |
+| Budapesti Magasépítő Vállalat | `sites/budapesti-magasepito-vallalat` | `http://budapesti-magasepito-vallalat.localhost:8080` |
 | BauFreund | `sites/baufreund` | `http://baufreund.localhost:8080` |
 | RED Property | `sites/red-property` | `http://red-property.localhost:8080` |
 | Timberhaus | `sites/timberhaus` | `http://timberhaus.localhost:8080` |
 
-Minden site saját könyvtárban él, közös vizuális assetjeik pedig a
-`sites/_shared` könyvtárból érhetők el. A `sites/_portal` a helyi belépőoldal.
+## Tesztadat- és review-modell
+
+### Tesztadatok
+
+- `brands.json`: márkanév, slug, monogram, prototípusállapot és vizuális akcentus.
+- `artifacts.json`: az oldalválasztó 50 bejegyzése és a Drive-források
+  visszakövethetősége.
+- `imperial-home.json`: szekciók, szintetikus mutatók, portfólió-, projekt- és
+  hírkártyák.
+- A `containsCustomerData: false` mezőt a CI és a helyi validátor is ellenőrzi.
+- A projektnevek, helyszínek, dátumok és mutatók demonstrációs mintaadatok.
+
+### Review megjegyzések
+
+A review rekord mezői:
+
+```json
+{
+  "brandId": "imperial",
+  "pagePath": "/drive/venture/venture-studio.html",
+  "pageTitle": "Imperial Venture Studio",
+  "sectionId": "hero",
+  "title": "CTA pontosítása",
+  "comment": "A fő CTA legyen rövidebb.",
+  "priority": "normal",
+  "createdAt": "2026-07-23T12:00:00.000Z"
+}
+```
+
+A rekordok nem kerülnek szerverre. Böngészőprofil- vagy site data törléskor
+elvesznek, ezért hosszabb review folyamat előtt használd a JSON exportot.
 
 ## Konfiguráció
-
-A `.env.example` csak nem érzékeny alapértékeket tartalmaz:
 
 | Változó | Alapérték | Jelentés |
 | --- | --- | --- |
 | `COMPOSE_PROJECT_NAME` | `imperial-staging` | Compose projekt neve |
-| `HTTP_PORT` | `8080` | Kizárólag loopbackre publikált HTTP port |
-| `NGINX_IMAGE` | `nginx:stable-alpine` | Használt nginx image |
+| `HTTP_PORT` | `8080` | Csak loopbackre publikált HTTP port |
+| `NGINX_IMAGE` | `nginx:stable-alpine` | Nginx image |
 
-A `.env` fájl gitignore alatt van. Secreteket ne commitolj; egy későbbi
-valódi staging szolgáltatásnál használj szervezeti secret store-t és külön
-hozzáférés-kezelést.
+A `.env` gitignore alatt van. Production secretet vagy ügyféladatot ne írj
+sem `.env` fájlba, sem a JSON fixture-ökbe.
 
 ## Biztonsági alapok
 
-- A host port csak `127.0.0.1` címen nyílik meg.
-- A konténer nem root (`101:101`) felhasználóként, read-only fájlrendszerrel,
-  capabilityk nélkül és `no-new-privileges` módban fut.
-- A site tartalom read-only mount.
-- Minden oldal `noindex,nofollow` meta tagot és `X-Robots-Tag` fejlécet kap.
-- Az nginx alap biztonsági fejléceket és szigorú Content Security Policyt ad.
-- Ismeretlen Host fejléc esetén az nginx válasz nélkül lezárja a kapcsolatot.
-- Nincs production deployment workflow és nincs internet felé nyitott port.
+- a host port csak `127.0.0.1` címen nyílik meg;
+- az nginx `101:101` felhasználóként, read-only fájlrendszerrel fut;
+- minden capability le van dobva, `no-new-privileges` aktív;
+- a webtartalom read-only volume;
+- minden oldal `noindex,nofollow`, a válaszok `X-Robots-Tag` fejlécet kapnak;
+- a Content Security Policy csak same-origin scriptet, fetch-et, assetet és
+  preview iframe-et enged;
+- a `/site-preview/<brand>/` útvonal explicit, 12 elemű allow-listet használ;
+- nincs production deployment workflow.
+- az importált, önálló HTML-prototípusok saját inline megjelenítési logikája
+  csak a loopback staging környezetben engedélyezett; hálózati kapcsolataikat a
+  CSP továbbra is same-originra korlátozza;
+- a külső Bootstrap CDN-hivatkozásokat lokális kompatibilitási CSS váltja ki.
 
-Ez az alap nem helyettesíti a valódi staging környezet TLS-ét, hitelesítését,
-hálózati szegmentálását, naplókezelését és titokkezelését.
+Az iframe támogatása miatt `X-Frame-Options: SAMEORIGIN` és
+`frame-ancestors 'self'` van beállítva; külső oldal továbbra sem ágyazhatja be a
+prototípust.
 
-## CI
+## Helyi ellenőrzések
 
-A `.github/workflows/ci.yml` a `main` és `staging` pushokra, valamint az ezekre
-irányuló pull requestekre fut. A workflow:
-
-1. ellenőrzi a kötelező könyvtárakat és a keresőtiltást;
-2. validálja a Compose konfigurációt;
-3. elindítja az nginx stacket;
-4. végigteszteli a portált, mind a 12 hostot és a health endpointot;
-5. mindig leállítja és eltávolítja a tesztkonténert.
-
-Helyi szerkezeti ellenőrzés:
+PowerShell:
 
 ```powershell
 .\scripts\validate-structure.ps1
 docker compose config --quiet
+docker compose up --detach --wait
+Invoke-WebRequest http://localhost:8080/healthz -UseBasicParsing
+docker compose down --remove-orphans
 ```
 
 Linux/macOS:
@@ -129,21 +332,39 @@ Linux/macOS:
 ```bash
 sh scripts/validate-structure.sh
 docker compose config --quiet
+docker compose up --detach --wait
+curl --fail http://localhost:8080/healthz
+docker compose down --remove-orphans
 ```
 
-## Új tartalom vagy webhely hozzáadása
+A `.github/workflows/ci.yml`:
 
-Egy meglévő oldal módosításához a megfelelő `sites/<slug>` könyvtárban
-dolgozz. Új webhely esetén:
+1. ellenőrzi a 12 site belépési pontját és a noindex jelölést;
+2. parse-olja a JSON fixture-öket és validálja mind az 50 katalógusbejegyzést;
+3. ellenőrzi az importált fájlok Drive-forrásazonosítóját, review bridge-ét és
+   a futásidejű Bootstrap CDN hiányát;
+4. összeveti a stabil Imperial szekció-ID-ket a DOM-mal;
+5. validálja a Compose konfigurációt és elindítja az nginx stacket;
+6. HTTP-n ellenőrzi az admint, a márka- és artefaktumadatokat, mind a 12 hostot,
+   valamint négy reprezentatív Drive-preview útvonalat;
+7. ellenőrzi a health endpointot, majd minden esetben eltávolítja a tesztstacket.
 
-1. hozz létre `sites/<slug>/index.html` fájlt `noindex,nofollow` metával;
-2. add hozzá a host → könyvtár leképezést az `nginx.conf` `map` blokkjához;
-3. add a hostot a `staging.conf` `server_name` listájához;
-4. bővítsd a portált, a validációs scriptet, a CI füsttesztet és ezt a táblát;
-5. futtasd a helyi ellenőrzéseket, majd nyiss PR-t a `staging` ágra.
+## Branch-modell és kiadás
 
-## Élesítés
+- `main`: ellenőrzött, kiadható staging-alap;
+- `staging`: integrációs ág, a feature branchek célága;
+- `feature/<rövid-név>`: rövid életű fejlesztési ág a `staging` ágból.
 
-Szándékosan nincs implementálva. Production bevezetés előtt külön döntés kell
-a hosztingról, domainekről, TLS-ről, hozzáférésről, secret store-ról,
-megfigyelhetőségről, backupokról és jóváhagyott release folyamatról.
+Javasolt folyamat: feature → draft PR a `staging` ágra → review és sikeres CI →
+kézi merge. A repository szándékosan nem tartalmaz automatikus production
+deploymentet vagy automatikus merge-et.
+
+## Következő, külön jóváhagyást igénylő lépések
+
+- a még csak dokumentum- és komponensforrással rendelkező nyolc márka
+  futtatható HTML-prototípusa;
+- tartós review backend, SSO és jogosultságkezelés;
+- jóváhagyott CMS vagy tartalom-API integráció;
+- éles domainek, TLS, secret store, monitoring és release folyamat;
+- accessibility audit és támogatott böngészőmátrix;
+- production adatmodell és adatmegőrzési szabályok.

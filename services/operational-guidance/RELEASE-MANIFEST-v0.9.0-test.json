@@ -1,0 +1,23 @@
+{
+  "name": "Imperial Intelligence Integrated GitHub Test Environment",
+  "version": "0.9.0-test",
+  "baseIntegrationHub": "0.8.1",
+  "embeddedItepCore": "1.4.0",
+  "embeddedSalesCrm": "1.0.0",
+  "dataPolicy": {
+    "crm": "internal-test-durable-d1-r2",
+    "crmMigration": "synthetic-write-with-separate-token",
+    "itepCrmAccess": "read-only",
+    "billingo": "synthetic",
+    "bank": "synthetic",
+    "google": "disabled-unless-explicitly-configured",
+    "databases": "ephemeral-test-only"
+  },
+  "githubEnvironment": "imperial-test",
+  "requiredSecrets": [],
+  "ephemeralCredentials": [
+    "ITEP_IDENTITY_SHARED_SECRET",
+    "CRM_MIGRATION_TOKEN",
+    "ITEP_CRM_READ_TOKEN"
+  ]
+}

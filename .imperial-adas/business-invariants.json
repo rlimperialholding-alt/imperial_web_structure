@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "2.1",
+  "status": "RECOVERY_BASELINE_MODULE_REFINEMENT_REQUIRED",
+  "invariants": [
+    {
+      "id": "platform-core-regression-suite",
+      "description": "A teljes platform-core regressziós tesztsor sikeres ugyanazon az exact commiton.",
+      "enabled": true,
+      "command": "cd services/platform-core && python -m pytest -q",
+      "requiredAtRisk": ["R2", "R3"],
+      "timeoutSeconds": 3600
+    },
+    {
+      "id": "single-migration-head",
+      "description": "Az Alembic migrációs gráfnak pontosan egy, 20260816_0072 fejjel kell rendelkeznie.",
+      "enabled": true,
+      "command": "cd services/platform-core && python scripts/check_single_alembic_head.py",
+      "requiredAtRisk": ["R2", "R3"],
+      "timeoutSeconds": 600
+    },
+    {
+      "id": "publication-and-external-writes-default-off",
+      "description": "A Market service API, LinkedIn és autonóm publikálási külső írások alapállapotban kikapcsoltak.",
+      "enabled": true,
+      "command": "cd services/platform-core && python -m pytest -q tests/test_market_service_api.py tests/test_autonomous_publishing.py",
+      "requiredAtRisk": ["R2", "R3"],
+      "timeoutSeconds": 1800
+    },
+    {
+      "id": "module-specific-release-evidence",
+      "description": "Minden érintett modul UI-, DB-, scope-, audit-, security- és tesztbizonyítéka külön frissítendő; egészrendszer-kész állítás automatikusan nem adható.",
+      "enabled": true,
+      "command": "cd services/platform-core && python -m pytest -q tests/test_house_designer_adapters.py tests/test_house_designer_api.py tests/test_house_designer_geometry.py tests/test_house_designer_guest.py tests/test_house_designer_performance.py tests/test_house_designer_privacy.py tests/test_house_designer_submission.py tests/test_house_designer_vertical_slice.py tests/test_regulatory_admin.py tests/test_regulatory_compliance.py",
+      "requiredAtRisk": ["R3"],
+      "timeoutSeconds": 1800
+    }
+  ]
+}
