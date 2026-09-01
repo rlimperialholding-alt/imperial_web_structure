@@ -33,8 +33,9 @@ The hourly scheduled task must run one non-overlapping, at most 55-minute fallba
 `offline-next --wait-seconds 3300` (or the smaller number of seconds remaining before the
 55-minute run deadline), start the connected-Gmail transport before the returned
 `slot_not_after`, record the terminal accepted/ambiguous/pre-transport result, then call
-`offline-next` again until the run deadline. `NO_READY_PERMIT` includes `next_due_at` and
-`wait_seconds`, so offset slots are not missed and no catch-up burst is allowed. Operate exactly one
+`offline-next` again until the run deadline. `WAITING_FOR_PERMIT_SLOT` includes `next_due_at` and
+`wait_seconds`, so offset slots are not missed and no catch-up burst is allowed;
+`NO_READY_PERMIT` means that no future cached permit is available. Operate exactly one
 encrypted journal on one NTP-synchronized task host; never clone a live cache/client key/bundle to
 a second runner.
 
