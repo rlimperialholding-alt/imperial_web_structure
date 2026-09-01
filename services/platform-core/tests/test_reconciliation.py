@@ -27,10 +27,19 @@ isolation tests prove the command never connects to or mutates any database
 configured through ``DATABASE_URL``. The SOURCE_LOCK tests cover the
 complete required top-level version-field set, and direct in-process probe
 tests are isolated from ambient ``II_RECON_EXPECTED_*`` values.
+
+Task71 review-remediáció: a deprekált kulcs neve változatlan, direkt
+literálként szerepel a script forrásában (nincs futásidejű név-összeállítás
+és nincs statikus-elemző elkerülésére hivatkozó megjegyzés), a
+deprecation-warning mindkét kulcs nevét megnevezi, és statikus
+AST-ellenőrzések zárják le, hogy a kulcsok értéke és a feloldott útvonal
+semmilyen kimeneti csatornára (stdout, stderr, warning, kivétel-üzenet,
+visszaadott diagnosztika) nem folyhat.
 """
 
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import importlib.util
@@ -432,7 +441,8 @@ def test_baseline_env_override_precedence_contract(
       DeprecationWarning;
     - mindkettő: az új kulcs nyer, a régi ignorálva (a warning ezt jelzi);
     - egyik sem: a kanonikus alapértelmezett útvonal, nincs warning.
-    A warning secretmentes: sem kulcsérték, sem útvonal nem szerepel benne."""
+    A warning secretmentes: sem kulcsérték, sem útvonal nem szerepel benne,
+    és (Task71) operatívan egyértelmű: mindkét kulcs nevét megnevezi."""
     tracked_path = tmp_path / "tracked-baseline.json"
     deprecated_path = tmp_path / "deprecated-baseline.json"
     for path in (tracked_path, deprecated_path):
@@ -460,12 +470,23 @@ def test_baseline_env_override_precedence_contract(
     path, deprecations = resolve(None, str(deprecated_path))
     assert path == deprecated_path
     assert len(deprecations) == 1
-    assert str(deprecated_path) not in str(deprecations[0].message)
+    message = str(deprecations[0].message)
+    # Task71: a warning mindkét kulcs nevét megnevezi, értéket és feloldott
+    # útvonalat (egyik kulcsét sem, a kanonikus defaultét sem) nem tartalmaz.
+    assert "II_RECON_SECRETS_BASELINE" in message
+    assert "II_RECON_TRACKED_BASELINE" in message
+    assert str(deprecated_path) not in message
+    assert str(tracked_path) not in message
+    assert str(REPO_ROOT / ".secrets.baseline") not in message
     path, deprecations = resolve(str(tracked_path), str(deprecated_path))
     assert path == tracked_path
     assert len(deprecations) == 1
-    assert str(tracked_path) not in str(deprecations[0].message)
-    assert str(deprecated_path) not in str(deprecations[0].message)
+    message = str(deprecations[0].message)
+    assert "II_RECON_SECRETS_BASELINE" in message
+    assert "II_RECON_TRACKED_BASELINE" in message
+    assert str(tracked_path) not in message
+    assert str(deprecated_path) not in message
+    assert str(REPO_ROOT / ".secrets.baseline") not in message
     path, deprecations = resolve(None, None)
     assert path == REPO_ROOT / ".secrets.baseline"
     assert deprecations == []
@@ -488,12 +509,154 @@ def test_command_level_deprecated_baseline_override_is_honored(
     assert result.returncode != 0
     assert "repository baseline is not valid JSON" in result.stderr
     assert "DeprecationWarning" in result.stderr
+    # Task71: a deprecation-notice operatívan egyértelmű: mindkét kulcs
+    # nevét megnevezi a stderrben.
+    assert "II_RECON_SECRETS_BASELINE" in result.stderr
+    assert "II_RECON_TRACKED_BASELINE" in result.stderr
     # Secretmentes: az override értéke (az útvonal) nem kerül a kimenetbe.
     assert str(baseline) not in result.stdout
     assert str(baseline) not in result.stderr
     # Anti-masking: a többi probe lefut, a titok-probe hibája nem maszkol.
     assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
     assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
+
+
+def test_command_level_primary_key_wins_over_deprecated_key(
+    tmp_path: Path,
+) -> None:
+    """Task71 parancsszintű precedencia-bizonyíték: ha mindkét kulcs be van
+    állítva, az elsődleges II_RECON_TRACKED_BASELINE nyer — a titok-probe az
+    elsődleges útvonalon bukik el (érvénytelen JSON), NEM a deprekált
+    útvonalon (ami hiányzó fájl lenne, tehát a téves precedencia
+    'missing'-diagnosztikát adna). A deprecation-notice a stderrre kerül
+    mindkét kulcs nevével, és egyik kulcs értéke (útvonala) sem jelenik meg
+    a kimenetben. A többi probe az anti-masking szerződés szerint lefut."""
+    primary_baseline = _write_invalid_json_baseline(tmp_path)
+    deprecated_path = tmp_path / "no-such-deprecated-baseline.json"
+    result = _run_reconciliation(
+        II_RECON_TRACKED_BASELINE=str(primary_baseline),
+        **{_DEPRECATED_BASELINE_ENV_KEY: str(deprecated_path)},
+    )
+    # Az elsődleges kulcs nyert: az érvénytelen-JSON diagnosztika jelent
+    # meg; a deprekált útvonalon a probe 'missing'-gel bukott volna.
+    assert result.returncode != 0
+    assert "repository baseline is not valid JSON" in result.stderr
+    assert "repository baseline is missing" not in result.stderr
+    assert "DeprecationWarning" in result.stderr
+    assert "II_RECON_SECRETS_BASELINE" in result.stderr
+    assert "II_RECON_TRACKED_BASELINE" in result.stderr
+    # Secretmentes: egyik kulcs értéke (útvonala) sem kerül a kimenetbe.
+    assert str(primary_baseline) not in result.stdout
+    assert str(primary_baseline) not in result.stderr
+    assert str(deprecated_path) not in result.stdout
+    assert str(deprecated_path) not in result.stderr
+    # Anti-masking: a többi probe lefut, a titok-probe hibája nem maszkol.
+    assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
+    assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
+
+
+def _is_environ_get_call(node: ast.AST) -> bool:
+    """True, ha a node ``os.environ.get(...)`` hívás."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == "environ"
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == "os"
+    )
+
+
+def test_reconciliation_source_pins_direct_deprecated_key_literal() -> None:
+    """Task71 review-remediáció: a deprekált kulcs neve változatlan, direkt
+    literálként szerepel a script forrásában — az os.environ.get kulcs-
+    argumentumai string-literálok, nincs futásidejű név-összeállítás
+    (konkatenáció, chr/hex/base64 kódolás, getattr/eval indirekció), és
+    nincs statikus-elemző elkerülésére hivatkozó megjegyzés vagy
+    suppression-komment sem. Statikus, pure-Python forrás-/AST-ellenőrzés:
+    a direkt literál vagy a tiszta forrás bármely visszarendeződése
+    fail-closed elbuktatja ezt a tesztet."""
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert '"II_RECON_SECRETS_BASELINE"' in source
+    tree = ast.parse(source)
+    environ_keys: list[str] = []
+    for node in ast.walk(tree):
+        if not _is_environ_get_call(node):
+            continue
+        if not node.args or not isinstance(node.args[0], ast.Constant):
+            raise AssertionError(
+                "az os.environ.get kulcs-argumentuma nem direkt string-"
+                f"literal (line {node.lineno})"
+            )
+        environ_keys.append(node.args[0].value)
+    assert "II_RECON_SECRETS_BASELINE" in environ_keys
+    # Nincs obfuszkáció és nincs elemző-elkerülés: a script forrása nem
+    # tartalmazhat név-összeállító idiómát, suppression-kommentet vagy
+    # statikus-elemzőre hivatkozó (elkerülési célú) szöveget.
+    for pattern in (
+        '"II_RECON_" +',
+        '+ "SECRETS"',
+        '+ "_BASELINE"',
+        "chr(",
+        "bytes.fromhex",
+        "base64.",
+        "codecs.",
+        "getattr(",
+        "eval(",
+        "# nosec",
+        "lgtm",
+        "codeql",
+        "CodeQL",
+        "clear-text",
+        "heurisztika",
+    ):
+        assert pattern not in source, (
+            f"obfuscation/suppression pattern a scriptben: {pattern!r}"
+        )
+    # A scriptben minden noqa-komment csak a két ismert, nem biztonsági
+    # elnyomás-kód valamelyike lehet (E402 import-sorrend a script-head
+    # sys.path-felépítés miatt, BLE001 a fail-closed blanket-except);
+    # semmilyen statikus-elemző query-elnyomás nincs.
+    for line in source.splitlines():
+        if "noqa" in line:
+            assert "# noqa: E402" in line or "# noqa: BLE001" in line, (
+                f"ismeretlen noqa komment a scriptben: {line!r}"
+            )
+
+
+def test_reconciliation_source_keeps_env_values_and_paths_out_of_output() -> None:
+    """Task71 lokális kompenzáló ellenőrzés (a py/clear-text-logging-
+    sensitive-data szerződésre): az elsődleges/deprekált baseline-kulcs
+    értéke és a belőlük feloldott útvonal (TRACKED_BASELINE) semmilyen
+    kimeneti hívásba (print, warnings.warn, SystemExit raise) nem folyhat —
+    a modul forrásában egyetlen kimeneti utasítás argumentuma sem
+    hivatkozhat rájuk. Statikus, pure-Python AST-ellenőrzés: az
+    érték-útvonal kimenetbe folyásának bármely visszakerülése fail-closed
+    elbuktatja ezt a tesztet."""
+    source = SCRIPT.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    guarded = {"primary", "deprecated", "TRACKED_BASELINE"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            is_print = isinstance(node.func, ast.Name) and node.func.id == "print"
+            is_warn = isinstance(node.func, ast.Attribute) and node.func.attr == "warn"
+            if not (is_print or is_warn):
+                continue
+            for argument in [*node.args, *(kw.value for kw in node.keywords)]:
+                for inner in ast.walk(argument):
+                    if isinstance(inner, ast.Name) and inner.id in guarded:
+                        raise AssertionError(
+                            "baseline-kulcs értéke/feloldott útvonala kimeneti "
+                            f"hívásban (line {node.lineno})"
+                        )
+        elif isinstance(node, ast.Raise):
+            for inner in ast.walk(node.exc):
+                if isinstance(inner, ast.Name) and inner.id in guarded:
+                    raise AssertionError(
+                        "baseline-kulcs értéke/feloldott útvonala kivétel-"
+                        f"üzenetben (line {node.lineno})"
+                    )
 
 
 def _introduced_digest_tamper(document: dict) -> str:
