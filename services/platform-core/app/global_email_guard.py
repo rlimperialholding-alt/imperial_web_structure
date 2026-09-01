@@ -88,6 +88,25 @@ def normalize_recipients(recipients: list[str] | tuple[str, ...]) -> tuple[str, 
     return normalized
 
 
+def claimed_global_recipient_token(
+    db: Session,
+    *,
+    recipient: str,
+    identity_sha256: str,
+) -> str | None:
+    """Return the exact durable guard token for a matching in-flight identity."""
+    normalized = normalize_recipients([recipient])[0]
+    identity = _validate_identity(identity_sha256)
+    state = db.get(GlobalEmailRecipientGuard, normalized)
+    if (
+        state is None
+        or state.identity_sha256 != identity
+        or state.status not in {"claimed", "accepted_unverified"}
+    ):
+        return None
+    return state.claim_token
+
+
 def _validate_identity(identity_sha256: str) -> str:
     value = str(identity_sha256 or "").strip().casefold()
     if not IDENTITY_RE.fullmatch(value):
@@ -103,6 +122,7 @@ def _claim_postgresql(
     message_type: str,
     tenant_scope: str,
     current: datetime,
+    commit: bool,
 ) -> GlobalEmailGuardDecision:
     row = db.execute(
         text(
@@ -118,7 +138,8 @@ def _claim_postgresql(
             "current": current,
         },
     ).one()
-    db.commit()
+    if commit:
+        db.commit()
     return GlobalEmailGuardDecision(str(row[0]), row[1], row[2])
 
 
@@ -130,6 +151,7 @@ def claim_global_recipient_delivery(
     message_type: str,
     tenant_scope: str = "imperial-holding",
     now: datetime | None = None,
+    commit: bool = True,
 ) -> GlobalEmailGuardDecision:
     normalized = normalize_recipients(recipients)
     identity = _validate_identity(identity_sha256)
@@ -142,9 +164,10 @@ def claim_global_recipient_delivery(
             message_type=message_type,
             tenant_scope=tenant_scope,
             current=current,
+            commit=commit,
         )
 
-    if db.get_bind().dialect.name == "sqlite":
+    if db.get_bind().dialect.name == "sqlite" and commit:
         db.commit()
         db.execute(text("BEGIN IMMEDIATE"))
         insert = sqlite_insert(GlobalEmailRecipientGuard)
@@ -170,7 +193,8 @@ def claim_global_recipient_delivery(
         .with_for_update()
     ).all()
     if len(states) != len(normalized):
-        db.rollback()
+        if commit:
+            db.rollback()
         raise RuntimeError("global_email_guard_state_missing")
 
     same_sent = True
@@ -180,7 +204,8 @@ def claim_global_recipient_delivery(
         lease_expires_at = _aware(state.lease_expires_at)
         if sent_at and sent_at > current - RECIPIENT_GUARD_WINDOW:
             if state.identity_sha256 != identity:
-                db.rollback()
+                if commit:
+                    db.rollback()
                 return GlobalEmailGuardDecision("blocked_rolling_24h")
             if state.provider_message_id:
                 provider_ids.add(state.provider_message_id)
@@ -188,11 +213,13 @@ def claim_global_recipient_delivery(
         same_sent = False
         if state.status in {"claimed", "sending"}:
             if lease_expires_at and lease_expires_at > current:
-                db.rollback()
+                if commit:
+                    db.rollback()
                 return GlobalEmailGuardDecision(
                     "in_progress" if state.identity_sha256 == identity else "blocked_active_claim"
                 )
-            db.rollback()
+            if commit:
+                db.rollback()
             return GlobalEmailGuardDecision(
                 "reconcile_required"
                 if state.identity_sha256 == identity
@@ -203,7 +230,8 @@ def claim_global_recipient_delivery(
                 ),
             )
         if state.status == "accepted_unverified":
-            db.rollback()
+            if commit:
+                db.rollback()
             return GlobalEmailGuardDecision(
                 "reconcile_required" if state.identity_sha256 == identity else "blocked_ambiguous",
                 claim_token=state.claim_token if state.identity_sha256 == identity else None,
@@ -213,7 +241,8 @@ def claim_global_recipient_delivery(
             )
 
     if same_sent:
-        db.rollback()
+        if commit:
+            db.rollback()
         provider_id = next(iter(provider_ids)) if len(provider_ids) == 1 else None
         return GlobalEmailGuardDecision("already_sent", provider_message_id=provider_id)
 
@@ -238,7 +267,8 @@ def claim_global_recipient_delivery(
                 created_at=current,
             )
         )
-    db.commit()
+    if commit:
+        db.commit()
     return GlobalEmailGuardDecision("claimed", claim_token=claim_token)
 
 
@@ -250,6 +280,7 @@ def finalize_global_recipient_delivery(
     claim_token: str,
     provider_message_id: str,
     now: datetime | None = None,
+    commit: bool = True,
 ) -> None:
     normalized = normalize_recipients(recipients)
     identity = _validate_identity(identity_sha256)
@@ -269,12 +300,14 @@ def finalize_global_recipient_delivery(
             },
         )
         if ok is not True:
-            db.rollback()
+            if commit:
+                db.rollback()
             raise RuntimeError("global_email_guard_finalize_rejected")
-        db.commit()
+        if commit:
+            db.commit()
         return
 
-    if db.get_bind().dialect.name == "sqlite":
+    if db.get_bind().dialect.name == "sqlite" and commit:
         db.commit()
         db.execute(text("BEGIN IMMEDIATE"))
     states = db.scalars(
@@ -289,7 +322,8 @@ def finalize_global_recipient_delivery(
         or state.status not in {"claimed", "accepted_unverified"}
         for state in states
     ):
-        db.rollback()
+        if commit:
+            db.rollback()
         raise RuntimeError("global_email_guard_finalize_rejected")
     for state in states:
         state.status = "sent"
@@ -307,7 +341,8 @@ def finalize_global_recipient_delivery(
                 created_at=current,
             )
         )
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def fail_global_recipient_delivery(
@@ -320,6 +355,7 @@ def fail_global_recipient_delivery(
     accepted_unverified: bool,
     provider_message_id: str | None = None,
     now: datetime | None = None,
+    commit: bool = True,
 ) -> None:
     normalized = normalize_recipients(recipients)
     identity = _validate_identity(identity_sha256)
@@ -343,12 +379,14 @@ def fail_global_recipient_delivery(
             },
         )
         if ok is not True:
-            db.rollback()
+            if commit:
+                db.rollback()
             raise RuntimeError("global_email_guard_failure_record_rejected")
-        db.commit()
+        if commit:
+            db.commit()
         return
 
-    if db.get_bind().dialect.name == "sqlite":
+    if db.get_bind().dialect.name == "sqlite" and commit:
         db.commit()
         db.execute(text("BEGIN IMMEDIATE"))
     states = db.scalars(
@@ -360,7 +398,8 @@ def fail_global_recipient_delivery(
     if len(states) != len(normalized) or any(
         state.identity_sha256 != identity or state.claim_token != claim_token for state in states
     ):
-        db.rollback()
+        if commit:
+            db.rollback()
         raise RuntimeError("global_email_guard_failure_record_rejected")
     for state in states:
         state.status = status
@@ -379,7 +418,8 @@ def fail_global_recipient_delivery(
                 created_at=current,
             )
         )
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def guard_identity(*parts: str) -> str:

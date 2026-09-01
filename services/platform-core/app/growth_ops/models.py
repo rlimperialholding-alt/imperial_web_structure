@@ -8,6 +8,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -284,6 +285,322 @@ class OutreachMessage(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ScheduledGmailLease(Base):
+    __tablename__ = "growth_scheduled_gmail_leases"
+    __table_args__ = (
+        UniqueConstraint("lease_id", name="uq_growth_scheduled_gmail_lease_id"),
+        UniqueConstraint("outreach_id", name="uq_growth_scheduled_gmail_lease_outreach"),
+        UniqueConstraint(
+            "provider_message_id",
+            name="uq_growth_scheduled_gmail_lease_provider_message",
+        ),
+        CheckConstraint(
+            "status IN ('authorized','sent','accepted_unverified','aborted')",
+            name="ck_growth_scheduled_gmail_lease_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lease_id: Mapped[str] = mapped_column(String(120), index=True)
+    outreach_id: Mapped[str] = mapped_column(
+        String(120),
+        ForeignKey("growth_outreach_messages.outreach_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    client_id: Mapped[str] = mapped_column(String(120), index=True)
+    token_nonce: Mapped[str] = mapped_column(String(64))
+    lease_token_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    quota_local_date: Mapped[date] = mapped_column(Date, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="authorized", index=True)
+    global_guard_claim_token: Mapped[str | None] = mapped_column(String(120), index=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(500), index=True)
+    provider_internal_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    readback_mime_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    authorized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    aborted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    abort_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ScheduledGmailLeaseRequest(Base):
+    __tablename__ = "growth_scheduled_gmail_lease_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "request_id",
+            name="uq_growth_scheduled_gmail_lease_request_id",
+        ),
+        CheckConstraint(
+            "status IN ('authorized','sent','accepted_unverified','aborted')",
+            name="ck_growth_scheduled_gmail_lease_request_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(120), index=True)
+    client_id: Mapped[str] = mapped_column(String(120), index=True)
+    lease_id: Mapped[str] = mapped_column(
+        String(120),
+        ForeignKey("growth_scheduled_gmail_leases.lease_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    outreach_id: Mapped[str] = mapped_column(
+        String(120),
+        ForeignKey("growth_outreach_messages.outreach_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), default="authorized", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ScheduledGmailEscrowBundle(Base):
+    __tablename__ = "growth_scheduled_gmail_escrow_bundles"
+    __table_args__ = (
+        UniqueConstraint("bundle_id", name="uq_growth_sg_escrow_bundle_id"),
+        UniqueConstraint("request_id", name="uq_growth_sg_escrow_bundle_request"),
+        CheckConstraint(
+            "status IN ('building','active','pending_sync','reconciled','revoked')",
+            name="ck_growth_sg_escrow_bundle_status",
+        ),
+        CheckConstraint(
+            # Serialization/package bound only. Daily quota remains a separate,
+            # permit-by-permit Europe/Budapest reservation and multiple bundles
+            # may coexist.
+            "permit_count > 0 AND permit_count <= 2000",
+            name="ck_growth_sg_escrow_bundle_permit_count",
+        ),
+        CheckConstraint(
+            "first_quota_local_date <= last_quota_local_date",
+            name="ck_growth_sg_escrow_bundle_date_order",
+        ),
+        CheckConstraint(
+            "valid_from < expires_at",
+            name="ck_growth_sg_escrow_bundle_time_order",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bundle_id: Mapped[str] = mapped_column(String(120), index=True)
+    request_id: Mapped[str] = mapped_column(String(120), index=True)
+    client_id: Mapped[str] = mapped_column(String(120), index=True)
+    client_key_id: Mapped[str] = mapped_column(String(120), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="building", index=True)
+    permit_count: Mapped[int] = mapped_column(Integer)
+    first_quota_local_date: Mapped[date] = mapped_column(Date, index=True)
+    last_quota_local_date: Mapped[date] = mapped_column(Date, index=True)
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    policy_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    client_registry_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    # The registered verification key is snapshotted for the lifetime of an
+    # issued bundle.  This is public material (never a private key) and lets
+    # outstanding offline events remain verifiable after registry rotation.
+    client_public_key_sha256: Mapped[str | None] = mapped_column(
+        String(64), index=True
+    )
+    client_public_key_pem: Mapped[str | None] = mapped_column(Text)
+    manifest_sha256: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    signing_key_id: Mapped[str] = mapped_column(String(120), index=True)
+    manifest_signature: Mapped[str | None] = mapped_column(Text)
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ScheduledGmailEscrowPermit(Base):
+    __tablename__ = "growth_scheduled_gmail_escrow_permits"
+    __table_args__ = (
+        UniqueConstraint("permit_id", name="uq_growth_sg_escrow_permit_id"),
+        UniqueConstraint("lease_id", name="uq_growth_sg_escrow_permit_lease"),
+        UniqueConstraint("outreach_id", name="uq_growth_sg_escrow_permit_outreach"),
+        UniqueConstraint(
+            "permit_token_sha256",
+            name="uq_growth_sg_escrow_permit_token",
+        ),
+        UniqueConstraint(
+            "provider_message_id",
+            name="uq_growth_sg_escrow_permit_provider",
+        ),
+        UniqueConstraint(
+            "bundle_id",
+            "permit_index",
+            name="uq_growth_sg_escrow_permit_bundle_index",
+        ),
+        CheckConstraint(
+            "status IN ('reserved','consuming','accepted_unverified','sent',"
+            "'aborted','expired_unreconciled')",
+            name="ck_growth_sg_escrow_permit_status",
+        ),
+        CheckConstraint(
+            "permit_index >= 0",
+            name="ck_growth_sg_escrow_permit_index",
+        ),
+        CheckConstraint(
+            "day_start_utc < day_end_utc",
+            name="ck_growth_sg_escrow_permit_day_order",
+        ),
+        CheckConstraint(
+            "slot_not_before >= day_start_utc AND slot_not_after <= day_end_utc "
+            "AND slot_not_before < slot_not_after",
+            name="ck_growth_sg_escrow_permit_slot_bounds",
+        ),
+        CheckConstraint(
+            "last_client_sequence >= 0",
+            name="ck_growth_sg_escrow_permit_sequence",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    permit_id: Mapped[str] = mapped_column(String(120), index=True)
+    bundle_id: Mapped[str] = mapped_column(
+        String(120),
+        ForeignKey("growth_scheduled_gmail_escrow_bundles.bundle_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    lease_id: Mapped[str] = mapped_column(
+        String(120),
+        ForeignKey("growth_scheduled_gmail_leases.lease_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    outreach_id: Mapped[str] = mapped_column(
+        String(120),
+        ForeignKey("growth_outreach_messages.outreach_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    client_id: Mapped[str] = mapped_column(String(120), index=True)
+    client_key_id: Mapped[str] = mapped_column(String(120), index=True)
+    permit_index: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="reserved", index=True)
+    sender_email: Mapped[str] = mapped_column(String(320), index=True)
+    motor_key: Mapped[str] = mapped_column(String(80), index=True)
+    payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    exact_payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    outreach_idempotency_key: Mapped[str] = mapped_column(String(64), index=True)
+    quota_local_date: Mapped[date] = mapped_column(Date, index=True)
+    day_start_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    day_end_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    slot_not_before: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    slot_not_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    permit_token_nonce: Mapped[str] = mapped_column(String(64))
+    permit_token_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    global_guard_claim_token: Mapped[str] = mapped_column(String(120), index=True)
+    global_guard_claim_token_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    permit_manifest_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    signing_key_id: Mapped[str] = mapped_column(String(120), index=True)
+    permit_signature: Mapped[str] = mapped_column(Text)
+    quota_reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(500), index=True)
+    provider_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    provider_internal_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    readback_mime_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    aborted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    abort_reason: Mapped[str | None] = mapped_column(Text)
+    last_client_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    last_event_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ScheduledGmailEscrowSyncEvent(Base):
+    __tablename__ = "growth_scheduled_gmail_escrow_sync_events"
+    __table_args__ = (
+        UniqueConstraint("event_id", name="uq_growth_sg_escrow_event_id"),
+        UniqueConstraint("event_sha256", name="uq_growth_sg_escrow_event_hash"),
+        UniqueConstraint(
+            "permit_id",
+            "client_sequence",
+            name="uq_growth_sg_escrow_event_sequence",
+        ),
+        CheckConstraint(
+            "event_type IN ('permit_consumed','provider_accepted','transport_ambiguous',"
+            "'pretransport_aborted','expired_unused')",
+            name="ck_growth_sg_escrow_event_type",
+        ),
+        CheckConstraint(
+            "processing_status IN ('received','applied','pending_verification','rejected')",
+            name="ck_growth_sg_escrow_event_status",
+        ),
+        CheckConstraint(
+            "client_sequence > 0",
+            name="ck_growth_sg_escrow_event_sequence",
+        ),
+        CheckConstraint(
+            "(client_sequence = 1 AND previous_event_sha256 IS NULL) OR "
+            "(client_sequence > 1 AND previous_event_sha256 IS NOT NULL)",
+            name="ck_growth_sg_escrow_event_chain",
+        ),
+        CheckConstraint(
+            "(event_type = 'permit_consumed' AND provider_transport_called = false "
+            "AND provider_message_id IS NULL) OR "
+            "(event_type = 'provider_accepted' AND provider_transport_called = true "
+            "AND provider_message_id IS NOT NULL) OR "
+            "(event_type = 'transport_ambiguous' AND provider_transport_called = true) OR "
+            "(event_type IN ('pretransport_aborted','expired_unused') "
+            "AND provider_transport_called = false AND provider_message_id IS NULL)",
+            name="ck_growth_sg_escrow_event_transport",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(120), index=True)
+    permit_id: Mapped[str] = mapped_column(
+        String(120),
+        ForeignKey("growth_scheduled_gmail_escrow_permits.permit_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    bundle_id: Mapped[str] = mapped_column(
+        String(120),
+        ForeignKey("growth_scheduled_gmail_escrow_bundles.bundle_id", ondelete="RESTRICT"),
+        index=True,
+    )
+    client_id: Mapped[str] = mapped_column(String(120), index=True)
+    client_sequence: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(40), index=True)
+    processing_status: Mapped[str] = mapped_column(String(32), default="received", index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    exact_payload_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    permit_token_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    previous_event_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    event_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    client_key_id: Mapped[str] = mapped_column(String(120), index=True)
+    client_public_key_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    client_signature: Mapped[str] = mapped_column(Text)
+    provider_transport_called: Mapped[bool] = mapped_column(Boolean)
+    provider_message_id: Mapped[str | None] = mapped_column(String(500), index=True)
+    reason: Mapped[str | None] = mapped_column(Text)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

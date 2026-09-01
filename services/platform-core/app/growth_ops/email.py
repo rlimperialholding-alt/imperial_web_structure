@@ -18,7 +18,7 @@ from datetime import UTC, datetime, time
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
-from email.utils import formatdate, parsedate_to_datetime
+from email.utils import formatdate, getaddresses, parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -461,6 +461,169 @@ def _verified_gmail_resource(
     }
 
 
+def _single_mailbox_header(message: EmailMessage, name: str) -> str:
+    values = message.get_all(name, [])
+    if len(values) != 1:
+        raise _GmailReadbackError(f"gmail_readback_{name.lower()}_header_count")
+    addresses = getaddresses([str(values[0])])
+    if len(addresses) != 1 or not addresses[0][1]:
+        raise _GmailReadbackError(f"gmail_readback_{name.lower()}_mailbox_count")
+    try:
+        return _canonical_addr_spec(
+            addresses[0][1],
+            field=f"readback_{name.lower()}",
+        )
+    except GrowthRegistryError as exc:
+        raise _GmailReadbackError(str(exc)) from exc
+
+
+def _assert_optional_exact_header(
+    message: EmailMessage,
+    name: str,
+    expected: str,
+) -> None:
+    values = message.get_all(name, [])
+    if not values:
+        return
+    if len(values) != 1 or str(values[0]) != expected:
+        raise _GmailReadbackError(f"gmail_readback_{name.lower()}_mismatch")
+
+
+def _mime_text_matches_exact_payload(actual: str | None, expected: str) -> bool:
+    if actual == expected:
+        return True
+    # RFC-conformant MIME generators terminate text parts with one line break.
+    # Treat that transport framing byte as equivalent, but allow no other drift.
+    return not expected.endswith("\n") and actual == f"{expected}\n"
+
+
+def _verify_scheduled_gmail_readback(
+    *,
+    raw_mime: bytes,
+    sender_email: str,
+    to_email: str,
+    subject: str,
+    body_text: str,
+    body_html: str,
+    reply_to: str | None,
+    unsubscribe_url: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    try:
+        returned = BytesParser(policy=policy.default).parsebytes(raw_mime)
+    except (TypeError, ValueError) as exc:
+        raise _GmailReadbackError("gmail_readback_mime_parse_failed") from exc
+
+    if _single_mailbox_header(returned, "From") != sender_email:
+        raise _GmailReadbackError("gmail_readback_from_mismatch")
+    if _single_mailbox_header(returned, "To") != to_email:
+        raise _GmailReadbackError("gmail_readback_to_mismatch")
+    if _single_header(returned, "Subject") != subject:
+        raise _GmailReadbackError("gmail_readback_subject_mismatch")
+
+    returned_reply_to = returned.get_all("Reply-To", [])
+    # Connected Gmail senders do not all expose a Reply-To control. Absence is
+    # therefore valid; a sender-provided value must still match the centrally
+    # approved binding exactly.
+    if returned_reply_to and (
+        reply_to is None or _single_mailbox_header(returned, "Reply-To") != reply_to
+    ):
+        raise _GmailReadbackError("gmail_readback_reply-to_mismatch")
+    if returned.get_all("Cc", []) or returned.get_all("Bcc", []):
+        raise _GmailReadbackError("gmail_readback_unexpected_cc_or_bcc")
+
+    returned_plain, returned_html = _text_bodies(returned)
+    if not _mime_text_matches_exact_payload(returned_plain, body_text):
+        raise _GmailReadbackError("gmail_readback_plain_body_mismatch")
+    if not _mime_text_matches_exact_payload(returned_html, body_html):
+        raise _GmailReadbackError("gmail_readback_html_body_mismatch")
+    if _attachment_fingerprints(returned):
+        raise _GmailReadbackError("gmail_readback_unexpected_attachment")
+    if unsubscribe_url not in returned_plain:
+        raise _GmailReadbackError("gmail_readback_plain_unsubscribe_missing")
+    if unsubscribe_url not in html.unescape(returned_html or ""):
+        raise _GmailReadbackError("gmail_readback_html_unsubscribe_missing")
+
+    content_sha256 = hashlib.sha256(
+        (subject + "\0" + body_text + "\0" + body_html).encode("utf-8")
+    ).hexdigest()
+    _assert_optional_exact_header(
+        returned,
+        "X-Imperial-Idempotency-Key",
+        idempotency_key,
+    )
+    _assert_optional_exact_header(
+        returned,
+        "X-Imperial-Content-SHA256",
+        content_sha256,
+    )
+    _assert_optional_exact_header(
+        returned,
+        "List-Unsubscribe",
+        f"<{unsubscribe_url}>",
+    )
+    _assert_optional_exact_header(
+        returned,
+        "List-Unsubscribe-Post",
+        "List-Unsubscribe=One-Click",
+    )
+    return {
+        "readback_mime_sha256": hashlib.sha256(raw_mime).hexdigest(),
+        "content_sha256": content_sha256,
+        "rfc_message_id": _single_header(returned, "Message-ID"),
+    }
+
+
+def _verified_scheduled_gmail_resource(
+    *,
+    resource: dict[str, Any],
+    sender_email: str,
+    to_email: str,
+    subject: str,
+    body_text: str,
+    body_html: str,
+    reply_to: str | None,
+    unsubscribe_url: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    labels = resource.get("labelIds")
+    if not isinstance(labels, list) or "SENT" not in labels:
+        raise _GmailReadbackError("gmail_readback_sent_label_missing")
+    try:
+        internal_date_ms = int(str(resource.get("internalDate")))
+        if internal_date_ms <= 0:
+            raise ValueError
+        provider_internal_date = datetime.fromtimestamp(
+            internal_date_ms / 1000,
+            tz=UTC,
+        )
+    except (TypeError, ValueError, OSError, OverflowError) as exc:
+        raise _GmailReadbackError("gmail_readback_internal_date_invalid") from exc
+    readback_raw = resource.get("raw")
+    if not isinstance(readback_raw, str) or not readback_raw:
+        raise _GmailReadbackError("gmail_readback_raw_missing")
+    try:
+        raw_mime = base64.urlsafe_b64decode(readback_raw + "=" * (-len(readback_raw) % 4))
+    except (ValueError, TypeError) as exc:
+        raise _GmailReadbackError("gmail_readback_raw_invalid") from exc
+    detail = _verify_scheduled_gmail_readback(
+        raw_mime=raw_mime,
+        sender_email=sender_email,
+        to_email=to_email,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        reply_to=reply_to,
+        unsubscribe_url=unsubscribe_url,
+        idempotency_key=idempotency_key,
+    )
+    return {
+        **detail,
+        "label_ids": labels,
+        "provider_internal_date": provider_internal_date.isoformat(),
+    }
+
+
 def _deterministic_message_id(*, idempotency_key: str, sender_domain: str) -> str:
     digest = hashlib.sha256(f"{idempotency_key}\0{sender_domain.lower()}".encode()).hexdigest()
     return f"<imperial-{digest}@{sender_domain.lower()}>"
@@ -705,6 +868,169 @@ class SMTPEmailAdapter:
             "profile_email": profile_email,
             "granted_scope_verified": "gmail_send_or_compose+gmail_read",
         }
+
+    def verify_scheduled_gmail_delivery(
+        self,
+        provider_message_id: str,
+        to_email: str,
+        subject: str,
+        body_text: str,
+        body_html: str,
+        reply_to: str | None,
+        unsubscribe_url: str,
+        idempotency_key: str,
+    ) -> EmailReceipt:
+        """Verify an already accepted scheduled-client delivery without sending mail."""
+        provider_id = str(provider_message_id or "")
+        try:
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", provider_id):
+                raise _GmailReadbackError("gmail_provider_message_id_invalid")
+            sender_email = _canonical_addr_spec(
+                self.binding.sender_email,
+                field="sender_email",
+            )
+            to_email = _canonical_addr_spec(to_email, field="recipient_email")
+            if reply_to is not None:
+                reply_to = _canonical_addr_spec(reply_to, field="reply_to")
+            if not isinstance(subject, str) or not subject or "\r" in subject or "\n" in subject:
+                raise _GmailReadbackError("gmail_expected_subject_invalid")
+            if not isinstance(body_text, str) or not isinstance(body_html, str) or not body_html:
+                raise _GmailReadbackError("gmail_expected_multipart_body_invalid")
+            if not re.fullmatch(r"[0-9a-f]{64}", str(idempotency_key or "")):
+                raise _GmailReadbackError("gmail_expected_idempotency_key_invalid")
+            unsubscribe_url = _validated_one_click_unsubscribe_url(unsubscribe_url)
+            if unsubscribe_url not in body_text or unsubscribe_url not in html.unescape(body_html):
+                raise _GmailReadbackError("gmail_expected_unsubscribe_missing")
+            self.preflight(delivery_scope=DELIVERY_SCOPE_EXTERNAL_CUSTOMER)
+
+            access_token = str(self.secret.get("access_token") or "")
+            if not access_token:
+                token_body = urllib.parse.urlencode(
+                    {
+                        "client_id": self.secret["client_id"],
+                        "client_secret": self.secret["client_secret"],
+                        "refresh_token": self.secret["refresh_token"],
+                        "grant_type": "refresh_token",
+                    }
+                ).encode()
+                with urllib.request.urlopen(
+                    urllib.request.Request(
+                        "https://oauth2.googleapis.com/token",
+                        data=token_body,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    ),
+                    timeout=30,
+                ) as response:
+                    token_payload = json.loads(response.read(1_000_000))
+                if not isinstance(token_payload, dict):
+                    raise _GmailReadbackError("gmail_oauth_token_response_invalid")
+                access_token = str(token_payload.get("access_token") or "")
+                if not access_token:
+                    raise _GmailReadbackError("gmail_oauth_access_token_missing")
+
+            authorization = {"Authorization": f"Bearer {access_token}"}
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+                    headers=authorization,
+                    method="GET",
+                ),
+                timeout=30,
+            ) as response:
+                profile = json.loads(response.read(1_000_000))
+            if not isinstance(profile, dict):
+                raise _GmailReadbackError("gmail_oauth_profile_invalid")
+            profile_email = _canonical_addr_spec(
+                str(profile.get("emailAddress") or ""),
+                field="gmail_oauth_profile_email",
+            )
+            if profile_email != sender_email:
+                raise _GmailReadbackError("gmail_oauth_profile_sender_mismatch")
+
+            readback_url = (
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/"
+                f"{urllib.parse.quote(provider_id, safe='')}?format=raw"
+            )
+            with urllib.request.urlopen(
+                urllib.request.Request(
+                    readback_url,
+                    headers=authorization,
+                    method="GET",
+                ),
+                timeout=30,
+            ) as response:
+                resource = json.loads(response.read(10_000_000))
+            if not isinstance(resource, dict):
+                raise _GmailReadbackError("gmail_readback_resource_invalid")
+            if str(resource.get("id") or "") != provider_id:
+                raise _GmailReadbackError("gmail_readback_provider_message_id_mismatch")
+            detail = _verified_scheduled_gmail_resource(
+                resource=resource,
+                sender_email=sender_email,
+                to_email=to_email,
+                subject=subject,
+                body_text=body_text,
+                body_html=body_html,
+                reply_to=reply_to,
+                unsubscribe_url=unsubscribe_url,
+                idempotency_key=idempotency_key,
+            )
+        except urllib.error.HTTPError as exc:
+            metadata = _gmail_http_error_metadata(exc)
+            raise EmailDeliveryError(
+                "accepted_but_unverified",
+                retry_safe=False,
+                authentication_failure=bool(metadata["authentication_failure"]),
+                accepted_but_unverified=True,
+                transport_attempted=True,
+                rate_limited=bool(metadata["rate_limited"]),
+                retry_after_seconds=metadata["retry_after_seconds"],
+                provider_reason=metadata["provider_reason"],
+                http_status=exc.code,
+                provider_message_id=provider_id or None,
+                detail={
+                    **metadata,
+                    "reason": f"scheduled_gmail_readback_http_{exc.code}",
+                    "provider_message_id": provider_id or None,
+                },
+            ) from exc
+        except (
+            OSError,
+            urllib.error.URLError,
+            http.client.HTTPException,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            ValueError,
+            KeyError,
+            GrowthRegistryError,
+            _GmailReadbackError,
+        ) as exc:
+            raise EmailDeliveryError(
+                "accepted_but_unverified",
+                retry_safe=False,
+                accepted_but_unverified=True,
+                transport_attempted=True,
+                provider_message_id=provider_id or None,
+                detail={
+                    "reason": str(exc),
+                    "provider_message_id": provider_id or None,
+                },
+            ) from exc
+
+        return EmailReceipt(
+            provider_message_id=provider_id,
+            accepted_recipient=to_email,
+            provider="gmail_api",
+            response_sha256=str(detail["readback_mime_sha256"]),
+            detail={
+                **detail,
+                "accepted": True,
+                "readback_verified": True,
+                "provider_message_id": provider_id,
+                "oauth_profile_email": profile_email,
+                "scheduled_client_delivery": True,
+            },
+        )
 
     def _send_gmail_api(
         self,

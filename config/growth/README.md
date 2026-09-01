@@ -8,6 +8,36 @@ verified backup plus atomic read-back. Store each credential JSON below
 `/opt/imperial-intelligence/secrets/growth` with mode `0600`. Never commit the resulting registry,
 backup, or secret files.
 
+Outbound transport is deliberately non-exclusive. The central worker may send through its
+server-side Gmail adapter, and a registered scheduled task may send the same exact released
+outbox artifact through its own connected Gmail account. A scheduled sender must first obtain a
+short-lived, recipient-guarded central lease and must then report the Gmail provider message id.
+The server independently reads back the SENT message and full MIME before finalizing the shared
+row. Lease expiry, an uncertain provider result or a MIME mismatch remains reserved for
+reconciliation and is never automatically retried. This coordination layer does not replace or
+disable IORA, public-land, real-estate-agent or architect discovery; it only serializes their
+outbound transport evidence.
+
+For a prolonged Hetzner outage, a registered scheduled task may prefetch a multi-day offline
+escrow bundle. Every permit in that bundle is bound to one already released exact outbox payload,
+one recipient guard, one Europe/Budapest quota day and one non-overlapping pacing slot. Bundles and
+permits are Ed25519-signed by the server and bound to the registered task public-key hash; the task
+stores them in an encrypted local WAL journal and atomically consumes each permit before invoking
+its own connected Gmail transport. Only a genuine network/timeout failure or infrastructure-
+unavailable 502/503/504 response enables this fallback, and only for a previously signed permit.
+Authentication, policy, conflict and quota denials (including 400/401/403/409/429) never do. Once
+transport may have been attempted, the permit can only be synchronized or reconciled, never reset
+or automatically resent. Public-land rows that require send-time live-listing evidence are not
+eligible for multi-day escrow; their discovery and normal coordinated sending remain unchanged.
+The hourly scheduled task must run one non-overlapping, at most 55-minute fallback loop: call
+`offline-next --wait-seconds 3300` (or the smaller number of seconds remaining before the
+55-minute run deadline), start the connected-Gmail transport before the returned
+`slot_not_after`, record the terminal accepted/ambiguous/pre-transport result, then call
+`offline-next` again until the run deadline. `NO_READY_PERMIT` includes `next_due_at` and
+`wait_seconds`, so offset slots are not missed and no catch-up burst is allowed. Operate exactly one
+encrypted journal on one NTP-synchronized task host; never clone a live cache/client key/bundle to
+a second runner.
+
 The long-running `platform-core` and `growth-ops-worker` mounts stay read-only. Run the updater
 from a one-off release-image container with only the growth registry directory temporarily mounted
 read-write; first omit `--apply`, verify the reported hashes/action, then repeat with `--apply`:
@@ -28,7 +58,8 @@ Production remains fail-closed until all of the following are true:
   non-expired policy evidence; the public-land aggregate instead requires its exact
   digest-bound 7/7 route readback and fresh per-request HTTPS/robots evidence;
 - `GROWTH_OPS_BASE_URL` is the public HTTPS control-center URL;
-- the production kill-switch file contains exactly `ALLOW_APPROVED_WRITES`;
+- this release does not create, remove or depend on a runtime marker; worker lifecycle and
+  database/readiness gates provide the coordinated fail-closed state;
 - `/api/internal/growth-ops/readiness` returns HTTP 200.
 
 The construction and distress motors run hourly. IVS runs once per Europe/Budapest calendar

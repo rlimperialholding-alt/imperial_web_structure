@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -223,6 +223,189 @@ class OutreachReleaseIn(BaseModel):
     approved_by: str = Field(min_length=3, max_length=255)
     inspected_payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     approval_note: str = Field(min_length=10, max_length=2000)
+
+
+class ScheduledGmailLeaseIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(
+        min_length=16,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$",
+    )
+    outreach_id: str | None = Field(default=None, min_length=2, max_length=120)
+    expected_payload_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+
+
+class ScheduledGmailFinalizeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lease_token: str = Field(min_length=32, max_length=512)
+    provider_message_id: str = Field(min_length=1, max_length=500)
+
+
+class ScheduledGmailAbortIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lease_token: str = Field(min_length=32, max_length=512)
+    reason: str = Field(min_length=10, max_length=2000)
+    provider_transport_called: Literal[False]
+
+
+class ScheduledGmailEscrowCandidateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outreach_id: str = Field(
+        min_length=2,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,119}$",
+    )
+    expected_payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ScheduledGmailEscrowBundleIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(
+        min_length=16,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$",
+    )
+    desired_permit_count: int = Field(
+        ge=1,
+        le=2000,
+        description=(
+            "Technical bundle size only; each permit separately reserves its "
+            "Europe/Budapest quota day and multiple bundles are allowed."
+        ),
+    )
+    quota_local_dates: list[date] = Field(min_length=1, max_length=31)
+    candidates: list[ScheduledGmailEscrowCandidateIn] = Field(
+        default_factory=list,
+        max_length=2000,
+    )
+
+    @model_validator(mode="after")
+    def escrow_request_is_unambiguous(self):
+        if self.quota_local_dates != sorted(set(self.quota_local_dates)):
+            raise ValueError("Escrow quota dates must be unique and sorted")
+        if self.candidates and len(self.candidates) != self.desired_permit_count:
+            raise ValueError("Explicit escrow candidates must match desired permit count")
+        outreach_ids = [candidate.outreach_id for candidate in self.candidates]
+        if len(set(outreach_ids)) != len(outreach_ids):
+            raise ValueError("Escrow candidate outreach IDs must be unique")
+        return self
+
+
+class ScheduledGmailEscrowSyncEventIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(
+        min_length=16,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$",
+    )
+    permit_id: str = Field(
+        min_length=2,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,119}$",
+    )
+    client_sequence: int = Field(ge=1)
+    event_type: Literal[
+        "permit_consumed",
+        "provider_accepted",
+        "transport_ambiguous",
+        "pretransport_aborted",
+        "expired_unused",
+    ]
+    occurred_at: datetime
+    payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    exact_payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    previous_event_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    event_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    client_key_id: str = Field(
+        min_length=2,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,119}$",
+    )
+    client_signature: str = Field(
+        min_length=43,
+        max_length=512,
+        pattern=r"^[A-Za-z0-9_-]+={0,2}$",
+    )
+    permit_token: str = Field(min_length=32, max_length=512)
+    provider_transport_called: bool
+    provider_message_id: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9_-]{1,256}$",
+    )
+    reason: str | None = Field(default=None, min_length=3, max_length=2000)
+
+    @model_validator(mode="after")
+    def escrow_event_matches_transport_state(self):
+        if self.occurred_at.tzinfo is None:
+            raise ValueError("Escrow event time must include a timezone")
+        if self.client_sequence == 1 and self.previous_event_sha256 is not None:
+            raise ValueError("First escrow event cannot have a previous event hash")
+        if self.client_sequence > 1 and self.previous_event_sha256 is None:
+            raise ValueError("Later escrow events require a previous event hash")
+        if self.event_type == "provider_accepted":
+            if not self.provider_transport_called or not self.provider_message_id:
+                raise ValueError("Provider acceptance requires transport and provider message ID")
+        elif self.event_type == "transport_ambiguous":
+            if not self.provider_transport_called or not self.reason:
+                raise ValueError("Ambiguous transport requires a reason")
+        elif self.event_type in {"pretransport_aborted", "expired_unused"}:
+            if self.provider_transport_called or self.provider_message_id or not self.reason:
+                raise ValueError("Unused or aborted permit must be provably pre-transport")
+        elif self.provider_transport_called or self.provider_message_id:
+            raise ValueError("Permit-consumed journal event precedes provider transport")
+        if any(character.isspace() for character in self.permit_token):
+            raise ValueError("Escrow permit token cannot contain whitespace")
+        return self
+
+
+class ScheduledGmailEscrowSyncIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(
+        min_length=16,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$",
+    )
+    bundle_id: str = Field(
+        min_length=2,
+        max_length=120,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,119}$",
+    )
+    # Keep malformed individual events inside the request envelope so the
+    # service can reject them one-by-one without suppressing later valid
+    # events.  Valid objects are still parsed into the strict event model.
+    events: list[ScheduledGmailEscrowSyncEventIn | dict[str, Any]] = Field(
+        min_length=1,
+        max_length=2000,
+    )
+
+
+class ScheduledGmailEscrowAbortIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    permit_token: str = Field(min_length=32, max_length=512)
+    reason: str = Field(min_length=10, max_length=2000)
+    provider_transport_called: Literal[False]
+
+    @field_validator("permit_token")
+    @classmethod
+    def escrow_abort_token_has_no_whitespace(cls, value: str) -> str:
+        if any(character.isspace() for character in value):
+            raise ValueError("Escrow permit token cannot contain whitespace")
+        return value
 
 
 class CanonicalFirstContactRenderIn(BaseModel):
