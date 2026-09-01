@@ -35,6 +35,15 @@ változatlanul futnak. A szkript stdout-szerződése pontosan egy fix,
 count/path-mentes, secretmentes információs sor lett; a runtime teszt ezt a
 dokumentált kimenetet exact-match-szel, a secret-nevek és -értékek
 logmentességét pedig teljes stdout+stderr ellenőrzéssel zárja.
+
+Task68 review-conflict remediáció (Review-1 HIGH / Review-2 LOW):
+a valódi temp könyvtárban futó végrehajtási próba cwd-jét a teszt a
+subprocess indítása előtt létrehozza (nem létező cwd-vel a Python
+``FileNotFoundError``-ral áll meg, mielőtt a shell elindulna; a szkript
+``chmod 0700``-ja így is érvényesül); a statikus stdout-szerződés-ellenőrzés
+pedig minden nem dokumentált kimeneti statementet elutasít (echo/cat/tee/
+logger, további printf, közvetlen stdout/stderr redirekció), negatív
+regressziókkal.
 """
 
 from __future__ import annotations
@@ -417,18 +426,85 @@ def test_provisioning_script_uses_traversable_directory_mode() -> None:
     assert 'chmod 0400 "$SECRET_DIR/${name}.txt"' in text
 
 
+_ALLOWED_PRINTF_LINE = "printf 'Ephemeral synthetic CI secret files provisioned.\\n'"
+# Kimeneti shell-statement parancsok, amelyeket a stdout-szerződés tilt
+# (a szkript egyetlen dokumentált kimenete a fix printf információs sor).
+_OUTPUT_COMMAND_RE = re.compile(r"(^|[;&|]\s*)(echo|cat|tee|logger|print)\b")
+# Közvetlen stdout/stderr fd- vagy /dev/std*-redirekció. A /dev/null-ba dobó
+# sorok (pl. ``command -v sudo >/dev/null 2>&1``) nem termelnek
+# console-kimenetet, ezért azok kivételt képeznek.
+_CONSOLE_FD_RE = re.compile(r">\s*&[12]\b|>\s*/dev/std(out|err)\b")
+
+
+def _undocumented_output_statements(text: str) -> list[str]:
+    """A szkript nem dokumentált console-kimeneti statementjei (Task68).
+
+    Az egyetlen engedélyezett stdout a fix ``printf`` információs sor; minden
+    más kimeneti statement — echo/cat/tee/logger parancs, további printf,
+    közvetlen stdout/stderr redirekció — fail-closed elutasítandó. Pure-Python
+    statikus ellenőrzés, shell/tool függés nélkül (a Windows proof-pathon is
+    fut). Az output-parancsokat akkor is elutasítja, ha /dev/null-ba
+    dobják őket (a szerződés egyetlen printf-sort enged); a secret-fájlba
+    író redirekció (``> "$SECRET_DIR/${name}.txt"``) nem console-kimenet.
+    """
+    violations: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if _OUTPUT_COMMAND_RE.search(line):
+            violations.append(raw)
+        if _CONSOLE_FD_RE.search(line) and "/dev/null" not in line:
+            violations.append(raw)
+        if "printf" in line and line != _ALLOWED_PRINTF_LINE:
+            violations.append(raw)
+    return violations
+
+
 def test_provisioning_script_stdout_contract_is_static_and_secret_free() -> None:
     # Task67 szerződészárolás (statikus, pure-Python — Windows-on is fut):
     # a szkript információs kimenete pontosan egy fix sor, interpoláció
     # nélkül; a stdout így count/path-mentes és secretmentes (sem név, sem
     # érték, sem útvonal nem kerülhet a logba).
+    #
+    # Task68 (Review-2 LOW lezárás): a printf-sorok listaequality-je önmagában
+    # nem zárja ki más kimeneti statementeket (pl. echo, további printf vagy
+    # közvetlen stdout/stderr redirekció); minden nem dokumentált kimeneti
+    # statementet külön, pure-Python statikusan (shell/tool függés nélkül)
+    # elutasítunk.
     if (reason := _skip_reason_scripts()) is not None:
         pytest.skip(reason)
     text = PROVISION_SCRIPT.read_text(encoding="utf-8")
     output_lines = [line for line in text.splitlines() if "printf" in line]
-    assert output_lines == [
-        "printf 'Ephemeral synthetic CI secret files provisioned.\\n'"
-    ]
+    assert output_lines == [_ALLOWED_PRINTF_LINE]
+    assert _undocumented_output_statements(text) == []
+
+
+def test_provisioning_script_stdout_contract_rejects_undocumented_output() -> None:
+    # Task68 negatív regresszió: a statikus szerződés-ellenőrzésnek minden
+    # nem dokumentált kimeneti statementet el kell utasítania (echo,
+    # további printf, közvetlen stdout/stderr redirekció) — így a Windows
+    # proof-path is fail-closed a count/path- és secretmentes
+    # stdout-szerződésre.
+    if (reason := _skip_reason_scripts()) is not None:
+        pytest.skip(reason)
+    text = PROVISION_SCRIPT.read_text(encoding="utf-8")
+    for bad_line in (
+        "echo provisioned\n",
+        "echo \"$SECRET_DIR\"\n",
+        "echo \"$name\" >&2\n",
+        "printf 'second line\\n'\n",
+        "printf '%s\\n' \"$name\"\n",
+        "cat \"$SECRET_DIR/leak.txt\"\n",
+        "true && echo leak\n",
+        "logger provisioning\n",
+        "echo x > /dev/stdout\n",
+    ):
+        drifted = text + bad_line
+        violations = _undocumented_output_statements(drifted)
+        assert violations, f"nem detektált kimeneti statement: {bad_line!r}"
+    # Positive kontroll: a dokumentált printf-sor önmagában nem sérthet.
+    assert _undocumented_output_statements(text) == []
 
 
 def test_provisioning_script_executes_in_real_temp_dir(tmp_path) -> None:
@@ -445,6 +521,13 @@ def test_provisioning_script_executes_in_real_temp_dir(tmp_path) -> None:
         pytest.skip(reason)
     names = _provisioned_names()
     secret_dir = tmp_path / "secrets"
+    # Task68 (Review-1 HIGH): a subprocess cwd-jének léteznie kell a
+    # futtatás előtt — nem létező cwd-vel a Python FileNotFoundError-ral áll
+    # meg, mielőtt a shell egyáltalán elindulna. A szkript mkdir -p-je a már
+    # létező könyvtárat nem bántja, a chmod 0700 pedig így is érvényesül,
+    # tehát a lenti 0700-mód-állítás továbbra is a szkript chmod-ját
+    # bizonyítja, nem a teszt általi pre-kreálást.
+    secret_dir.mkdir()
     completed = subprocess.run(
         ["sh", str(PROVISION_SCRIPT)],
         cwd=str(secret_dir),
