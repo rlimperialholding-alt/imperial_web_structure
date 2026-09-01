@@ -20,8 +20,11 @@ eltérést determinisztikusan, fail-closed módon blokkolja:
 - a provisioning-szkript kizárólag ``openssl rand`` értékeket generál:
   committed literal secret/credential nem lehet benne.
 
-A diagnosztika csak neveket, útvonalakat és darabszámokat közöl; secret-érték
-soha nem kerül a kimenetbe. A kimenet determinisztikus (rendezett listák).
+A diagnosztika kizárólag stabilan nem érzékeny, korlátozott metadatát közöl:
+sorszám-azonosítókat (rendezett pozíció) és darabszámokat, valamint a
+workflow-fájlok nevét; secret-név, secret-útvonal vagy érték soha nem kerül
+a kimenetbe (sem stdout/stderr, sem exception, sem visszaadott üzenet).
+A kimenet determinisztikus (rendezett listák).
 """
 
 from __future__ import annotations
@@ -70,14 +73,18 @@ def _parse_compose_secrets(text: str) -> dict[str, str]:
                 )
             current = match.group(1)
             if current in secrets:
-                raise ValueError(f"compose secrets block: duplicate secret {current}")
+                # Secret-név nem kerülhet a diagnosztikába: csak a duplikált
+                # deklaráció sora azonosít (stabil, nem érzékeny metadata).
+                raise ValueError(
+                    f"compose secrets block: duplicate declaration at line {line_number}"
+                )
             secrets[current] = ""
             continue
         if line.startswith("    file:"):
             source = line[len("    file:") :].strip()
             if current is None:
                 raise ValueError(f"compose secrets block: file source without name (line {line_number})")
-            default = _expand_default(source)
+            default = _expand_default(source, line_number)
             secrets[current] = default
             continue
         raise ValueError(f"compose secrets block: unexpected line {line_number}")
@@ -86,17 +93,19 @@ def _parse_compose_secrets(text: str) -> dict[str, str]:
     return secrets
 
 
-def _expand_default(source: str) -> str:
+def _expand_default(source: str, line_number: int) -> str:
     """A ``${VAR:-default}`` formátum defaultját adja vissza; default nélküli
     vagy egyéb formájú interpoláció fail-closed (a CI nem tudná
-    determinisztikusan provisionálni)."""
+    determinisztikusan provisionálni). A diagnosztika a forrásszöveg helyett
+    csak a sorszámot közli: a bind-source default a ``./secrets/<név>.txt``
+    secret-útvonalat hordozza, ami nem kerülhet a kimenetbe."""
     match = _DEFAULT_RE.fullmatch(source)
     if match:
         return match.group(1)
     if _NO_DEFAULT_RE.search(source):
         raise ValueError(
             "compose secrets block: bind source has no local default "
-            f"({source!r}); CI provisioning cannot be deterministic"
+            f"(line {line_number}); CI provisioning cannot be deterministic"
         )
     return source
 
@@ -109,7 +118,9 @@ def _parse_provisioning_list(text: str) -> list[str]:
         raise ValueError("provisioning script: canonical names block markers missing")
     block = text[begin + len(_NAME_BEGIN) : end]
     names: list[str] = []
-    for raw in block.splitlines():
+    # Secret-név nem kerülhet a diagnosztikába: a hibás bejegyzést a blokkon
+    # belüli sorszáma azonosítja (stabil, nem érzékeny metadata).
+    for index, raw in enumerate(block.splitlines(), 1):
         name = raw.strip()
         if not name or name.startswith("#"):
             continue
@@ -118,9 +129,13 @@ def _parse_provisioning_list(text: str) -> list[str]:
             # és a blokk záró idézőjele része a blokknak, de nem névbejegyzés.
             continue
         if not re.fullmatch(r"[a-z0-9_]+", name):
-            raise ValueError(f"provisioning script: unexpected name entry {name!r}")
+            raise ValueError(
+                f"provisioning script: unexpected name entry at block line {index}"
+            )
         if name in names:
-            raise ValueError(f"provisioning script: duplicate name entry {name}")
+            raise ValueError(
+                f"provisioning script: duplicate name entry at block line {index}"
+            )
         names.append(name)
     if not names:
         raise ValueError("provisioning script: canonical names block is empty")
@@ -183,26 +198,39 @@ def reconcile(
     except ValueError as exc:
         return 1, f"FAIL - {exc}"
 
+    # A diagnosztika kizárólag rendezett sorszám-azonosítókat közöl: a
+    # secret-nevek és a ./secrets/<név>.txt útvonalak nem kerülhetnek a
+    # kimenetbe. A sorszám a rendezett (determinisztikus) pozíció, így a
+    # hiba ugyanahhoz a deklarációhoz mindig ugyanazt az azonosítót adja.
+    # A számláló tiszta egész aritmetikából képződik (sem a rendezett
+    # deklarációs elemekből, sem iterátor-modellből nem származhat).
     provisioned_set = set(provisioned)
+    declaration_index = 0
     for name, default in sorted(compose.items()):
+        declaration_index += 1
         if default.startswith(_SECRET_DIR_PREFIX):
             expected = f"./secrets/{name}.txt"
             if default != expected:
                 failures.append(
-                    f"compose secret {name} default path {default!r} "
-                    f"does not match its name ({expected!r})"
+                    f"compose declaration #{declaration_index} default path "
+                    f"does not match its name"
                 )
             if name not in provisioned_set:
                 failures.append(
-                    f"compose secret {name} ({default}) is not provisioned by the CI script"
+                    f"compose declaration #{declaration_index} is not provisioned "
+                    f"by the CI script"
                 )
         elif name in provisioned_set:
             failures.append(
-                f"provisioning entry {name} is not a ./secrets/ compose declaration "
-                f"(compose default: {default!r})"
+                f"provisioning list entry for compose declaration #{declaration_index} "
+                f"is not a ./secrets/ compose declaration"
             )
-    for name in sorted(provisioned_set - set(compose)):
-        failures.append(f"provisioning entry {name} has no compose secret declaration")
+    entry_index = 0
+    for _name in sorted(provisioned_set - set(compose)):
+        entry_index += 1
+        failures.append(
+            f"provisioning list entry #{entry_index} has no compose secret declaration"
+        )
     if not (REPO_ROOT / "docker" / "no-extra-ca.pem").is_file():
         failures.append("committed build_ca placeholder docker/no-extra-ca.pem is missing")
 

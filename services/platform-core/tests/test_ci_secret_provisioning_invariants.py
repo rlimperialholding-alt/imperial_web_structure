@@ -207,6 +207,86 @@ def test_compose_default_path_mismatch_fails_closed() -> None:
     assert status == 1
 
 
+def test_failure_diagnostics_never_contain_secret_names_or_paths(capsys) -> None:
+    # Task69 CodeQL HIGH (py/clear-text-logging-sensitive-data) regresszió:
+    # a checker diagnosztikája kizárólag rendezett sorszám-azonosítókat és
+    # darabszámokat közöl — secret-név és ./secrets/<név>.txt útvonal soha
+    # nem jelenhet meg sem a stderrre írt FAIL-sorokban, sem a visszaadott
+    # üzenetben (kétirányú drift mellett).
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
+    checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
+    compose_text = COMPOSE_PATH.read_text(encoding="utf-8")
+    entry = (
+        "  dpm_auth_hs256_secret:\n"
+        "    file: ${DPM_AUTH_HS256_SECRET_FILE:-./secrets/dpm_auth_hs256_secret.txt}\n"
+    )
+    drifted = compose_text.replace(
+        entry,
+        entry + "  dpm_audit_log_key:\n"
+        "    file: ${DPM_AUDIT_LOG_KEY_FILE:-./secrets/dpm_audit_log_key.txt}\n",
+    )
+    assert drifted != compose_text
+    provisioning_text = PROVISION_SCRIPT.read_text(encoding="utf-8")
+    drifted_provisioning = provisioning_text.replace(
+        "dpm_auth_hs256_secret\n", "dpm_auth_hs256_secret\ndpm_orphan_secret\n"
+    )
+    assert drifted_provisioning != provisioning_text
+    status, message = checker.reconcile(drifted, drifted_provisioning, _workflow_texts())
+    assert status == 1
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err + message
+    # Secret-nevek és secret-útvonalak tilosak a kimenetben; a diagnosztika
+    # a rendezett pozíció sorszámával azonosít (stabil, nem érzékeny).
+    for fragment in ("dpm_audit_log_key", "dpm_orphan_secret", "./secrets/dpm_audit_log_key.txt"):
+        assert fragment not in combined, f"secret-adat a checker kimenetében: {fragment!r}"
+    assert "compose declaration #" in captured.err
+    assert "provisioning list entry #" in captured.err
+
+
+def test_parser_exception_texts_never_contain_secret_names() -> None:
+    # Task69 CodeQL HIGH (py/clear-text-logging-sensitive-data) negatív
+    # regresszió: a compose- és provisioning-parser kivételszövegei
+    # kizárólag sorszámot azonosítanak — secret-név vagy secret-útvonal
+    # soha nem jelenhet meg bennük.
+    if (reason := _skip_reason_repo()) is not None:
+        pytest.skip(reason)
+    checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
+    compose_text = COMPOSE_PATH.read_text(encoding="utf-8")
+    entry = (
+        "  dpm_auth_hs256_secret:\n"
+        "    file: ${DPM_AUTH_HS256_SECRET_FILE:-./secrets/dpm_auth_hs256_secret.txt}\n"
+    )
+    # Duplikált deklaráció: a kivétel csak a duplikált sor sorszámát közli.
+    duplicated = compose_text.replace(entry, entry + entry)
+    assert duplicated != compose_text
+    with pytest.raises(ValueError) as excinfo:
+        checker._parse_compose_secrets(duplicated)
+    assert "dpm_auth_hs256_secret" not in str(excinfo.value)
+    assert "duplicate declaration at line" in str(excinfo.value)
+    # Default nélküli interpoláció: a kivétel csak a sorszámot közli, a
+    # secret-útvonalat hordozó forrásszöveget nem.
+    defaultless = compose_text.replace(
+        "${DPM_AUTH_HS256_SECRET_FILE:-./secrets/dpm_auth_hs256_secret.txt}",
+        "${DPM_AUTH_HS256_SECRET_FILE}",
+    )
+    assert defaultless != compose_text
+    with pytest.raises(ValueError) as excinfo:
+        checker._parse_compose_secrets(defaultless)
+    assert "dpm_auth_hs256_secret" not in str(excinfo.value)
+    assert "has no local default (line" in str(excinfo.value)
+    # Érvénytelen névbejegyzés a provisioning-listában: a kivétel a blokkon
+    # belüli sorszámot azonosítja, a nevet nem.
+    provisioning_text = PROVISION_SCRIPT.read_text(encoding="utf-8")
+    malformed = provisioning_text.replace(
+        "dpm_auth_hs256_secret\n", "dpm_auth_hs256_secret\nDPM-BAD-NAME!\n"
+    )
+    with pytest.raises(ValueError) as excinfo:
+        checker._parse_provisioning_list(malformed)
+    assert "DPM-BAD-NAME" not in str(excinfo.value)
+    assert "unexpected name entry at block line" in str(excinfo.value)
+
+
 def test_workflow_without_provisioning_invocation_fails_closed() -> None:
     if (reason := _skip_reason_repo()) is not None:
         pytest.skip(reason)

@@ -48,7 +48,7 @@ SCRIPT = PLATFORM_CORE / "scripts" / "reconciliation.py"
 SCRIPTS_DIR = PLATFORM_CORE / "scripts"
 REPO_ROOT = PLATFORM_CORE.parents[1]
 CORPUS_MANIFEST_PATH = REPO_ROOT / ".imperial-adas" / "protected-corpus-manifest.json"
-SECRETS_BASELINE_PATH = REPO_ROOT / ".secrets.baseline"
+TRACKED_BASELINE_PATH = REPO_ROOT / ".secrets.baseline"
 SOURCE_LOCK_PATH = PLATFORM_CORE / "SOURCE_LOCK.json"
 REQUIRED_LOCK_VERSION_FIELDS = (
     "platform_version",
@@ -97,7 +97,7 @@ def _run_reconciliation(
     env = dict(os.environ)
     for key in (
         "II_RECON_CORPUS_MANIFEST",
-        "II_RECON_SECRETS_BASELINE",
+        "II_RECON_TRACKED_BASELINE",
         "II_RECON_SECRETS_SNAPSHOT",
         "II_RECON_SOURCE_LOCK",
         "II_RECON_EXPECTED_ALEMBIC_HEAD",
@@ -202,6 +202,12 @@ def test_reconciliation_command_passes_on_the_canonical_secret_baseline() -> Non
     assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
     # Minden probe PASS: az összegzés is a teljes lokális egyezést jelenti.
     assert "minden lokalis" in result.stdout
+    # Task69 CodeQL HIGH (py/clear-text-logging-sensitive-data): a
+    # titok-probe kimenete a kanonikus futásban sem tartalmazhat
+    # baseline-fingerprintet (secret-értékből visszafejthető adatot) --
+    # sem stdouton, sem stderrben.
+    canonical = json.loads(TRACKED_BASELINE_PATH.read_text(encoding="utf-8"))
+    _assert_no_secret_material(canonical, result.stdout + result.stderr)
 
 
 def _write_invalid_json_baseline(tmp_path: Path) -> Path:
@@ -224,7 +230,7 @@ def test_secret_probe_failure_cannot_mask_the_other_probe_assertions(
     négy probe akkor is lefut és PASS-t jelent (a Task31 hibája éppen a
     maszkolás volt)."""
     baseline = _write_invalid_json_baseline(tmp_path)
-    result = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(baseline))
+    result = _run_reconciliation(II_RECON_TRACKED_BASELINE=str(baseline))
     assert result.returncode != 0
     assert "repository baseline is not valid JSON" in result.stderr
     assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
@@ -243,9 +249,9 @@ def test_command_level_snapshot_environment_variable_has_no_effect(
     a parancs két futása (a változóval és anélkül) byte-azonos kimenetet ad,
     tehát a parancsszintű kód a változót ténylegesen nem olvassa."""
     baseline = _write_invalid_json_baseline(tmp_path)
-    plain = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(baseline))
+    plain = _run_reconciliation(II_RECON_TRACKED_BASELINE=str(baseline))
     result = _run_reconciliation(
-        II_RECON_SECRETS_BASELINE=str(baseline),
+        II_RECON_TRACKED_BASELINE=str(baseline),
         II_RECON_SECRETS_SNAPSHOT=str(tmp_path / "no-such-snapshot.json"),
         PYTEST_CURRENT_TEST="test_command_level_snapshot_environment_variable_has_no_effect",
     )
@@ -265,7 +271,7 @@ def _write_valid_json_baseline(tmp_path: Path) -> Path:
     A titok-probe sikeresen átjut a baseline parse-on, a pinelt élő scan
     (direct pytest seam) üres eredménye pedig determinisztikus PASS-t ad --
     így a parse UTÁNI teljes egyeztetési kódút a valós
-    ``reconcile_tracked_secrets`` logikával fut, teljes-repo scan nélkül
+    ``reconcile_tracked_baseline`` logikával fut, teljes-repo scan nélkül
     (Review 1 HIGH: a seam-olvasás tilalmát valid baseline parse után is
     bizonyítani kell)."""
     baseline = tmp_path / "valid-baseline.json"
@@ -290,7 +296,7 @@ def test_snapshot_environment_seam_is_not_read_after_valid_baseline_parse(
 
     def run_probe(with_seam_env: bool) -> str:
         module = _load_module(monkeypatch)
-        monkeypatch.setattr(module, "SECRETS_BASELINE", baseline)
+        monkeypatch.setattr(module, "TRACKED_BASELINE", baseline)
         _pin_canonical_scan(module, monkeypatch, {"results": {}})
         if with_seam_env:
             monkeypatch.setenv("II_RECON_SECRETS_SNAPSHOT", str(snapshot))
@@ -331,7 +337,7 @@ def test_unexpected_probe_exception_cannot_mask_the_other_probes(
     baseline = _write_invalid_json_baseline(tmp_path)
     result = _run_reconciliation(
         II_RECON_CORPUS_MANIFEST=str(broken),
-        II_RECON_SECRETS_BASELINE=str(baseline),
+        II_RECON_TRACKED_BASELINE=str(baseline),
     )
     assert result.returncode != 0
     assert "_corpus_probe varatlan hiba: JSONDecodeError" in result.stderr
@@ -394,7 +400,7 @@ def test_corpus_probe_fail_closed_on_invalid_manifest(
 def test_reconciliation_fail_closed_on_missing_secret_baseline(
     tmp_path: Path,
 ) -> None:
-    result = _run_reconciliation(II_RECON_SECRETS_BASELINE=str(tmp_path / "no-baseline.json"))
+    result = _run_reconciliation(II_RECON_TRACKED_BASELINE=str(tmp_path / "no-baseline.json"))
     assert result.returncode != 0
     assert "repository baseline is missing" in result.stderr
 
@@ -440,7 +446,7 @@ def test_secret_baseline_probe_fail_closed_on_post_audited_state_tamper(
     assert excinfo.value.code not in (0, None)
     assert "unclassified candidate(s)" in str(excinfo.value)
     assert filename in str(excinfo.value)
-    baseline = json.loads(SECRETS_BASELINE_PATH.read_text(encoding="utf-8"))
+    baseline = json.loads(TRACKED_BASELINE_PATH.read_text(encoding="utf-8"))
     _assert_no_secret_material(baseline, str(excinfo.value))
 
 
@@ -450,7 +456,7 @@ def test_secret_baseline_probe_maps_status_zero_to_pass(
     module = _load_module(monkeypatch)
     monkeypatch.setattr(
         module.check_secret_baseline,
-        "reconcile_tracked_secrets",
+        "reconcile_tracked_baseline",
         lambda baseline_path, **kwargs: (
             0,
             "7 tracked candidate(s) match the audited baseline.",
@@ -465,7 +471,7 @@ def test_secret_baseline_probe_maps_nonzero_to_fail_closed(
     module = _load_module(monkeypatch)
     monkeypatch.setattr(
         module.check_secret_baseline,
-        "reconcile_tracked_secrets",
+        "reconcile_tracked_baseline",
         lambda baseline_path, **kwargs: (
             1,
             "3 unclassified candidate(s) in 1 tracked file(s).\n- svc/synthetic.py",

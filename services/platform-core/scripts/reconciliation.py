@@ -76,8 +76,8 @@ CORPUS_MANIFEST = Path(
         str(_REPO_ROOT / ".imperial-adas" / "protected-corpus-manifest.json"),
     )
 )
-SECRETS_BASELINE = Path(
-    os.environ.get("II_RECON_SECRETS_BASELINE", str(_REPO_ROOT / ".secrets.baseline"))
+TRACKED_BASELINE = Path(
+    os.environ.get("II_RECON_TRACKED_BASELINE", str(_REPO_ROOT / ".secrets.baseline"))
 )
 SOURCE_LOCK = Path(os.environ.get("II_RECON_SOURCE_LOCK", str(_APP_ROOT / "SOURCE_LOCK.json")))
 
@@ -141,7 +141,7 @@ def _corpus_probe() -> None:
 def _secret_baseline_probe() -> None:
     # Nincs snapshot/környezeti seam: a kanonikus egyeztetés mindig az élő
     # scannel fut; a tesztek csak közvetlen monkeypatch-csel gyorsítanak.
-    status, message = check_secret_baseline.reconcile_tracked_secrets(SECRETS_BASELINE)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(TRACKED_BASELINE)
     if status != 0:
         raise SystemExit(f"reconciliation FAIL: {message}")
     print(f"reconciliation PASS: tracked-secret baseline: {message}")

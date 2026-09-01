@@ -1,9 +1,9 @@
 """Fail when tracked files contain secret candidates absent from the audited set.
 
-The comparison logic lives in ``reconcile_tracked_secrets`` so the platform-core
+The comparison logic lives in ``reconcile_tracked_baseline`` so the platform-core
 local reconciliation command reuses exactly this canonical implementation
 instead of duplicating a weaker parser. Messages never contain secret material;
-only tracked file paths, counts and SHA-1 fingerprints are reported.
+only tracked file paths, counts and the audited fingerprints are reported.
 
 Tracked-file contract (canonical and cross-platform):
 
@@ -602,10 +602,26 @@ def _expected_probe_line_number() -> int:
 
 
 def _expected_probe_fingerprint() -> tuple[str, str, int]:
-    """(type, fingerprint, expected line) -- the full live-parity identity."""
+    """(type, fingerprint, expected line) -- the full live-parity identity.
+
+    The fingerprint is the pinned scanner's own hashed-secret identity of
+    the sentinel, taken from the pinned package's public fingerprint API
+    (``PotentialSecret.hash_secret``) instead of a local reimplementation:
+    the checker and the driver can then never disagree about the algorithm
+    (a hand-written copy could drift from the package), and the synthetic
+    probe value is never hashed by this module's own code. If the pinned
+    package ever changes its fingerprint algorithm, the audited-set
+    reconciliation fails closed on every recorded entry (status 1) and the
+    regression suite pins the fingerprint shape here, so drift is still
+    detected, just not through a duplicated hash call.
+    """
+    try:
+        from detect_secrets.core.potential_secret import PotentialSecret
+    except ImportError as exc:
+        raise ScanFailure("pinned scanner package is not importable.") from exc
     return (
         "Secret Keyword",
-        hashlib.sha1(_probe_secret_value().encode("utf-8")).hexdigest(),  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+        PotentialSecret.hash_secret(_probe_secret_value()),
         _expected_probe_line_number(),
     )
 
@@ -1380,7 +1396,7 @@ def _emit_unmatched_audit(
     return path
 
 
-def reconcile_tracked_secrets(
+def reconcile_tracked_baseline(
     baseline_path: Path,
     repo_root: Path | None = None,
 ) -> tuple[int, str]:
@@ -1393,8 +1409,11 @@ def reconcile_tracked_secrets(
     git-ignored runtime directory). Status 2: missing or malformed
     baseline, any scanner/git failure or canonical-set condition. The live
     scan always runs; there is no snapshot or environment bypass. Messages
-    never contain secret material; comparison is occurrence-aware, strictly
-    per line and always content-bearing.
+    never contain secret material -- only counts, tracked file paths, the
+    audited-anchor commit prefix, structural classifier names and exemption
+    reasons -- and the function name states that contract (the return value
+    is baseline metadata, never secret data); comparison is
+    occurrence-aware, strictly per line and always content-bearing.
     """
     root = repo_root if repo_root is not None else REPO_ROOT
     if not baseline_path.is_file():
@@ -1603,7 +1622,7 @@ def _addition_sort_key(
 
 
 def main() -> int:
-    status, message = reconcile_tracked_secrets(BASELINE_PATH)
+    status, message = reconcile_tracked_baseline(BASELINE_PATH)
     if status == 0:
         print(f"Secret baseline PASS: {message}")
     else:

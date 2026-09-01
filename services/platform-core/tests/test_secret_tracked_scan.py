@@ -18,6 +18,7 @@ temporary synthetic git repositories; no network, no production write.
 
 from __future__ import annotations
 
+import ast
 import base64
 import hashlib
 import inspect
@@ -205,7 +206,7 @@ def test_unreadable_candidate_file_fails_closed(
         raise OSError("synthetic unreadable candidate")
 
     monkeypatch.setattr(check_secret_baseline, "_read_candidate_bytes", _unreadable)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "cannot be read" in message
 
@@ -228,7 +229,7 @@ def test_invalid_index_record_fails_closed(
     monkeypatch.setattr(
         check_secret_baseline, "_run_git_ls_files", lambda repo_root: record
     )
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -270,7 +271,7 @@ def test_untracked_build_cache_and_runtime_files_cannot_influence_reconciliation
     (repo / "runtime").mkdir()
     (repo / "runtime" / "manifest.json").write_text(PASSWORD_LINE, encoding="utf-8")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "0 tracked candidate(s) match the audited baseline." in message
 
@@ -278,7 +279,7 @@ def test_untracked_build_cache_and_runtime_files_cannot_influence_reconciliation
     # indexben) azonnal megjelenik — fail-closed, plaintext nélkül,
     # hash/path-only audit-artefaktummal:
     _git(repo, "add", "runtime/manifest.json")
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1
     assert "- runtime/manifest.json" in message
     assert _SYNTHETIC_VALUE not in message
@@ -338,7 +339,7 @@ def test_baseline_file_excluded_exactly(tmp_path: Path) -> None:
 
     candidates = check_secret_baseline._git_tracked_candidates(repo, baseline)
     assert candidates == ["tracked.py"]
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "synthetic-baseline.json" not in message
     assert _SYNTHETIC_VALUE not in message
@@ -351,12 +352,48 @@ def test_new_tracked_candidate_fails_closed_without_revealing_plaintext(
     repo, baseline = _tracked_repo(tmp_path)
     (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1
     assert "- tracked.py" in message
     assert _SYNTHETIC_VALUE not in message
     hashed = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
     assert hashed not in message
+
+
+def test_console_contract_never_emits_secret_names_values_or_hashes(
+    tmp_path: Path,
+) -> None:
+    """Task69 CodeQL HIGH (py/clear-text-logging-sensitive-data) regresszió a
+    ``reconcile_tracked_baseline`` üzenet-szerződésére: a main() által kiírt
+    üzenet mindkét ágon kizárólag stabilan nem érzékeny, korlátozott
+    metadatát (darabszám, tracked-fájl-útvonal, audit-jelentés-útvonal,
+    classifier-név, commit-prefix) tartalmazhat — secret-név, secret-érték,
+    fájltartalom vagy ezekből visszafejthető adat (a szintetikus érték SHA-1
+    fingerprintje) soha nem jelenhet meg benne."""
+    hashed = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
+    forbidden = (_SYNTHETIC_VALUE, _ASSIGNMENT_KEY, PASSWORD_LINE.strip(), hashed, "Secret Keyword")
+
+    # Pozitív ág (PASS): üres baseline + nem titkos tracked fájl — az
+    # üzenetben csak a dokumentált metadata-szerepek jelennek meg.
+    repo, baseline = _tracked_repo(tmp_path)
+    (repo / "tracked.py").write_text("# synthetic, no secrets\n", encoding="utf-8")
+    _git(repo, "add", "tracked.py")
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
+    assert status == 0, message
+    assert "tracked candidate(s) match the audited baseline" in message
+    for fragment in forbidden:
+        assert fragment not in message, f"secret-adat a PASS üzenetben: {fragment!r}"
+
+    # Negatív ág (FAIL): baseline-on kívüli szintetikus secret — az üzenet a
+    # tracked-fájl útvonalát és az audit-jelentés útvonalát közli, a
+    # secret-név/érték/tartalom/fingerprint azonban tilos benne.
+    (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
+    assert status == 1
+    assert "- tracked.py" in message
+    assert "bounded hash/path-only audit report written to" in message
+    for fragment in forbidden:
+        assert fragment not in message, f"secret-adat a FAIL üzenetben: {fragment!r}"
 
 
 def test_cp1250_undecodable_tracked_file_is_still_scanned(tmp_path: Path) -> None:
@@ -382,7 +419,7 @@ def test_cp1250_undecodable_tracked_file_is_still_scanned(tmp_path: Path) -> Non
     (repo / "ascii_control.py").write_text(HEX_LINE, encoding="utf-8")
     (repo / "hungarian.py").write_bytes(raw)
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "- ascii_control.py" in message, "a kontroll jelölt nem detektálható"
     assert "- hungarian.py" in message, (
@@ -437,7 +474,7 @@ def test_scanner_version_mismatch_fails_closed(
 ) -> None:
     baseline = _empty_baseline(tmp_path)
     monkeypatch.setattr(check_secret_baseline.metadata, "version", lambda _name: "1.4.0")
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -453,7 +490,7 @@ def test_missing_scanner_distribution_fails_closed(
         raise check_secret_baseline.metadata.PackageNotFoundError(_name)
 
     monkeypatch.setattr(check_secret_baseline.metadata, "version", _absent)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -473,7 +510,7 @@ def test_pinned_scanner_version_matches_requirements() -> None:
 def test_scanner_failure_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     baseline = _empty_baseline(tmp_path)
     monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _driver_fake(returncode=1))
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -491,7 +528,7 @@ def test_malformed_scanner_output_fails_closed(
         )
 
     monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _broken)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -505,7 +542,7 @@ def test_git_failure_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         raise subprocess.CalledProcessError(1, "git ls-files")
 
     monkeypatch.setattr(check_secret_baseline.subprocess, "check_output", _broken_ls_files)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -521,7 +558,7 @@ def test_missing_tracked_candidate_file_fails_closed(
         "_git_tracked_candidates",
         lambda repo_root, baseline_path: ["does/not/exist.txt"],
     )
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -540,7 +577,7 @@ def test_duplicate_normalized_paths_fail_closed(
             "services\\platform-core\\app\\seed.py",
         ],
     )
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -569,7 +606,7 @@ def test_case_ambiguous_paths_fail_closed_on_case_insensitive_platforms(
         "_git_tracked_candidates",
         lambda repo_root, baseline_path: ["Module.py", "module.py"],
     )
-    status, message = check_secret_baseline.reconcile_tracked_secrets(
+    status, message = check_secret_baseline.reconcile_tracked_baseline(
         baseline, repo_root=check_secret_baseline.REPO_ROOT
     )
     assert status == 2
@@ -590,7 +627,7 @@ def test_scanner_output_outside_canonical_set_fails_closed(
         "_run_driver_scan",
         _driver_fake(payload={"evil/outside.py": [{"type": "t", "hashed_secret": "0" * 40}]}),
     )
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "outside the canonical tracked set" in message
 
@@ -603,7 +640,7 @@ def test_missing_sentinel_probe_fails_closed(
     monkeypatch.setattr(
         check_secret_baseline, "_run_driver_scan", _driver_fake(include_probe=False)
     )
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "sentinel probe was not detected" in message
 
@@ -654,7 +691,7 @@ def test_reconcile_has_no_snapshot_or_environment_seam(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No command-level snapshot seam and no env-toggled bypass exists."""
-    parameters = inspect.signature(check_secret_baseline.reconcile_tracked_secrets).parameters
+    parameters = inspect.signature(check_secret_baseline.reconcile_tracked_baseline).parameters
     assert set(parameters) == {"baseline_path", "repo_root"}
 
     repo, baseline = _tracked_repo(tmp_path)
@@ -667,7 +704,7 @@ def test_reconcile_has_no_snapshot_or_environment_seam(
 
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "test_reconcile_has_no_snapshot_or_environment_seam")
     monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _counting_driver)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert calls, "az élő scan lefutott: a környezeti változó nem kapcsol ki semmit"
 
@@ -688,7 +725,7 @@ def test_readable_file_the_scanner_skips_fails_closed(
         "_run_driver_scan",
         _driver_fake(skip_accounting={"readable_but_skipped.py"}),
     )
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "scanner did not account for requested file(s)" in message
     assert "readable_but_skipped.py" in message
@@ -709,7 +746,7 @@ def test_probe_write_error_fails_closed_and_leaves_no_probe_file(
         original_write(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "write_text", _refuse_probe_write)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "sentinel probe could not be written" in message
     assert list(repo.glob(check_secret_baseline._PROBE_PREFIX + "*")) == []
@@ -731,7 +768,7 @@ def test_probe_delete_error_fails_closed(tmp_path: Path, monkeypatch: pytest.Mon
         original_unlink(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "unlink", _refuse_probe_unlink)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "sentinel probe could not be removed" in message
 
@@ -830,6 +867,60 @@ def test_real_probe_run_leaves_no_scratch_file(tmp_path: Path) -> None:
     assert not probe_root.exists() or list(probe_root.iterdir()) == []
 
 
+def test_probe_fingerprint_uses_pinned_package_api_and_40_hex_shape() -> None:
+    """Task69 CodeQL HIGH (py/weak-sensitive-data-hashing) pozitív regresszió:
+    az elvárt probe-fingerprint a pinelt scanner csomag nyilvános fingerprint
+    API-jával készül (``PotentialSecret.hash_secret``), nem lokális
+    hash-hívással, és megőrzi a 40-hex SHA-1 alakot. Ha a pinelt csomag
+    egyszer megváltoztatná a fingerprint-algoritmust, ez a teszt fail-closed
+    elbukik -- a drift-észlelés teszt-szinten is megmarad."""
+    from detect_secrets.core.potential_secret import PotentialSecret
+
+    expected_type, expected_hash, expected_line = (
+        check_secret_baseline._expected_probe_fingerprint()
+    )
+    assert expected_type == "Secret Keyword"
+    assert expected_hash == PotentialSecret.hash_secret(
+        check_secret_baseline._probe_secret_value()
+    )
+    assert re.fullmatch(r"[0-9a-f]{40}", expected_hash)
+    assert 1 <= expected_line
+
+
+def test_probe_fingerprint_hashes_no_sensitive_value_in_module_source() -> None:
+    """Task69 CodeQL HIGH (py/weak-sensitive-data-hashing) negatív regresszió:
+    a ``_expected_probe_fingerprint`` forrása nem tartalmazhat közvetlen
+    hashing-hívást a szentinel secret-értékre (hashlib hívás a
+    függvénytestben) -- a fingerprint kizárólag a pinelt csomag API-jából
+    származhat. Statikus, pure-Python forrásellenőrzés."""
+    source = inspect.getsource(check_secret_baseline._expected_probe_fingerprint)
+    assert "hashlib" not in source
+    assert "PotentialSecret.hash_secret" in source
+
+
+def test_no_password_class_data_is_hashed_in_test_module_source() -> None:
+    """Task69 CodeQL HIGH (py/weak-sensitive-data-hashing) negatív regresszió:
+    a tesztmodul forrása soha nem adhat password-osztályú adatot
+    (PASSWORD_LINE-eredetű neveket) hashing-hívásnak -- a digest-szerződést
+    a teszt kizárólag nem érzékeny tartalomra pineli. Statikus, pure-Python
+    AST-ellenőrzés: a titkos tartalom közvetlen hashelésének visszakerülése
+    fail-closed elbuktatja ezt a tesztet."""
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    guarded_names = {"PASSWORD_LINE", "secret_line", "_ASSIGNMENT_KEY"}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in {"sha1", "sha256", "sha512", "md5", "new"}:
+            continue
+        for argument in node.args:
+            for inner in ast.walk(argument):
+                if isinstance(inner, ast.Name) and inner.id in guarded_names:
+                    raise AssertionError(
+                        "password-osztályú adat hashelve a tesztforrásban "
+                        f"(line {node.lineno})"
+                    )
+
+
 def test_scanner_exempt_candidates_are_accounted_deterministically(
     tmp_path: Path,
 ) -> None:
@@ -848,7 +939,7 @@ def test_scanner_exempt_candidates_are_accounted_deterministically(
     _git(repo, "add", "docs/swagger.json")
     _commit(repo)
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "4 tracked candidate file(s) scanner-exempt" in message
     assert "data.blob (not-utf-8)" in message
@@ -934,7 +1025,7 @@ def test_runtime_audit_output_is_never_read_back_as_suppression_input(
         encoding="utf-8",
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "unclassified candidate(s)" in message
 
@@ -955,7 +1046,7 @@ def test_audit_output_path_is_excluded_from_the_candidate_set(tmp_path: Path) ->
     tracked = check_secret_baseline._git_tracked_candidates(repo, baseline)
     assert check_secret_baseline._audit_output_relative_path() not in tracked
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     for fingerprint in planted_hashes:
         assert fingerprint not in message
@@ -973,7 +1064,7 @@ def test_content_digest_classifier_clears_a_bound_sha256_value(tmp_path: Path) -
     _commit(repo)
     _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + line + '  "x": 1\n}\n')
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "content-digest: 1" in message
 
@@ -1022,7 +1113,7 @@ def test_unicode_line_separators_never_shift_scanner_line_identity(
         '{\n  "title": "fejezet' + separator + 'folytatás",\n' + line + '  "x": 1\n}\n',
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "content-digest: 1" in message
 
@@ -1032,10 +1123,18 @@ def test_real_driver_and_classifier_agree_on_line_identity_across_separators(
     tmp_path: Path, separator: str
 ) -> None:
     """A valódi driver sorszáma és a classifier digestsorai U+2028/U+2029
-    tartalom mellett is azonos sort azonosítanak (közvetlen cross-check)."""
+    tartalom mellett is azonos sort azonosítanak (közvetlen cross-check).
+
+    Task69 CodeQL HIGH (py/weak-sensitive-data-hashing) remediáció: a digest
+    szerződés bizonyítása anélkül, hogy a teszt a szintetikus secret-tartalmat
+    hashelné. Az SHA-256 algoritmust ugyanazon fájl, ugyanazon kódút nem
+    érzékeny fejléc-során pineljük (a modul soronként egységes algoritmust
+    használ); a secret-sor digestjére format-, determinizmus- és
+    tartalom-érzékenységi invariánsokat állítunk."""
     repo = _init_repo(tmp_path / "repo")
     secret_line = PASSWORD_LINE.rstrip("\n")
-    _write_tracked(repo, "tracked.py", "header" + separator + "continues\n" + PASSWORD_LINE)
+    header_line = "header" + separator + "continues"
+    _write_tracked(repo, "tracked.py", header_line + "\n" + PASSWORD_LINE)
     completed = subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / "_detect_secrets_scan_driver.py")],
         cwd=str(repo),
@@ -1052,9 +1151,24 @@ def test_real_driver_and_classifier_agree_on_line_identity_across_separators(
     lines = check_secret_baseline._read_text_for_classification(repo / "tracked.py")
     digests = check_secret_baseline._live_line_content_digests(repo, ["tracked.py"])
     assert lines[line_number - 1] == secret_line
-    assert digests["tracked.py"][line_number] == hashlib.sha256(
-        secret_line.encode("utf-8")
+    # A digest-algoritmus (SHA-256) pinelése a nem érzékeny fejléc-soron
+    # (ugyanaz a hívás, ugyanaz a kódút, mint a secret-sor esetében).
+    assert digests["tracked.py"][1] == hashlib.sha256(
+        header_line.encode("utf-8")
     ).hexdigest()
+    # A secret-sor digestjének invariánsai a titkos tartalom hashelése
+    # nélkül: 64-hex format, tartalom-függő determinizmus.
+    secret_digest = digests["tracked.py"][line_number]
+    assert re.fullmatch(r"[0-9a-f]{64}", secret_digest)
+    # Ugyanaz a titkos tartalom más fájlban, más sorszámon ugyanazt a
+    # digestet adja (a digest tartalom-függő, nem pozíciófüggő).
+    _write_tracked(repo, "tracked2.py", "padding\n" + secret_line + "\n")
+    other_digests = check_secret_baseline._live_line_content_digests(repo, ["tracked2.py"])
+    assert other_digests["tracked2.py"][2] == secret_digest
+    # A megváltoztatott titkos tartalom digestje eltér (tartalom-érzékenység).
+    _write_tracked(repo, "tracked.py", header_line + "\n" + secret_line + "x\n")
+    changed_digests = check_secret_baseline._live_line_content_digests(repo, ["tracked.py"])
+    assert changed_digests["tracked.py"][line_number] != secret_digest
 
 
 @pytest.mark.parametrize("separator", [" ", " "])
@@ -1075,7 +1189,7 @@ def test_same_line_substitution_with_separator_content_fails_closed(
         encoding="utf-8",
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
     assert "content-digest" not in message
@@ -1111,7 +1225,7 @@ def test_moved_line_substitution_with_separator_content_fails_closed(
         encoding="utf-8",
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
     assert "content-digest" not in message
@@ -1139,7 +1253,7 @@ def test_content_digest_classifier_rejects_an_unbound_hex_value(tmp_path: Path) 
     _commit(repo)
     _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "api_value": "' + digest + '"\n}\n')
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "unclassified candidate(s)" in message
 
@@ -1156,7 +1270,7 @@ def test_content_digest_classifier_rejects_exact_key_outside_registry_files(
     _commit(repo)
     (repo / "manifest.json").write_text("{\n" + line + '  "x": 1\n}\n', encoding="utf-8")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "unclassified candidate(s)" in message
 
@@ -1171,7 +1285,7 @@ def test_content_digest_classifier_rejects_a_lookalike_key(tmp_path: Path) -> No
     _commit(repo)
     _write_tracked(repo, _DIGEST_MANIFEST_PATH, '{\n  "api_sha256": "' + digest + '"\n}\n')
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "unclassified candidate(s)" in message
 
@@ -1184,7 +1298,7 @@ def test_real_secret_in_a_classified_file_still_fails_closed(tmp_path: Path) -> 
     baseline = _empty_baseline(repo)
     _git(repo, "add", _DIGEST_MANIFEST_PATH, baseline.name)
     _commit(repo)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
 
     _write_tracked(
@@ -1193,7 +1307,7 @@ def test_real_secret_in_a_classified_file_still_fails_closed(tmp_path: Path) -> 
     _git(repo, "add", _DIGEST_MANIFEST_PATH)
     _commit(repo)
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "unclassified candidate(s)" in message
     assert _DIGEST_MANIFEST_PATH in message
@@ -1209,7 +1323,7 @@ def test_drive_resource_id_requires_corroborating_provenance(tmp_path: Path) -> 
     _commit(repo)
     _write_tracked(repo, _DRIVE_ARTIFACTS_PATH, "{\n" + line + '  "x": 1\n}\n')
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     if status == 0:
         pytest.skip("the synthetic identifier stayed under the detector entropy threshold")
     assert status == 1, message
@@ -1225,7 +1339,7 @@ def test_drive_resource_id_requires_corroborating_provenance(tmp_path: Path) -> 
         + '/edit"\n}\n',
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "drive-resource-id" in message
 
@@ -1247,7 +1361,7 @@ def test_drive_resource_id_rejected_outside_drive_index_files(tmp_path: Path) ->
         encoding="utf-8",
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     if status == 0:
         pytest.skip("the synthetic identifier stayed under the detector entropy threshold")
     assert status == 1, message
@@ -1260,7 +1374,7 @@ def test_unclassifiable_detector_type_fails_closed(tmp_path: Path) -> None:
     repo, baseline = _tracked_repo(tmp_path)
     (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "unclassified candidate(s)" in message
 
@@ -1398,7 +1512,7 @@ def test_identical_digest_on_classified_and_unclassified_lines_fails_closed(
         '{\n  "reference_sha256": "' + digest + '",\n  "unbound": "' + digest + '",\n  "x": 1\n}\n',
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "unclassified candidate(s)" in message
     assert _DIGEST_MANIFEST_PATH in message
@@ -1440,7 +1554,7 @@ def test_baselined_digest_on_a_new_unclassified_line_fails_closed(tmp_path: Path
         "{\n" + digest_line + '  "unbound": "' + digest + '",\n  "x": 1\n}\n',
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
     assert _DIGEST_MANIFEST_PATH in message
@@ -1483,7 +1597,7 @@ def test_baselined_digest_on_a_new_classified_line_is_proven_per_line(
     _commit(repo)
     _write_tracked(repo, _DIGEST_MANIFEST_PATH, "{\n" + digest_line + digest_line + '  "x": 1\n}\n')
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "1 tracked candidate(s) match the audited baseline" in message
     assert "content-digest: 1" in message
@@ -1495,7 +1609,7 @@ def test_baselined_classified_line_still_matches_the_audited_set_exactly(
     """Az occurrence-aware identitás nem törte meg a baselined sor egyezését."""
     repo, baseline, _, _, _ = _baselined_digest_repo(tmp_path, b"synthetic-exact-line-match")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "1 tracked candidate(s) match the audited baseline" in message
     assert "structural classifier" not in message
@@ -1537,7 +1651,7 @@ def test_unchanged_canonical_repeat_occurrences_reconcile(tmp_path: Path) -> Non
     _git(repo, "add", "config/website-targets.json", baseline.name)
     _commit(repo)
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "1 tracked candidate(s) match the audited baseline" in message
     assert "3 candidate(s) reconcile with the audited repository state" in message
@@ -1555,7 +1669,7 @@ def test_line_drifted_existing_occurrence_reconciles(tmp_path: Path) -> None:
     drifted = '{\n  "added": 1,\n  "added": 2,\n' + digest_line + '  "x": 1\n}\n'
     target.write_text(drifted, encoding="utf-8")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
     assert "1 candidate(s) reconcile with the audited repository state" in message
     assert "structural classifier" not in message
@@ -1572,7 +1686,7 @@ def test_duplicated_audited_value_blocks_without_structural_proof(tmp_path: Path
         encoding="utf-8",
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
     assert _DIGEST_MANIFEST_PATH in message
@@ -1598,7 +1712,7 @@ def test_audited_digest_moved_to_an_unclassified_line_fails_closed(tmp_path: Pat
         encoding="utf-8",
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
     assert _DIGEST_MANIFEST_PATH in message
@@ -1639,7 +1753,7 @@ def test_same_line_classified_to_unclassified_substitution_fails_closed(
         encoding="utf-8",
     )
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "1 unclassified candidate(s) in 1 tracked file(s)" in message
     assert _DIGEST_MANIFEST_PATH in message
@@ -1838,7 +1952,7 @@ def test_new_tracked_file_after_the_audited_state_fails_closed(tmp_path: Path) -
     (repo / "late.py").write_text(PASSWORD_LINE, encoding="utf-8")
     _git(repo, "add", "late.py")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1
     assert "- late.py" in message
     assert _SYNTHETIC_VALUE not in message
@@ -1852,7 +1966,7 @@ def test_uncommitted_baseline_fails_closed_on_the_audited_anchor(tmp_path: Path)
     _git(repo, "add", "tracked.py")
     _commit(repo)
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "baseline anchor commit" in message
 
@@ -1866,7 +1980,7 @@ def test_baseline_outside_repository_root_fails_closed(tmp_path: Path) -> None:
     outside = tmp_path / "outside-baseline.json"
     outside.write_text(json.dumps({"results": {}}), encoding="utf-8")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(outside, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(outside, repo_root=repo)
     assert status == 2
     assert "outside the reconciled repository root" in message
 
@@ -1879,7 +1993,7 @@ def test_audited_state_scan_failure_fails_closed(
     (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
     monkeypatch.setattr(check_secret_baseline, "_run_audited_driver", _driver_fake(returncode=1))
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "scan driver exit code 1" in message
 
@@ -1906,7 +2020,7 @@ def test_faked_live_scan_cannot_fabricate_audited_coverage(
         )(files, repo_root)
 
     monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _fake_live)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     # A valódi auditált scan az ártalmatlan commitot látja: a hamis találatnak
     # nincs auditált állapota, így osztályozatlan marad.
     assert status == 1, message
@@ -1918,7 +2032,7 @@ def test_audited_state_scan_leaves_no_temp_copies(tmp_path: Path) -> None:
     repo, baseline = _tracked_repo(tmp_path)
     (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     historical = repo.joinpath(*check_secret_baseline._HISTORICAL_SCAN_RELATIVE_DIR)
     assert list(historical.glob("*")) == []
@@ -2058,7 +2172,7 @@ def test_live_scan_smoke_runs_the_real_scanner_on_a_trivial_repository(
     _commit(repo)
     (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 1, message
     assert "2 unclassified candidate(s) in 1 tracked file(s)" in message
     assert "- tracked.py" in message
@@ -2234,7 +2348,7 @@ def test_exact_requested_accounted_set_with_nested_probe_succeeds(
         )
 
     monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _nested_probe_accounting)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 0, message
 
 
@@ -2263,7 +2377,7 @@ def test_accounted_file_outside_requested_set_fails_closed(
         )
 
     monkeypatch.setattr(check_secret_baseline, "_run_driver_scan", _extra_accounting)
-    status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+    status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     assert status == 2
     assert "outside the requested set" in message
     assert "evil/outside.py" in message
@@ -2316,9 +2430,9 @@ def test_git_start_failure_retry_contract(
     )
     monkeypatch.setattr(check_secret_baseline.subprocess, "check_output", _fake_ls_files)
     if behavior == "flaky-then-success":
-        status, message = check_secret_baseline.reconcile_tracked_secrets(baseline, repo_root=repo)
+        status, message = check_secret_baseline.reconcile_tracked_baseline(baseline, repo_root=repo)
     else:
-        status, message = check_secret_baseline.reconcile_tracked_secrets(
+        status, message = check_secret_baseline.reconcile_tracked_baseline(
             baseline, repo_root=check_secret_baseline.REPO_ROOT
         )
     assert len(calls) == expected_calls
