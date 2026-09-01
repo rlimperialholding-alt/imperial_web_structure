@@ -207,12 +207,19 @@ def test_compose_default_path_mismatch_fails_closed() -> None:
     assert status == 1
 
 
-def test_failure_diagnostics_never_contain_secret_names_or_paths(capsys) -> None:
-    # Task69 CodeQL HIGH (py/clear-text-logging-sensitive-data) regresszió:
-    # a checker diagnosztikája kizárólag rendezett sorszám-azonosítókat és
-    # darabszámokat közöl — secret-név és ./secrets/<név>.txt útvonal soha
-    # nem jelenhet meg sem a stderrre írt FAIL-sorokban, sem a visszaadott
-    # üzenetben (kétirányú drift mellett).
+def test_failure_diagnostics_never_contain_secret_names_or_paths(
+    capsys, monkeypatch, tmp_path
+) -> None:
+    # Task69 CodeQL HIGH (py/clear-text-logging-sensitive-data) regresszió,
+    # Task70 review-remediáció: a teszt a valós szerződést ellenőrzi.
+    # 1) A reconcile() dokumentált visszatérési értéke: (status, message) —
+    #    az üzenet összegzés, secret-név és ./secrets/<név>.txt útvonal
+    #    nélkül.
+    # 2) A tényleges CLI stderr-szerződés: a main() meghívása driftelt
+    #    bemeneti fájlokon (modul-szintű útvonal-seam), ahol a diagnosztika
+    #    kizárólag rendezett sorszám-azonosítókat és darabszámokat ír
+    #    stderrre — secret-név/útvonal soha nem jelenhet meg sem stdouton,
+    #    sem stderrben (kétirányú drift mellett).
     if (reason := _skip_reason_repo()) is not None:
         pytest.skip(reason)
     checker = _load("check_ci_secret_provisioning", CHECKER_SCRIPT)
@@ -232,14 +239,35 @@ def test_failure_diagnostics_never_contain_secret_names_or_paths(capsys) -> None
         "dpm_auth_hs256_secret\n", "dpm_auth_hs256_secret\ndpm_orphan_secret\n"
     )
     assert drifted_provisioning != provisioning_text
-    status, message = checker.reconcile(drifted, drifted_provisioning, _workflow_texts())
-    assert status == 1
-    captured = capsys.readouterr()
-    combined = captured.out + captured.err + message
+
     # Secret-nevek és secret-útvonalak tilosak a kimenetben; a diagnosztika
     # a rendezett pozíció sorszámával azonosít (stabil, nem érzékeny).
-    for fragment in ("dpm_audit_log_key", "dpm_orphan_secret", "./secrets/dpm_audit_log_key.txt"):
-        assert fragment not in combined, f"secret-adat a checker kimenetében: {fragment!r}"
+    forbidden = ("dpm_audit_log_key", "dpm_orphan_secret", "./secrets/dpm_audit_log_key.txt")
+
+    # 1) A visszaadott szerződés ellenőrzése: status 1, a message a
+    # dokumentált összegzés, secret-adat nélkül.
+    status, message = checker.reconcile(drifted, drifted_provisioning, _workflow_texts())
+    assert status == 1
+    assert "FAIL - Compose secret provisioning reconciliation failed" in message
+    for fragment in forbidden:
+        assert fragment not in message, f"secret-adat a visszaadott üzenetben: {fragment!r}"
+
+    # 2) A tényleges CLI stderr-szerződés a main()-en keresztül: a driftelt
+    # tartalmakat a modul-szintű útvonalak pytest seamjére irányítjuk, így a
+    # main() pontosan a CLI-ként futó kódutat járja be (fájlolvasás + a
+    # diagnose-print-ek), a workflow-szövegek a valódiak maradnak.
+    drifted_compose = tmp_path / "docker-compose.yml"
+    drifted_compose.write_text(drifted, encoding="utf-8")
+    drifted_provisioning_path = tmp_path / "ci-provision-secrets.sh"
+    drifted_provisioning_path.write_text(drifted_provisioning, encoding="utf-8")
+    monkeypatch.setattr(checker, "COMPOSE_PATH", drifted_compose)
+    monkeypatch.setattr(checker, "PROVISION_SCRIPT", drifted_provisioning_path)
+    capsys.readouterr()  # az 1. lépés reconcile-kimenetét ürítjük
+    assert checker.main() == 1
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    for fragment in forbidden:
+        assert fragment not in combined, f"secret-adat a CLI kimenetében: {fragment!r}"
     assert "compose declaration #" in captured.err
     assert "provisioning list entry #" in captured.err
 

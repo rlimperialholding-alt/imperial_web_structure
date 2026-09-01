@@ -38,6 +38,7 @@ import json
 import os
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 from types import ModuleType
 
@@ -67,6 +68,10 @@ _II_RECON_EXPECTED_ENV_KEYS = (
     "II_RECON_EXPECTED_PARTNER_FIELD_VERSION",
     "II_RECON_EXPECTED_COMMERCIAL_INTEGRATION_VERSION",
 )
+# Task70 review-remediáció: a Task69 előtti baseline-override kulcs
+# deprekált fallback maradt; a tesztek ambient értékektől izoláltan
+# bizonyítják a precedencia-szerződést (új / régi / mindkettő / egyik sem).
+_DEPRECATED_BASELINE_ENV_KEY = "II_RECON_SECRETS_BASELINE"
 # A script pinelt defaultjai, exact a kanonikus SOURCE_LOCK.json ertekeivel.
 # Deterministikus bizonyitek; a ket oldal csak egyutt, auditált commitban
 # mozoghat, ezt a teszt kulon is vedi.
@@ -98,6 +103,7 @@ def _run_reconciliation(
     for key in (
         "II_RECON_CORPUS_MANIFEST",
         "II_RECON_TRACKED_BASELINE",
+        _DEPRECATED_BASELINE_ENV_KEY,
         "II_RECON_SECRETS_SNAPSHOT",
         "II_RECON_SOURCE_LOCK",
         "II_RECON_EXPECTED_ALEMBIC_HEAD",
@@ -124,9 +130,19 @@ def _run_reconciliation(
     )
 
 
-def _load_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+def _load_module(
+    monkeypatch: pytest.MonkeyPatch,
+    baseline_env: dict[str, str] | None = None,
+) -> ModuleType:
     for key in _II_RECON_EXPECTED_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
+    # Ambient baseline-override értékektől izolált betöltés (Task70): a
+    # modul-szintű útvonalfeloldás a betöltéskor fut, így a tesztek csak a
+    # saját, explicit környezetüket látják.
+    monkeypatch.delenv("II_RECON_TRACKED_BASELINE", raising=False)
+    monkeypatch.delenv(_DEPRECATED_BASELINE_ENV_KEY, raising=False)
+    for key, value in (baseline_env or {}).items():
+        monkeypatch.setenv(key, value)
     spec = importlib.util.spec_from_file_location("reconciliation_under_test", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -403,6 +419,81 @@ def test_reconciliation_fail_closed_on_missing_secret_baseline(
     result = _run_reconciliation(II_RECON_TRACKED_BASELINE=str(tmp_path / "no-baseline.json"))
     assert result.returncode != 0
     assert "repository baseline is missing" in result.stderr
+
+
+def test_baseline_env_override_precedence_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Task70 review-remediáció (MEDIUM backward-compat): a Task69 előtti
+    baseline-override kulcs kontrollált, deprekált fallback, egyértelmű
+    precedenciával — négy eset:
+    - csak az új kulcs: az új útvonal nyer, nincs deprecation-warning;
+    - csak a régi kulcs: a régi útvonal érvényesül, pontosan egy
+      DeprecationWarning;
+    - mindkettő: az új kulcs nyer, a régi ignorálva (a warning ezt jelzi);
+    - egyik sem: a kanonikus alapértelmezett útvonal, nincs warning.
+    A warning secretmentes: sem kulcsérték, sem útvonal nem szerepel benne."""
+    tracked_path = tmp_path / "tracked-baseline.json"
+    deprecated_path = tmp_path / "deprecated-baseline.json"
+    for path in (tracked_path, deprecated_path):
+        path.write_text(json.dumps({"results": {}}), encoding="utf-8")
+
+    def resolve(
+        tracked: str | None, deprecated: str | None
+    ) -> tuple[Path, list[warnings.WarningMessage]]:
+        baseline_env: dict[str, str] = {}
+        if tracked is not None:
+            baseline_env["II_RECON_TRACKED_BASELINE"] = tracked
+        if deprecated is not None:
+            baseline_env[_DEPRECATED_BASELINE_ENV_KEY] = deprecated
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            module = _load_module(monkeypatch, baseline_env)
+        deprecations = [
+            item for item in caught if issubclass(item.category, DeprecationWarning)
+        ]
+        return module.TRACKED_BASELINE, deprecations
+
+    path, deprecations = resolve(str(tracked_path), None)
+    assert path == tracked_path
+    assert deprecations == []
+    path, deprecations = resolve(None, str(deprecated_path))
+    assert path == deprecated_path
+    assert len(deprecations) == 1
+    assert str(deprecated_path) not in str(deprecations[0].message)
+    path, deprecations = resolve(str(tracked_path), str(deprecated_path))
+    assert path == tracked_path
+    assert len(deprecations) == 1
+    assert str(tracked_path) not in str(deprecations[0].message)
+    assert str(deprecated_path) not in str(deprecations[0].message)
+    path, deprecations = resolve(None, None)
+    assert path == REPO_ROOT / ".secrets.baseline"
+    assert deprecations == []
+
+
+def test_command_level_deprecated_baseline_override_is_honored(
+    tmp_path: Path,
+) -> None:
+    """A deprekált kulcs a parancsszintű futásban is érvényesül (fallback,
+    nem némán az alapértelmezett útvonal): az érvénytelen JSON baseline-on a
+    titok-probe fail-closed, a deprecation-notice a stderrre kerül, és sem
+    a kulcs értéke, sem az útvonal nem jelenik meg a kimenetben
+    (secretmentes). A többi probe az anti-masking szerződés szerint
+    továbbra is lefut."""
+    baseline = _write_invalid_json_baseline(tmp_path)
+    result = _run_reconciliation(**{_DEPRECATED_BASELINE_ENV_KEY: str(baseline)})
+    # A fallback bizonyítéka: a titok-probe az érvénytelen JSON baseline-on
+    # bukik el — a parancs a deprekált kulcs útvonalát használta, nem a
+    # default canonical baseline-t (ami teljes PASS-t adna).
+    assert result.returncode != 0
+    assert "repository baseline is not valid JSON" in result.stderr
+    assert "DeprecationWarning" in result.stderr
+    # Secretmentes: az override értéke (az útvonal) nem kerül a kimenetbe.
+    assert str(baseline) not in result.stdout
+    assert str(baseline) not in result.stderr
+    # Anti-masking: a többi probe lefut, a titok-probe hibája nem maszkol.
+    assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
+    assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
 
 
 def _introduced_digest_tamper(document: dict) -> str:

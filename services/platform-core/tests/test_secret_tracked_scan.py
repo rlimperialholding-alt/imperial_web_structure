@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from detect_secrets.core.potential_secret import PotentialSecret
 from detect_secrets.settings import default_settings
 
 PLATFORM_CORE = Path(__file__).resolve().parents[1]
@@ -297,7 +298,7 @@ def test_untracked_build_cache_and_runtime_files_cannot_influence_reconciliation
         "Secret Keyword",
         "Base64 High Entropy String",
     }
-    fingerprint = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
+    fingerprint = PotentialSecret.hash_secret(_SYNTHETIC_VALUE)
     assert all(row["hashes"] == [fingerprint] for row in rows)
     # A sorszám az occurrence-aware identitás része, ezért az audit sorai is
     # hordozzák; a sorok kizárólag path/type/classification/count/hash/line
@@ -356,7 +357,7 @@ def test_new_tracked_candidate_fails_closed_without_revealing_plaintext(
     assert status == 1
     assert "- tracked.py" in message
     assert _SYNTHETIC_VALUE not in message
-    hashed = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
+    hashed = PotentialSecret.hash_secret(_SYNTHETIC_VALUE)
     assert hashed not in message
 
 
@@ -370,7 +371,7 @@ def test_console_contract_never_emits_secret_names_values_or_hashes(
     classifier-név, commit-prefix) tartalmazhat — secret-név, secret-érték,
     fájltartalom vagy ezekből visszafejthető adat (a szintetikus érték SHA-1
     fingerprintje) soha nem jelenhet meg benne."""
-    hashed = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
+    hashed = PotentialSecret.hash_secret(_SYNTHETIC_VALUE)
     forbidden = (_SYNTHETIC_VALUE, _ASSIGNMENT_KEY, PASSWORD_LINE.strip(), hashed, "Secret Keyword")
 
     # Pozitív ág (PASS): üres baseline + nem titkos tracked fájl — az
@@ -899,26 +900,37 @@ def test_probe_fingerprint_hashes_no_sensitive_value_in_module_source() -> None:
 
 
 def test_no_password_class_data_is_hashed_in_test_module_source() -> None:
-    """Task69 CodeQL HIGH (py/weak-sensitive-data-hashing) negatív regresszió:
-    a tesztmodul forrása soha nem adhat password-osztályú adatot
-    (PASSWORD_LINE-eredetű neveket) hashing-hívásnak -- a digest-szerződést
-    a teszt kizárólag nem érzékeny tartalomra pineli. Statikus, pure-Python
-    AST-ellenőrzés: a titkos tartalom közvetlen hashelésének visszakerülése
-    fail-closed elbuktatja ezt a tesztet."""
-    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
-    guarded_names = {"PASSWORD_LINE", "secret_line", "_ASSIGNMENT_KEY"}
+    """Task69 CodeQL HIGH (py/weak-sensitive-data-hashing) negatív regresszió,
+    Task70 review-remediáció: a tesztmodul forrása soha nem adhat
+    password-osztályú adatot (PASSWORD_LINE-eredetű neveket, valamint magát
+    a szintetikus secret-értéket) közvetlen hashing-hívásnak -- a
+    digest-szerződést a teszt kizárólag nem érzékeny tartalomra pineli, a
+    szintetikus érték fingerprintje kizárólag a pinelt scanner csomag
+    nyilvános API-jából (``PotentialSecret.hash_secret``) származhat.
+    Statikus, pure-Python AST-ellenőrzés: a titkos tartalom közvetlen
+    hashelésének visszakerülése (positional ÉS keyword argumentummal is)
+    fail-closed elbuktatja ezt a tesztet; a szankcionált API-út jelenlétét
+    pozitív forrás-pin is zárolja."""
+    source = Path(__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    guarded_names = {"PASSWORD_LINE", "secret_line", "_ASSIGNMENT_KEY", "_SYNTHETIC_VALUE"}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         if node.func.attr not in {"sha1", "sha256", "sha512", "md5", "new"}:
             continue
-        for argument in node.args:
+        arguments = [*node.args, *(keyword.value for keyword in node.keywords)]
+        for argument in arguments:
             for inner in ast.walk(argument):
                 if isinstance(inner, ast.Name) and inner.id in guarded_names:
                     raise AssertionError(
                         "password-osztályú adat hashelve a tesztforrásban "
                         f"(line {node.lineno})"
                     )
+    # A szankcionált út jelen van: a szintetikus érték fingerprintje a
+    # pinelt csomag API-jából származik (a hashlib-hívás bármely jövőbeli
+    # visszakerülése a fenti AST-őrön elbukik).
+    assert "PotentialSecret.hash_secret(_SYNTHETIC_VALUE)" in source
 
 
 def test_scanner_exempt_candidates_are_accounted_deterministically(
@@ -1004,7 +1016,7 @@ def test_runtime_audit_output_is_never_read_back_as_suppression_input(
     repo, baseline = _tracked_repo(tmp_path)
     (repo / "tracked.py").write_text(PASSWORD_LINE, encoding="utf-8")
 
-    fingerprint = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
+    fingerprint = PotentialSecret.hash_secret(_SYNTHETIC_VALUE)
     planted = check_secret_baseline._unmatched_audit_path(repo)
     planted.parent.mkdir(parents=True, exist_ok=True)
     planted.write_text(
@@ -2004,7 +2016,7 @@ def test_faked_live_scan_cannot_fabricate_audited_coverage(
     """Az auditált állapot a saját seamjén fut: egy hamisított élő scan nem
     gyárthat auditált lefedettséget -- a hamis találat addition marad."""
     repo, baseline = _tracked_repo(tmp_path)
-    synthetic_hash = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
+    synthetic_hash = PotentialSecret.hash_secret(_SYNTHETIC_VALUE)
 
     def _fake_live(files: list[str], repo_root: Path) -> subprocess.CompletedProcess[bytes]:
         return _driver_fake(
@@ -2180,7 +2192,7 @@ def test_live_scan_smoke_runs_the_real_scanner_on_a_trivial_repository(
     assert "- nulbytes.py" not in message
     assert "did not account for requested file(s)" not in message
     assert _SYNTHETIC_VALUE not in message
-    fingerprint = hashlib.sha1(_SYNTHETIC_VALUE.encode("utf-8")).hexdigest()
+    fingerprint = PotentialSecret.hash_secret(_SYNTHETIC_VALUE)
     assert fingerprint not in message
 
     audit = repo / "services" / "platform-core" / "runtime" / "tracked-secret-delta-audit.json"

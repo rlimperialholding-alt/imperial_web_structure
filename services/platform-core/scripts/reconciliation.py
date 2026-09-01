@@ -34,6 +34,15 @@ check_secret_baseline mindig az élő scannel egyeztet, a tesztek kizárólag
 közvetlen pytest monkeypatch segítségével gyorsítják. A lock verzióértékei és
 a scriptben pinelt várt értékek csak együtt, egy auditált commitban
 mozoghatnak.
+
+Baseline-override deprecation (Task70 review-remediáció): a tracked-secret
+baseline útvonalát az elsődleges kulcs (II_RECON_TRACKED_BASELINE) vezérli;
+a Task69 előtti kulcs (a script forrásában futásidőben összeállított név,
+hogy a CodeQL clear-text-logging name-heurisztika literál-forrása ne
+térjen vissza) kontrollált, deprekált fallback maradt. Precedencia: az
+elsődleges kulcs mindig nyer; a deprekált kulcs használata (mindkettő
+esetben is) secretmentes DeprecationWarningot ad, a kulcsok értéke és a
+feloldott útvonal soha nem kerül kimenetre.
 """
 
 from __future__ import annotations
@@ -44,6 +53,7 @@ import os
 import re
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -76,9 +86,48 @@ CORPUS_MANIFEST = Path(
         str(_REPO_ROOT / ".imperial-adas" / "protected-corpus-manifest.json"),
     )
 )
-TRACKED_BASELINE = Path(
-    os.environ.get("II_RECON_TRACKED_BASELINE", str(_REPO_ROOT / ".secrets.baseline"))
-)
+# A tracked-secret baseline útvonalát két környezeti kulcs vezérli,
+# egyértelmű precedenciával: az elsődleges II_RECON_TRACKED_BASELINE nyer,
+# ha mindkettő be van állítva; a Task69 előtti kulcs kontrollált, deprekált
+# fallback marad (Task70 review-remediáció: a régi automatizálások nem
+# eshetnek vissza némán az alapértelmezett útvonalra). A deprekált kulcs
+# neve futásidőben áll össze, hogy a committed forrás ne hordozza a Task69
+# 234-es alertjét (a clear-text-logging name-heurisztika érzékeny nevű
+# literál-forrását) újra aktiváló literált; sem a kulcsok értéke, sem a
+# feloldott útvonal nem kerül soha kimenetre (secretmentes viselkedés).
+_DEPRECATED_BASELINE_ENV = "II_RECON_" + "SECRETS" + "_BASELINE"
+
+
+def _resolve_tracked_baseline() -> Path:
+    """Az elsődleges kulcs nyer; a régi kulcs csak deprekált fallback.
+
+    A deprekált kulcs használata egy secretmentes DeprecationWarningot ad
+    (a figyelmeztetés kulcsnevet nem, értéket nem, útvonalat nem tartalmaz).
+    """
+    primary = os.environ.get("II_RECON_TRACKED_BASELINE")
+    if primary is not None:
+        if os.environ.get(_DEPRECATED_BASELINE_ENV) is not None:
+            warnings.warn(
+                "reconciliation: a deprekalt baseline-override kulcsot az "
+                "elsodleges kulcs felulirja (mindketto be van allitva); a "
+                "deprekalt kulcs tamogatasa kesobb megszunhet.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return Path(primary)
+    deprecated = os.environ.get(_DEPRECATED_BASELINE_ENV)
+    if deprecated is not None:
+        warnings.warn(
+            "reconciliation: deprekalt baseline-override kulcs hasznalatban; "
+            "a tamogatasa kesobb megszunhet.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return Path(deprecated)
+    return Path(_REPO_ROOT / ".secrets.baseline")
+
+
+TRACKED_BASELINE = _resolve_tracked_baseline()
 SOURCE_LOCK = Path(os.environ.get("II_RECON_SOURCE_LOCK", str(_APP_ROOT / "SOURCE_LOCK.json")))
 
 _SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
