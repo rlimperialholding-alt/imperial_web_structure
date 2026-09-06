@@ -459,6 +459,69 @@ def seed_content_quality_sources(db: Session) -> None:
         )
 
 
+def seed_content_factory_source_inventory(db: Session) -> None:
+    """Register owner-confirmed source material for the real active brands.
+
+    The inventory is intentionally declarative and immutable per key/version.
+    Startup may add a missing source, but it must never silently replace a
+    changed document under the same version. A new source revision therefore
+    requires a new manifest version and leaves the old row auditable.
+    """
+    manifest_path = Path(__file__).resolve().parents[1] / "data" / "content_factory_source_manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Content Factory source manifest is unreadable") from exc
+    if not isinstance(manifest, dict) or not str(manifest.get("manifest_version") or ""):
+        raise RuntimeError("Content Factory source manifest lacks a version")
+    valid_from = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    valid_until = datetime(2027, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    for brand in manifest.get("brands") or []:
+        if not isinstance(brand, dict) or not str(brand.get("brand_id") or "").strip():
+            raise RuntimeError("Content Factory source manifest contains an invalid brand")
+        brand_id = str(brand["brand_id"]).strip()
+        for item in brand.get("sources") or []:
+            if not isinstance(item, dict):
+                raise RuntimeError("Content Factory source manifest contains an invalid source")
+            source_key = str(item.get("source_key") or "").strip()
+            version = str(item.get("version") or "").strip()
+            source_type = str(item.get("source_type") or "").strip()
+            source_url = str(item.get("source_url") or "").strip()
+            payload = item.get("payload")
+            if not source_key or not version or not source_type or not source_url or not isinstance(payload, dict):
+                raise RuntimeError(f"Invalid Content Factory source manifest row: {source_key or '<missing>'}")
+            payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            content_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+            existing = db.scalar(
+                select(CopySourceRecord).where(
+                    CopySourceRecord.source_key == source_key,
+                    CopySourceRecord.version == version,
+                )
+            )
+            if existing:
+                if existing.content_hash != content_hash:
+                    raise RuntimeError(
+                        f"Content Factory source changed without a new version: {source_key}@{version}"
+                    )
+                continue
+            db.add(
+                CopySourceRecord(
+                    source_key=source_key,
+                    source_type=source_type,
+                    brand_id=brand_id,
+                    version=version,
+                    priority=20,
+                    status="approved",
+                    approved=True,
+                    valid_from=valid_from,
+                    valid_until=valid_until,
+                    source_url=source_url,
+                    content_hash=content_hash,
+                    payload_json=payload_json,
+                )
+            )
+
+
 def retire_seeded_content_quality_sources(db: Session) -> None:
     """Fail closed in production: the synthetic pilot registry is never authoritative."""
     seeded_versions = {
@@ -616,6 +679,7 @@ def seed_database(db: Session) -> None:
         seed_content_quality_sources(db)
     else:
         retire_seeded_content_quality_sources(db)
+    seed_content_factory_source_inventory(db)
     seed_workspace_demo(db)
     seed_operations_demo(db)
     db.commit()

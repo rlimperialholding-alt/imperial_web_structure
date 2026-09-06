@@ -107,8 +107,6 @@ BRAND_POSITION_ANCHORS = {
     "BauShield": ("építési kockázat", "szerződés"),
     "Casa Moderna": ("prémium otthon", "komfort"),
     "Danish Fabrik": ("favázas", "készház"),
-    "Imperial Intelligence": ("mesterséges intelligencia", "automatizálás"),
-    "Imperial Knowledge": ("szakmai tudás", "oktatás"),
     "Property360": ("property360", "beköltözés"),
     "RED Property": ("ingatlanfejlesztő", "típusház"),
     "TimberHaus": ("faépítés", "készültségi"),
@@ -708,6 +706,8 @@ BRAND_FIT_ALIASES = {
     "Imperial": ("imperial", "imperial holding"),
     "Veritas Construct": ("veritas", "veritas construct"),
     "Property360": ("property360", "property 360"),
+    "RED Property": ("red", "red property"),
+    "Venture Studio": ("venture", "venture studio", "imperial venture studio"),
 }
 
 
@@ -718,7 +718,7 @@ def _brands(route: SourceCoverageRoute) -> tuple[str, ...]:
         aliases = BRAND_FIT_ALIASES.get(brand, (_norm(brand),))
         if any(_norm(alias) in fit_parts for alias in aliases):
             matched.append(brand)
-    return tuple(matched) or ("Imperial Intelligence",)
+    return tuple(matched) or ("Imperial",)
 
 
 def _brand(route: SourceCoverageRoute) -> str:
@@ -1860,7 +1860,7 @@ def _approved_brand_facts(db: Session, brand_id: str, *, current: datetime) -> l
     rows = db.scalars(
         select(CopySourceRecord)
         .where(
-            CopySourceRecord.brand_id == brand_id,
+            func.lower(CopySourceRecord.brand_id) == str(brand_id).casefold(),
             CopySourceRecord.approved.is_(True),
             CopySourceRecord.status == "approved",
             (CopySourceRecord.valid_from.is_(None) | (CopySourceRecord.valid_from <= current)),
@@ -1998,7 +1998,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         }
 
     # Retry a failed brand at most three times and only after a five-minute backoff.
-    # This keeps the 19-brand obligation durable without burning the monthly
+    # This keeps the active-brand obligation durable without burning the monthly
     # DeepSeek budget on every 30-second worker tick.
     current = now or datetime.now(UTC)
     pending: list[DailyContentObligation] = []
@@ -3994,7 +3994,7 @@ def send_internal_handoff(db: Session, *, now: datetime | None = None) -> dict[s
         f"- forrásbizonyítékkal rögzített lehetőségek: "
         f"{counts['unique_leads']}\n"
         f"- kérdésradar-témák: {counts['question_topics']}\n"
-        f"- elkészített márkatartalmak: {counts['content_brands']}/19\n"
+        f"- elkészített márkatartalmak: {counts['content_brands']}/{len(ACTIVE_CONTENT_BRANDS)}\n"
         "- IORA lehetőségek (csak belső ellenőrzésre): "
         f"{counts['iora_opportunities']}\n\n"
         "Mai leadek és projektjelzések teljes listája:\n"

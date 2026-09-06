@@ -1,0 +1,108 @@
+{
+  "manifest_version": "2026-09-06.v1",
+  "purpose": "Owner-confirmed Content Factory source inventory for real customer-facing brands.",
+  "brands": [
+    {
+      "brand_id": "Property360",
+      "sources": [
+        {
+          "source_key": "property360-brand-fact-project-coordination",
+          "source_type": "brand_fact",
+          "version": "2026-09-06.v1",
+          "source_url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+          "payload": {
+            "record_id": "P360-BRAND-COORDINATION-V1",
+            "statement": "A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút.",
+            "buyer_problems": [
+              "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+              "A költözésig tartó teljes projektköltség nem azonos a ház kivitelezési árával."
+            ],
+            "next_steps": ["telek–ház elővizsgálat", "projektindító ellenőrzés"],
+            "source_refs": [
+              "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+              "/opt/imperial-intelligence/releases/content-intent-revenue-a92472f-20260906/sites/property-360/index.html",
+              "/opt/imperial-intelligence/releases/content-intent-revenue-a92472f-20260906/sites/property-360/SITE.md"
+            ]
+          }
+        },
+        {
+          "source_key": "property360-offer-interior-360",
+          "source_type": "offer",
+          "version": "2026-09-06.v1",
+          "source_url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+          "payload": {
+            "record_id": "P360-OFFER-INTERIOR-360-V1",
+            "statement": "A Property360 Interior 360 csomag belsőépítészeti tanácsadást, látványtervet, burkolatkiosztási tervet és moodboard-választást kapcsol össze.",
+            "source_refs": [
+              "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+              "/opt/imperial-intelligence/releases/content-intent-revenue-a92472f-20260906/sites/property-360/index.html"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "brand_id": "RED Property",
+      "sources": [
+        {
+          "source_key": "red-property-brand-fact-typeshouses",
+          "source_type": "brand_fact",
+          "version": "2026-09-06.v1",
+          "source_url": "https://docs.google.com/document/d/11DGGtDJ_Lwstdixq0n_LbL_L8e19rt1CCLrQRXG0IBc/edit?usp=drivesdk",
+          "payload": {
+            "record_id": "RED-BRAND-TYPESHOUSES-V1",
+            "statement": "A RED Property típusházak és összehasonlítható építési döntések márkája; a ház, az ár, a műszaki tartalom és a helyszínfüggő tételek együtt értelmezendők.",
+            "buyer_problems": [
+              "A ház négyzetméterára önmagában nem mutatja meg a teljes projekt költségét.",
+              "A fix ár csak a terv, a műszaki tartalom és a helyszíni feltételek tisztázása után értelmezhető."
+            ],
+            "next_steps": ["típusházak összehasonlítása", "ház- és telekvizsgálat"],
+            "source_refs": [
+              "https://docs.google.com/document/d/11DGGtDJ_Lwstdixq0n_LbL_L8e19rt1CCLrQRXG0IBc/edit?usp=drivesdk",
+              "https://docs.google.com/document/d/1jSsYSUhB4i_5yb5HG1KEjFU0AbFbNJYg0wj8y0JLcKA/edit?usp=drivesdk",
+              "/opt/imperial-intelligence/releases/content-intent-revenue-a92472f-20260906/sites/red-property/index.html",
+              "/opt/imperial-intelligence/releases/content-intent-revenue-a92472f-20260906/sites/red-property/SITE.md"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "brand_id": "Venture Studio",
+      "sources": [
+        {
+          "source_key": "venture-studio-brand-fact-special-situations",
+          "source_type": "brand_fact",
+          "version": "2026-09-06.v1",
+          "source_url": "https://docs.google.com/document/d/1AeyklfXNK5JS8yTxGFiRALmGa3OdbGylPoo1r8xuAiI/edit?usp=drivesdk",
+          "payload": {
+            "record_id": "VS-BRAND-SPECIAL-SITUATIONS-V1",
+            "statement": "A Venture Studio komplex, alulértékelt vagy problémás ingatlanhelyzetekből validált, strukturált befektetési opportunitykat épít fel.",
+            "buyer_problem": "A befektetőnek kevés, bizonyítékokkal és kockázati feltárással előkészített opportunityra van szüksége, nem tömeges projektlistára.",
+            "sales_goal": "Minősített befektetői kapcsolatfelvétel és projektajánlás.",
+            "next_step": "Befektetői profil vagy összetett projekt rövid előminősítése.",
+            "source_refs": [
+              "https://docs.google.com/document/d/1AeyklfXNK5JS8yTxGFiRALmGa3OdbGylPoo1r8xuAiI/edit?usp=drivesdk",
+              "https://docs.google.com/document/d/1NldFrW-l5M-UfqwiKiqSM3UA1-bMawdJH5CiOvh5dSs/edit?usp=drivesdk",
+              "/opt/imperial-intelligence/releases/content-intent-revenue-a92472f-20260906/sites/imperial/drive/venture/venture-studio.html"
+            ]
+          }
+        },
+        {
+          "source_key": "venture-studio-offer-private-investor-circle",
+          "source_type": "offer",
+          "version": "2026-09-06.v1",
+          "source_url": "https://docs.google.com/document/d/1NldFrW-l5M-UfqwiKiqSM3UA1-bMawdJH5CiOvh5dSs/edit?usp=drivesdk",
+          "payload": {
+            "record_id": "VS-OFFER-PRIVATE-CIRCLE-V1",
+            "statement": "A Private Investor Circle zártkörű, előzetesen minősített befektetői kapcsolat; nem tömeges hírlevél és nem garantált hozamígéret.",
+            "source_refs": [
+              "https://docs.google.com/document/d/1NldFrW-l5M-UfqwiKiqSM3UA1-bMawdJH5CiOvh5dSs/edit?usp=drivesdk",
+              "/opt/imperial-intelligence/releases/content-intent-revenue-a92472f-20260906/sites/imperial/drive/venture/venture-studio.html"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

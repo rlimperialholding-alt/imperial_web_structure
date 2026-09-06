@@ -16,7 +16,9 @@ SOURCE_LEDGER_ROUTE_COUNT = 25_494
 DAILY_UNIQUE_LEAD_MINIMUM = 0
 DAILY_QUESTION_TOPIC_MINIMUM = 80
 DAILY_ROUTE_ATTEMPT_MINIMUM = 800
-DAILY_CONTENT_BRAND_MINIMUM = 19
+# Imperial Intelligence and Imperial Knowledge are not active customer-facing
+# brands. Keep the daily gate tied to the actual active brand list.
+DAILY_CONTENT_BRAND_MINIMUM = 17
 
 IORA_EXECUTIVE_NAME = "Právicz Anna"
 IORA_EXECUTIVE_EMAIL = "ugyvezeto@imperialholding.hu"
@@ -100,9 +102,7 @@ ACTIVE_CONTENT_BRANDS = (
     "Venture Studio",
     "Family Homes",
     "Imperial Construction",
-    "Imperial Intelligence",
     "Imperial Technologies",
-    "Imperial Knowledge",
     "ExitFlow",
     "Veritas Construct",
     "BauShield",
@@ -150,9 +150,7 @@ BRAND_CONTENT_FOCUS = {
     "Venture Studio": ("vállalkozás", "üzletfejlesztés", "innováció", "növekedés", "befektetés"),
     "Family Homes": ("családi ház", "otthon", "alaprajz", "építkezés", "család"),
     "Imperial Construction": ("generálkivitelezés", "építkezés", "kivitelezés", "műszaki", "projekt"),
-    "Imperial Intelligence": ("mesterséges intelligencia", "adat", "automatizálás", "kutatás", "döntéstámogatás"),
     "Imperial Technologies": ("technológia", "integráció", "automatizálás", "szoftver", "rendszer"),
-    "Imperial Knowledge": ("szakmai tudás", "oktatás", "útmutató", "képzés", "döntés"),
     "ExitFlow": ("cégeladás", "utódlás", "kiszállás", "felvásárlás", "exit"),
     "Veritas Construct": ("műszaki ellenőrzés", "építési vita", "szakértő", "hiba", "kivitelezés"),
     "BauShield": ("építési kockázat", "garancia", "szerződés", "műszaki ellenőrzés", "hiba"),
@@ -252,21 +250,9 @@ BRAND_PUBLICATION_CONTRACTS = {
         "required": ["építési kockázat vagy szerződéses döntés", "ellenőrizhető műszaki szempont", "konkrét következő lépés"],
         "forbidden": ["garantált eredmény", "bizonyíték nélküli jogi vagy műszaki ígéret", "riogatás"],
     },
-    "Imperial Intelligence": {
-        "position": "Imperial Intelligence: mesterséges intelligencia, adat és automatizálás üzleti döntésekhez, ellenőrizhető módon.",
-        "voice": "Tárgyilagos, technológiai, üzleti döntéshozóknak szóló magyar.",
-        "required": ["adat- vagy automatizálási döntés", "ellenőrizhető üzleti haszon", "konkrét következő lépés"],
-        "forbidden": ["bizonyíték nélküli teljesítményígéret", "kitalált megtakarítás", "saját referencia"],
-    },
-    "Imperial Knowledge": {
-        "position": "Imperial Knowledge: szakmai tudás, oktatás és útmutató, amely jobb döntéshez rendezett magyarázatot ad.",
-        "voice": "Közérthető, rendszerezett, szakmai és természetes magyar.",
-        "required": ["tanulási vagy döntési probléma", "rendezett szakmai magyarázat", "konkrét következő lépés"],
-        "forbidden": ["kitalált képesítés", "garantált eredmény", "bizonyíték nélküli felsőfok"],
-    },
 }
 
-# The seven currently internal-only brands still receive daily content, but do not
+# The five currently internal-only brands still receive daily content, but do not
 # have an external delivery target in this release.  Their contract remains explicit
 # so their drafts cannot drift into another brand's lane.
 for _brand in set(ACTIVE_CONTENT_BRANDS) - set(BRAND_PUBLICATION_CONTRACTS):

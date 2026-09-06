@@ -1312,10 +1312,10 @@ def test_content_factory_quarantines_all_nineteen_brands(db, monkeypatch):
 
     rows = db.scalars(select(DailyContentObligation)).all()
     assert result["status"] == "complete"
-    assert result["generated"] == result["required"] == result["completed"] == 19
+    assert result["generated"] == result["required"] == result["completed"] == len(ACTIVE_CONTENT_BRANDS)
     assert result["failed_brands"] == result["unresolved_brands"] == []
     assert calls == list(ACTIVE_CONTENT_BRANDS)
-    assert len(rows) == 19
+    assert len(rows) == len(ACTIVE_CONTENT_BRANDS)
     assert all(row.status == "release_passed" for row in rows)
     assert all("RELEASE_APPROVED" in row.evidence_json for row in rows)
     assert all("quality_gate_manifest" in row.evidence_json for row in rows)

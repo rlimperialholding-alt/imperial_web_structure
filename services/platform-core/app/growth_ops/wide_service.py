@@ -286,7 +286,7 @@ def readiness(db: Session) -> dict[str, Any]:
             ),
             "unique_leads": 100,
             "question_topics": 80,
-            "content_brands": 19,
+            "content_brands": len(ACTIVE_CONTENT_BRANDS),
         },
         "iora": {
             "mode": "internal_executive_review_only",

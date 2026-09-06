@@ -86,17 +86,15 @@ ACTIVE_CONTENT_BRAND_TERM_KEYS = {
     "Venture Studio": "venture-studio",
     "Family Homes": "family-homes",
     "Imperial Construction": "imperial-construction",
-    "Imperial Intelligence": "imperial-intelligence",
     "Imperial Technologies": "imperial-technologies",
-    "Imperial Knowledge": "imperial-knowledge",
     "ExitFlow": "exit-flow",
     "Veritas Construct": "veritas-construct",
     "BauShield": "bau-shield",
 }
 
-if set(ACTIVE_CONTENT_BRAND_TERM_KEYS) != set(ACTIVE_CONTENT_BRANDS) or set(
+if set(ACTIVE_CONTENT_BRAND_TERM_KEYS) != set(ACTIVE_CONTENT_BRANDS) or not set(
     ACTIVE_CONTENT_BRAND_TERM_KEYS.values()
-) != set(BRAND_IDENTITY_TERMS):
+).issubset(BRAND_IDENTITY_TERMS):
     raise RuntimeError("customer-facing brand identity inventory is incomplete")
 
 DELIVERY_SCOPE_EXTERNAL_CUSTOMER = "external_customer"

@@ -149,7 +149,7 @@ def test_daily_wide_run_creates_all_brand_obligations_and_fails_closed(db, tmp_p
     assert row.external_publication_status == "owner_approved_live_for_bound_channels" or (
         row.external_publication_status.startswith("blocked_until")
     )
-    assert len(db.scalars(select(DailyContentObligation)).all()) == len(ACTIVE_CONTENT_BRANDS) == 19
+    assert len(db.scalars(select(DailyContentObligation)).all()) == len(ACTIVE_CONTENT_BRANDS)
     assert len(db.scalars(select(CanonicalGrowthDailyRun)).all()) == 1
 
     original_run_id = row.run_id
@@ -176,7 +176,7 @@ def test_quality_first_daily_gate_has_no_lead_quota():
         route_target=1,
         unique_leads=0,
         question_topics=80,
-        content_brands=19,
+        content_brands=len(ACTIVE_CONTENT_BRANDS),
     )
 
     assert gate.passed
