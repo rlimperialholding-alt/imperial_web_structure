@@ -49,6 +49,21 @@ def test_real_login_page_is_still_blocked() -> None:
     )
 
 
+def test_source_page_publication_metadata_is_preserved_but_modified_time_is_not() -> None:
+    body = """
+    <html><head><script type="application/ld+json">
+      {"@type":"Article","datePublished":"2025-01-17T18:48:41.385Z",
+       "dateModified":"2026-09-06T09:00:00Z"}
+    </script></head><body><main>Építési napló kérdés.</main></body></html>
+    """
+    text, _ = catalog._page_evidence(
+        body, base_url="https://joszaki.hu/szakivalaszol/kerdes-1", limit=6000
+    )
+    assert "published_at_source=source_page" in text
+    assert "2025-01-17T18:48:41.385Z" in text
+    assert "2026-09-06T09:00:00Z" not in text
+
+
 def test_qjob_div_task_cards_become_specific_link_candidates() -> None:
     body = """
     <html><body>

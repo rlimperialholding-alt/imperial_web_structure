@@ -550,6 +550,31 @@ def _visible_text(body_text: str, limit: int) -> str:
     return re.sub(r"\s+", " ", value).strip()[:limit]
 
 
+def _source_page_date_evidence(body_text: str) -> str:
+    """Extract only post-page publication metadata for the evidence prompt.
+
+    Search-result dates and page-modified timestamps are deliberately excluded.
+    The value remains raw source evidence; ``processing._question_freshness``
+    still requires the extractor to bind it to the exact post permalink.
+    """
+    patterns = (
+        r'"datePublished"\s*:\s*"([^"]+)"',
+        r"<meta[^>]+(?:property|name)\s*=\s*[\"'](?:article:published_time|datepublished)[\"'][^>]+content\s*=\s*[\"']([^\"']+)",
+        r"<meta[^>]+content\s*=\s*[\"']([^\"']+)[\"'][^>]+(?:property|name)\s*=\s*[\"'](?:article:published_time|datepublished)[\"']",
+    )
+    values: list[str] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, body_text, flags=re.IGNORECASE):
+            value = re.sub(r"\s+", " ", match.group(1)).strip()[:255]
+            if value and value not in values:
+                values.append(value)
+    if not values:
+        return ""
+    return "[SOURCE_PAGE_DATE_EVIDENCE] published_at_source=source_page; " + "; ".join(
+        f"published_at_raw={value}" for value in values[:5]
+    )
+
+
 def _page_evidence(
     body_text: str, *, base_url: str, limit: int
 ) -> tuple[str, list[dict[str, str]]]:
@@ -559,7 +584,9 @@ def _page_evidence(
         value = " ".join(parser.parts)
     except Exception:
         return _visible_text(body_text, limit), []
-    text = re.sub(r"\s+", " ", value).strip()[:limit]
+    visible = re.sub(r"\s+", " ", value).strip()
+    metadata = _source_page_date_evidence(body_text)
+    text = " ".join(part for part in (metadata, visible) if part)[:limit]
     links = list(parser.links)
     if (urlparse(base_url).hostname or "").casefold().endswith("qjob.hu"):
         task_parser = _QjobTaskCards(base_url)
