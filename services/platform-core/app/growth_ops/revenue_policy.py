@@ -51,12 +51,14 @@ class SourceReplenishmentRequired(ValueError):
 
 def is_purchase_signal(text: str) -> bool:
     normalized = " ".join(str(text or "").casefold().split())
+    plain = _plain(text)
     return any(marker in normalized for marker in _PURCHASE_MARKERS) or bool(
         re.search(
             r"(?:kivitelező|kivitelezo|generálkivitelező|generalkivitelezo)\w*\s+"
             r"(?:keres(?:ek|ünk|unk)|visszamondta|eltűnt|eltunt|nem vállalja|nem vallalja)"
-            r"|ajánlatkérés|ajanlatkeres|rendelési? szándék|rendelesi? szandek",
-            _plain(text),
+            r"|ajánlatkérés|ajanlatkeres|rendelési? szándék|rendelesi? szandek"
+            r"|ajanlatot\s+kerek|kerek\s+arajanlatot|arajanlatot\s+kerek",
+            plain,
         )
     )
 

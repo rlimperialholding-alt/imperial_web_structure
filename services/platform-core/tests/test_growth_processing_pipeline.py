@@ -546,6 +546,69 @@ def test_qjob_lead_requires_and_preserves_exact_task_permalink(db, monkeypatch):
     assert signal.evidence_url == permalink
 
 
+def test_purchase_signal_lead_is_also_retained_in_question_radar(db, monkeypatch):
+    permalink = "https://qjob.hu/tasks/214544"
+    evidence = "Csaladi haz kulso szigetelesere ajanlatot kerek, mielobbi kezdessel."
+    response = {
+        "leads": [
+            {
+                "organization_name": None,
+                "project_title": "Csaladi haz kulso szigetelese",
+                "summary": evidence,
+                "location": "Budapest",
+                "evidence_excerpt": evidence,
+                "source_permalink": permalink,
+                "confidence": 90,
+                "urgency": 70,
+            }
+        ],
+        "questions": [],
+    }
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(
+        processing,
+        "complete_json",
+        lambda *args, **kwargs: SimpleNamespace(
+            request_id="DS-QJOB-PURCHASE", content=json.dumps(response)
+        ),
+    )
+    route = _route()
+    route.route_url = "https://qjob.hu/budapest/munka/epitesz-munka"
+    route.brand_fit = "BauFreund"
+    attempt = _attempt()
+    attempt.started_at = datetime(2026, 8, 21, 10, 0, tzinfo=UTC)
+    db.add_all([route, attempt])
+    db.flush()
+
+    result = processing.process_source_attempt(
+        db,
+        route=route,
+        attempt=attempt,
+        text="Epitesi feladatok.",
+        link_candidates=[
+            {
+                "url": permalink,
+                "label": (
+                    evidence
+                    + " [SOURCE_PAGE_EVIDENCE] "
+                    + "published_at_raw=2026-08-21T09:00:00+02:00; "
+                    + "active_status_raw=published; active_status=active; "
+                    + "answer_count_raw=0 valasz; existing_answer_count=0; "
+                    + "published_at_source=source_page"
+                ),
+            }
+        ],
+    )
+    db.commit()
+
+    topic = db.scalar(select(QuestionRadarTopic))
+    assert result["leads"] == 1
+    assert topic is not None
+    assert topic.classification == "observed_purchase_signal"
+    assert topic.use_case == "exact_source_purchase_signal_candidate"
+    assert topic.existing_answer_count == 0
+
+
 def test_question_answer_generator_quarantines_exact_artifact(db, monkeypatch):
     topic = QuestionRadarTopic(
         topic_id="QRT-ELIGIBLE",

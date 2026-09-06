@@ -1086,7 +1086,7 @@ def process_source_attempt(
         attempt.analysis_at = datetime.now(UTC)
         return {"status": "skipped", "leads": 0, "questions": 0}
     all_link_candidates = [
-        {"url": str(item.get("url") or "")[:1500], "label": str(item.get("label") or "")[:500]}
+        {"url": str(item.get("url") or "")[:1500], "label": str(item.get("label") or "")[:1200]}
         for item in (link_candidates or [])[:500]
         if isinstance(item, dict) and _canonical_https_url(item.get("url"))
     ]
@@ -1321,6 +1321,29 @@ def process_source_attempt(
                 "source_permalink": exact_permalink,
             }
         )
+        if exact_permalink and is_purchase_signal(
+            " ".join((project_title, excerpt, summary))
+        ):
+            purchase_topic = _persist_purchase_signal_topic(
+                db,
+                route=route,
+                attempt=attempt,
+                source_url=exact_permalink,
+                signal_text=excerpt or project_title or summary,
+                link_candidates=safe_link_candidates,
+                local_day=local_day,
+            )
+            if purchase_topic:
+                question_decisions.append(
+                    {
+                        "question": (excerpt or project_title or summary)[:500],
+                        "source_permalink": exact_permalink,
+                        "accepted": purchase_topic.get("accepted") is True,
+                        "reasons": purchase_topic.get("reasons") or [],
+                        "purchase_signal_from_lead": True,
+                        "topic_id": purchase_topic.get("topic_id"),
+                    }
+                )
         lead_count += 1
 
     for item in payload.get("questions", []) if isinstance(payload, dict) else []:
@@ -1634,6 +1657,136 @@ def generate_question_radar_answers(db: Session, *, now: datetime | None = None)
         "quarantined": quarantined,
         "failed": failed,
         "reserved_elsewhere": reserved_elsewhere,
+    }
+
+
+def _source_page_metadata_from_label(label: str) -> dict[str, str]:
+    """Read only the adapter-written metadata marker from a candidate label."""
+
+    marker = "[SOURCE_PAGE_EVIDENCE]"
+    if marker not in label:
+        return {}
+    values: dict[str, str] = {}
+    for item in label.split(marker, 1)[1].split(";"):
+        key, separator, value = item.strip().partition("=")
+        if separator and key in {
+            "published_at_raw",
+            "published_at_source",
+            "active_status_raw",
+            "active_status",
+            "answer_count_raw",
+            "existing_answer_count",
+        }:
+            values[key] = value.strip()[:255]
+    return values
+
+
+def _persist_purchase_signal_topic(
+    db: Session,
+    *,
+    route: SourceCoverageRoute,
+    attempt: SourceCoverageAttempt,
+    source_url: str,
+    signal_text: str,
+    link_candidates: list[dict[str, str]],
+    local_day: date,
+) -> dict[str, Any] | None:
+    """Keep a source-proven purchase request even when the model stores it as a lead."""
+
+    metadata = next(
+        (
+            _source_page_metadata_from_label(str(item.get("label") or ""))
+            for item in link_candidates
+            if str(item.get("url") or "") == source_url
+        ),
+        {},
+    )
+    if metadata.get("published_at_source") != "source_page":
+        return None
+    text_value = " ".join(str(signal_text or "").split())[:500]
+    if not 20 <= len(text_value) <= 500 or not is_purchase_signal(text_value):
+        return None
+    freshness = _question_freshness(
+        metadata,
+        evidence_text=" ".join(
+            [text_value, *[str(item.get("label") or "") for item in link_candidates]]
+        ),
+        observed_at=attempt.started_at,
+        require_source_date_proof=bool(
+            getattr(settings(), "canonical_question_require_source_date_proof", False)
+        ),
+    )
+    brand = next(
+        (
+            value
+            for value in ("BauFreund", "Bautica", "Prefab", "BauShield", "Imperial")
+            if value in _brands(route)
+        ),
+        _brands(route)[0],
+    )
+    platform = (urlparse(source_url).hostname or "unknown").casefold()
+    identity_hash = _sha(
+        {"platform": platform, "source_url": source_url, "question": _norm(text_value)}
+    )
+    if db.get(QuestionRadarIdentity, identity_hash):
+        return {"accepted": False, "reasons": ["stable_identity_already_seen"]}
+    dedupe = _sha(
+        {
+            "day": local_day.isoformat(),
+            "brand_id": brand,
+            "question": _norm(text_value),
+            "source_url": source_url,
+        }
+    )
+    if db.scalar(
+        select(QuestionRadarTopic.id).where(
+            QuestionRadarTopic.local_date == local_day,
+            QuestionRadarTopic.dedupe_hash == dedupe,
+        )
+    ):
+        return {"accepted": False, "reasons": ["daily_duplicate"]}
+    topic_id = f"QRT-{uuid4().hex[:20].upper()}"
+    try:
+        with db.begin_nested():
+            db.add(
+                QuestionRadarIdentity(
+                    identity_hash=identity_hash,
+                    platform=platform,
+                    canonical_source_url=source_url,
+                    normalized_question=_norm(text_value),
+                    first_topic_id=topic_id,
+                )
+            )
+            db.flush()
+    except IntegrityError:
+        return {"accepted": False, "reasons": ["stable_identity_reserved_elsewhere"]}
+    db.add(
+        QuestionRadarTopic(
+            topic_id=topic_id,
+            local_date=local_day,
+            question=text_value,
+            brand_id=brand,
+            use_case="exact_source_purchase_signal_candidate",
+            source_url=source_url,
+            classification="observed_purchase_signal",
+            dedupe_hash=dedupe,
+            identity_hash=identity_hash,
+            platform=platform,
+            published_at=freshness["published_at"],
+            published_at_raw=freshness["published_at_raw"],
+            age_days=freshness["age_days"],
+            active_status=freshness["active_status"],
+            existing_answer_count=freshness["existing_answer_count"],
+            freshness_decision=freshness["freshness_decision"],
+            eligibility_status=freshness["eligibility_status"],
+            rejection_reasons_json=_json(freshness["reasons"]),
+        )
+    )
+    return {
+        "accepted": freshness["eligibility_status"] == "eligible",
+        "topic_id": topic_id,
+        "source_url": source_url,
+        "reasons": freshness["reasons"],
     }
 
 
