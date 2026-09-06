@@ -1531,6 +1531,15 @@ def process_source_attempt(
             }
         )
         question_count += 1
+    deterministic_decisions = _deterministic_purchase_signal_topics(
+        db,
+        route=route,
+        attempt=attempt,
+        link_candidates=safe_link_candidates,
+        local_day=local_day,
+    )
+    question_decisions.extend(deterministic_decisions)
+    question_count += sum(item["accepted"] for item in deterministic_decisions)
     attempt.analysis_status = "completed"
     attempt.analysis_json = _json(
         {
