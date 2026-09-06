@@ -1174,6 +1174,7 @@ def process_source_attempt(
     result = None
     payload = None
     last_error: Exception | None = None
+    local_day = _local_day(attempt.started_at)
     for _try_number in range(2):
         try:
             result = complete_json(
@@ -1189,16 +1190,29 @@ def process_source_attempt(
         except (GrowthRegistryError, json.JSONDecodeError, TypeError, ValueError) as exc:
             last_error = exc
     if result is None or payload is None:
-        attempt.analysis_status = "failed"
+        deterministic_decisions = _deterministic_purchase_signal_topics(
+            db,
+            route=route,
+            attempt=attempt,
+            link_candidates=safe_link_candidates,
+            local_day=local_day,
+        )
+        attempt.analysis_status = "completed" if deterministic_decisions else "failed"
         attempt.analysis_json = _json(
-            {"error_type": type(last_error).__name__ if last_error else "UnknownError"}
+            {
+                "error_type": type(last_error).__name__ if last_error else "UnknownError",
+                "deterministic_purchase_signals": deterministic_decisions,
+            }
         )
         attempt.analysis_at = datetime.now(UTC)
-        return {"status": "failed", "leads": 0, "questions": 0}
+        return {
+            "status": "completed" if deterministic_decisions else "failed",
+            "leads": 0,
+            "questions": sum(item["accepted"] for item in deterministic_decisions),
+        }
 
     lead_count = 0
     question_count = 0
-    local_day = _local_day(attempt.started_at)
     safe_leads: list[dict[str, Any]] = []
     safe_questions: list[dict[str, Any]] = []
     question_decisions: list[dict[str, Any]] = []
@@ -1788,6 +1802,48 @@ def _persist_purchase_signal_topic(
         "source_url": source_url,
         "reasons": freshness["reasons"],
     }
+
+
+def _deterministic_purchase_signal_topics(
+    db: Session,
+    *,
+    route: SourceCoverageRoute,
+    attempt: SourceCoverageAttempt,
+    link_candidates: list[dict[str, str]],
+    local_day: date,
+) -> list[dict[str, Any]]:
+    """Retain clearly marked public purchase requests when model extraction fails."""
+
+    decisions: list[dict[str, Any]] = []
+    for candidate in link_candidates:
+        url = _canonical_https_url(candidate.get("url"))
+        label = str(candidate.get("label") or "")
+        if not url or not _specific_reply_permalink(url) or "[SOURCE_PAGE_EVIDENCE]" not in label:
+            continue
+        source_text = label.split("[SOURCE_PAGE_EVIDENCE]", 1)[0].strip()
+        if not is_purchase_signal(source_text):
+            continue
+        decision = _persist_purchase_signal_topic(
+            db,
+            route=route,
+            attempt=attempt,
+            source_url=url,
+            signal_text=source_text,
+            link_candidates=link_candidates,
+            local_day=local_day,
+        )
+        if decision:
+            decisions.append(
+                {
+                    "question": source_text[:500],
+                    "source_permalink": url,
+                    "accepted": decision.get("accepted") is True,
+                    "reasons": decision.get("reasons") or [],
+                    "purchase_signal_deterministic": True,
+                    "topic_id": decision.get("topic_id"),
+                }
+            )
+    return decisions
 
 
 def _approved_brand_facts(db: Session, brand_id: str, *, current: datetime) -> list[dict[str, Any]]:
