@@ -91,6 +91,46 @@ def test_qjob_div_task_cards_become_specific_link_candidates() -> None:
     ]
 
 
+def test_concrete_reply_page_metadata_uses_original_post_date_and_state() -> None:
+    body = """
+    <script type="application/ld+json">
+      {"datePublished":"2026-09-02T09:24:48.109+02:00"}
+    </script>
+    <script>
+      {"status":"published","taskResponsesCount":0,
+       "publishedAt":"2026-09-02T09:24:48.109+02:00"}
+    </script>
+    """
+    metadata = catalog._reply_page_metadata(
+        body, source_url="https://qjob.hu/tasks/215605"
+    )
+    assert metadata == {
+        "published_at_raw": "2026-09-02T09:24:48.109+02:00",
+        "active_status_raw": "published",
+        "active_status": "active",
+        "answer_count_raw": "0 válasz",
+        "existing_answer_count": "0",
+        "published_at_source": "source_page",
+        "source_url": "https://qjob.hu/tasks/215605",
+    }
+
+
+def test_reply_page_candidate_rejects_category_and_cross_host_links() -> None:
+    base = "https://joszaki.hu/szakivalaszol"
+    assert catalog._reply_page_candidate(
+        "https://joszaki.hu/szakivalaszol/lapostetos-haz-hoszigetelese",
+        base_url=base,
+    )
+    assert not catalog._reply_page_candidate(
+        "https://joszaki.hu/szakivalaszol/szakma/konyveles",
+        base_url=base,
+    )
+    assert not catalog._reply_page_candidate(
+        "https://example.test/szakivalaszol/lapostetos-haz-hoszigetelese",
+        base_url=base,
+    )
+
+
 def test_fetch_analyzes_content_after_old_200k_cutoff(monkeypatch) -> None:
     tail = '<a href="/szakivalaszol/tetofelujitas">Hogyan újítsam fel a tetőt?</a>'
     body = (

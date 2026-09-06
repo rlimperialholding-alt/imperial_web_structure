@@ -540,6 +540,146 @@ class _QjobTaskCards(HTMLParser):
             self.active_parts.append(data)
 
 
+def _reply_page_candidate(url: str, *, base_url: str) -> bool:
+    """Return true only for public, concrete question/task pages we can verify.
+
+    The category page is only a discovery surface.  Freshness must come from
+    the concrete item page, so this deliberately supports the two current
+    Hungarian reply surfaces with stable, same-host permalinks.
+    """
+
+    base = urlparse(base_url)
+    candidate = urlparse(urljoin(base_url, url))
+    if (
+        candidate.scheme != "https"
+        or not base.hostname
+        or not candidate.hostname
+        or candidate.hostname.casefold() != base.hostname.casefold()
+        or candidate.username
+        or candidate.password
+        or candidate.fragment
+    ):
+        return False
+    host = candidate.hostname.casefold()
+    path = candidate.path.rstrip("/")
+    if host == "qjob.hu" and re.fullmatch(r"/tasks/\d+", path, flags=re.IGNORECASE):
+        return True
+    if host == "joszaki.hu" and path.casefold().startswith("/szakivalaszol/"):
+        parts = [part.casefold() for part in path.split("/") if part]
+        return len(parts) == 2 and parts[1] not in {
+            "uj-kerdes",
+            "szakma",
+            "tevekenyseg",
+        }
+    return False
+
+
+def _reply_page_metadata(body_text: str, *, source_url: str) -> dict[str, str] | None:
+    """Extract source-page metadata from one concrete public item page.
+
+    These values are evidence for the downstream extractor.  They are not
+    accepted from model output and are not inferred from the discovery page.
+    """
+
+    metadata: dict[str, str] = {}
+    date_patterns = (
+        r'"datePublished"\s*:\s*"([^"]+)"',
+        r'"publishedAt"\s*:\s*"([^"]+)"',
+        r'"createdAt"\s*:\s*"([^"]+)"',
+    )
+    for pattern in date_patterns:
+        match = re.search(pattern, body_text, flags=re.IGNORECASE)
+        if match:
+            metadata["published_at_raw"] = match.group(1).strip()[:255]
+            break
+    status_match = re.search(r'"status"\s*:\s*"([^"]+)"', body_text, flags=re.IGNORECASE)
+    deleted_match = re.search(r'"deleted"\s*:\s*(null|true|false)', body_text, flags=re.IGNORECASE)
+    if status_match:
+        raw_status = status_match.group(1).strip()
+        metadata["active_status_raw"] = raw_status[:255]
+        metadata["active_status"] = (
+            "active" if raw_status.casefold() in {"published", "active", "open"} else "inactive"
+        )
+    elif deleted_match:
+        raw_deleted = deleted_match.group(1).strip()
+        metadata["active_status_raw"] = "deleted=" + raw_deleted
+        metadata["active_status"] = "active" if raw_deleted.casefold() == "null" else "inactive"
+
+    answer_match = re.search(r'"taskResponsesCount"\s*:\s*(\d+)', body_text, flags=re.IGNORECASE)
+    if not answer_match:
+        visible = _visible_text(body_text, 60_000)
+        answer_match = re.search(r"(?<!\d)(\d{1,5})\s+v[aá]lasz", visible, flags=re.IGNORECASE)
+    if answer_match:
+        count = answer_match.group(1)
+        metadata["answer_count_raw"] = count + " válasz"
+        metadata["existing_answer_count"] = count
+
+    if not metadata.get("published_at_raw"):
+        return None
+    metadata["published_at_source"] = "source_page"
+    metadata["source_url"] = source_url
+    return metadata
+
+
+def _enrich_reply_page_links(
+    links: list[dict[str, str]],
+    *,
+    base_url: str,
+    timeout_seconds: float,
+    max_response_bytes: int,
+) -> list[dict[str, str]]:
+    """Attach concrete-page date/state evidence to bounded reply links."""
+
+    candidates = [
+        item for item in links
+        if isinstance(item, dict)
+        and _reply_page_candidate(str(item.get("url") or ""), base_url=base_url)
+    ][:12]
+    if not candidates:
+        return links
+    enriched: dict[str, dict[str, str]] = {}
+    try:
+        with httpx.Client(
+            timeout=min(float(timeout_seconds), 8.0),
+            follow_redirects=False,
+            headers={"User-Agent": "Imperial-Source-Coverage/1.0"},
+        ) as client:
+            for item in candidates:
+                url = str(item["url"])
+                try:
+                    response = client.get(url)
+                    if not 200 <= response.status_code < 300:
+                        continue
+                    if len(response.content) > max_response_bytes:
+                        continue
+                    metadata = _reply_page_metadata(
+                        response.content.decode("utf-8", errors="ignore"),
+                        source_url=url,
+                    )
+                except (httpx.HTTPError, UnicodeError):
+                    continue
+                if not metadata:
+                    continue
+                evidence = "; ".join(
+                    f"{key}={value}"
+                    for key, value in metadata.items()
+                    if key not in {"source_url"}
+                )
+                enriched[url] = {
+                    "url": url,
+                    "label": (
+                        str(item.get("label") or "").strip()
+                        + "\n[SOURCE_PAGE_EVIDENCE] "
+                        + evidence
+                    )[:1200],
+                }
+    except (httpx.HTTPError, OSError):
+        return links
+    if not enriched:
+        return links
+    return [enriched.get(str(item.get("url") or ""), item) for item in links]
+
+
 def _visible_text(body_text: str, limit: int) -> str:
     parser = _VisibleText()
     try:
@@ -1262,6 +1402,17 @@ def _fetch(
         base_url=fetch_url,
         limit=getattr(cfg, "canonical_analysis_text_chars", 6000),
     )
+    if 200 <= status_code < 300 and body:
+        # The list page is discovery only.  For supported question/task
+        # surfaces, verify each bounded concrete permalink on its own page so
+        # the extractor receives the original publication date and lifecycle
+        # evidence rather than a search/list refresh time.
+        analysis_links = _enrich_reply_page_links(
+            analysis_links,
+            base_url=fetch_url,
+            timeout_seconds=cfg.canonical_route_timeout_seconds,
+            max_response_bytes=cfg.canonical_route_max_response_bytes,
+        )
     blocked = _looks_like_blocked_response(
         status_code=status_code,
         route_url=fetch_url,
