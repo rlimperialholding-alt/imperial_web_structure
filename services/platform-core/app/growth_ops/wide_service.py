@@ -173,6 +173,7 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
         db.scalar(
             select(func.count(func.distinct(DailyContentObligation.brand_id))).where(
                 DailyContentObligation.local_date == local_day,
+                DailyContentObligation.brand_id.in_(ACTIVE_CONTENT_BRANDS),
                 DailyContentObligation.status.in_(
                     ("drafted", "quarantined", "release_passed", "published")
                 ),
