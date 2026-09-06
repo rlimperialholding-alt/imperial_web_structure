@@ -129,6 +129,123 @@ def test_reply_page_candidate_rejects_category_and_cross_host_links() -> None:
         "https://example.test/szakivalaszol/lapostetos-haz-hoszigetelese",
         base_url=base,
     )
+    assert catalog._reply_page_candidate(
+        "https://forum.index.hu/Article/showArticle?t=9250012",
+        base_url="https://forum.index.hu/Topic/showTopicList",
+    )
+    assert catalog._reply_page_candidate(
+        "https://www.reddit.com/r/hungary/comments/abc123/epitkezes/",
+        base_url="https://www.reddit.com/r/hungary/.rss",
+    )
+
+
+def test_public_atom_feed_preserves_entry_date_and_permalink() -> None:
+    body = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <title>r/hungary</title>
+      <entry>
+        <title>Mennyiből lehet felújítani ezt a házat?</title>
+        <published>2026-09-05T10:15:00+00:00</published>
+        <link rel="alternate" href="https://www.reddit.com/r/hungary/comments/abc123/felujitas/" />
+        <content type="html">Kivitelezőt és költségbecslést keresek.</content>
+      </entry>
+    </feed>
+    """
+    text, links = catalog._page_evidence(
+        body,
+        base_url="https://www.reddit.com/r/hungary/.rss",
+        limit=6000,
+    )
+    assert "published_at_raw=2026-09-05T10:15:00+00:00" in text or any(
+        "published_at_raw=2026-09-05T10:15:00+00:00" in item["label"] for item in links
+    )
+    assert links == [
+        {
+            "url": "https://www.reddit.com/r/hungary/comments/abc123/felujitas/",
+            "label": (
+                "Mennyiből lehet felújítani ezt a házat? Kivitelezőt és költségbecslést keresek.\n"
+                "[SOURCE_PAGE_EVIDENCE] published_at_raw=2026-09-05T10:15:00+00:00; "
+                "published_at_source=source_page; active_status_raw=active; active_status=active"
+            ),
+        }
+    ]
+
+
+def test_rss_feed_items_are_discovered_and_search_results_cross_host() -> None:
+    rss = """<?xml version="1.0" encoding="UTF-8"?><rss><channel>
+      <item><title>Tudtok megbízható kivitelezőt?</title>
+      <pubDate>Sun, 06 Sep 2026 10:15:00 GMT</pubDate>
+      <link>https://forum.example.hu/threads/kivitelezo-ajanlas.12345/</link>
+      <description>Ajánlást és árajánlatot keresek.</description></item>
+    </channel></rss>"""
+    _text, rss_links = catalog._page_evidence(
+        rss,
+        base_url="https://www.reddit.com/r/askhungary/.rss",
+        limit=6000,
+    )
+    assert rss_links[0]["url"].endswith("kivitelezo-ajanlas.12345/")
+    assert "published_at_source=source_page" in rss_links[0]["label"]
+
+    search = """<html><body><li class="b_algo">
+      <h2><a href="https://forum.example.hu/threads/kivitelezo-ajanlas.12345/">
+      Tudtok megbízható kivitelezőt? Építkezés fórum</a></h2>
+    </li><a href="https://irrelevant.example/threads/other.123">Másik</a></body></html>"""
+    _text, search_links = catalog._page_evidence(
+        search,
+        base_url="https://www.bing.com/search?q=epitkezes+kivitelezo+forum",
+        limit=6000,
+    )
+    assert search_links == [
+        {
+            "url": "https://forum.example.hu/threads/kivitelezo-ajanlas.12345/",
+            "label": "Tudtok megbízható kivitelezőt? Építkezés fórum",
+        }
+    ]
+
+
+def test_fetch_search_discovery_rechecks_each_forum_post(monkeypatch) -> None:
+    route = _route("https://www.bing.com/search?q=epitkezes+kivitelezo+forum")
+    route.category = "forum"
+    route.source_type = "public_html"
+    route.source_name = "Automatikus fórumfelfedezés"
+    route.route_mode = "direct"
+    route.search_signal = "építkezés; kivitelező; fórum"
+    route.source_record_json = '{"category":"forum"}'
+    search_body = (
+        "<html><body><h2><a href=\"https://forum.example.hu/threads/"
+        "kivitelezo-ajanlas.12345/\">Tudtok megbízható kivitelezőt? "
+        "Építkezés fórum</a></h2></body></html>"
+    ).encode()
+    post_body = (
+        '<html><time datetime="2026-09-05T10:15:00+00:00"></time>'
+        '<script>{"status":"published","taskResponsesCount":0}</script>'
+        "<body>Tudtok megbízható kivitelezőt?</body></html>"
+    ).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = post_body if request.url.host == "forum.example.hu" else search_body
+        return httpx.Response(200, content=body, headers={"content-type": "text/html"})
+
+    real_client = httpx.Client
+
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(catalog.httpx, "Client", client_factory)
+    monkeypatch.setattr(
+        catalog.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (catalog.socket.AF_INET, catalog.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
+    result = catalog._fetch(route)
+    assert result["status"] == "succeeded"
+    assert result["evidence"]["discovery_mode"] == "search_engine_forum_discovery"
+    assert len(result["analysis_links"]) == 1
+    assert "published_at_source=source_page" in result["analysis_links"][0]["label"]
+    assert "answer_count_raw=0 válasz" in result["analysis_links"][0]["label"]
 
 
 def test_fetch_analyzes_content_after_old_200k_cutoff(monkeypatch) -> None:

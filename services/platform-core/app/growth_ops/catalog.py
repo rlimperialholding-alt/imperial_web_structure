@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import http.client
 import ipaddress
@@ -19,6 +20,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 from urllib.robotparser import RobotFileParser
 from uuid import uuid4
+from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -102,6 +104,128 @@ QUESTION_RADAR_DIRECT_ROUTES = (
         "search_signal": "felújítás; szakember; ár; kivitelező",
         "brand_fit": "BauFreund,Bautica",
     },
+    {
+        "route_key": "QUESTION-RADAR:INDEX-FORUM-TOPICLIST",
+        "route_id": "QR-INDEX-FORUM-TOPICLIST",
+        "source_name": "Index Fórum – témalisták",
+        "route_url": "https://forum.index.hu/Topic/showTopicList",
+        "search_signal": "építkezés; felújítás; kivitelező; tetőtér; költség",
+        "brand_fit": "BauFreund,Bautica,Prefab",
+    },
+    {
+        "route_key": "QUESTION-RADAR:REDDIT-HUNGARY-RSS",
+        "route_id": "QR-REDDIT-HUNGARY-RSS",
+        "source_name": "Reddit r/hungary – új bejegyzések",
+        "route_url": "https://www.reddit.com/r/hungary/.rss",
+        "search_signal": "építkezés; felújítás; ingatlan; kivitelező",
+        "brand_fit": "BauFreund,Bautica,Prefab",
+    },
+    {
+        "route_key": "QUESTION-RADAR:REDDIT-ASKHUNGARY-RSS",
+        "route_id": "QR-REDDIT-ASKHUNGARY-RSS",
+        "source_name": "Reddit r/askhungary – új bejegyzések",
+        "route_url": "https://www.reddit.com/r/askhungary/.rss",
+        "search_signal": "építkezés; felújítás; szakember; ár; ingatlan",
+        "brand_fit": "BauFreund,Bautica,Prefab",
+    },
+    {
+        "route_key": "QUESTION-RADAR:REDDIT-KISZAMOLO-RSS",
+        "route_id": "QR-REDDIT-KISZAMOLO-RSS",
+        "source_name": "Reddit r/kiszamolo – új bejegyzések",
+        "route_url": "https://www.reddit.com/r/kiszamolo/.rss",
+        "search_signal": "felújítás; építkezés; költség; hitel; ingatlan",
+        "brand_fit": "BauFreund,Bautica",
+    },
+    {
+        "route_key": "QUESTION-RADAR:FORUM-DISCOVERY-CONSTRUCTION",
+        "route_id": "QR-FORUM-DISCOVERY-CONSTRUCTION",
+        "source_name": "Automatikus fórumfelfedezés – építkezés",
+        "route_url": (
+            "https://www.bing.com/search?"
+            "q=epitkezes+kivitelezo+hazepites+tetoter+forum"
+        ),
+        "search_signal": "építkezés; kivitelező; házépítés; tetőtér; fórum",
+        "brand_fit": "BauFreund,Bautica,Prefab",
+    },
+    {
+        "route_key": "QUESTION-RADAR:FORUM-DISCOVERY-RENOVATION",
+        "route_id": "QR-FORUM-DISCOVERY-RENOVATION",
+        "source_name": "Automatikus fórumfelfedezés – felújítás",
+        "route_url": (
+            "https://www.bing.com/search?"
+            "q=felujitas+szakember+kivitelezo+koltseg+forum"
+        ),
+        "search_signal": "felújítás; szakember; kivitelező; költség; fórum",
+        "brand_fit": "BauFreund,Bautica,Prefab",
+    },
+    {
+        "route_key": "QUESTION-RADAR:FORUM-DISCOVERY-PURCHASE",
+        "route_id": "QR-FORUM-DISCOVERY-PURCHASE",
+        "source_name": "Automatikus fórumfelfedezés – vásárlási jelzések",
+        "route_url": (
+            "https://www.bing.com/search?"
+            "q=megbizhato+kivitelezo+ajanlas+arajanlat+epitkezes"
+        ),
+        "search_signal": "megbízható kivitelező; ajánlás; árajánlat; építkezés",
+        "brand_fit": "BauFreund,Bautica,Prefab",
+    },
+)
+
+QUESTION_RADAR_DISCOVERY_ROUTE_PREFIX = "QUESTION-RADAR:FORUM-DISCOVERY-"
+QUESTION_RADAR_DISCOVERED_ROUTE_PREFIX = "QUESTION-RADAR:DISCOVERED:"
+_SEARCH_ENGINE_HOSTS = {
+    "bing.com",
+    "www.bing.com",
+    "google.com",
+    "www.google.com",
+    "search.yahoo.com",
+    "duckduckgo.com",
+    "html.duckduckgo.com",
+}
+_FORUM_RELEVANCE_MARKERS = (
+    "épít",
+    "epit",
+    "felúj",
+    "feluj",
+    "kivitelez",
+    "szakember",
+    "tetőtér",
+    "tetoter",
+    "ház",
+    "haz",
+    "ingatlan",
+    "lakás",
+    "lakas",
+    "költ",
+    "kolt",
+    "ár",
+    "ajanl",
+    "ajánl",
+    "forum",
+    "fórum",
+    "reddit",
+    "gyakorikerdesek",
+    "index.hu",
+)
+_FORUM_CONTENT_MARKERS = tuple(
+    marker
+    for marker in _FORUM_RELEVANCE_MARKERS
+    if marker not in {"forum", "fórum", "reddit", "gyakorikerdesek", "index.hu"}
+)
+_FORUM_PATH_MARKERS = (
+    "comment",
+    "discussion",
+    "forum",
+    "kerdes",
+    "kérdés",
+    "question",
+    "post",
+    "thread",
+    "topic",
+    "tema",
+    "téma",
+    "showarticle",
+    "showthread",
 )
 
 # A Gyakori Kérdések kategóriaoldalán rendszerint több tucat konkrét kérdés
@@ -571,6 +695,155 @@ class _QjobTaskCards(HTMLParser):
             self.active_parts.append(data)
 
 
+class _SearchResultLinks(HTMLParser):
+    """Collect result anchors from public search HTML, including nested titles."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._href: str | None = None
+        self._parts: list[str] = []
+        self.links: list[dict[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() != "a" or self._href is not None:
+            return
+        values = {key.casefold(): value or "" for key, value in attrs}
+        href = values.get("href", "").strip()
+        if href:
+            self._href = href
+            self._parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._href is not None:
+            self._parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() != "a" or self._href is None:
+            return
+        label = re.sub(r"\s+", " ", " ".join(self._parts)).strip()[:900]
+        self.links.append({"url": self._href, "label": label})
+        self._href = None
+        self._parts = []
+
+
+def _decode_search_result_url(value: str, *, base_url: str) -> str:
+    """Decode Bing's opaque ``/ck/a?...&u=a1<base64>`` result wrapper."""
+
+    absolute = urljoin(base_url, value.strip())
+    parsed = urlparse(absolute)
+    if (parsed.hostname or "").casefold() not in _SEARCH_ENGINE_HOSTS:
+        return absolute
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    opaque = query.get("u", "")
+    if opaque.startswith("a1") and len(opaque) > 2:
+        try:
+            decoded = base64.urlsafe_b64decode(
+                opaque[2:] + "=" * ((-len(opaque[2:])) % 4)
+            ).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            decoded = ""
+        if decoded.startswith("https://"):
+            return decoded
+    return absolute
+
+
+def _is_search_route(route_url: str) -> bool:
+    parsed = urlparse(route_url)
+    host = (parsed.hostname or "").casefold()
+    if host not in _SEARCH_ENGINE_HOSTS:
+        return False
+    path = parsed.path.casefold().rstrip("/")
+    return path in {"", "/search", "/web"} and bool(
+        dict(parse_qsl(parsed.query, keep_blank_values=True)).get("q")
+    )
+
+
+def _is_forum_discovery_route(route: SourceCoverageRoute) -> bool:
+    context = " ".join(
+        str(value or "")
+        for value in (
+            getattr(route, "route_key", ""),
+            getattr(route, "category", ""),
+            getattr(route, "source_type", ""),
+            getattr(route, "source_name", ""),
+            getattr(route, "search_signal", ""),
+        )
+    ).casefold()
+    return _is_search_route(route.route_url) and any(
+        marker in context
+        for marker in ("forum", "fórum", "question", "kérdés", "radar", "reddit", "gyakori")
+    )
+
+
+def _forum_search_result_candidate(url: str, *, base_url: str) -> bool:
+    """Accept only concrete, relevant HTTPS result pages from a search surface."""
+
+    canonical = urlunparse(
+        urlparse(_decode_search_result_url(url, base_url=base_url))._replace(
+            fragment=""
+        )
+    )
+    parsed = urlparse(canonical)
+    base_host = (urlparse(base_url).hostname or "").casefold()
+    host = (parsed.hostname or "").casefold()
+    if (
+        parsed.scheme != "https"
+        or not host
+        or host in _SEARCH_ENGINE_HOSTS
+        or host == base_host
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        return False
+    path = parsed.path.casefold().rstrip("/")
+    if not path or path in {"/", "/search", "/login", "/bejelentkezes"}:
+        return False
+    parts = [part for part in path.split("/") if part]
+    query_keys = {
+        key.casefold()
+        for key, _value in parse_qsl(parsed.query, keep_blank_values=True)
+    }
+    has_identity_query = bool(
+        query_keys & {"id", "post", "question", "thread", "topic", "tid", "t"}
+    )
+    path_text = " ".join(parts)
+    has_forum_path = any(marker in path_text for marker in _FORUM_PATH_MARKERS)
+    has_stable_id = any(part.isdigit() or re.fullmatch(r"[a-z0-9]{5,}", part) for part in parts)
+    if not (has_identity_query or has_forum_path or (len(parts) >= 2 and has_stable_id)):
+        return False
+    return True
+
+
+def _forum_search_page_evidence(
+    body_text: str, *, base_url: str, limit: int
+) -> tuple[str, list[dict[str, str]]]:
+    parser = _SearchResultLinks()
+    try:
+        parser.feed(body_text)
+    except Exception:
+        return _visible_text(body_text, limit), []
+    links: list[dict[str, str]] = []
+    visible_parts: list[str] = []
+    for item in parser.links:
+        url = _decode_search_result_url(str(item.get("url") or ""), base_url=base_url)
+        label = re.sub(r"\s+", " ", str(item.get("label") or "")).strip()
+        relevance_text = f"{label} {url}".casefold()
+        if not _forum_search_result_candidate(url, base_url=base_url):
+            continue
+        if not any(marker.casefold() in relevance_text for marker in _FORUM_CONTENT_MARKERS):
+            continue
+        canonical = urlunparse(urlparse(url)._replace(fragment=""))
+        if any(existing["url"] == canonical for existing in links):
+            continue
+        links.append({"url": canonical, "label": label[:1200]})
+        visible_parts.extend(part for part in (label, canonical) if part)
+        if len(links) >= 40:
+            break
+    text = re.sub(r"\s+", " ", " ".join(visible_parts)).strip()[:limit]
+    return text, links
+
+
 def _reply_page_candidate(url: str, *, base_url: str) -> bool:
     """Return true only for public, concrete question/task pages we can verify.
 
@@ -606,7 +879,36 @@ def _reply_page_candidate(url: str, *, base_url: str) -> bool:
         # Concrete Gyakori Kérdések pages carry a numeric question id in the
         # category slug (for example ``otthon__epitkezes__13249178-...``).
         return bool(re.search(r"__\d{6,}(?:-|$)", path, flags=re.IGNORECASE))
-    return False
+    if host == "forum.index.hu" or host.endswith(".forum.index.hu"):
+        query = parse_qsl(candidate.query, keep_blank_values=True)
+        return (
+            path.casefold().endswith("/article/showarticle")
+            and any(key.casefold() in {"t", "id", "article"} and value for key, value in query)
+        )
+    if host == "reddit.com" or host.endswith(".reddit.com"):
+        return bool(re.search(r"/comments/[a-z0-9]+(?:/|$)", path, flags=re.IGNORECASE))
+    query_keys = {
+        key.casefold()
+        for key, _value in parse_qsl(candidate.query, keep_blank_values=True)
+    }
+    if query_keys & {"id", "post", "question", "thread", "topic", "tid", "t"}:
+        return True
+    parts = [part for part in path.split("/") if part]
+    if not parts or path in {
+        "/",
+        "/forum",
+        "/forums",
+        "/topic",
+        "/topics",
+        "/thread",
+        "/threads",
+        "/questions",
+    }:
+        return False
+    path_text = " ".join(parts).casefold()
+    if not any(marker in path_text for marker in _FORUM_PATH_MARKERS):
+        return any(part.isdigit() and len(part) >= 3 for part in parts)
+    return any(part.isdigit() or len(part) >= 6 for part in parts[1:])
 
 
 def _reply_page_metadata(body_text: str, *, source_url: str) -> dict[str, str] | None:
@@ -629,6 +931,17 @@ def _reply_page_metadata(body_text: str, *, source_url: str) -> dict[str, str] |
         if match:
             metadata["published_at_raw"] = match.group(1).strip()[:255]
             break
+    if not metadata.get("published_at_raw"):
+        date_patterns = (
+            r"<time[^>]+datetime=[\"']([^\"']+)",
+            r"<meta[^>]+(?:property|name)=[\"'](?:article:published_time|datepublished|date)[\"'][^>]+content=[\"']([^\"']+)",
+            r"<(?:published|pubDate)>\s*([^<]+)",
+        )
+        for pattern in date_patterns:
+            match = re.search(pattern, body_text, flags=re.IGNORECASE)
+            if match:
+                metadata["published_at_raw"] = re.sub(r"\s+", " ", match.group(1)).strip()[:255]
+                break
     status_match = re.search(r'"status"\s*:\s*"([^"]+)"', body_text, flags=re.IGNORECASE)
     deleted_match = re.search(r'"deleted"\s*:\s*(null|true|false)', body_text, flags=re.IGNORECASE)
     if status_match:
@@ -645,6 +958,14 @@ def _reply_page_metadata(body_text: str, *, source_url: str) -> dict[str, str] |
     answer_match = re.search(r'"taskResponsesCount"\s*:\s*(\d+)', body_text, flags=re.IGNORECASE)
     if not answer_match:
         answer_match = re.search(r"(?<!\d)(\d{1,5})\s+v[aá]lasz", visible, flags=re.IGNORECASE)
+    if not answer_match:
+        answer_match = re.search(
+            r"(?<!\d)(\d{1,5})\s+(?:comments?|hozz[aá]sz[oó]l[aá]s)",
+            visible,
+            flags=re.IGNORECASE,
+        )
+    if not answer_match and host.endswith(".reddit.com"):
+        answer_match = re.search(r'"num_comments"\s*:\s*(\d+)', body_text, flags=re.IGNORECASE)
     if answer_match:
         count = answer_match.group(1)
         metadata["answer_count_raw"] = count + " válasz"
@@ -758,6 +1079,31 @@ def _enrich_reply_page_links(
     return [enriched.get(str(item.get("url") or ""), item) for item in links]
 
 
+def _enrich_discovered_forum_links(
+    links: list[dict[str, str]],
+    *,
+    discovery_url: str,
+    timeout_seconds: float,
+    max_response_bytes: int,
+) -> list[dict[str, str]]:
+    """Re-read each search result on its own host for source-page evidence."""
+
+    enriched: list[dict[str, str]] = []
+    for item in links[:12]:
+        url = str(item.get("url") or "")
+        if not _forum_search_result_candidate(url, base_url=discovery_url):
+            continue
+        enriched.extend(
+            _enrich_reply_page_links(
+                [item],
+                base_url=url,
+                timeout_seconds=timeout_seconds,
+                max_response_bytes=max_response_bytes,
+            )
+        )
+    return enriched
+
+
 def _visible_text(body_text: str, limit: int) -> str:
     parser = _VisibleText()
     try:
@@ -794,8 +1140,21 @@ def _source_page_date_evidence(body_text: str) -> str:
 
 
 def _page_evidence(
-    body_text: str, *, base_url: str, limit: int
+    body_text: str, *, base_url: str, limit: int, forum_discovery: bool | None = None
 ) -> tuple[str, list[dict[str, str]]]:
+    if forum_discovery is None:
+        forum_discovery = _is_search_route(base_url)
+    if forum_discovery and _is_search_route(base_url):
+        search_text, search_links = _forum_search_page_evidence(
+            body_text,
+            base_url=base_url,
+            limit=limit,
+        )
+        if search_links:
+            return search_text, search_links
+    atom_evidence = _atom_feed_evidence(body_text, base_url=base_url, limit=limit)
+    if atom_evidence is not None:
+        return atom_evidence
     parser = _VisibleText(base_url)
     try:
         parser.feed(body_text)
@@ -817,6 +1176,90 @@ def _page_evidence(
         # remaining capacity after all concrete task permalinks.
         links = task_parser.links + [item for item in links if item["url"] not in task_urls]
     return text, links[:100]
+
+
+def _atom_feed_evidence(
+    body_text: str, *, base_url: str, limit: int
+) -> tuple[str, list[dict[str, str]]] | None:
+    """Read public Atom/RSS forum feeds without treating the feed refresh as a post date.
+
+    Reddit's public ``.rss`` endpoint exposes each post's own ``published`` value and
+    permalink even when the HTML/JSON endpoints require a login or return a challenge.
+    Comment counts are intentionally left unclaimed; the normal question policy keeps
+    such records as research data until a concrete page proves the answer count.
+    """
+
+    if "<feed" not in body_text[:1200].casefold() and "<rss" not in body_text[:1200].casefold():
+        return None
+    try:
+        root = ElementTree.fromstring(body_text)
+    except ElementTree.ParseError:
+        return None
+    namespace = ""
+    if root.tag.startswith("{"):
+        namespace = root.tag.split("}", 1)[0][1:]
+    entry_tag = f"{{{namespace}}}entry" if namespace else "entry"
+    item_tag = f"{{{namespace}}}item" if namespace else "item"
+    title_tag = f"{{{namespace}}}title" if namespace else "title"
+    content_tags = {
+        f"{{{namespace}}}content" if namespace else "content",
+        f"{{{namespace}}}summary" if namespace else "summary",
+        f"{{{namespace}}}description" if namespace else "description",
+    }
+    date_tags = {
+        f"{{{namespace}}}published" if namespace else "published",
+        f"{{{namespace}}}updated" if namespace else "updated",
+        f"{{{namespace}}}pubDate" if namespace else "pubDate",
+    }
+    links: list[dict[str, str]] = []
+    visible_parts: list[str] = []
+    entries = list(root.iter(entry_tag)) or list(root.iter(item_tag))
+    for entry in entries[:100]:
+        title = next(
+            (str(child.text or "").strip() for child in entry if child.tag == title_tag),
+            "",
+        )
+        raw_date = next(
+            (str(child.text or "").strip() for child in entry if child.tag in date_tags),
+            "",
+        )
+        raw_content = next(
+            (str(child.text or "").strip() for child in entry if child.tag in content_tags),
+            "",
+        )
+        permalink = ""
+        for child in entry:
+            if child.tag.casefold().endswith("link"):
+                href = str(child.attrib.get("href") or child.text or "").strip()
+                rel = str(child.attrib.get("rel") or "").casefold()
+                if href and (rel in {"", "alternate"} or not permalink):
+                    permalink = href
+        canonical = urlunparse(urlparse(urljoin(base_url, permalink))._replace(fragment=""))
+        parsed = urlparse(canonical)
+        if parsed.scheme != "https" or not parsed.hostname:
+            continue
+        excerpt = re.sub(r"<[^>]+>", " ", raw_content)
+        excerpt = re.sub(r"\s+", " ", excerpt).strip()
+        evidence = "; ".join(
+            part
+            for part in (
+                f"published_at_raw={raw_date}" if raw_date else "",
+                "published_at_source=source_page" if raw_date else "",
+                "active_status_raw=active",
+                "active_status=active",
+            )
+            if part
+        )
+        label = " ".join(part for part in (title, excerpt) if part).strip()[:900]
+        if evidence:
+            label = f"{label}\n[SOURCE_PAGE_EVIDENCE] {evidence}"[:1200]
+        if canonical and label and not any(item["url"] == canonical for item in links):
+            links.append({"url": canonical, "label": label})
+        visible_parts.extend(part for part in (title, excerpt, raw_date) if part)
+    if not links:
+        return None
+    text = re.sub(r"\s+", " ", " ".join(visible_parts)).strip()[:limit]
+    return text, links
 
 
 def _public_land_pagination_entry(
@@ -1215,9 +1658,8 @@ def import_snapshot(
         update(SourceCoverageRoute)
         .where(
             SourceCoverageRoute.catalog_sha256 != snapshot_sha,
-            SourceCoverageRoute.route_key.not_like(
-                f"{LAND_PUBLIC_HTML_ROUTE_PREFIX}%"
-            ),
+            SourceCoverageRoute.route_key.not_like(f"{LAND_PUBLIC_HTML_ROUTE_PREFIX}%"),
+            SourceCoverageRoute.route_key.not_like("QUESTION-RADAR:%"),
         )
         .values(enabled=False, updated_at=now)
     )
@@ -1264,6 +1706,8 @@ def ensure_question_radar_direct_routes(
     timestamp = now or datetime.now(UTC)
     rows: list[dict[str, Any]] = []
     for spec in QUESTION_RADAR_DIRECT_ROUTES:
+        route_parsed = urlparse(spec["route_url"])
+        route_base_url = f"{route_parsed.scheme}://{route_parsed.netloc}"
         record = {
             "RouteKey": spec["route_key"],
             "RouteID": spec["route_id"],
@@ -1276,7 +1720,7 @@ def ensure_question_radar_direct_routes(
             "Forrástípus": "public_html",
             "Keresési jel/kifejezés": spec["search_signal"],
             "Útvonal URL": spec["route_url"],
-            "Alap URL": "https://www.gyakorikerdesek.hu",
+            "Alap URL": route_base_url,
             "Útvonalmód": "direct",
             "Prioritás": "0",
             "Validáció": "runtime_direct_source",
@@ -1318,6 +1762,92 @@ def ensure_question_radar_direct_routes(
         )
     _upsert_routes(db, rows)
     db.flush()
+
+
+def _upsert_discovered_forum_routes(
+    db: Session,
+    *,
+    catalog_sha256: str,
+    parent_route: SourceCoverageRoute,
+    links: list[dict[str, str]],
+    now: datetime,
+) -> int:
+    """Persist exact forum permalinks found by a search route, idempotently."""
+
+    rows: list[dict[str, Any]] = []
+    for item in links[:40]:
+        raw_url = str(item.get("url") or "").strip()
+        canonical = urlunparse(urlparse(raw_url)._replace(fragment=""))
+        if not _forum_search_result_candidate(canonical, base_url=parent_route.route_url):
+            continue
+        parsed = urlparse(canonical)
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        route_key = f"{QUESTION_RADAR_DISCOVERED_ROUTE_PREFIX}{digest[:40].upper()}"
+        route_id = f"QR-DISC-{digest[:32].upper()}"
+        source_name = f"Felfedezett fórum – {(parsed.hostname or 'ismeretlen').casefold()}"
+        record = {
+            "RouteKey": route_key,
+            "RouteID": route_id,
+            "Motor": "Imperial–Bautica–Prefab",
+            "Katalógusrész": "question_radar_discovered_forum_v1",
+            "Ország": "HU",
+            "Márkailleszkedés": parent_route.brand_fit or "BauFreund,Bautica,Prefab",
+            "Kategória": "forum",
+            "Forrás neve": source_name,
+            "Forrástípus": "public_html",
+            "Keresési jel/kifejezés": (
+                parent_route.search_signal
+                or "építkezés; felújítás; kivitelező"
+            ),
+            "Útvonal URL": canonical,
+            "Alap URL": f"{parsed.scheme}://{parsed.netloc}",
+            "Útvonalmód": "direct_post",
+            "Prioritás": "1",
+            "Validáció": "runtime_forum_discovery",
+            "Katalógusstátusz": "active",
+            "Katalógus frissítése": "runtime",
+            "Megjegyzés": (
+                f"Automatikusan felfedezett konkrét fórum-bejegyzés; parent_route="
+                f"{parent_route.route_key}; discovery_url={parent_route.route_url}. "
+                "A publikálás és a küldés külön policy-kapuk alatt marad."
+            ),
+        }
+        canonical_record = _canonical_json(record)
+        if contains_no_monitoring_entity(canonical_record):
+            continue
+        rows.append(
+            {
+                "route_key": route_key,
+                "route_id": route_id,
+                "catalog_sha256": catalog_sha256,
+                "motor": record["Motor"],
+                "catalog_part": record["Katalógusrész"],
+                "country": record["Ország"],
+                "brand_fit": record["Márkailleszkedés"],
+                "category": record["Kategória"],
+                "source_name": record["Forrás neve"],
+                "source_type": record["Forrástípus"],
+                "search_signal": record["Keresési jel/kifejezés"],
+                "route_url": canonical,
+                "base_url": record["Alap URL"],
+                "route_mode": record["Útvonalmód"],
+                "priority": record["Prioritás"],
+                "validation": record["Validáció"],
+                "catalog_status": record["Katalógusstátusz"],
+                "source_updated_value": record["Katalógus frissítése"],
+                "notes": record["Megjegyzés"],
+                "source_row_sha256": hashlib.sha256(canonical_record.encode()).hexdigest(),
+                "source_record_json": canonical_record,
+                "enabled": True,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+    if not rows:
+        return 0
+    _upsert_routes(db, rows)
+    db.flush()
+    return len(rows)
 
 
 def active_revision(db: Session) -> SourceCatalogRevision:
@@ -1548,22 +2078,40 @@ def _fetch(
     body_text = body.decode("utf-8", errors="ignore")
     title_match = re.search(r"<title[^>]*>(.*?)</title>", body_text, re.I | re.S)
     title = re.sub(r"\s+", " ", title_match.group(1)).strip()[:500] if title_match else None
+    forum_discovery = _is_forum_discovery_route(route)
     analysis_text, analysis_links = _page_evidence(
         body_text,
         base_url=fetch_url,
         limit=getattr(cfg, "canonical_analysis_text_chars", 6000),
+        forum_discovery=forum_discovery,
     )
     if 200 <= status_code < 300 and body:
         # The list page is discovery only.  For supported question/task
         # surfaces, verify each bounded concrete permalink on its own page so
         # the extractor receives the original publication date and lifecycle
         # evidence rather than a search/list refresh time.
-        analysis_links = _enrich_reply_page_links(
-            analysis_links,
-            base_url=fetch_url,
-            timeout_seconds=cfg.canonical_route_timeout_seconds,
-            max_response_bytes=cfg.canonical_route_max_response_bytes,
-        )
+        if forum_discovery:
+            analysis_links = _enrich_discovered_forum_links(
+                analysis_links,
+                discovery_url=fetch_url,
+                timeout_seconds=cfg.canonical_route_timeout_seconds,
+                max_response_bytes=cfg.canonical_route_max_response_bytes,
+            )
+        else:
+            if getattr(route, "route_mode", None) == "direct_post" and _reply_page_candidate(
+                fetch_url,
+                base_url=fetch_url,
+            ):
+                analysis_links = [
+                    {"url": fetch_url, "label": analysis_text[:900]},
+                    *analysis_links,
+                ]
+            analysis_links = _enrich_reply_page_links(
+                analysis_links,
+                base_url=fetch_url,
+                timeout_seconds=cfg.canonical_route_timeout_seconds,
+                max_response_bytes=cfg.canonical_route_max_response_bytes,
+            )
     blocked = _looks_like_blocked_response(
         status_code=status_code,
         route_url=fetch_url,
@@ -1651,7 +2199,13 @@ def _fetch(
             "title": title,
             "host": parsed.hostname,
             "source_ip": source_ip,
-            "discovery_mode": "public_html" if named_portal else "generic_html",
+            "discovery_mode": (
+                "search_engine_forum_discovery"
+                if forum_discovery
+                else "public_html"
+                if named_portal
+                else "generic_html"
+            ),
             "robots_txt": "allowed" if named_portal else "not_applicable",
             "land_listing_fetches": land_listing_fetches,
             "land_listing_candidate_count": (
@@ -2154,6 +2708,7 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
     land_examined = 0
     land_qualified = 0
     land_queued = 0
+    discovered_forum_routes = 0
     # Persist and extract evidence on the owning SQLAlchemy thread only.
     for (route, route_run_id, managed_land), (started, result, completed) in zip(
         selected_runs, fetched, strict=True
@@ -2174,6 +2729,14 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         )
         db.add(attempt)
         db.flush()
+        if status == "succeeded" and _is_forum_discovery_route(route):
+            discovered_forum_routes += _upsert_discovered_forum_routes(
+                db,
+                catalog_sha256=revision.catalog_sha256,
+                parent_route=route,
+                links=result.get("analysis_links") or [],
+                now=completed,
+            )
         cursor_rows: dict[str, GrowthPublicLandListingCursor] = {}
         if managed_land:
             land_examined += len(
@@ -2284,6 +2847,7 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         "remaining_routes": max(0, active_route_target - attempted_today - len(selected)),
         "run_id": run_id,
         "outcomes": outcomes,
+        "discovered_forum_routes": discovered_forum_routes,
         "land_public_lane": {
             "run_id": land_run_id,
             "route_readiness": managed_route_state,

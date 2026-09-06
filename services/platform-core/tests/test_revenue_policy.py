@@ -88,8 +88,51 @@ def test_direct_question_routes_are_registered_with_current_catalog_revision(db)
     assert {row.route_url for row in rows} == {
         "https://www.gyakorikerdesek.hu/otthon__epitkezes__valasz-nelkul",
         "https://www.gyakorikerdesek.hu/otthon__felujitas__valasz-nelkul",
+        "https://forum.index.hu/Topic/showTopicList",
+        "https://www.reddit.com/r/hungary/.rss",
+        "https://www.reddit.com/r/askhungary/.rss",
+        "https://www.reddit.com/r/kiszamolo/.rss",
+        "https://www.bing.com/search?q=epitkezes+kivitelezo+hazepites+tetoter+forum",
+        "https://www.bing.com/search?q=felujitas+szakember+kivitelezo+koltseg+forum",
+        "https://www.bing.com/search?q=megbizhato+kivitelezo+ajanlas+arajanlat+epitkezes",
     }
     assert all(row.enabled is True and row.catalog_sha256 == "a" * 64 for row in rows)
+
+
+def test_search_discovered_forum_permalink_is_idempotent(db):
+    catalog.ensure_question_radar_direct_routes(db, catalog_sha256="a" * 64)
+    parent = db.scalar(
+        select(SourceCoverageRoute).where(
+            SourceCoverageRoute.route_key == "QUESTION-RADAR:FORUM-DISCOVERY-CONSTRUCTION"
+        )
+    )
+    assert parent is not None
+    link = {
+        "url": "https://forum.example.hu/threads/kivitelezo-ajanlas.12345/",
+        "label": "Tudtok megbízható kivitelezőt? Építkezés fórum",
+    }
+    assert catalog._upsert_discovered_forum_routes(
+        db,
+        catalog_sha256="a" * 64,
+        parent_route=parent,
+        links=[link],
+        now=datetime.now(UTC),
+    ) == 1
+    assert catalog._upsert_discovered_forum_routes(
+        db,
+        catalog_sha256="a" * 64,
+        parent_route=parent,
+        links=[link],
+        now=datetime.now(UTC),
+    ) == 1
+    rows = db.scalars(
+        select(SourceCoverageRoute).where(
+            SourceCoverageRoute.route_key.like("QUESTION-RADAR:DISCOVERED:%")
+        )
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].route_mode == "direct_post"
+    assert rows[0].route_url == link["url"]
 
 
 def test_revalidation_rejects_changed_source_identity():

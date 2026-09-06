@@ -9,6 +9,7 @@ import stat
 import unicodedata
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -853,6 +854,7 @@ def _specific_reply_permalink(value: object) -> bool:
     parsed = urlparse(canonical)
     parts = [part.casefold() for part in parsed.path.split("/") if part]
     host = (parsed.hostname or "").casefold()
+    query = parse_qs(parsed.query)
     if (
         (host == "joszaki.hu" or host.endswith(".joszaki.hu"))
         and len(parts) >= 2
@@ -865,7 +867,18 @@ def _specific_reply_permalink(value: object) -> bool:
         and re.search(r"__\d{6,}(?:-|$)", parsed.path, flags=re.IGNORECASE)
     ):
         return True
-    query = parse_qs(parsed.query)
+    if (host == "reddit.com" or host.endswith(".reddit.com")) and re.search(
+        r"/comments/[a-z0-9]{3,}(?:/|$)", parsed.path, flags=re.IGNORECASE
+    ):
+        return True
+    if (host == "forum.index.hu" or host.endswith(".forum.index.hu")):
+        if parsed.path.casefold().rstrip("/").endswith("/article/showarticle"):
+            return any(
+                key.casefold() in {"id", "post", "question", "thread", "topic", "tid", "t"}
+                and value
+                for key, values in query.items()
+                for value in values
+            )
     has_identity_query = any(
         key.casefold() in {"id", "post", "question", "thread", "topic"} for key in query
     )
@@ -996,6 +1009,14 @@ def _parse_observed_date(value: object, *, observed_at: datetime) -> datetime | 
     raw = _norm(str(value or "")).strip(".,")
     local_now = observed_at.astimezone(ZoneInfo(settings().timezone))
     local_date: date | None = None
+    try:
+        rfc822 = parsedate_to_datetime(raw)
+    except (TypeError, ValueError, OverflowError):
+        rfc822 = None
+    if rfc822 is not None:
+        if rfc822.tzinfo is None:
+            rfc822 = rfc822.replace(tzinfo=UTC)
+        return rfc822.astimezone(UTC)
     if raw in {"ma", "today"}:
         local_date = local_now.date()
     elif raw in {"tegnap", "yesterday"}:
