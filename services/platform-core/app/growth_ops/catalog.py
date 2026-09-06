@@ -78,6 +78,32 @@ QUESTION_SURFACE_ROUTE_OVERRIDES = {
     "EVB-06834": "https://qjob.hu/budapest/munka/epitomernok-allas",
 }
 
+# The canonical route ledger contains several search-engine URLs for forum
+# discovery.  Those URLs are not reliable source pages: Google commonly
+# redirects the worker to a consent page and the resulting page has no
+# question evidence.  Keep the ledger immutable, but add a small, explicit
+# overlay for the public Hungarian question surface that can be fetched and
+# revalidated directly.  The concrete question permalinks are extracted from
+# these category pages and fetched separately before they reach the extractor.
+QUESTION_RADAR_DIRECT_ROUTES = (
+    {
+        "route_key": "QUESTION-RADAR:GYAKORI-EPITKEZES-NELKUL",
+        "route_id": "QR-GYAKORI-EPITKEZES-NELKUL",
+        "source_name": "Gyakori Kérdések – Építkezés – válasz nélkül",
+        "route_url": "https://www.gyakorikerdesek.hu/otthon__epitkezes__valasz-nelkul",
+        "search_signal": "építkezés; kivitelező; házépítés; tetőtér; költség",
+        "brand_fit": "BauFreund,Bautica,Prefab",
+    },
+    {
+        "route_key": "QUESTION-RADAR:GYAKORI-FELUJITAS-NELKUL",
+        "route_id": "QR-GYAKORI-FELUJITAS-NELKUL",
+        "source_name": "Gyakori Kérdések – Felújítás – válasz nélkül",
+        "route_url": "https://www.gyakorikerdesek.hu/otthon__felujitas__valasz-nelkul",
+        "search_signal": "felújítás; szakember; ár; kivitelező",
+        "brand_fit": "BauFreund,Bautica",
+    },
+)
+
 # The canonical ledger still contains the legacy `/lista` address, which the
 # portal's current robots policy disallows. Keep the immutable source row for
 # audit, but fetch the equivalent public route that robots.txt permits.
@@ -571,6 +597,10 @@ def _reply_page_candidate(url: str, *, base_url: str) -> bool:
             "szakma",
             "tevekenyseg",
         }
+    if host == "gyakorikerdesek.hu" or host.endswith(".gyakorikerdesek.hu"):
+        # Concrete Gyakori Kérdések pages carry a numeric question id in the
+        # category slug (for example ``otthon__epitkezes__13249178-...``).
+        return bool(re.search(r"__\d{6,}(?:-|$)", path, flags=re.IGNORECASE))
     return False
 
 
@@ -582,6 +612,8 @@ def _reply_page_metadata(body_text: str, *, source_url: str) -> dict[str, str] |
     """
 
     metadata: dict[str, str] = {}
+    host = (urlparse(source_url).hostname or "").casefold()
+    visible = _visible_text(body_text, 60_000)
     date_patterns = (
         r'"datePublished"\s*:\s*"([^"]+)"',
         r'"publishedAt"\s*:\s*"([^"]+)"',
@@ -607,12 +639,47 @@ def _reply_page_metadata(body_text: str, *, source_url: str) -> dict[str, str] |
 
     answer_match = re.search(r'"taskResponsesCount"\s*:\s*(\d+)', body_text, flags=re.IGNORECASE)
     if not answer_match:
-        visible = _visible_text(body_text, 60_000)
         answer_match = re.search(r"(?<!\d)(\d{1,5})\s+v[aá]lasz", visible, flags=re.IGNORECASE)
     if answer_match:
         count = answer_match.group(1)
         metadata["answer_count_raw"] = count + " válasz"
         metadata["existing_answer_count"] = count
+
+    if host == "gyakorikerdesek.hu" or host.endswith(".gyakorikerdesek.hu"):
+        # Gyakori Kérdések renders Hungarian relative dates and does not expose
+        # JSON-LD timestamps.  Read the date and answer state from the concrete
+        # question page, never from the category/search page.
+        date_match = re.search(
+            r"\b(?:jan(?:uár)?|febr?(?:uár)?|márc(?:ius)?|ápr(?:ilis)?|"
+            r"máj(?:us)?|jún(?:ius)?|júl(?:ius)?|aug(?:usztus)?|"
+            r"szept(?:ember)?|okt(?:óber)?|nov(?:ember)?|dec(?:ember)?)\.?"
+            r"\s+\d{1,2}\.?(?:\s+\d{1,2}:\d{2})?",
+            visible,
+            flags=re.IGNORECASE,
+        )
+        if date_match:
+            metadata["published_at_raw"] = date_match.group(0).strip()[:255]
+        if re.search(
+            r"még\s+nem\s+érkezett\s+v[aá]lasz|nincs\s+v[aá]lasz",
+            visible,
+            flags=re.IGNORECASE,
+        ):
+            metadata["active_status_raw"] = "active"
+            metadata["active_status"] = "active"
+            metadata["answer_count_raw"] = "0 válasz"
+            metadata["existing_answer_count"] = "0"
+        elif not metadata.get("active_status"):
+            metadata["active_status_raw"] = "active"
+            metadata["active_status"] = "active"
+        if "existing_answer_count" not in metadata:
+            answer_total = re.search(
+                r"\d+\s*/\s*(\d+)\s+anonim\s+v[aá]lasza",
+                visible,
+                flags=re.IGNORECASE,
+            )
+            if answer_total:
+                metadata["answer_count_raw"] = answer_total.group(1) + " válasz"
+                metadata["existing_answer_count"] = answer_total.group(1)
 
     if not metadata.get("published_at_raw"):
         return None
@@ -1167,6 +1234,79 @@ def import_snapshot(
     revision.imported_at = now
     db.commit()
     return revision
+
+
+def ensure_question_radar_direct_routes(
+    db: Session,
+    *,
+    catalog_sha256: str,
+    now: datetime | None = None,
+) -> None:
+    """Keep the approved direct public question surfaces beside the ledger.
+
+    These rows deliberately use the current canonical revision hash so a later
+    source-ledger import cannot silently disable the direct question feed.  The
+    rows are still ordinary ``SourceCoverageRoute`` records, so all existing
+    URL, robots, evidence, dedupe and freshness checks remain in force.
+    """
+
+    timestamp = now or datetime.now(UTC)
+    rows: list[dict[str, Any]] = []
+    for spec in QUESTION_RADAR_DIRECT_ROUTES:
+        record = {
+            "RouteKey": spec["route_key"],
+            "RouteID": spec["route_id"],
+            "Motor": "Imperial–Bautica–Prefab",
+            "Katalógusrész": "question_radar_direct_v1",
+            "Ország": "HU",
+            "Márkailleszkedés": spec["brand_fit"],
+            "Kategória": "forum",
+            "Forrás neve": spec["source_name"],
+            "Forrástípus": "public_html",
+            "Keresési jel/kifejezés": spec["search_signal"],
+            "Útvonal URL": spec["route_url"],
+            "Alap URL": "https://www.gyakorikerdesek.hu",
+            "Útvonalmód": "direct",
+            "Prioritás": "0",
+            "Validáció": "runtime_direct_source",
+            "Katalógusstátusz": "active",
+            "Katalógus frissítése": "runtime",
+            "Megjegyzés": (
+                "Közvetlen nyilvános kérdéslista; a konkrét kérdésoldal dátuma, "
+                "aktív állapota és válaszszáma külön visszaolvasandó."
+            ),
+        }
+        canonical = _canonical_json(record)
+        rows.append(
+            {
+                "route_key": spec["route_key"],
+                "route_id": spec["route_id"],
+                "catalog_sha256": catalog_sha256,
+                "motor": record["Motor"],
+                "catalog_part": record["Katalógusrész"],
+                "country": record["Ország"],
+                "brand_fit": record["Márkailleszkedés"],
+                "category": record["Kategória"],
+                "source_name": record["Forrás neve"],
+                "source_type": record["Forrástípus"],
+                "search_signal": record["Keresési jel/kifejezés"],
+                "route_url": record["Útvonal URL"],
+                "base_url": record["Alap URL"],
+                "route_mode": record["Útvonalmód"],
+                "priority": record["Prioritás"],
+                "validation": record["Validáció"],
+                "catalog_status": record["Katalógusstátusz"],
+                "source_updated_value": record["Katalógus frissítése"],
+                "notes": record["Megjegyzés"],
+                "source_row_sha256": hashlib.sha256(canonical.encode()).hexdigest(),
+                "source_record_json": canonical,
+                "enabled": True,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            }
+        )
+    _upsert_routes(db, rows)
+    db.flush()
 
 
 def active_revision(db: Session) -> SourceCatalogRevision:
@@ -1738,6 +1878,7 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
     if local_now < start_local:
         return {"status": "not_due", "attempted": 0}
     revision = active_revision(db)
+    ensure_question_radar_direct_routes(db, catalog_sha256=revision.catalog_sha256, now=current)
     start_utc = start_local.astimezone(UTC)
     from .models import CanonicalGrowthDailyRun
 

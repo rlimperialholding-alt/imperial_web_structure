@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
-from app.growth_ops import processing
+from app.growth_ops import catalog, processing
 from app.growth_ops.models import (
     QuestionRadarTopic,
     SourceCoverageAttempt,
@@ -41,6 +41,55 @@ def _topic(**overrides):
 
 def test_purchase_signal_accepts_no_question_mark():
     assert is_purchase_signal("Ajánlatot kérek családi ház kivitelezésére")
+
+
+def test_gyakori_kerdesek_permalink_and_relative_date_are_source_page_safe():
+    permalink = (
+        "https://www.gyakorikerdesek.hu/otthon__epitkezes__13249178-"
+        "piteszmernokot-keresek-miskolcon-kit-ajanlanatok"
+    )
+    assert processing._specific_reply_permalink(permalink)
+    parsed = processing._parse_observed_date(
+        "júl. 23. 09:43",
+        observed_at=datetime(2026, 9, 6, 12, 0, tzinfo=UTC),
+    )
+    assert parsed == datetime(2026, 7, 23, 7, 43, tzinfo=UTC)
+
+
+def test_gyakori_kerdesek_page_metadata_proves_zero_answers():
+    body = """
+    <html><head><title>Építészmérnököt keresek</title></head><body>
+    Építészmérnököt keresek Miskolcon. Kit ajánlanátok?
+    Családi ház bővítéséhez keresek tervezőt. júl. 23. 09:43
+    Sajnos még nem érkezett válasz a kérdésre.
+    </body></html>
+    """
+    metadata = catalog._reply_page_metadata(
+        body,
+        source_url=(
+            "https://www.gyakorikerdesek.hu/otthon__epitkezes__13249178-"
+            "piteszmernokot-keresek-miskolcon-kit-ajanlanatok"
+        ),
+    )
+    assert metadata is not None
+    assert metadata["published_at_raw"] == "júl. 23. 09:43"
+    assert metadata["published_at_source"] == "source_page"
+    assert metadata["active_status"] == "active"
+    assert metadata["existing_answer_count"] == "0"
+
+
+def test_direct_question_routes_are_registered_with_current_catalog_revision(db):
+    catalog.ensure_question_radar_direct_routes(db, catalog_sha256="a" * 64)
+    rows = db.scalars(
+        select(SourceCoverageRoute).where(
+            SourceCoverageRoute.route_key.like("QUESTION-RADAR:%")
+        )
+    ).all()
+    assert {row.route_url for row in rows} == {
+        "https://www.gyakorikerdesek.hu/otthon__epitkezes__valasz-nelkul",
+        "https://www.gyakorikerdesek.hu/otthon__felujitas__valasz-nelkul",
+    }
+    assert all(row.enabled is True and row.catalog_sha256 == "a" * 64 for row in rows)
 
 
 def test_revalidation_rejects_changed_source_identity():

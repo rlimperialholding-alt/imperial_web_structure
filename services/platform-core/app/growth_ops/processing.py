@@ -809,6 +809,34 @@ _CONSTRUCTION_TOPIC_MARKERS = (
     "víz",
 )
 
+_HUNGARIAN_MONTHS = {
+    "jan": 1,
+    "január": 1,
+    "feb": 2,
+    "febr": 2,
+    "február": 2,
+    "márc": 3,
+    "március": 3,
+    "ápr": 4,
+    "április": 4,
+    "máj": 5,
+    "május": 5,
+    "jún": 6,
+    "június": 6,
+    "júl": 7,
+    "július": 7,
+    "aug": 8,
+    "augusztus": 8,
+    "szept": 9,
+    "szeptember": 9,
+    "okt": 10,
+    "október": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
 
 def _canonical_https_url(value: object) -> str | None:
     raw = str(value or "").strip()
@@ -832,6 +860,11 @@ def _specific_reply_permalink(value: object) -> bool:
         and parts[1] in {"szakma", "uj-kerdes"}
     ):
         return False
+    if (
+        (host == "gyakorikerdesek.hu" or host.endswith(".gyakorikerdesek.hu"))
+        and re.search(r"__\d{6,}(?:-|$)", parsed.path, flags=re.IGNORECASE)
+    ):
+        return True
     query = parse_qs(parsed.query)
     has_identity_query = any(
         key.casefold() in {"id", "post", "question", "thread", "topic"} for key in query
@@ -968,6 +1001,31 @@ def _parse_observed_date(value: object, *, observed_at: datetime) -> datetime | 
     elif raw in {"tegnap", "yesterday"}:
         local_date = local_now.date() - timedelta(days=1)
     else:
+        hungarian = re.fullmatch(
+            r"([a-záéíóöőúüű]+)\.?\s+(\d{1,2})\.?(?:\s+(\d{1,2}:\d{2}))?",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        if hungarian:
+            month = _HUNGARIAN_MONTHS.get(hungarian.group(1).casefold())
+            if month is None:
+                return None
+            day = int(hungarian.group(2))
+            clock = hungarian.group(3) or "00:00"
+            hour, minute = (int(part) for part in clock.split(":", 1))
+            local_date = date(
+                observed_at.astimezone(ZoneInfo(settings().timezone)).year,
+                month,
+                day,
+            )
+            observed_local_date = local_now.date()
+            if local_date > observed_local_date:
+                local_date = date(local_date.year - 1, month, day)
+            return datetime.combine(
+                local_date,
+                datetime.min.time().replace(hour=hour, minute=minute),
+                ZoneInfo(settings().timezone),
+            ).astimezone(UTC)
         relative = re.fullmatch(r"(\d{1,3})\s*(napja|hete|hónapja|honapja|éve|eve)", raw)
         if relative:
             amount = int(relative.group(1))
