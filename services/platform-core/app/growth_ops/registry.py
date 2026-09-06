@@ -112,6 +112,8 @@ class GrowthSettings:
     canonical_analysis_text_chars: int
     canonical_question_answer_enabled: bool
     canonical_question_answer_batch_size: int
+    canonical_question_require_source_date_proof: bool
+    canonical_revenue_policy_enabled: bool
     canonical_content_factory_enabled: bool
     canonical_internal_handoff_enabled: bool
     canonical_internal_handoff_at: str
@@ -273,6 +275,14 @@ def settings() -> GrowthSettings:
         canonical_question_answer_batch_size=max(
             1, min(100, int(os.getenv("CANONICAL_QUESTION_ANSWER_BATCH_SIZE", "50")))
         ),
+        canonical_question_require_source_date_proof=os.getenv(
+            "CANONICAL_QUESTION_REQUIRE_SOURCE_DATE_PROOF", "true"
+        ).lower()
+        == "true",
+        canonical_revenue_policy_enabled=os.getenv(
+            "CANONICAL_REVENUE_POLICY_ENABLED", "true"
+        ).lower()
+        == "true",
         canonical_content_factory_enabled=os.getenv(
             "CANONICAL_CONTENT_FACTORY_ENABLED", "false"
         ).lower()

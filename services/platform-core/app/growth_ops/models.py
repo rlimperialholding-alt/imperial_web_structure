@@ -688,6 +688,35 @@ class DailyContentObligation(Base):
     )
 
 
+class ContentSourceReplenishmentTask(Base):
+    """Durable work item created when a revenue brief lacks approved evidence."""
+
+    __tablename__ = "content_source_replenishment_tasks"
+    __table_args__ = (
+        UniqueConstraint("dedupe_key", name="uq_content_source_replenishment_dedupe"),
+        CheckConstraint(
+            "status IN ('open','resolved','cancelled')",
+            name="ck_content_source_replenishment_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    dedupe_key: Mapped[str] = mapped_column(String(180), index=True)
+    local_date: Mapped[date] = mapped_column(Date, index=True)
+    brand_id: Mapped[str] = mapped_column(String(120), index=True)
+    radar_topic_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    buyer_problem: Mapped[str] = mapped_column(Text)
+    required_fact_types_json: Mapped[str] = mapped_column(Text, default='["brand_fact"]')
+    source_urls_json: Mapped[str] = mapped_column(Text, default="[]")
+    details_json: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class QuestionRadarIdentity(Base):
     __tablename__ = "question_radar_identities"
 
