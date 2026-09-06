@@ -210,13 +210,13 @@ BRAND_PUBLICATION_CONTRACTS = {
         "forbidden": ["Danish életmódhang", "RED agresszív ár-idő hang", "a falszerkezet mint önmagában eladott termék"],
     },
     "RED Property": {
-        "position": "Családi házak és típusházak: ár, idő és azonnali összehasonlíthatóság; nem ingatlanközvetítő márka.",
+        "position": "Ingatlanfejlesztő márka családi házak és típusházak számára; az ár, az idő és az összehasonlítható fejlesztési döntés tisztázása.",
         "voice": "Direkt, energikus, magabiztos, tegező, rövid és félreérthetetlen magyar.",
-        "required": ["típusház vagy egyértelmű házválasztási helyzet", "konkrét döntési előny", "egyetlen direkt CTA"],
-        "forbidden": ["ingatlanfejlesztés", "ingatlanhirdetés", "közvetítés", "listing", "staging", "bizonyíték nélküli ár-, idő- vagy legjobb/leggyorsabb állítás", "Ház. Ár. Határidő."],
+        "required": ["ingatlanfejlesztőként, nem közvetítőként jelenik meg", "típusház vagy egyértelmű házválasztási helyzet", "egyetlen direkt CTA"],
+        "forbidden": ["ingatlan-közvetítés", "ingatlanhirdetés", "listing", "staging", "bizonyíték nélküli ár-, idő- vagy legjobb/leggyorsabb állítás", "Ház. Ár. Határidő."],
     },
     "Property360": {
-        "position": "Az ingatlanvásárlás és beköltözés teljes, összehangolt 360 fokos ügyfélútja; nem befektetési tanácsadás és nem üzemeltetés.",
+        "position": "Property360: az ingatlanvásárlástól a beköltözésig összehangolt ügyfélút; nem befektetési tanácsadás és nem üzemeltetés.",
         "voice": "Segítőkész, lendületes, tegező, döntést könnyítő magyar.",
         "required": ["konkrét lakás- vagy házkeresési helyzet", "összehangolt következő lépés", "kézzelfogható ügyfélhaszon"],
         "locked_slogan": "Kattints és költözz!",
@@ -239,6 +239,30 @@ BRAND_PUBLICATION_CONTRACTS = {
         "voice": "Tapasztalt cégvezető természetes, magabiztos, magázó hangja.",
         "required": ["generálkivitelezés, fővállalkozás vagy magasépítés kifejezett megnevezése", "konkrét B2B épülettípus vagy növekedési helyzet", "konkrét ajánlatkérési CTA"],
         "forbidden": ["lakossági típusház", "általános projektkontroll mint főígéret", "bizonyíték nélküli 1989-, ár- vagy időgarancia"],
+    },
+    "Venture Studio": {
+        "position": "Venture Studio: vállalkozás- és üzletfejlesztési műhely, amely az innovációs és növekedési döntések tisztázását segíti.",
+        "voice": "Tárgyilagos, vállalkozói, konkrét és döntésorientált magyar.",
+        "required": ["üzletfejlesztési vagy növekedési döntés", "innovációs helyzet", "egyértelmű következő lépés"],
+        "forbidden": ["általános motiváció", "bizonyíték nélküli befektetési ígéret", "másik márka szolgáltatása"],
+    },
+    "BauShield": {
+        "position": "BauShield: építési kockázatok, szerződéses pontok és műszaki ellenőrzés közérthető tisztázása.",
+        "voice": "Határozott, védelmet és előrelátást hangsúlyozó, tárgyilagos magyar.",
+        "required": ["építési kockázat vagy szerződéses döntés", "ellenőrizhető műszaki szempont", "konkrét következő lépés"],
+        "forbidden": ["garantált eredmény", "bizonyíték nélküli jogi vagy műszaki ígéret", "riogatás"],
+    },
+    "Imperial Intelligence": {
+        "position": "Imperial Intelligence: mesterséges intelligencia, adat és automatizálás üzleti döntésekhez, ellenőrizhető módon.",
+        "voice": "Tárgyilagos, technológiai, üzleti döntéshozóknak szóló magyar.",
+        "required": ["adat- vagy automatizálási döntés", "ellenőrizhető üzleti haszon", "konkrét következő lépés"],
+        "forbidden": ["bizonyíték nélküli teljesítményígéret", "kitalált megtakarítás", "saját referencia"],
+    },
+    "Imperial Knowledge": {
+        "position": "Imperial Knowledge: szakmai tudás, oktatás és útmutató, amely jobb döntéshez rendezett magyarázatot ad.",
+        "voice": "Közérthető, rendszerezett, szakmai és természetes magyar.",
+        "required": ["tanulási vagy döntési probléma", "rendezett szakmai magyarázat", "konkrét következő lépés"],
+        "forbidden": ["kitalált képesítés", "garantált eredmény", "bizonyíték nélküli felsőfok"],
     },
 }
 

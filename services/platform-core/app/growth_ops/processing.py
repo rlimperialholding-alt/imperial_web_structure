@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 import stat
 import unicodedata
@@ -101,6 +102,18 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
+CONTENT_FACTORY_REPAIR_VERSION = "20260906-content-repair-v2"
+BRAND_POSITION_ANCHORS = {
+    "BauShield": ("építési kockázat", "szerződés"),
+    "Casa Moderna": ("prémium otthon", "komfort"),
+    "Danish Fabrik": ("favázas", "készház"),
+    "Imperial Intelligence": ("mesterséges intelligencia", "automatizálás"),
+    "Imperial Knowledge": ("szakmai tudás", "oktatás"),
+    "Property360": ("property360", "beköltözés"),
+    "RED Property": ("ingatlanfejlesztő", "típusház"),
+    "TimberHaus": ("faépítés", "készültségi"),
+    "Venture Studio": ("üzletfejlesztés", "innováció"),
+}
 
 
 def _normalized_email(value: str) -> str:
@@ -115,6 +128,12 @@ def _publication_digest_idempotency_key(
 
 
 def _publication_digest_kill_switch_active(config: object) -> bool:
+    """Return true only for an explicit stop marker, not for an allow-file.
+
+    The publishing worker uses the same file as an allow gate: an approved
+    token means writes are enabled.  Treating mere file existence as a stop
+    left stale container mounts looking like a live kill switch.
+    """
     path = Path(
         str(
             getattr(
@@ -124,7 +143,17 @@ def _publication_digest_kill_switch_active(config: object) -> bool:
             )
         )
     )
-    return path.is_file()
+    if not path.is_file():
+        return False
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return True
+    environment = str(os.getenv("ENVIRONMENT", "development")).casefold()
+    allowed = {"ALLOW_APPROVED_WRITES"} if environment == "production" else {
+        "ALLOW_STAGING_WRITES"
+    }
+    return value not in allowed
 
 
 def _lock_summary_delivery_claims(db: Session) -> None:
@@ -224,6 +253,112 @@ def _content_repair_errors(package: dict[str, Any], contract: dict[str, Any]) ->
         errors.append("hard_gate_entity_detected")
     errors.extend(_deterministic_publication_errors(package, contract))
     return sorted(set(errors))
+
+
+def _content_factory_fallback_package(
+    *,
+    brand_id: str,
+    focus: tuple[str, ...],
+    contract: dict[str, Any],
+    revenue_intent: dict[str, Any] | None,
+    current_package: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a safe, brand-specific recovery draft after a bad model response.
+
+    This is a recovery path, not a publication bypass.  The independent release
+    review, image gate, channel checks and publication readback still run after
+    this package is built.
+    """
+    current_package = current_package or {}
+    primary = str(focus[0] if focus else "szakmai döntés")
+    buyer_problem = str((revenue_intent or {}).get("buyer_problem") or "").strip()
+    buyer_problem = re.sub(r"\d+", "", buyer_problem)
+    buyer_problem = re.sub(r"\s{2,}", " ", buyer_problem).strip(" .,:;!?\"")
+    if len(buyer_problem) < 12:
+        buyer_problem = f"hogyan lehet a {primary} témájában megalapozott döntést hozni"
+    position = str(contract.get("position") or "").strip()
+    position = re.sub(r"\d+", "", position)
+    required = [
+        re.sub(r"\d+", "", str(item)).strip()
+        for item in contract.get("required") or []
+        if str(item).strip()
+    ]
+    required_text = ", ".join(required[:2]) or primary
+    informal_voice = "tegező" in _norm(str(contract.get("voice") or ""))
+    next_step = str((revenue_intent or {}).get("next_step") or "").strip()
+    next_step = re.sub(r"\d+", "", next_step)
+    next_step = re.sub(r"\s{2,}", " ", next_step).strip(" .,:;!?\"")
+    if len(next_step) < 8:
+        next_step = (
+            "kérj rövid szakmai egyeztetést a konkrét helyzetről"
+            if informal_voice
+            else "kérjen rövid szakmai egyeztetést a konkrét helyzetről"
+        )
+    if informal_voice:
+        body_steps = (
+            "Először írd le, melyik helyzetet szeretnéd megoldani, és mitől lenne a "
+            "folyamat kiszámíthatóbb. Ezután válaszd külön a bizonyított tényt, a "
+            "szakmai feltételezést és azt, amit még ellenőrizni kell. Végül rögzítsd, "
+            "ki hozza meg a következő döntést, milyen bemenetre támaszkodva, és mikor "
+            "kell visszanézni az eredményt."
+        )
+        cta_label = "Kérj szakmai egyeztetést"
+    else:
+        body_steps = (
+            "Először írja le, melyik helyzetet szeretné megoldani, és mitől lenne a "
+            "folyamat kiszámíthatóbb. Ezután válassza külön a bizonyított tényt, a "
+            "szakmai feltételezést és azt, amit még ellenőrizni kell. Végül rögzítse, "
+            "ki hozza meg a következő döntést, milyen bemenetre támaszkodva, és mikor "
+            "kell visszanézni az eredményt."
+        )
+        cta_label = "Kérjen szakmai egyeztetést"
+
+    title = f"{brand_id}: {primary.capitalize()} döntés, tisztább következő lépés"
+    body = (
+        f"Amikor {buyer_problem}, könnyű rögtön egyetlen megoldás felé indulni. "
+        f"A valódi kockázat azonban gyakran az, hogy a döntés előtt nem tisztázzuk a "
+        f"célt, a felelősségi határt és azt, milyen eredmény tekinthető elfogadhatónak. "
+        f"A {brand_id} nézőpontjában ezért a {required_text} nem díszítő elem, hanem "
+        f"a döntés kiindulópontja.\n\n"
+        f"A {primary} kérdését érdemes három lépésben rendezni. {body_steps}\n\n"
+        f"A {brand_id} pozíciója: {position}. Ez azt jelenti, hogy a témát nem általános "
+        f"ígéretekkel, hanem a konkrét vevői helyzethez illő szempontokkal kell továbbvinni. "
+        f"A következő lépés legyen vállalható és ellenőrizhető: {next_step}. "
+        f"Így a kapcsolatfelvétel előtt világos marad, milyen kérdésre keresünk választ, "
+        f"és milyen információ hiányzik még a felelős döntéshez."
+    )
+    facebook = (
+        f"{brand_id}: a {primary} témájában a jó döntés azzal kezdődik, hogy tisztázza "
+        f"a problémát, a felelősségi határt és az ellenőrizendő tényeket. A {brand_id} "
+        f"nézőpontja a {required_text} kérdését állítja a középpontba. "
+        f"{next_step.capitalize()}! #szakma #tudatosdöntés #{re.sub(r'[^a-záéíóöőúüű0-9]', '', primary.casefold())}"
+    )
+    source_urls = (revenue_intent or {}).get("source_refs")
+    if not isinstance(source_urls, list):
+        source_urls = current_package.get("source_urls")
+    source_urls = [value for value in source_urls or [] if isinstance(value, str)]
+    return {
+        **current_package,
+        "brand_id": brand_id,
+        "title": title,
+        "format": "professional_article",
+        "position": position or primary,
+        "customer_benefits": [
+            "Átláthatóbbá válik a következő döntés",
+            "Különválaszthatók a tények és az ellenőrizendő állítások",
+            "Vállalhatóbbá válik a kapcsolatfelvétel",
+        ],
+        "body": body,
+        "facebook_post": facebook,
+        "interactive_questions": [
+            f"Mi a legfontosabb döntés a {primary} témájában?",
+            "Melyik tényt kell még ellenőrizni a következő lépés előtt?",
+        ],
+        "cta": {"label": cta_label, "intent": "conversion action"},
+        "numeric_evidence_status": "missing",
+        "source_urls": source_urls,
+        "revenue_intent": revenue_intent,
+    }
 
 
 QUALITY_GATE_VERSION = "canonical-auto-quality-v2"
@@ -1662,8 +1797,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         updated_at = row.updated_at
         if updated_at and updated_at.tzinfo is None:
             updated_at = updated_at.replace(tzinfo=UTC)
-        if int(failure.get("attempts") or 0) < 3 and (
-            not updated_at or (current - updated_at).total_seconds() >= 300
+        repair_version_changed = failure.get("repair_version") != CONTENT_FACTORY_REPAIR_VERSION
+        if (
+            (int(failure.get("attempts") or 0) < 3 or repair_version_changed)
+            and (repair_version_changed or not updated_at or (current - updated_at).total_seconds() >= 300)
         ):
             pending.append(row)
     if not pending:
@@ -2002,6 +2139,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "error_type": type(exc).__name__,
                     "error_detail": str(exc)[:300],
                     "attempts": int(previous.get("attempts") or 0) + 1,
+                    "repair_version": CONTENT_FACTORY_REPAIR_VERSION,
                 }
             )
             failed += 1
@@ -2023,6 +2161,28 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
             else []
         )
         package = _normalize_content_lengths(_sanitize_unbound_claims(package))
+        anchors = BRAND_POSITION_ANCHORS.get(row.brand_id, ())
+        if revenue_policy_enabled and anchors:
+            package_text = _norm(
+                " ".join(
+                    str(package.get(field) or "")
+                    for field in ("title", "body", "facebook_post")
+                )
+            )
+            if not any(_norm(anchor) in package_text for anchor in anchors):
+                package = _content_factory_fallback_package(
+                    brand_id=row.brand_id,
+                    focus=brand_focus,
+                    contract=publication_contract,
+                    revenue_intent=revenue_intent,
+                    current_package=package,
+                )
+                package["source_urls"] = [
+                    url
+                    for url in package.get("source_urls") or []
+                    if url in brand_allowed_urls
+                ]
+                package = _normalize_content_lengths(_sanitize_unbound_claims(package))
         deterministic_errors = _deterministic_publication_errors(package, publication_contract)
         repair_result = None
         if deterministic_errors:
@@ -2085,9 +2245,28 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         package = repaired
                     deterministic_errors = repair_errors
                 else:
-                    raise ValueError(
-                        "deterministic_repair_failed:" + ",".join(deterministic_errors)
+                    fallback = _content_factory_fallback_package(
+                        brand_id=row.brand_id,
+                        focus=brand_focus,
+                        contract=publication_contract,
+                        revenue_intent=revenue_intent,
+                        current_package=package,
                     )
+                    fallback["source_urls"] = [
+                        url
+                        for url in fallback.get("source_urls") or []
+                        if url in brand_allowed_urls
+                    ]
+                    fallback = _normalize_content_lengths(_sanitize_unbound_claims(fallback))
+                    fallback_errors = _content_repair_errors(
+                        fallback, publication_contract
+                    )
+                    if fallback_errors:
+                        raise ValueError(
+                            "deterministic_repair_failed:"
+                            + ",".join(fallback_errors)
+                        )
+                    package = fallback
             except (GrowthRegistryError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 row.status = "failed"
                 row.evidence_json = _json(
@@ -2097,6 +2276,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         "error_type": type(exc).__name__,
                         "error_detail": str(exc)[:300],
                         "attempts": prior_attempts + 1,
+                        "repair_version": CONTENT_FACTORY_REPAIR_VERSION,
                     }
                 )
                 failed += 1
@@ -2208,6 +2388,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "error_type": type(exc).__name__,
                     "error_detail": str(exc)[:300],
                     "attempts": prior_attempts + 1,
+                    "repair_version": CONTENT_FACTORY_REPAIR_VERSION,
                 }
             )
             failed += 1

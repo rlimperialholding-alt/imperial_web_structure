@@ -8,7 +8,11 @@ import pytest
 from sqlalchemy import select
 
 from app.growth_ops import processing
-from app.growth_ops.canonical_policy import ACTIVE_CONTENT_BRANDS, IORA_EXECUTIVE_EMAIL
+from app.growth_ops.canonical_policy import (
+    ACTIVE_CONTENT_BRANDS,
+    IORA_EXECUTIVE_EMAIL,
+    publication_contract_for_brand,
+)
 from app.growth_ops.email import EmailDeliveryError
 from app.growth_ops.models import (
     CanonicalInternalHandoff,
@@ -744,6 +748,16 @@ def test_publication_digest_includes_hash_bound_blocked_forum_draft(db, monkeypa
     assert captured["delivery_scope"] == "internal"
 
 
+def test_publication_digest_allow_gate_is_not_mistaken_for_kill_switch(tmp_path, monkeypatch):
+    gate = tmp_path / "publishing-gate"
+    gate.write_text("ALLOW_APPROVED_WRITES\n", encoding="utf-8")
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    config = _settings(canonical_publication_digest_kill_switch_file=str(gate))
+    assert processing._publication_digest_kill_switch_active(config) is False
+    gate.write_text("STOP_PUBLICATION\n", encoding="utf-8")
+    assert processing._publication_digest_kill_switch_active(config) is True
+
+
 def test_internal_digest_uses_no_arg_guard_without_first_contact_quota(
     db,
     monkeypatch,
@@ -1207,6 +1221,18 @@ def test_content_factory_quarantines_all_nineteen_brands(db, monkeypatch):
         next(row for row in rows if row.brand_id == "Casa Moderna").evidence_json
     )["delivery_plan"]
     assert casa_plan["cms"]["mode"] == "DISABLED"
+
+
+def test_content_factory_recovery_package_is_valid_for_every_brand():
+    for brand_id in ACTIVE_CONTENT_BRANDS:
+        contract = publication_contract_for_brand(brand_id)
+        package = processing._content_factory_fallback_package(
+            brand_id=brand_id,
+            focus=processing.content_focus_for_brand(brand_id),
+            contract=contract,
+            revenue_intent=None,
+        )
+        assert processing._content_repair_errors(package, contract) == []
 
 
 def test_internal_handoff_is_fixed_recipient_and_idempotent(db, monkeypatch):
