@@ -467,7 +467,10 @@ def seed_content_factory_source_inventory(db: Session) -> None:
     changed document under the same version. A new source revision therefore
     requires a new manifest version and leaves the old row auditable.
     """
-    manifest_path = Path(__file__).resolve().parents[1] / "data" / "content_factory_source_manifest.json"
+    # Keep this beside the application code: /app/data is a persistent Docker
+    # volume and intentionally survives releases, so it must not hide a
+    # required source manifest from the image.
+    manifest_path = Path(__file__).resolve().parent / "content_factory_source_manifest.json"
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
