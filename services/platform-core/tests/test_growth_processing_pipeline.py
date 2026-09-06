@@ -609,6 +609,64 @@ def test_purchase_signal_lead_is_also_retained_in_question_radar(db, monkeypatch
     assert topic.existing_answer_count == 0
 
 
+def test_question_radar_rejects_category_url_as_exact_question(db, monkeypatch):
+    category_url = "https://www.gyakorikerdesek.hu/otthon__epitkezes__valasz-nelkul"
+    response = {
+        "leads": [],
+        "questions": [
+            {
+                "question": "Mennyiből épülne meg a családi házam Miskolcon?",
+                "question_kind": "literal",
+                "signal_kind": "question",
+                "evidence_excerpt": (
+                    "Mennyiből épülne meg a családi házam Miskolcon? "
+                    "júl. 23. 09:43 aktív 0 válasz"
+                ),
+                "source_permalink": category_url,
+                "published_at_raw": "júl. 23. 09:43",
+                "published_at_source": "source_page",
+                "active_status": "active",
+                "active_status_raw": "aktív",
+                "existing_answer_count": 0,
+                "answer_count_raw": "0 válasz",
+            }
+        ],
+    }
+    monkeypatch.setattr(processing, "settings", lambda: _settings())
+    monkeypatch.setattr(
+        processing,
+        "complete_json",
+        lambda *args, **kwargs: SimpleNamespace(
+            request_id="DS-CATEGORY-URL-REJECT", content=json.dumps(response)
+        ),
+    )
+    route = _route()
+    route.category = "forum"
+    route.source_type = "public_html"
+    route.source_name = "Gyakori Kérdések"
+    route.route_url = category_url
+    route.brand_fit = "BauFreund"
+    attempt = _attempt()
+    db.add_all([route, attempt])
+    db.flush()
+
+    result = processing.process_source_attempt(
+        db,
+        route=route,
+        attempt=attempt,
+        text="Mennyiből épülne meg a családi házam Miskolcon? júl. 23. 09:43 aktív 0 válasz",
+        link_candidates=[
+            {"url": category_url, "label": "válasz nélküli kérdések"}
+        ],
+    )
+    db.commit()
+
+    assert result["questions"] == 0
+    assert db.scalar(select(QuestionRadarTopic)) is None
+    decision = json.loads(attempt.analysis_json)["question_decisions"][0]
+    assert decision["reasons"] == ["exact_post_permalink_missing"]
+
+
 def test_source_model_error_keeps_verified_purchase_signal(db, monkeypatch):
     permalink = "https://qjob.hu/tasks/214545"
     evidence = "Csaladi haz kulso szigetelesere ajanlatot kerek, mielobbi kezdessel."

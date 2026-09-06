@@ -104,6 +104,11 @@ QUESTION_RADAR_DIRECT_ROUTES = (
     },
 )
 
+# A Gyakori Kérdések kategóriaoldalán rendszerint több tucat konkrét kérdés
+# szerepel. Ezek mindegyikének a saját oldaláról kell a dátumot és a válasz-
+# állapotot visszaolvasni; a többi fórumnál megmarad a kisebb, óvatosabb keret.
+QUESTION_RADAR_GYAKORI_REPLY_PAGE_MAXIMUM = 50
+
 # The canonical ledger still contains the legacy `/lista` address, which the
 # portal's current robots policy disallows. Keep the immutable source row for
 # audit, but fetch the equivalent public route that robots.txt permits.
@@ -697,11 +702,17 @@ def _enrich_reply_page_links(
 ) -> list[dict[str, str]]:
     """Attach concrete-page date/state evidence to bounded reply links."""
 
+    base_host = (urlparse(base_url).hostname or "").casefold()
+    candidate_limit = (
+        QUESTION_RADAR_GYAKORI_REPLY_PAGE_MAXIMUM
+        if base_host == "gyakorikerdesek.hu" or base_host.endswith(".gyakorikerdesek.hu")
+        else 12
+    )
     candidates = [
         item for item in links
         if isinstance(item, dict)
         and _reply_page_candidate(str(item.get("url") or ""), base_url=base_url)
-    ][:12]
+    ][:candidate_limit]
     if not candidates:
         return links
     enriched: dict[str, dict[str, str]] = {}

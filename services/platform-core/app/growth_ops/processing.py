@@ -1459,6 +1459,19 @@ def process_source_attempt(
                 }
             )
             continue
+        # A reply-surface route is a discovery/list page. Even when the
+        # generic permalink validator accepts its path shape, the route itself
+        # can never be the exact question that will be revalidated or used.
+        if reply_surface and not _specific_reply_permalink(exact_permalink):
+            question_decisions.append(
+                {
+                    "question": question,
+                    "source_permalink": exact_permalink,
+                    "accepted": False,
+                    "reasons": ["exact_post_permalink_missing"],
+                }
+            )
+            continue
         freshness = _question_freshness(
             item,
             evidence_text=evidence_text,
