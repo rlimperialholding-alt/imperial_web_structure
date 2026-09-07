@@ -229,6 +229,7 @@
             "evidence_scope": "Operatív arculati és konverziós kézikönyv; kizárólag a statikus pozicionálás és dokumentált kérési út került felhasználásra.",
             "claim_limits": [
               "A megszólítás későbbi módosítását ez a forrás nem igazolja; a hangvétel beállítása nem változik.",
+              "A mérnöki figyelem és ellenőrzés nem igazol azonnali döntési határidőt, teljes döntési hatáskört vagy a későbbi problémák kizárását.",
               "Nincs ár-, idő-, eredmény- vagy szerződéses garancia átvéve."
             ]
           },
@@ -319,14 +320,14 @@
                 "exact_excerpts": [
                   "Pozicionálás: Üzemi pontosságú, ellenőrizhető előregyártott masszívház-rendszer.",
                   "Elsődleges CTA: Kérek tételes mérnöki ajánlatot.",
-                  "Technológia, készültségi fok, műszaki tartalom választható konfiguráció.",
-                  "Ár, határidő, készültség, érvényesség, kizárások egymás közelében."
+                  "Technológia, készültségi fok, műszaki tartalom választható konfiguráció."
                 ]
               }
             ],
             "evidence_scope": "Operatív arculati és konverziós kézikönyv; rendszerpozicionálás és ajánlatkérési út.",
             "claim_limits": [
               "Nem újítja meg a korábbi, lejárt Prefab ár- és kapacitásforrásokat.",
+              "A kézikönyv webes elrendezési előírásai nem igazolnak megvalósult felületet, működő online konfigurátort vagy jelenleg látható árlistát. Az ajánlat adatait együtt érdemes ellenőrizni; az ajánlatkérés előtti tényleges láthatóságuk nincs igazolva.",
               "Konkrét típusház, ár, építési idő és mérnöki teljesítményadat nincs igazolva ezzel a bejegyzéssel."
             ]
           },
@@ -502,6 +503,7 @@
             "claim_limits": [
               "A régi elsődleges Privát konzultáció CTA helyett a v2.0 pontos elsődleges CTA-ja szerepel.",
               "Ár, határidő, díjmentesség, kötelezettségmentesség, teljesítménygarancia és aktív referencia nincs ebből engedélyezve.",
+              "A kézikönyv többlépéses űrlapra és minősítésre vonatkozó előírása nem igazolja egy ilyen folyamat tényleges működését. A konzultációra érdemes összegyűjteni a telek, az alapterület, a szobaszám, az anyagok és a belső terek iránti igényeket.",
               "A kézikönyvben szereplő One Price Residence csomag tényleges aktuális tartalmát nem igazolja ez a szűk márkatény."
             ],
             "record_id": "CASA-MODERNA-ARCHITECT-LED-HOME-V1",
@@ -519,8 +521,7 @@
                 "exact_excerpts": [
                   "2026. augusztus 4. · Kötelező operatív szabvány",
                   "Pozicionálás: Építészvezérelt, prémium egyedi családi ház: építészet, enteriőr és személyes concierge egy folyamatban.",
-                  "Elsődleges CTA (FELÜLÍRVA v1.0: „Privát konzultációt kérek.” helyett): Építészkonzultációt kérek.",
-                  "a részletes minősítés (telek státusza, finanszírozás, alapterület, szobaszám, anyag- és enteriőr-preferencia) több lépésben, diszkrét kérdésekkel történik."
+                  "Elsődleges CTA (FELÜLÍRVA v1.0: „Privát konzultációt kérek.” helyett): Építészkonzultációt kérek."
                 ],
                 "all_excerpts_verified": true,
                 "verified_at": "2026-09-07"

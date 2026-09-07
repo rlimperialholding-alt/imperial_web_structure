@@ -1,0 +1,263 @@
+[
+  {
+    "brand_id": "Property360",
+    "recorded_commit": "a676765c655719324ff98d025347920c30134283",
+    "package": {
+      "title": "Telek, terv, finanszírozás: miért ne külön-külön intézd őket?",
+      "body": "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket. Ha előbb telket nézel, aztán terveztetsz, végül hitelért mész, könnyen kiderülhet, hogy a kiválasztott telekre nem fér rá az álomház, vagy a terv nem fér bele a finanszírozási keretbe. A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút. Ez azt jelenti, hogy a döntéseidet nem egymás után, hanem együtt vizsgáljuk meg, így elkerülheted a felesleges köröket és a későbbi módosításokat. A cél, hogy a költözésig minden lépés összhangban legyen, és ne érjen meglepetés a projekt közepén. Érdemes már az elején tisztázni, milyen telek, milyen ház és milyen finanszírozás illik össze a te helyzetedben. Így nem csak időt spórolsz, hanem elkerülheted a rossz döntésekből fakadó pluszköltségeket is. A Property360 nem egymás mellé teszi a telket, a tervezést, a finanszírozást és a kivitelezést. Egyetlen projektben hangolja össze őket a költözésig. Ez a szemlélet segít abban, hogy a teljes folyamatot átlásd, és ne kelljen külön-külön egyeztetned minden szereplővel. Ha szeretnéd, hogy a te projektje is így induljon, kérd a telek–ház elővizsgálatot, és nézzük meg együtt, mi a reális sorrend és milyen feltételek illenek hozzád.",
+      "facebook_post": "Telek, terv, finanszírozás – három dolog, ami csak együtt működik igazán. Ha külön-külön kezded el, könnyen kiderülhet, hogy a telek nem elég nagy, a terv nem fér a keretbe, vagy a hitel nem elég. A Property360 egyetlen projektben hangolja össze ezeket a költözésig, hogy ne kelljen felesleges köröket futnod. Nézd meg, milyen elővizsgálattal indulhat a te utad! #telek #házépítés #finanszírozás #ingatlan #Property360 #költözés",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek telek–ház elővizsgálatot."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Property360",
+          "content_hash": "059f933372cab71f8a83272a109b615240df788f7a7ae9598da3695ad00d10be",
+          "payload": {
+            "buyer_problems": [
+              "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+              "A költözésig tartó teljes projektköltség nem azonos a ház kivitelezési árával."
+            ],
+            "next_steps": [
+              "Kérek telek–ház elővizsgálatot."
+            ],
+            "record_id": "P360-BRAND-COORDINATION-V1",
+            "sales_goal": "A telek és a ház elővizsgálatára irányuló, konkrét projektadatokat tartalmazó megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "f62b1272dfabf9c3a8ca620e373e76d9544bbb28fd6b8b977fd58a0086815aca",
+                "drive_file_id": "1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs",
+                "exact_excerpts": [
+                  "A Property360 nem egymás mellé teszi a telket, a tervezést, a finanszírozást és a kivitelezést. Egyetlen projektben hangolja össze őket a költözésig.",
+                  "Kérek telek–ház elővizsgálatot."
+                ],
+                "source_modified_time": "2026-07-28T06:55:44.104Z",
+                "title": "2026-07-28 – Property360 – Telek, terv, finanszírozás – publikációs csomag",
+                "url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+            ],
+            "statement": "A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút."
+          },
+          "source_key": "property360-brand-fact-project-coordination",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        },
+        {
+          "brand_id": "Property360",
+          "content_hash": "90cd92849bd4fb0abf91d0c1bc2106f1875b7546c8fb9b63d06d22bc1b78408b",
+          "payload": {
+            "record_id": "P360-OFFER-INTERIOR-360-V1",
+            "source_evidence": [
+              {
+                "content_sha256": "58155677eeec7216792ee29dc330bba87d68d89e24d2eed1b5aea94fe1f9286c",
+                "drive_file_id": "13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD",
+                "exact_excerpts": [
+                  "2 óra belsőépítészeti tanácsadás · látványterv · burkolatkiosztási terv · választás a moodboardok közül",
+                  "A pontos helyiségkört, nézetszámot, módosítási kört és a megrendelhető termékeket a szerződéses műszaki tartalom rögzíti."
+                ],
+                "source_modified_time": "2026-08-08T23:05:01.525Z",
+                "title": "Property360-Interior-360-standalone.html",
+                "url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk"
+            ],
+            "statement": "A Property360 Interior 360 csomag belsőépítészeti tanácsadást, látványtervet, burkolatkiosztási tervet és moodboard-választást kapcsol össze."
+          },
+          "source_key": "property360-offer-interior-360",
+          "source_type": "offer",
+          "source_url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Property360",
+      "buyer_problem": "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek telek–ház elővizsgálatot.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A telek és a ház elővizsgálatára irányuló, konkrét projektadatokat tartalmazó megkeresés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+      ]
+    }
+  },
+  {
+    "brand_id": "Bautica",
+    "recorded_commit": "a676765c655719324ff98d025347920c30134283",
+    "package": {
+      "title": "Ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést?",
+      "body": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. Ez a bizonytalanság gyakran vezet félreértésekhez, elcsúszott határidőkhöz és olyan kompromisszumokhoz, amelyeket a kész épületben már nehéz korrigálni. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ahelyett, hogy Önnek kellene összefognia a különböző szakembereket, a Bautica mérnöke a tervet megérti, a helyszínt felméri és az építést ellenőrzi. Ez a fajta felelősségvállalás azért fontos, mert a kivitelezés során felmerülő kérdések nem várhatnak heteket egy válaszra. Ha a terv és a valós helyszín eltér, a mérnök azonnal tud döntést hozni, és ezt a döntést a teljes folyamatban következetesen érvényesíti. Így Ön nem marad egyedül a műszaki részletekkel, és nem kell attól tartania, hogy egy apró eltérésből később nagyobb probléma lesz. A Bautica megközelítése nem a választék nagyságáról szól, hanem arról, hogy egy névvel és felelősséggel azonosítható mérnök álljon az építkezés mögött. Ez a személyes kontroll teszi lehetővé, hogy a felújítás vagy bővítés során minden lépés átlátható legyen, és Ön mindig tudja, kihez fordulhat kérdéseivel. A műszaki kalkuláció kérése az első lépés ahhoz, hogy a konkrét tervéhez és helyszínéhez igazodó, megalapozott döntést hozhasson.",
+      "facebook_post": "Építkezés vagy felújítás előtt gyakran nem egyértelmű, ki egyezteti a tervet, ki méri fel a helyszínt, és ki ellenőrzi a kivitelezést. A Bautica ezt a feladatot személyes mérnöki figyelemmel és végig követhető szakmai kontrollal oldja meg. A mérnök a tervet megérti, a helyszínt felméri, és az építést ellenőrzi – így Ön nem marad egyedül a műszaki döntésekkel. Ha szeretné tisztázni, milyen műszaki feltételekkel valósítható meg az Ön terve, kérjen műszaki kalkulációt. #építkezés #felújítás #kivitelezés #mérnök #Bautica #építésitudománya",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek műszaki kalkulációt."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Bautica",
+          "content_hash": "59aa8aba48a393df8fff71b3840384c6aa018afd4d45a49c13d692186f9744bd",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést."
+            ],
+            "claim_limits": [
+              "A megszólítás későbbi módosítását ez a forrás nem igazolja; a hangvétel beállítása nem változik.",
+              "Nincs ár-, idő-, eredmény- vagy szerződéses garancia átvéve."
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; kizárólag a statikus pozicionálás és dokumentált kérési út került felhasználásra.",
+            "next_steps": [
+              "Kérek műszaki kalkulációt."
+            ],
+            "record_id": "BAUTICA-ENGINEERING-PREPARATION-V1",
+            "sales_goal": "A konkrét építési tervhez és helyszínhez kötött műszaki kalkulációkérés.",
+            "source_evidence": [
+              {
+                "content_sha256": "3781fd836611de6111d0d580cfd5cac243cfbaaee0886607b659492a2a5a9a09",
+                "drive_file_id": "1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA",
+                "exact_excerpts": [
+                  "Pozicionálás: Személyes mérnöki figyelem és végig követhető szakmai kontroll.",
+                  "Elsődleges CTA (FELÜLÍRVA v1.2: „Kérek helyszíni felmérést.” helyett): Kérek műszaki kalkulációt.",
+                  "A főszereplő nem a választék nagysága, hanem a névvel és felelősséggel azonosítható mérnök, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi."
+                ],
+                "readback_at": "2026-09-07T08:26:41.040Z",
+                "source_modified_time": "2026-08-04T20:58:14.602Z",
+                "title": "Bautica – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit"
+            ],
+            "statement": "A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését."
+          },
+          "source_key": "bautica-brand-fact-engineering-preparation",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Bautica",
+      "buyer_problem": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek műszaki kalkulációt.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A konkrét építési tervhez és helyszínhez kötött műszaki kalkulációkérés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit"
+      ]
+    }
+  },
+  {
+    "brand_id": "Everyday Homes",
+    "recorded_commit": "a676765c655719324ff98d025347920c30134283",
+    "package": {
+      "title": "Előszoba, kamra, háztartási helyiség: így tervezd a napi útvonalakat",
+      "body": "Az építkező család szeretné úgy elhelyezni az előszobát, a kamrát és a háztartási helyiséget, hogy azok a napi útvonalakat és a tárolást segítsék. Az Everyday Homes a praktikus családi otthont az alaprajzi rutinok, a tárolás és a mindennapi kényelem felől mutatja be. Érdemes a tervezést a tárgylistával és a folyamatlistával kezdeni, mert így a terek nem négyzetméterek, hanem valódi használat szerint alakulnak. Az előszoba akkor működik jól, ha a bejárattól a konyháig vezető útvonalon nincs felesleges kerülő, és a cipők, kabátok, táskák helye nem a nappali közepén van. A kamra akkor praktikus, ha a konyha mellett kap helyet, és a bevásárlás után nem kell az egész házon átcipelni a nehéz szatyrokat. A háztartási helyiség pedig akkor segít, ha a mosás, szárítás és a takarítószerek tárolása egy helyen, a hálószobáktól távolabb oldható meg. Így a napi rutinok rövidebbek, a tárolás átláthatóbb, és a családi élet kevesebb felesleges lépéssel jár. A tervezéshez hasznosabb a tárgylista és a folyamatlista, mint egy előre rögzített négyzetméterszám, mert így a terek a valódi igényekhez igazodnak. Érdemes átgondolni, hogy melyik helyiség milyen tárgyakat fogad, és milyen sorrendben használjátok őket egy átlagos napon. Ez segít elkerülni a későbbi átalakításokat és a rosszul kihasznált sarkokat. A cél egy olyan alaprajz, amelyben a mindennapi mozgás természetes, a tárolás pedig észrevétlenül a helyén van.",
+      "facebook_post": "Az előszoba, a kamra és a háztartási helyiség elhelyezése sok családnál utólag derül ki, hogy nem a napi útvonalakat követi. Pedig a jó alaprajz nem négyzetméterekről szól, hanem arról, hogy a bevásárlás után ne kelljen kerülőt tenni, és a mosás se a nappali közepén landoljon. Érdemes a tárgylistával és a folyamatlistával kezdeni, mert így a terek a valódi használathoz igazodnak. Ha most tervezel, gondold át, melyik helyiség milyen tárgyakat fogad, és milyen sorrendben használjátok őket egy átlagos napon. Így elkerülhetők a későbbi átalakítások és a rosszul kihasznált sarkok. #alaprajz #előszoba #kamra #háztartásihelyiség #családiház #praktikusotthon #EverydayHomes",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek alaprajzi konzultációt."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Everyday Homes",
+          "content_hash": "a9f026abbe38266fdd5dff2ad2900f624ba8cd706c85e4dbd52018d359b6d49a",
+          "payload": {
+            "buyer_problem_basis": "A végleges alaprajzi útmutatóban leírt használati problémából szerkesztett brief; nem megfigyelt fórumkérdés.",
+            "buyer_problems": [
+              "Az építkező család szeretné úgy elhelyezni az előszobát, a kamrát és a háztartási helyiséget, hogy azok a napi útvonalakat és a tárolást segítsék."
+            ],
+            "claim_limits": [
+              "Nem állítunk működő háromszintű csomagrendszert vagy adott kínálatot pusztán a kézikönyv oldalsorrendjéből.",
+              "Egy kézben kezelt teljes megvalósítás, finanszírozási eredmény, fix ár és aktuális kivitelezési kapacitás nem része ennek a ténynek.",
+              "A cikk Facebook-változatának hiányzó cikkre támaszkodó promóciós mondata nem került a briefbe.",
+              "Ár, idő, díjmentesség és kötelezettségmentesség nincs ebből engedélyezve."
+            ],
+            "next_steps": [
+              "Kérek alaprajzi konzultációt."
+            ],
+            "record_id": "EVERYDAY-HOMES-PRACTICAL-FLOORPLAN-V1",
+            "sales_goal": "A család tárolási és napi térhasználati igényeire épülő alaprajzi konzultációs megkeresés.",
+            "source_evidence": [
+              {
+                "all_excerpts_verified": true,
+                "content_sha256": "4441675974379f9e8e45fa0d26ee62241ed2b14461f2a0fff9731f530170a958",
+                "drive_file_id": "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+                "exact_excerpts": [
+                  "Kanonikus vezérmondat: „Otthon – egyszerűen.”",
+                  "Márkaesszencia: PRAKTIKUM · ÉRTHETŐ KÖLTSÉG · ELÉRHETŐ OTTHON · MINDENNAPI KÉNYELEM",
+                  "Elsődleges CTA: Kérek egyszerű költségbecslést.",
+                  "Alaprajzi rutin, tárolási tippek, havi költség, első otthon, családi élethelyzet, egyszerű döntési segítség, fix áras típusterv és elérhető otthonteremtés."
+                ],
+                "readback_at": "2026-09-07 10:30:21 UTC",
+                "source_modified_time": "2026-07-31T13:35:58.592Z",
+                "title": "Everyday Homes – Online és offline arculati és konverziós kézikönyv v1.1",
+                "url": "https://docs.google.com/document/d/19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4/edit",
+                "verified_at": "2026-09-07"
+              },
+              {
+                "all_excerpts_verified": true,
+                "content_sha256": "41de607d2d822d1fe9e304d1e11c677e915ef63404fc21f4c673c23ecd70d170",
+                "drive_file_id": "1RkxuxGVUvOPOsS3ytOG16UNRiD9RC4YpAv5Rj4e7UMc",
+                "exact_excerpts": [
+                  "EVERYDAY HOMES – VÉGLEGES PUBLIKÁCIÓS CSOMAG",
+                  "A tervezéshez hasznosabb a tárgylista és a folyamatlista, mint egy előre rögzített négyzetméterszám.",
+                  "Kérek alaprajzi konzultációt.",
+                  "A gombot az Everyday Homes jelenleg működő kapcsolatfelvételi oldalára vagy űrlapjára kell vezetni."
+                ],
+                "readback_at": "2026-09-07 10:30:21 UTC",
+                "source_modified_time": "2026-08-15T06:36:44.193Z",
+                "title": "Everyday Homes – Praktikus háttér a család mindennapjaihoz – végleges publikációs csomag – 2026-08-15",
+                "url": "https://docs.google.com/document/d/1RkxuxGVUvOPOsS3ytOG16UNRiD9RC4YpAv5Rj4e7UMc/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4/edit",
+              "https://docs.google.com/document/d/1RkxuxGVUvOPOsS3ytOG16UNRiD9RC4YpAv5Rj4e7UMc/edit"
+            ],
+            "statement": "Az Everyday Homes a praktikus családi otthont az alaprajzi rutinok, a tárolás és a mindennapi kényelem felől mutatja be."
+          },
+          "source_key": "everyday-homes-brand-fact-practical-floorplan",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Everyday Homes",
+      "buyer_problem": "Az építkező család szeretné úgy elhelyezni az előszobát, a kamrát és a háztartási helyiséget, hogy azok a napi útvonalakat és a tárolást segítsék.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek alaprajzi konzultációt.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A család tárolási és napi térhasználati igényeire épülő alaprajzi konzultációs megkeresés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4/edit"
+      ]
+    }
+  }
+]

@@ -47,12 +47,17 @@ def manifest():
     )
 
 
-def test_new_inventory_preserves_all_eleven_existing_source_records():
+def test_v9_inventory_preserves_nine_unchanged_prior_source_records():
     inventory = manifest()
-    existing = [row for row in inventory["brands"] if row["brand_id"] not in EXPECTED]
+    # V9 explicitly revised Bautica's limits and removed Prefab UI instructions.
+    # All other prior records must still match their a676765 baseline exactly.
+    revised_brands = {"Bautica", "Prefab"}
+    existing = [row for row in inventory["brands"]
+                if row["brand_id"] not in set(EXPECTED) | revised_brands]
+    assert sum(len(row["sources"]) for row in existing) == 9
     encoded = json.dumps(existing, ensure_ascii=False, sort_keys=True).encode("utf8")
     assert hashlib.sha256(encoded).hexdigest() == (
-        "527caa373935fe7b8799dcdd9ef26b3d51c1befc4d99eeef686e7df6a294e16d"
+        "56024a8b26a2374e88849df1b6a57e40bea187a4df069bf77c05df644a53d381"
     )
     additions = [row for row in inventory["brands"] if row["brand_id"] in EXPECTED]
     assert {row["brand_id"] for row in additions} == set(EXPECTED)

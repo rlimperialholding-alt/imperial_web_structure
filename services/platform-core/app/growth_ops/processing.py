@@ -105,8 +105,12 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v8"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v9"
 CONTENT_SOURCE_SCOPE_INSTRUCTION = (
+    " Az approved statement az igazolt márkatény; a source_evidence exact_excerpts "
+    "háttérbizonyíték. A kézikönyvben előírt webes elrendezésből, űrlapból vagy kapacitásból "
+    "ne következtess megvalósult működésre. A statementtel és claim_limits-tal összhangban "
+    "álló, tényleges folyamatot leíró igazolt forrásszöveg továbbra is felhasználható. "
     " A forrásban igazolt részfeladat nem jelent teljes felelősségátvállalást. "
     "Tervellenőrzésből, felmérésből vagy mérnöki figyelemből ne következtess arra, "
     "hogy az ügyfélnek már semmilyen koordinációs feladata nincs. Teljes projektkoordinációt "
@@ -115,8 +119,17 @@ CONTENT_SOURCE_SCOPE_INSTRUCTION = (
     "A 'nem érhet meglepetés' és 'nem lehet váratlan költség' helyett a tisztázott "
     "tartalomról és a félreértések kockázatának csökkentéséről írj, ne hibamentességet ígérj. "
     "Egy részlet tisztázásából se állítsd, hogy a teljes kivitelezés nem hagy nyitott kérdéseket. "
+    "Mérnöki figyelemből ne következtess azonnali döntésre, teljes döntési hatáskörre vagy "
+    "arra, hogy egy eltérésből már nem lehet későbbi probléma. A leírt vizsgálati feladatot "
+    "és az egyeztetés lehetőségét őrizd meg, új idő- vagy eredményígéretet ne adj hozzá. "
     "A megszólítás névmása és igeragozása egyezzen: a 'maga dönts' és 'maga tudod' "
     "hibás; tegezésnél 'te dönts' és 'te tudod', magázásnál 'Ön döntsön' és 'Ön tudja'. "
+    "A birtokos személy is egyezzen: 'a te projekted', 'a te terved', 'a te házad'; "
+    "a 'te projektje' hibás, a harmadik személyű alak 'az Ön projektje' vagy 'az ő projektje'. "
+    "Minden teljes mondatban ellenőrizd a birtokos és a személyrag egyezését, valamint "
+    "a főmondat és mellékmondat alany-állítmány kapcsolatát. Íráskor csak a helyes kész "
+    "szöveget add; független ellenőrzéskor a findings mezőben idézd a hibás mondatot "
+    "és adj helyes mondatjavaslatot, ne csak tiltószavakat keress. "
 )
 BRAND_POSITION_ANCHORS = {
     "BauShield": ("építési kockázat", "szerződés"),
@@ -655,6 +668,12 @@ def _content_repair_instructions(
         ),
         "brand_address_mode_violation": _content_voice_instruction(contract).strip(),
         "mixed_formal_informal_address": _content_voice_instruction(contract).strip(),
+        "hungarian_sentence_structure": (
+            "A jelzett teljes mondat fő- és mellékmondatát szerkeszd újra: az derül ki, "
+            "hogy az elhelyezés nem megfelelő; az elhelyezés legyen a mellékmondat alanya. "
+            "A konkrét helyiségeket és állítást tartsd meg, csak a hibás mondatszerkezetet "
+            "javítsd, ne általános tanácsmondatra cseréld."
+        ),
         "locked_slogan_modified": (
             "A valóban idézett szlogent javítsd a szerződés pontos szövegére, vagy hagyd el. "
             "A hétköznapi szakmai mondatot nem kell szlogenné alakítani."
@@ -1014,31 +1033,57 @@ def _deterministic_publication_errors(
 ) -> list[str]:
     cta = package.get("cta")
     cta_label = cta.get("label") if isinstance(cta, dict) else cta
-    raw = "\n".join([
+    public_texts = [
         *(str(package.get(field) or "") for field in ("title", "body", "facebook_post")),
         str(cta_label or ""),
-    ])
+    ]
+    raw = "\n".join(public_texts)
     normalized = _norm(raw)
     errors: list[str] = []
-    if re.search(r"\bmaga\s+(?:dönts|tudod)\b", normalized):
+    if re.search(
+        r"\bmaga\s+(?:dönts|tudod)\b|"
+        r"\bte\s+(?:projektje|terve|háza|otthona|telke|építkezése)\b", normalized,
+    ):
         errors.append("mixed_formal_informal_address")
+    if re.search(
+        r"\baz?\s+[^.!?]{0,150}\belhelyezése\s+"
+        r"(?:(?:sok családnál|gyakran|csak)\s+){0,2}(?:utólag|később)\s+"
+        r"derül ki\s*,\s*hogy\b", normalized,
+    ):
+        errors.append("hungarian_sentence_structure")
     no_risk_claims = re.finditer(
         r"\bnem\s+(?:érhet(?:i)?\s+(?:(?:önt|téged)\s+)?"
         r"(?:(?:semmilyen|kellemetlen|váratlan)\s+)?meglepetés\w*|"
         r"lehet\s+(?:semmilyen\s+)?váratlan\s+(?:helyzet|költség|kiadás|"
         r"esemény|fordulat|változás|probléma)\w*)\b|"
         r"\b(?:a(?:z)?\s+(?:kivitelezés|folyamat)\s+)?nem\s+hagy(?:hat)?\s+"
-        r"(?:semmilyen\s+)?nyitott\s+kérdés\w*\b", normalized,
+        r"(?:semmilyen\s+)?nyitott\s+kérdés\w*\b|"
+        r"\bnem kell attól tart(?:ania|anod|ani|anunk)\s*,?\s*hogy\b[^.!?]{0,140}"
+        r"\bprobléma\b[^.!?]{0,40}\b(?:lesz|alakul\w*|adód\w*|keletkez\w*)\b", normalized,
     )
     if any(not _claim_is_denied(normalized, match.start()) for match in no_risk_claims):
         errors.append("unsupported_absolute_claim")
+    source_sentences = [sentence for claim in contract.get("_approved_scope_claims") or []
+                        for sentence in re.split(r"(?<=[.!?])\s+", _norm(str(claim)))]
+    for sentence in (
+        part for copy_text in public_texts for part in re.split(r"(?<=[.!?])\s+", _norm(copy_text))
+    ):
+        immediate_decisions = re.finditer(
+            r"\b(?:a\s+)?mérnök\b[^.!?]{0,60}?\bazonnal\b[^.!?]{0,35}?"
+            r"\bdönt(?:ést|eni|het)?\b", sentence,
+        )
+        if any(not _claim_is_denied(sentence, match.start())
+               and not re.search(
+                   r"\bnem\s+(?:(?:mindig\s+)?(?:tud|képes|fog)\s+)?azonnal\b|"
+                   r"\bazonnal\s+(?:nem|ne)\s+(?:(?:tud|képes|fog)\s+)?dönt", match.group(),
+               )
+               for match in immediate_decisions) and sentence not in source_sentences:
+            errors.append("unverified_case_or_capability_claim")
     takeover_claims = re.finditer(
         r"\b(?:önnek|neked)\b[^.!?]{0,100}\bnem kell\b[^.!?]{0,100}"
         r"\b(?:koordinál|összehangol)\w*\b", normalized,
     )
     if any(not _claim_is_denied(normalized, match.start()) for match in takeover_claims):
-        source_sentences = [sentence for claim in contract.get("_approved_scope_claims") or []
-                            for sentence in re.split(r"(?<=[.!?])\s+", _norm(str(claim)))]
         if not any(
             re.search(r"\b(?:egyetlen projektben hangolja össze|"
                       r"teljes projektkoordinációt (?:vállal|biztosít)\w*|"

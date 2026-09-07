@@ -70,7 +70,13 @@ def run_brand(db, monkeypatch, brand, generate):
 
 
 def test_recorded_red_missing_hashtags_reaches_review_without_generation_retry(db, monkeypatch):
-    response = recorded("RED Property")["calls"][-1]["output"]
+    response = deepcopy(recorded("RED Property")["calls"][-1]["output"])
+    # This test isolates missing hashtag formatting. The original unsupported
+    # outcome promise is independently covered by the actual V8 claim fixtures.
+    response["package"]["body"] = response["package"]["body"].replace(
+        "Így nem érhet meglepetés.",
+        "Így előre tisztázhatod a műszaki tartalommal kapcsolatos kérdéseket.",
+    )
     original = deepcopy(response)
 
     def generate(request, system):
