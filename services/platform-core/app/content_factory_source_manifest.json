@@ -187,6 +187,299 @@
           ]
         }
       ]
+    },
+    {
+      "brand_id": "Bautica",
+      "sources": [
+        {
+          "source_key": "bautica-brand-fact-engineering-preparation",
+          "source_type": "brand_fact",
+          "version": "2026-09-07.v1",
+          "source_url": "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit",
+          "payload": {
+            "record_id": "BAUTICA-ENGINEERING-PREPARATION-V1",
+            "statement": "A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését.",
+            "buyer_problems": [
+              "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést."
+            ],
+            "next_steps": [
+              "Kérek műszaki kalkulációt."
+            ],
+            "sales_goal": "A konkrét építési tervhez és helyszínhez kötött műszaki kalkulációkérés.",
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "source_refs": [
+              "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit"
+            ],
+            "source_evidence": [
+              {
+                "drive_file_id": "1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA",
+                "title": "Bautica – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit",
+                "source_modified_time": "2026-08-04T20:58:14.602Z",
+                "content_sha256": "3781fd836611de6111d0d580cfd5cac243cfbaaee0886607b659492a2a5a9a09",
+                "verified_at": "2026-09-07",
+                "readback_at": "2026-09-07T08:26:41.040Z",
+                "exact_excerpts": [
+                  "Pozicionálás: Személyes mérnöki figyelem és végig követhető szakmai kontroll.",
+                  "Elsődleges CTA (FELÜLÍRVA v1.2: „Kérek helyszíni felmérést.” helyett): Kérek műszaki kalkulációt.",
+                  "A főszereplő nem a választék nagysága, hanem a névvel és felelősséggel azonosítható mérnök, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi."
+                ]
+              }
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; kizárólag a statikus pozicionálás és dokumentált kérési út került felhasználásra.",
+            "claim_limits": [
+              "A megszólítás későbbi módosítását ez a forrás nem igazolja; a hangvétel beállítása nem változik.",
+              "Nincs ár-, idő-, eredmény- vagy szerződéses garancia átvéve."
+            ]
+          },
+          "supersedes_versions": []
+        }
+      ]
+    },
+    {
+      "brand_id": "BauFreund",
+      "sources": [
+        {
+          "source_key": "baufreund-brand-fact-building-decisions",
+          "source_type": "brand_fact",
+          "version": "2026-09-07.v1",
+          "source_url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+          "payload": {
+            "record_id": "BAUFREUND-BUILDING-DECISIONS-V1",
+            "statement": "A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez.",
+            "buyer_problems": [
+              "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól."
+            ],
+            "next_steps": [
+              "Kérek egy őszinte költségbecslést."
+            ],
+            "sales_goal": "A tervezett építkezés tartalmát tisztázó költségbecslési megkeresés.",
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "source_refs": [
+              "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit"
+            ],
+            "source_evidence": [
+              {
+                "drive_file_id": "1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc",
+                "title": "BauFreund – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+                "source_modified_time": "2026-08-04T21:08:22.421Z",
+                "content_sha256": "8a8994149831e9f566191aaf5670a341b7851e14e64f6149728ebbb1c5216847",
+                "verified_at": "2026-09-07",
+                "readback_at": "2026-09-07T08:26:41.073Z",
+                "exact_excerpts": [
+                  "Pozicionálás: Közérthető, barátságos és független segítség az építési döntésekhez.",
+                  "Másodlagos CTA: Kérek egy őszinte költségbecslést.",
+                  "A kalkulátor nem keltheti tételes vállalási ajánlat látszatát.",
+                  "A „független” jelző csak tényleges szerződéses függetlenség esetén használható."
+                ]
+              }
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; a forrás feltételes függetlenségi állítása nem lett márkatény.",
+            "claim_limits": [
+              "Független ellenőrt és szerződéses garanciát nem állítunk; ezek külön bizonyítékot igényelnek.",
+              "A költségbecslés kérése nem jelent szerződéses árígéretet vagy működő online kalkulátor igazolását."
+            ]
+          },
+          "supersedes_versions": []
+        }
+      ]
+    },
+    {
+      "brand_id": "Prefab",
+      "sources": [
+        {
+          "source_key": "prefab-brand-fact-massive-prefabrication",
+          "source_type": "brand_fact",
+          "version": "2026-09-07.v1",
+          "source_url": "https://docs.google.com/document/d/1nshDqAAAPPQD0jBweQd7AW53Thv-CrjEpML0P6Oo8a8/edit",
+          "payload": {
+            "record_id": "PREFAB-MASSIVE-PREFABRICATION-V1",
+            "statement": "A Prefab előregyártott masszívház-rendszert kínál; a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció.",
+            "buyer_problems": [
+              "Az építtető nem tudja összehasonlítani az előregyártott házak ajánlatait, ha a készültségi fok és a műszaki tartalom nincs egyértelműen megadva."
+            ],
+            "next_steps": [
+              "Kérek tételes mérnöki ajánlatot."
+            ],
+            "sales_goal": "A kiválasztott technológiához és készültségi fokhoz kötött tételes mérnöki ajánlatkérés.",
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "source_refs": [
+              "https://docs.google.com/document/d/1nshDqAAAPPQD0jBweQd7AW53Thv-CrjEpML0P6Oo8a8/edit"
+            ],
+            "source_evidence": [
+              {
+                "drive_file_id": "1nshDqAAAPPQD0jBweQd7AW53Thv-CrjEpML0P6Oo8a8",
+                "title": "Prefab – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1nshDqAAAPPQD0jBweQd7AW53Thv-CrjEpML0P6Oo8a8/edit",
+                "source_modified_time": "2026-08-04T14:59:18.786Z",
+                "content_sha256": "c849c07052566a67da1917afe8f11e477812f1da6954078206d46a630940baef",
+                "verified_at": "2026-09-07",
+                "readback_at": "2026-09-07T08:26:41.106Z",
+                "exact_excerpts": [
+                  "Pozicionálás: Üzemi pontosságú, ellenőrizhető előregyártott masszívház-rendszer.",
+                  "Elsődleges CTA: Kérek tételes mérnöki ajánlatot.",
+                  "Technológia, készültségi fok, műszaki tartalom választható konfiguráció.",
+                  "Ár, határidő, készültség, érvényesség, kizárások egymás közelében."
+                ]
+              }
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; rendszerpozicionálás és ajánlatkérési út.",
+            "claim_limits": [
+              "Nem újítja meg a korábbi, lejárt Prefab ár- és kapacitásforrásokat.",
+              "Konkrét típusház, ár, építési idő és mérnöki teljesítményadat nincs igazolva ezzel a bejegyzéssel."
+            ]
+          },
+          "supersedes_versions": []
+        }
+      ]
+    },
+    {
+      "brand_id": "TimberHaus",
+      "sources": [
+        {
+          "source_key": "timberhaus-brand-fact-timber-system-comparison",
+          "source_type": "brand_fact",
+          "version": "2026-09-07.v1",
+          "source_url": "https://docs.google.com/document/d/1-yeBF59CbKmtEfLWnG3wsaqBZGOEs7xmUOx76hwvdPY/edit",
+          "payload": {
+            "record_id": "TIMBERHAUS-TIMBER-SYSTEM-COMPARISON-V1",
+            "statement": "A TimberHaus faépítési rendszereknél a rétegrendek és az épületfizikai szempontok összehasonlítására építi a döntéstámogatást.",
+            "buyer_problems": [
+              "Az építtető nem látja, milyen rétegrendi és épületfizikai szempontok alapján hasonlítsa össze a faépítési rendszereket."
+            ],
+            "next_steps": [
+              "Kérek szerkezeti ajánlatot."
+            ],
+            "sales_goal": "A kiválasztandó faépítési rendszerhez kötött szerkezeti ajánlatkérés.",
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "source_refs": [
+              "https://docs.google.com/document/d/1-yeBF59CbKmtEfLWnG3wsaqBZGOEs7xmUOx76hwvdPY/edit"
+            ],
+            "source_evidence": [
+              {
+                "drive_file_id": "1-yeBF59CbKmtEfLWnG3wsaqBZGOEs7xmUOx76hwvdPY",
+                "title": "TimberHaus – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1-yeBF59CbKmtEfLWnG3wsaqBZGOEs7xmUOx76hwvdPY/edit",
+                "source_modified_time": "2026-08-04T21:11:41.839Z",
+                "content_sha256": "38d0cfd3b4dcbc073df4e9b03ece1693842ab31178f4775d110b5d8ede27e50c",
+                "verified_at": "2026-09-07",
+                "readback_at": "2026-09-07T08:26:41.134Z",
+                "exact_excerpts": [
+                  "Pozicionálás: Nyitott, összehasonlítható és épületfizikailag transzparens faépítési rendszer, saját anyagtudással.",
+                  "Elsődleges CTA (FELÜLÍRVA v1.0: „Kérek döntéstámogató konzultációt.” helyett): Kérek szerkezeti ajánlatot.",
+                  "3. Rétegrend és épületfizika 4. Technológiai összehasonlító"
+                ]
+              }
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; faépítési rendszer és szerkezeti ajánlatkérési út.",
+            "claim_limits": [
+              "Nem igazol konkrét faanyagminőséget, saját gyártókapacitást, szerkezeti számítást vagy fizetési garanciát."
+            ]
+          },
+          "supersedes_versions": []
+        }
+      ]
+    },
+    {
+      "brand_id": "Danish Fabrik",
+      "sources": [
+        {
+          "source_key": "danish-fabrik-brand-fact-timber-wall-planning",
+          "source_type": "brand_fact",
+          "version": "2026-09-07.v1",
+          "source_url": "https://docs.google.com/document/d/1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70/edit",
+          "payload": {
+            "record_id": "DANISH-FABRIK-TIMBER-WALL-PLANNING-V1",
+            "statement": "A Danish Fabrik favázas házainál a falpanelek méretét és csatlakozásait gyártmányterv rögzíti; az előre összeállított paneleket a helyszínen kapcsolják össze.",
+            "buyer_problems": [
+              "Az építtetőnek már a favázas fal tervezésekor tisztáznia kell, hogyan rögzíthetők a nehéz konyhaszekrények és más függesztett tárgyak."
+            ],
+            "next_steps": [
+              "Kérek árajánlatot"
+            ],
+            "sales_goal": "A tervezett házhoz és a falak használati igényeihez kötött ajánlatkérés.",
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "source_refs": [
+              "https://docs.google.com/document/d/1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70/edit"
+            ],
+            "source_evidence": [
+              {
+                "drive_file_id": "1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70",
+                "title": "Danish Fabrik – Favázas falrendszer – JÓVÁHAGYOTT – 2026-08-07",
+                "url": "https://docs.google.com/document/d/1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70/edit",
+                "source_modified_time": "2026-08-07T21:59:10.310Z",
+                "content_sha256": "42b92e47ef4984c827d35dbe59fabf6900a7a4fd243d9db707e110957019a8e2",
+                "verified_at": "2026-09-07",
+                "readback_at": "2026-09-07T08:26:41.158Z",
+                "exact_excerpts": [
+                  "A falak mérete, a nyílászárók helye, a tartóelemek kiosztása és a csatlakozási pontok a gyártmánytervben szerepelnek.",
+                  "A paneleket előre összeállítjuk.",
+                  "A helyszínen ezeket a készre tervezett elemeket állítjuk a helyükre és kapcsoljuk össze.",
+                  "Nagyobb terhelésnél a rögzítést a favázhoz vagy előre elhelyezett megerősítéshez kell kapcsolni.",
+                  "Ezért a konyha, a fürdőszobai bútor, a nagy televízió, a függesztett szekrény és más nehezebb tárgy helyét érdemes már a tervezés során megadni.",
+                  "**Kérek árajánlatot**"
+                ]
+              }
+            ],
+            "evidence_scope": "A dokumentum saját státusza: jóváhagyott vizsgálati szöveg, felhasználói kézi szerkesztéssel; csak a leírt, nem számszerű tervezési és szerelési folyamat került átvételre.",
+            "claim_limits": [
+              "Ár, négyzetméterár, időígéret, promóció, energetikai osztály és számszerű rétegrendi adat nincs átvéve.",
+              "A falrögzítés részletei az adott terv és szakmai ellenőrzés függvényei; univerzális teherbírási ígéret nem készül."
+            ]
+          },
+          "supersedes_versions": []
+        }
+      ]
+    },
+    {
+      "brand_id": "Imperial",
+      "sources": [
+        {
+          "source_key": "imperial-brand-fact-design-and-construction",
+          "source_type": "brand_fact",
+          "version": "2026-09-07.v1",
+          "source_url": "https://docs.google.com/document/d/1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA/edit",
+          "payload": {
+            "record_id": "IMPERIAL-DESIGN-AND-CONSTRUCTION-V1",
+            "statement": "Az Imperial Holding kínálatában a tervezés és a generálkivitelezés egy kézben kapcsolódik össze.",
+            "buyer_problems": [
+              "Az építtető a tervezést és a kivitelezést egymással összehangolt folyamatként szeretné előkészíteni."
+            ],
+            "next_steps": [
+              "Költségbecslést kérek."
+            ],
+            "sales_goal": "A tervezési és kivitelezési igényekkel alátámasztott előzetes költségbecslési megkeresés.",
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "source_refs": [
+              "https://docs.google.com/document/d/1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA/edit"
+            ],
+            "source_evidence": [
+              {
+                "drive_file_id": "1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA",
+                "title": "04 - Brand Profiles v1.0",
+                "url": "https://docs.google.com/document/d/1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA/edit",
+                "source_modified_time": "2026-07-06T18:42:34.941Z",
+                "content_sha256": "73b52d447c9958487c21941dc3e8bc6ea8206e94698a6991cbe79cd2849a075a",
+                "verified_at": "2026-09-07",
+                "readback_at": "2026-09-07T08:26:41.188Z",
+                "exact_excerpts": [
+                  "Egy kézben a teljes folyamat: tervezés, generálkivitelezés, bútorozás, hitelügyintézés, akár telekkel együtt.",
+                  "Buyer persona: középosztálybeli család, aki nem kalandot, hanem nyugodt építkezést akar.",
+                  "CTA-stílus: költségbecslés, konzultáció, referencia-megtekintés."
+                ]
+              }
+            ],
+            "evidence_scope": "Júliusi márkaprofil; kizárólag az Imperial Holding statikus tervezési és kivitelezési szerepe, valamint a dokumentált költségbecslési kapcsolatfelvétel került felhasználásra.",
+            "claim_limits": [
+              "A régi profil kockázatmentességi, fix ár-, fix határidő-, választékméret- és minősítési állításait nem vesszük át.",
+              "Imperial Intelligence és Imperial Knowledge nem kerültek márkaként létrehozásra."
+            ],
+            "next_step_provenance": "A dokumentum költségbecslési CTA-stílusának magyar cselekvő megfogalmazása; nem szó szerinti CTA-idézet és nem új szolgáltatási ígéret."
+          },
+          "supersedes_versions": []
+        }
+      ]
     }
   ]
 }

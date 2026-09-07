@@ -52,11 +52,12 @@ class SourceReplenishmentRequired(ValueError):
 
 
 def is_purchase_signal(text: str) -> bool:
-    normalized = " ".join(str(text or "").casefold().split())
-    plain = _plain(text)
+    plain = _buyer_authored_text(text)
+    if re.search(_CLOSED_PATTERN, plain) or re.search(_PROVIDER_PATTERN, plain):
+        return False
     return (
         score_intent(text)[0] >= 45
-        or any(marker in normalized for marker in _PURCHASE_MARKERS)
+        or any(_plain(marker) in plain for marker in _PURCHASE_MARKERS)
         or bool(
             re.search(
                 r"(?:kivitelező|kivitelezo|generálkivitelező|generalkivitelezo)\w*\s+"
@@ -164,14 +165,43 @@ def observed_window(
     return start, min(end, observed) if start <= observed else end
 
 
+def _buyer_authored_text(text: str) -> str:
+    """Keep explicit first-person requests separate from quoted/reported demand.
+
+    This is a conservative textual safeguard, not proof of the author's identity.
+    Adapters must still bind the body to its original post.
+    """
+    raw = re.sub(r"(?im)^[ \t]*>[^\n]*", " . ", str(text or ""))
+    raw = re.sub(r"<blockquote\b[^>]*>.*?</blockquote>", " . ", raw, flags=re.I | re.S)
+    for pattern in (r'"[^"\n]*"', r"[„“][^”\n]*”", r"«[^»\n]*»"):
+        # Keep a sentence boundary so a preceding attribution cannot swallow
+        # the author's independent request immediately after the quote.
+        raw = re.sub(pattern, " . ", raw)
+    clean = _plain(raw)
+    # Flattened source text may retain attribution even when the HTML quote
+    # container is gone. Do not attribute that reported first-person request
+    # to the writer; a following independent sentence remains available.
+    return re.sub(
+        r"\b(?:idezet|idezem|peldamondat|mintaszoveg|olvastam|"
+        r"(?:ismerosom|szomszedom|baratom|valaki|szerzo)[^.!?]{0,45}(?:irta|irja|mondta|kerdezte)|"
+        r"(?:ezt|azt)\s+(?:irta|irja|mondta)[^.!?]{0,45})"
+        r"\s*(?::|,?\s+hogy)\s*[^.!?]*(?:[.!?]|$)",
+        " ", clean,
+    )
+
+
+_SPECIALIST_PATTERN = (
+    r"(?:kivitelezo|generalkivitelezo|epitoceg|szakember|statikus|epitesz|"
+    r"tervezo|tetofedo|badogos|villanyszerelo|vizszerelo|futesszerelo|"
+    r"gazszerelo|burkolo|komuves|festo|acs|asztalos|szigetelo)\w*"
+)
 _FEATURES = {
     "explicit_request": (
         45,
-        r"(?:kivitelezo\w*|generalkivitelezo\w*|epitoceg\w*|burkolo\w*|acsmester\w*|"
-        r"acsot|komuves\w*|festot|szakember\w*|epitesz\w*|villanyszerelo\w*|vizszerelo\w*)"
-        r"\s+keres(?:ek|unk)|ajanlatot\s+ker(?:ek|unk)|ajanlatkeres|"
-        r"(?:tudtok|ajanlanatok|ajanljatok)[^.!?]{0,55}"
-        r"(?:kivitelezo|generalkivitelezo|burkolo|szakember|komuves|epitesz)",
+        rf"\b{_SPECIALIST_PATTERN}\s+keres(?:ek|unk)\b|"
+        rf"\bkeres(?:ek|unk)\b[^.!?;]{{0,90}}\b{_SPECIALIST_PATTERN}\b|"
+        r"ajanlatot\s+ker(?:ek|unk)|ajanlatkeres|"
+        rf"\b(?:tudtok|ajanlanatok|ajanljatok)\b[^.!?]{{0,90}}\b{_SPECIALIST_PATTERN}\b",
     ),
     "contractor_cancelled": (
         45,
@@ -199,12 +229,21 @@ _CLOSED_PATTERN = (
     r"targytalan|lezart\s+(?:kerdes|projekt)|megoldva"
 )
 _PROVIDER_PATTERN = (
-    r"(?:kivitelezest|hazepitest|epitest)\s+vallalunk|keressen\s+minket|megrendeleseket\s+varunk"
+    r"(?:kivitelezest|hazepitest|epitest)\s+vallalunk|keressen\s+(?:minket|bizalommal)|"
+    r"megrendeleseket\s+varunk|"
+    rf"\b{_SPECIALIST_PATTERN}\b[^.!?]{{0,70}}\bvallal(?:ok|unk)\b|"
+    r"\b(?:vallalok|vallalunk)\b[^.!?]{0,70}"
+    r"(?:statikai|tervezes|tetofedes|villanyszereles|vizszereles|burkolas|festes|felmeres)|"
+    r"\b(?:munkatars\w*|alkalmazott\w*)\s+keres(?:ek|unk)|"
+    r"\b(?:ugyfel\w*|megrendelo\w*|megbizas\w*|munkat)\s+keres(?:ek|unk)|"
+    r"\bkeres(?:ek|unk)\b[^.!?]{0,90}\bcsapatunkba\b"
 )
 
 
 def score_intent(text: str) -> tuple[int, dict[str, str]]:
-    clean = _plain(text)
+    clean = _buyer_authored_text(text)
+    if re.search(_CLOSED_PATTERN, clean) or re.search(_PROVIDER_PATTERN, clean):
+        return 0, {}
     matched = {
         name: match.group(0)
         for name, (_, pattern) in _FEATURES.items()
@@ -263,9 +302,10 @@ def assess_signal(evidence: Mapping[str, Any], *, now: datetime) -> dict[str, An
     except (ValueError, TypeError, KeyError, OverflowError) as exc:
         result["reasons"] = [str(exc) if isinstance(exc, ValueError) else "invalid_source_evidence"]
         return result
-    if evidence.get("closed") is True or re.search(_CLOSED_PATTERN, _plain(text)):
+    buyer_text = _buyer_authored_text(text)
+    if evidence.get("closed") is True or re.search(_CLOSED_PATTERN, buyer_text):
         result.update(queue="CLOSED", reasons=["project_closed_or_no_longer_seeking"])
-    elif re.search(_PROVIDER_PATTERN, _plain(text)):
+    elif re.search(_PROVIDER_PATTERN, buyer_text):
         result.update(queue="RESEARCH_ONLY", reasons=["provider_advert_not_buyer"])
     elif age > 720:
         result.update(queue="RESEARCH_ONLY", reasons=["older_than_30_days"])
@@ -438,6 +478,121 @@ def evaluate_revenue_intent(
     }
 
 
+_PROBLEM_NUMBER = (
+    r"(?:\d+(?:[ .]\d{3})*(?:[.,]\d+)?|egy|két|kettő|három|négy|öt|hat|hét|nyolc|kilenc|tíz)"
+    r"(?:\s*(?:[-–—]|és|vagy)\s*\d+(?:[.,]\d+)?)?"
+)
+_PROBLEM_SUFFIX = r"(?:-?(?P<suffix>es|os|as|ös|és|ot|et|at|ból|ből|ban|ben|ra|re|on|en|ig|ért))?"
+
+
+def _editorial_buyer_problem(original: str) -> tuple[str, str]:
+    """Generalize customer quantities without authorizing any numeric claim.
+
+    Exact quantities stay in the private source evidence. The public problem
+    describes the same work; it is not a price, performance or timing promise.
+    Unsupported numeric syntax produces a concrete topic brief, never a retry
+    requirement or an exception to the publication claim checks.
+    """
+    value = str(original or "").strip()
+    value = re.sub(r"https?://\S+", "a megadott forrás", value)
+    value = re.sub(r"\b[^\s@]+@[^\s@]+\.[^\s@]+", "a megadott elérhetőség", value)
+    value = re.sub(r"(?<!\w)(?:\+36|06)[ -]?(?:\d[ -]?){8,9}\b", "a megadott elérhetőség", value)
+    value = re.sub(r"(?<!\w)(?:/?u/|@)[\w.-]+", "az érintett fórumozó", value)
+    # Dates are context, not a new publication/freshness timestamp.
+    value = re.sub(r"\b\d{4}[-.]\s*\d{1,2}[-.]\s*\d{1,2}[.]?", "a megadott időpont", value)
+
+    def quantity(pattern: str, forms: Mapping[str, str], default: str) -> None:
+        nonlocal value
+        value = re.sub(
+            rf"\b{_PROBLEM_NUMBER}\s*(?:{pattern}){_PROBLEM_SUFFIX}\b(?!-\w)",
+            lambda match: forms.get((match.group("suffix") or "").casefold(), default),
+            value, flags=re.IGNORECASE,
+        )
+
+    quantity(r"m2|m²|nm|négyzetméter", {
+        "ra": "megadott alapterületre", "re": "megadott alapterületre",
+        "en": "megadott alapterületen", "on": "megadott alapterületen",
+        "ot": "megadott alapterületet", "et": "megadott alapterületet",
+    }, "megadott méretű")
+    thickness = any(word in _plain(original) for word in ("szigetel", "vastag", "homlokzat"))
+    quantity(r"mm|cm|méter|meter|m", {
+        "ra": "megadott méretre", "re": "megadott méretre",
+        "en": "megadott méreten", "on": "megadott méreten",
+    }, "eltérő vastagságú" if thickness and re.search(r"\d\s*(?:[-–—]|és|vagy)\s*\d", original)
+        else "megadott vastagságú" if thickness else "megadott méretű")
+    value = re.sub(r"(eltérő vastagságú[^.!?]{0,60}szigetelés)\s+között", r"\1ek között", value)
+    # Keep inflection where it carries the question's meaning (budget/price).
+    quantity(r"(?:ezer|millió|millio|milliárd|milliard)?\s*(?:Ft|forint|euró|euro)(?:\s*/\s*(?:m2|m²|nm|óra|nap))?", {
+        "es": "megadott összegű", "os": "megadott összegű", "as": "megadott összegű",
+        "ot": "megadott összeget", "et": "megadott összeget", "at": "megadott összeget",
+        "ból": "megadott keretből", "ből": "megadott keretből",
+        "ért": "megadott összegért", "ra": "megadott összegre", "re": "megadott összegre",
+        "ig": "megadott keretig", "ban": "megadott összegben", "ben": "megadott összegben",
+    }, "megadott összeg")
+    quantity(r"ezer|millió|millio|milliárd|milliard", {
+        "ból": "megadott keretből", "ből": "megadott keretből",
+        "ot": "megadott összeget", "et": "megadott összeget",
+    }, "megadott összeg")
+    value = re.sub(rf"\b{_PROBLEM_NUMBER}\s*(?:napja|hete|hónapja|honapja|éve|órája|oraja)\b", "egy ideje", value, flags=re.I)
+    quantity(r"nap|hét|het|hónap|honap|év|óra|ora", {
+        "es": "megadott időtartamú", "os": "megadott időtartamú",
+        "ig": "megadott ideig", "on": "megadott időn", "en": "megadott időn",
+        "ra": "megadott időre", "re": "megadott időre",
+        "ban": "megadott időszakban", "ben": "megadott időszakban",
+    }, "megadott idő")
+    value = re.sub(
+        rf"\b{_PROBLEM_NUMBER}\s*(?:%|százalék)(?:-?(?P<percent_suffix>os|kal|ot|ra))?(?![-\w])",
+        lambda match: {"kal": "megadott aránnyal", "ot": "megadott arányt", "ra": "megadott arányra"}.get(
+            match.group("percent_suffix"), "megadott arányú"
+        ), value, flags=re.I,
+    )
+    if re.search(r"\d", value):
+        # Model/type codes, complex dimensions and uncommon number morphology
+        # remain verbatim in original_problem; do not publish mangled fragments.
+        plain = _plain(original)
+        subjects = [description for markers, description in (
+            (("laminalt", "padlo", "burkol"), "padlóburkolás"),
+            (("fest", "glett"), "festés és falelőkészítés"),
+            (("hoszigetel", "szigetel", "parazar"), "hőszigetelés"),
+            (("tetoter",), "tetőtér-beépítés"),
+            (("teto",), "tető felújítása"),
+            (("garazs",), "garázs építése"),
+            (("falaz", "tegla", "ytong"), "falazat megválasztása"),
+            (("konyha",), "konyha felújítása"),
+            (("kivitelezo", "epitkezes", "hazepit"), "kivitelezés megtervezése"),
+            (("villany", "konnektor"), "villamos hálózat kialakítása"),
+            (("futes", "kazan"), "fűtés kialakítása"),
+            (("lakasa", "lakas", "ingatlan"), "ingatlanhoz kapcsolódó döntés"),
+        ) if any(marker in plain for marker in markers)]
+        subject = " és ".join(subjects[:2]) or "a forrásban leírt konkrét munka megtervezése"
+        goal = "a költséget és az ajánlatok tartalmát" if any(
+            marker in plain for marker in ("ar", "koltseg", "munkadij", "ajanlat", "keret", "ft")
+        ) else "a műszaki feltételeket és a következő lépést"
+        return (
+            f"A vevő a megadott projektadatok mellett a következő feladatról szeretne dönteni: {subject}. "
+            f"Ehhez {goal} kell tisztáznia."
+        ), "topic_brief_with_original_evidence"
+    return value, "quantity_and_contact_generalization" if value != original else "original_wording"
+
+
+def _problem_source_identity(source_url: str) -> tuple[str, str | None]:
+    parsed = urlsplit(source_url)
+    host = (parsed.hostname or "").removeprefix("www.")
+    native = None
+    if host == "reddit.com":
+        match = re.search(r"/comments/([a-z0-9]+)(?:/[^/]+/([a-z0-9]+))?", parsed.path, flags=re.I)
+        if match:
+            native = "post:" + match[1].lower() + (":comment:" + match[2].lower() if match[2] else "")
+    elif host == "forum.index.hu":
+        native = dict(parse_qsl(parsed.query)).get("a")
+    elif host == "prohardver.hu":
+        match = re.search(r"(.+)/hsz_(\d+)-\2[.]html$", parsed.path)
+        if match:
+            native = match[1] + ":post:" + match[2]
+    identity_url = urlunsplit(("https", host, parsed.path, parsed.query, parsed.fragment))
+    return identity(identity_url, native or ""), native
+
+
 def build_revenue_intent(
     topic: object,
     *,
@@ -450,11 +605,41 @@ def build_revenue_intent(
     revalidation = revalidate_topic_for_use(topic, source_snapshot=source_snapshot, now=now)
     if not revalidation["eligible"]:
         raise SourceReplenishmentRequired(list(revalidation["reasons"]))
+    source = source_snapshot or {}
+    original_problem = str(source.get("source_text") or _topic_value(topic, "question") or "").strip()
+    buyer_problem, derivation = _editorial_buyer_problem(original_problem)
+    source_url = revalidation["source_url"]
+    source_identity, native_id = _problem_source_identity(source_url)
+    published_at = source.get("published_at", _topic_value(topic, "published_at"))
+    if isinstance(published_at, datetime):
+        published_at = published_at.replace(tzinfo=UTC) if published_at.tzinfo is None else published_at
+        published_at = published_at.astimezone(UTC).isoformat()
     intent = {
         "policy": REVENUE_POLICY_VERSION,
         "brand_id": str(_topic_value(topic, "brand_id") or ""),
         "radar_topic_id": str(_topic_value(topic, "topic_id") or ""),
-        "buyer_problem": str(_topic_value(topic, "question") or "").strip(),
+        "buyer_problem": buyer_problem,
+        "source_problem_evidence": {
+            "original_problem": original_problem,
+            "source_url": source_url,
+            "source_identity": source_identity,
+            "native_id": native_id,
+            "radar_identity_hash": _topic_value(topic, "identity_hash"),
+            "published_at": published_at,
+            "published_at_raw": source.get("published_at_raw", _topic_value(topic, "published_at_raw")),
+            "observed_at": source.get("observed_at", revalidation["revalidated_at"]),
+            "revalidated_at": revalidation["revalidated_at"],
+            "verification_mode": "source_refresh" if source_snapshot is not None else "stored_topic_revalidation",
+            "original_text_sha256": hashlib.sha256(original_problem.encode("utf-8")).hexdigest(),
+            "public_problem_derivation": derivation,
+            "editorial_instruction": (
+                "A pontos méretek, összegek és időadatok a vevő saját helyzetének adatai. "
+                "A nyilvános szövegben a buyer_problem számadatok nélkül megfogalmazott "
+                "változatát használd; az eredeti számadatokat ne másold át. "
+                "A cikk a munka tartalmáról és a döntési szempontokról szóljon; ezekből "
+                "ne képezzen márkaárat, vállalási határidőt vagy teljesítményígéretet."
+            ),
+        },
         "sales_goal": sales_goal.strip(),
         "approved_brand_facts": [dict(item) for item in approved_brand_facts],
         "next_step": next_step.strip(),

@@ -220,7 +220,10 @@ def test_unavailable_forum_does_not_discard_usable_documented_brand_problem(db, 
 def test_final_repair_must_keep_actual_problem_and_fact_not_only_metadata(db):
     facts = processing._approved_brand_facts(db, "Property360", current=NOW)
     intent = build_brand_source_intent("Property360", facts)
-    package = {"revenue_intent": intent, "body": "Általános, bármely márkára ráhúzható tanács."}
+    package = {
+        "revenue_intent": intent, "body": "Általános, bármely márkára ráhúzható tanács.",
+        "cta": {"label": intent["next_step"], "intent": "lead"},
+    }
     errors = processing._revenue_package_errors(package, intent)
     assert "buyer_problem_missing_from_copy" in errors
     assert "approved_brand_fact_missing_from_copy" in errors

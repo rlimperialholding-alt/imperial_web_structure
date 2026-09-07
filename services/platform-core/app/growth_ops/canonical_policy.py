@@ -141,13 +141,17 @@ BRAND_CONTENT_FOCUS = {
     "Bautica": ("felújítás", "kivitelezés", "építkezés", "bővítés", "otthon"),
     "Prefab": ("előregyártás", "csarnok", "panel", "szerkezet", "kivitelezés"),
     "Casa Moderna": ("prémium otthon", "okosotthon", "komfort", "építészet", "ház"),
-    "BauFreund": ("építkezés", "kivitelezés", "ház", "költség", "műszaki"),
+    "BauFreund": ("építkezés", "kivitelezés", "ház", "költség", "műszaki", "munkadíj", "árajánlat"),
     "Danish Fabrik": ("készház", "faváz", "könnyűszerkezet", "szigetelés", "ház"),
     "TimberHaus": ("faház", "faváz", "könnyűszerkezet", "faépítés", "otthon"),
     "RED Property": ("ingatlanfejlesztés", "ingatlan", "beruházás", "értékesítés", "projekt"),
-    "Property360": ("ingatlan", "ingatlanüzemeltetés", "értékbecslés", "befektetés", "projekt"),
+    "Property360": (
+        "telek", "házterv", "finanszírozás", "kivitelezés", "beköltözés", "belsőépítészet",
+    ),
     "Everyday Homes": ("megfizethető otthon", "családi ház", "praktikus", "építkezés", "otthon"),
-    "Venture Studio": ("vállalkozás", "üzletfejlesztés", "innováció", "növekedés", "befektetés"),
+    "Venture Studio": (
+        "ingatlanbefektetés", "ingatlanprojekt", "ingatlanhelyzet", "befektető", "projektvalidálás",
+    ),
     "Family Homes": ("családi ház", "otthon", "alaprajz", "építkezés", "család"),
     "Imperial Construction": ("generálkivitelezés", "építkezés", "kivitelezés", "műszaki", "projekt"),
     "Imperial Technologies": ("technológia", "integráció", "automatizálás", "szoftver", "rendszer"),
@@ -187,7 +191,7 @@ BRAND_PUBLICATION_CONTRACTS = {
         "forbidden": ["olcsóság vagy finanszírozás mint főígéret", "generikus luxusjelzők", "nem igazolt okosotthon-funkció"],
     },
     "BauFreund": {
-        "position": "Az építtető barátságos, független szakmai segítője felújításnál, építkezésnél, számításnál és ellenőrzésnél.",
+        "position": "Az építtető barátságos szakmai segítője felújításnál, építkezésnél, számításnál és ellenőrzésnél.",
         "voice": "Közvetlen, tegező, természetes, kávé mellett is kimondható magyar.",
         "required": ["felismerhető vevői félelem vagy kérdés", "egy konkrét BauFreund-mechanizmus", "egy megfigyelhető ügyfélhaszon"],
         "locked_slogan": "BauFreund - az építő barát.",
@@ -239,10 +243,23 @@ BRAND_PUBLICATION_CONTRACTS = {
         "forbidden": ["lakossági típusház", "általános projektkontroll mint főígéret", "bizonyíték nélküli 1989-, ár- vagy időgarancia"],
     },
     "Venture Studio": {
-        "position": "Venture Studio: vállalkozás- és üzletfejlesztési műhely, amely az innovációs és növekedési döntések tisztázását segíti.",
-        "voice": "Tárgyilagos, vállalkozói, konkrét és döntésorientált magyar.",
-        "required": ["üzletfejlesztési vagy növekedési döntés", "innovációs helyzet", "egyértelmű következő lépés"],
-        "forbidden": ["általános motiváció", "bizonyíték nélküli befektetési ígéret", "másik márka szolgáltatása"],
+        "position": (
+            "Venture Studio: ingatlanbefektetési márka, amely speciális, komplex vagy alulértékelt "
+            "ingatlanprojekteket kutat fel, validál és strukturál, minősített befektetői kapcsolatokkal."
+        ),
+        "voice": "Tárgyilagos, befektetői szempontokra építő, konkrét és döntésorientált magyar.",
+        "required": [
+            "konkrét ingatlanbefektetési döntési helyzet",
+            "forrással alátámasztott projektérték és feltárandó kockázat",
+            "jóváhagyott befektetői meghívás vagy projektajánlás mint következő lépés",
+        ],
+        "forbidden": [
+            "általános motiváció",
+            "startup-inkubáció vagy általános vállalkozásfejlesztés mint főajánlat",
+            "bizonyíték nélküli befektetési ígéret",
+            "garantált hozam vagy kockázatmentesség",
+            "másik márka szolgáltatása",
+        ],
     },
     "BauShield": {
         "position": "BauShield: építési kockázatok, szerződéses pontok és műszaki ellenőrzés közérthető tisztázása.",

@@ -1,0 +1,9 @@
+{
+  "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w9lmk7/statikus_keresés/",
+  "feed_url": "https://www.reddit.com/r/lakokozosseg/new/.rss?limit=25",
+  "source_text": "Statikus keresés Hello. Budapesten keresek lelkiismeretes, alapos statikust, aki korrekt áron dolgozik. Lakás kapcsán lenne rá szükség. Ismertek ilyet?",
+  "published_at_raw": "2026-09-07T07:45:51+00:00",
+  "observed_at": "2026-09-07T08:17:25.390047+00:00",
+  "original_feed_sha256": "f397b06d999855ae3835a2b954afe848d9038321c87481689aec909b3455ef18",
+  "provenance": "Actual public Reddit Atom entry parsed during public-smoke-local-report.json on 2026-09-07. Title and own post body retained; author/profile omitted. The publication value comes from the original entry published element, not updated or discovery time. This is a parsed evidence fixture, not raw Atom XML."
+}

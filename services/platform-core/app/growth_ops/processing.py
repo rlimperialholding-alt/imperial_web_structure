@@ -105,7 +105,7 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260906-content-repair-v2"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v3"
 BRAND_POSITION_ANCHORS = {
     "BauShield": ("építési kockázat", "szerződés"),
     "Casa Moderna": ("prémium otthon", "komfort"),
@@ -113,7 +113,7 @@ BRAND_POSITION_ANCHORS = {
     "Property360": ("property360", "beköltözés"),
     "RED Property": ("ingatlanfejlesztő", "típusház"),
     "TimberHaus": ("faépítés", "készültségi"),
-    "Venture Studio": ("üzletfejlesztés", "innováció"),
+    "Venture Studio": ("ingatlanhelyzet", "befektetési lehetőség", "kockázatstrukturálás"),
 }
 
 
@@ -191,6 +191,30 @@ def _complete_json_payload(db: Session, **kwargs: Any) -> tuple[Any, dict[str, A
     raise last_error
 
 
+def _complete_content_review(db: Session, **kwargs: Any) -> Any:
+    """Retry one known technical failure against the exact same artifact only."""
+    transient_errors = {
+        "DeepSeek request failed: JSONDecodeError",
+        "DeepSeek request failed: ReadTimeout",
+        "DeepSeek request failed: ConnectError",
+    }
+    for attempt in range(2):
+        try:
+            return complete_json(db, **kwargs)
+        except GrowthRegistryError as exc:
+            retryable = str(exc) in transient_errors
+            if str(exc) == "DeepSeek request failed: HTTPStatusError":
+                cause = exc.__cause__
+                # The transport keeps its HTTPStatusError as the cause. An
+                # unknown status or an authentication error is not transient.
+                if isinstance(cause, httpx.HTTPStatusError):
+                    status = cause.response.status_code
+                    retryable = status in {408, 425, 429} or 500 <= status <= 599
+            if attempt or not retryable:
+                raise
+    raise AssertionError("unreachable_content_review_retry")
+
+
 def _single_content_package(payload: dict[str, Any]) -> dict[str, Any]:
     package = payload.get("package")
     if isinstance(package, dict):
@@ -207,6 +231,133 @@ def _single_content_package(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(nested, dict):
         return nested
     raise ValueError("package_not_object")
+
+
+def _normalize_generated_content_package(
+    payload: dict[str, Any], *, brand_id: str, revenue_intent: dict[str, Any] | None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Bind server-owned facts; model metadata can only trigger a repair.
+
+    Missing metadata is normal: the model writes copy, not source records or
+    permissions. Explicit conflicting metadata is recorded as an error and
+    must disappear in a fresh repaired response before independent review.
+    """
+    observed = _single_content_package(payload)
+    issues: list[str] = []
+    scopes = (payload,) if observed is payload else (payload, observed)
+    for scope in scopes:
+        supplied_brand = scope.get("brand_id")
+        if supplied_brand and _brand_key(supplied_brand) != _brand_key(brand_id):
+            raise ValueError("model_brand_mismatch")
+        if revenue_intent is not None:
+            if "revenue_intent" in scope and scope["revenue_intent"] != revenue_intent:
+                issues.append("model_revenue_metadata_untrusted")
+            if "source_urls" in scope:
+                urls = scope["source_urls"]
+                if not isinstance(urls, list) or any(
+                    not isinstance(url, str) or url not in revenue_intent["source_refs"]
+                    for url in urls
+                ):
+                    issues.append("model_source_urls_untrusted")
+        if any(key in scope for key in (
+            "publication_allowed", "send_allowed", "publication_state", "quality_gate_manifest",
+            "delivery_plan", "publication_job_id", "release_review_request_id", "content_asset_id",
+        )):
+            issues.append("model_authority_metadata_untrusted")
+    # Ignore unrequested annotations: only these fields can become public copy.
+    package = {key: observed[key] for key in (
+        "title", "body", "facebook_post", "cta", "position", "customer_benefits",
+        "interactive_questions", "numeric_evidence_status",
+    ) if key in observed}
+    if "article_body" in observed:
+        if "body" in observed and observed["body"] != observed["article_body"]:
+            issues.append("body_alias_conflict")
+        elif "body" not in observed:
+            package["body"] = observed["article_body"]
+    for field in ("title", "body", "facebook_post"):
+        if field in package and not isinstance(package[field], str):
+            issues.append(f"{field}_not_text")
+            package[field] = ""
+    package["brand_id"] = brand_id
+    package["format"] = "professional_article"
+    if revenue_intent is not None:
+        # A JSON copy prevents later normalization from mutating the trusted input.
+        package["revenue_intent"] = json.loads(_json(revenue_intent))
+        package["source_urls"] = list(revenue_intent["source_refs"])
+        cta = package.get("cta")
+        approved = str(revenue_intent["next_step"])
+        label = cta if isinstance(cta, str) else None
+        if isinstance(cta, dict):
+            label = cta.get("label")
+        if isinstance(label, str) and _norm(label).rstrip(".!?") == _norm(approved).rstrip(".!?"):
+            if isinstance(cta, dict) and (
+                set(cta) - {"label", "intent"} or cta.get("intent", "lead") != "lead"
+            ):
+                issues.append("model_cta_metadata_untrusted")
+            package["cta"] = {"label": approved, "intent": "lead"}
+        elif cta is not None:
+            issues.append("cta_not_approved_next_step")
+    else:
+        package["source_urls"] = observed.get("source_urls") or []
+    return package, sorted(set(issues))
+
+
+def _content_output_schema(revenue_intent: dict[str, Any] | None) -> dict[str, Any]:
+    """The model returns copy only; input facts are not an output template."""
+    return {
+        "type": "object", "required": ["package"], "additionalProperties": False,
+        "properties": {"package": {
+            "type": "object", "additionalProperties": False,
+            "required": ["title", "body", "facebook_post", "cta"],
+            "properties": {
+                "title": {"type": "string"}, "body": {"type": "string"},
+                "facebook_post": {"type": "string"},
+                "cta": {"type": "object", "required": ["label", "intent"],
+                        "additionalProperties": False, "properties": {
+                            "label": ({"const": revenue_intent["next_step"]}
+                                      if revenue_intent else {"type": "string"}),
+                            "intent": {"const": "lead"},
+                        }},
+            },
+        }},
+    }
+
+
+def _required_copy_spans(revenue_intent: dict[str, Any] | None) -> list[str]:
+    if not revenue_intent:
+        return []
+    return [
+        revenue_intent["buyer_problem"],
+        revenue_intent["approved_brand_facts"][0]["payload"]["statement"],
+    ]
+
+
+def _content_candidate_errors(
+    package: dict[str, Any], *, brand_id: str, focus: tuple[str, ...],
+    contract: dict[str, Any], revenue_intent: dict[str, Any] | None,
+) -> list[str]:
+    """Apply the same checks to the first draft and every repaired draft."""
+    errors = _content_repair_errors(package, contract)
+    if _brand_key(package.get("brand_id")) != _brand_key(brand_id):
+        errors.append("brand_mismatch")
+    copy_text = _norm(" ".join(
+        str(package.get(key) or "") for key in ("title", "body", "facebook_post")
+    ))
+    if not any(_norm(keyword) in copy_text for keyword in focus):
+        errors.append("off_brand_topic")
+    if re.search(r"\b(?:19|20)\d{2}\b", copy_text):
+        errors.append("unverified_year_claim")
+    facebook = _norm(str(package.get("facebook_post") or ""))
+    if any(fragment in facebook for fragment in (
+        "[link]", "http://", "https://", "cikkünkben", "olvasd el cikk", "olvassa el cikk",
+        "teljes útmutatónkat", "látogass el weboldalunkra",
+    )):
+        errors.append("facebook_requires_unavailable_web_content")
+    if revenue_intent is not None:
+        decision = evaluate_revenue_intent(revenue_intent, brand_id=brand_id)
+        errors.extend(f"revenue_{reason}" for reason in decision["reasons"])
+        errors.extend(_revenue_package_errors(package, revenue_intent))
+    return sorted(set(errors))
 
 
 def _trim_complete_sentences(value: object, *, limit: int) -> str:
@@ -460,9 +611,30 @@ def _sanitize_unbound_claims(package: dict[str, Any]) -> dict[str, Any]:
 def _deterministic_publication_errors(
     package: dict[str, Any], contract: dict[str, Any]
 ) -> list[str]:
-    raw = "\n".join(str(package.get(field) or "") for field in ("title", "body", "facebook_post"))
+    cta = package.get("cta")
+    cta_label = cta.get("label") if isinstance(cta, dict) else cta
+    raw = "\n".join([
+        *(str(package.get(field) or "") for field in ("title", "body", "facebook_post")),
+        str(cta_label or ""),
+    ])
     normalized = _norm(raw)
     errors: list[str] = []
+    # A documented request/CTA is not evidence of its contractual or fee terms.
+    # Model-supplied annotations cannot authorize these promises. This finding
+    # follows the existing bounded repair path and creates no global stop state.
+    offer_condition_patterns = (
+        r"(?<!nem )\b(?:kötelezettségmentes(?:en)?|díjmentes(?:en)?|"
+        r"ingyenes(?:en)?|költségmentes(?:en)?)(?!-e\b)\b",
+        r"\b(?:ingyen|kötelezettség nélkül|költség nélkül)\b",
+        r"\bnem\s+vállal(?:sz|tok|unk)?\s+(?:semmit|(?:semmilyen\s+)?kötelezettség\w*)\b",
+        r"\bsemmire\s+(?:sem\s+)?kötelez\w*\b",
+        r"\bnem\s+kötelez\w*\s+semmire\b",
+        r"\bnem\s+jár\s+(?:semmilyen\s+)?kötelezettség\w*\b",
+        r"\bnem\s+kerül\s+semmibe\b",
+        r"\bnem\s+kell\s+fizetn\w*\b",
+    )
+    if any(re.search(pattern, normalized) for pattern in offer_condition_patterns):
+        errors.append("unverified_offer_condition")
     if len(str(package.get("body") or "").strip()) > 2600:
         errors.append("body_too_long")
     instruction_leaks = (
@@ -2145,6 +2317,10 @@ def _useful_forum_question(text: str) -> bool:
             "teto",
             "hősziget",
             "hosziget",
+            "padlás",
+            "padlas",
+            "párazár",
+            "parazar",
             "burkol",
             "munkadíj",
             "munkadij",
@@ -2302,7 +2478,7 @@ def _revenue_package_errors(package: dict[str, Any], intent: dict[str, Any]) -> 
     errors: list[str] = []
     if package.get("revenue_intent") != intent:
         errors.append("revenue_brief_changed")
-    public_text = _norm(" ".join(str(package.get(k) or "") for k in ("body", "facebook_post")))
+    public_text = _norm(str(package.get("body") or ""))
     problem = _norm(str(intent.get("buyer_problem") or "")).rstrip(" .?!")
     if not problem or problem not in public_text:
         errors.append("buyer_problem_missing_from_copy")
@@ -2312,6 +2488,11 @@ def _revenue_package_errors(package: dict[str, Any], intent: dict[str, Any]) -> 
     ]
     if not any(statement and statement in public_text for statement in statements):
         errors.append("approved_brand_fact_missing_from_copy")
+    cta = package.get("cta")
+    if not isinstance(cta, dict) or cta != {"label": intent.get("next_step"), "intent": "lead"}:
+        errors.append("cta_not_approved_next_step")
+    if intent.get("publication_allowed") is not False or intent.get("send_allowed") is not False:
+        errors.append("revenue_policy_cannot_authorize_delivery")
     return errors
 
 
@@ -2519,7 +2700,12 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
             prior_evidence = json.loads(row.evidence_json or "{}")
         except json.JSONDecodeError:
             prior_evidence = {}
-        prior_attempts = int((prior_evidence or {}).get("attempts") or 0)
+        prior_attempts = (
+            int((prior_evidence or {}).get("attempts") or 0)
+            if isinstance(prior_evidence, dict)
+            and prior_evidence.get("repair_version") == CONTENT_FACTORY_REPAIR_VERSION
+            else 0
+        )
         brand_focus = content_focus_for_brand(row.brand_id)
         publication_contract = publication_contract_for_brand(row.brand_id)
         brand_evidence = {
@@ -2610,16 +2796,23 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "megtakarítást vagy összehasonlító teljesítményígéretet. A szöveget óvatos "
                     "döntési nyelven fogalmazd: mit érdemes tisztázni, megvizsgálni vagy "
                     "szakemberrel ellenőriztetni. A CTA a brief vállalható next_step értékét "
-                    "kövesse. Használj 3-8 releváns hashtaget. "
-                    "A kimenet még nem "
-                    "publikációs engedély."
+                    "kövesse. A kapcsolatfelvételi CTA nem igazol ingyenességet, "
+                    "kötelezettségmentességet vagy garantált választ. Ilyen új ajánlati "
+                    "feltételt ne állíts; a feltételek tisztázására lehet felhívni a figyelmet. "
+                    "Használj 3-8 releváns hashtaget. "
+                    "A válasz egyetlen JSON objektum legyen a package gyökérkulccsal. "
+                    "A package pontosan title, body, facebook_post és cta mezőt tartalmazzon, "
+                    "a schema szerint. Kizárólag kész szöveget adj, magyarázatot és kitöltetlen "
+                    "sablont ne. Ne használd az article_body mezőnevet: a cikk kulcsa body. "
+                    "Ne küldj brand_id, source_urls, revenue_intent, engedélyezési vagy "
+                    "ellenőrzési metaadatot. Ezeket a szerver az ellenőrzött bemenetből "
+                    "kapcsolja a szöveghez. A kimenet még nem publikációs engedély."
                     + (
-                        " A revenue brief kötelező mezői: konkrét buyer_problem, értékesítési "
-                        "sales_goal, approved_brand_facts és vállalható next_step. A brief "
-                        "source_refs mezőjét változtatás nélkül őrizd meg. A buyer_problem "
-                        "szövegét a cikkben is mondd ki, majd adj rá konkrét döntési segítséget. "
-                        "Legalább egy jóváhagyott statement szövegét pontosan építsd be a cikkbe. "
-                        "A mezők hiánya esetén jelezd a hiányt; ne írj általános pótló tartalmat."
+                        " A revenue_intent csak olvasandó brief, nem visszaírandó kimeneti mező. "
+                        "A body_must_include listában megadott vevői problémát és márkatényt "
+                        "karakterre pontosan, folyó szövegként építsd a body első bekezdésébe. "
+                        "Utána adj a problémára konkrét döntési segítséget. A cta.label pontosan "
+                        "a brief next_step értéke, cta.intent pedig lead legyen."
                         if revenue_policy_enabled
                         else ""
                     )
@@ -2640,7 +2833,8 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                             "vizsgálat, eredmény, szám, idő, ár, megtakarítás vagy márkaképesség."
                         ),
                         "requirements": {
-                            "article_body_chars": "900-1600",
+                            "body_chars": "900-1600",
+                            "body_must_include": _required_copy_spans(revenue_intent),
                             "facebook_post_chars": "350-700",
                             "facebook_link_mode": "none",
                             "facebook_image_mode": "required_before_publication",
@@ -2653,134 +2847,16 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                                 "required when enabled; no publication or send authority"
                             ),
                         },
-                        "schema": {
-                            "package": {
-                                "brand_id": row.brand_id,
-                                "title": "Hungarian title",
-                                "format": "professional_article",
-                                "position": "explicit recommendation",
-                                "customer_benefits": ["benefit"],
-                                "body": "Hungarian article draft",
-                                "facebook_post": "Hungarian social draft with 3-8 hashtags",
-                                "interactive_questions": ["question 1", "question 2"],
-                                "cta": {"label": "CTA", "intent": "conversion action"},
-                                "numeric_evidence_status": "resolved|missing",
-                                "source_urls": ["only supplied URLs"],
-                                "revenue_intent": {
-                                    "buyer_problem": "required",
-                                    "sales_goal": "required",
-                                    "approved_brand_facts": "required",
-                                    "next_step": "required",
-                                    "source_refs": "required",
-                                },
-                            }
-                        },
+                        "schema": _content_output_schema(revenue_intent),
                     }
                 ),
                 purpose=f"canonical_daily_content_factory:{row.brand_id}",
                 run_id=None,
                 max_tokens=3000,
             )
-            package = _single_content_package(payload)
-            validation_errors: list[str] = []
-            if not isinstance(package, dict):
-                validation_errors.append("package_not_object")
-            else:
-                observed_brand = _brand_key(package.get("brand_id"))
-                canonical_brand = _brand_key(row.brand_id)
-                copy_brand_context = _brand_key(
-                    " ".join(
-                        str(package.get(field) or "")
-                        for field in ("title", "body", "facebook_post")
-                    )
-                )
-                if (
-                    not observed_brand
-                    or (
-                        canonical_brand not in observed_brand
-                        and observed_brand not in canonical_brand
-                    )
-                ) and canonical_brand not in copy_brand_context:
-                    package["source_brand_id"] = package.get("brand_id")
-                    package["brand_id_corrected"] = True
-                    package["title"] = f"{row.brand_id}: {str(package.get('title') or '').strip()}"
-                    package["body"] = (
-                        f"{row.brand_id} szakmai útmutatója.\n\n"
-                        f"{str(package.get('body') or '').strip()}"
-                    )
-                    package["facebook_post"] = (
-                        f"{row.brand_id}: {str(package.get('facebook_post') or '').strip()}"
-                    )
-                if not str(package.get("title") or "").strip():
-                    validation_errors.append("title_missing")
-                if len(str(package.get("body") or "").strip()) < 600:
-                    validation_errors.append("body_too_short")
-                if len(str(package.get("facebook_post") or "").strip()) < 150:
-                    validation_errors.append("facebook_too_short")
-                hashtag_count = len(
-                    re.findall(
-                        r"(?<!\w)#\w+",
-                        str(package.get("facebook_post") or ""),
-                        flags=re.UNICODE,
-                    )
-                )
-                if not 3 <= hashtag_count <= 8:
-                    validation_errors.append("facebook_hashtag_count_invalid")
-                cta = package.get("cta")
-                if not isinstance(cta, dict) or not str(cta.get("label") or "").strip():
-                    validation_errors.append("cta_missing")
-                facebook_text = _norm(str(package.get("facebook_post") or ""))
-                forbidden_social_fragments = (
-                    "[link]",
-                    "http://",
-                    "https://",
-                    "cikkünkben",
-                    "olvasd el cikk",
-                    "olvassa el cikk",
-                    "teljes útmutatónkat",
-                    "látogass el weboldalunkra",
-                )
-                if any(fragment in facebook_text for fragment in forbidden_social_fragments):
-                    validation_errors.append("facebook_requires_unavailable_web_content")
-                topic_text = _norm(
-                    " ".join(
-                        str(package.get(field) or "")
-                        for field in ("title", "body", "facebook_post")
-                    )
-                )
-                if not any(_norm(keyword) in topic_text for keyword in brand_focus):
-                    validation_errors.append("off_brand_topic")
-                if re.search(r"\b(?:19|20)\d{2}\b", topic_text):
-                    validation_errors.append("unverified_year_claim")
-                if contains_no_monitoring_entity(_json(package)):
-                    validation_errors.append("hard_gate_entity_detected")
-                if revenue_policy_enabled:
-                    observed_intent = package.get("revenue_intent")
-                    if not isinstance(observed_intent, dict):
-                        validation_errors.append("revenue_intent_missing")
-                    else:
-                        intent_decision = evaluate_revenue_intent(
-                            observed_intent,
-                            brand_id=row.brand_id,
-                        )
-                        if not intent_decision["eligible"]:
-                            validation_errors.extend(
-                                f"revenue_{reason}" for reason in intent_decision["reasons"]
-                            )
-                        if observed_intent.get("publication_allowed") is not False:
-                            validation_errors.append("revenue_policy_cannot_authorize_publication")
-                        if observed_intent.get("send_allowed") is not False:
-                            validation_errors.append("revenue_policy_cannot_authorize_send")
-                        trusted_intent = revenue_intent or {}
-                        if observed_intent.get("approved_brand_facts") != trusted_intent.get(
-                            "approved_brand_facts"
-                        ):
-                            validation_errors.append("revenue_approved_fact_set_changed")
-                        if observed_intent.get("source_refs") != trusted_intent.get("source_refs"):
-                            validation_errors.append("revenue_source_refs_changed")
-            if validation_errors:
-                raise ValueError("invalid_brand_content_package:" + ",".join(validation_errors))
-            package["brand_id"] = row.brand_id
+            package, generation_issues = _normalize_generated_content_package(
+                payload, brand_id=row.brand_id, revenue_intent=revenue_intent,
+            )
         except (GrowthRegistryError, json.JSONDecodeError, TypeError, ValueError) as exc:
             try:
                 previous = json.loads(row.evidence_json or "{}")
@@ -2795,7 +2871,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "publication_state": "BLOCKED",
                     "error_type": type(exc).__name__,
                     "error_detail": str(exc)[:300],
-                    "attempts": int(previous.get("attempts") or 0) + 1,
+                    "attempts": prior_attempts + 1,
                     "repair_version": CONTENT_FACTORY_REPAIR_VERSION,
                 }
             )
@@ -2821,11 +2897,15 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                 for fact in (revenue_intent or {}).get("approved_brand_facts") or []
                 if fact.get("source_url")
             )
-        package["source_urls"] = (
-            [url for url in source_urls if isinstance(url, str) and url in brand_allowed_urls]
-            if isinstance(source_urls, list)
-            else []
-        )
+        if revenue_policy_enabled:
+            package["source_urls"] = (
+                [url for url in source_urls if isinstance(url, str) and url in brand_allowed_urls]
+                if isinstance(source_urls, list) else []
+            )
+        else:
+            # Legacy generation receives the same brand-filtered evidence, but
+            # the copy-only schema no longer asks the model to repeat its URLs.
+            package["source_urls"] = sorted(brand_allowed_urls)
         package = _normalize_content_lengths(_sanitize_unbound_claims(package))
         anchors = BRAND_POSITION_ANCHORS.get(row.brand_id, ())
         if not revenue_policy_enabled and anchors:
@@ -2849,9 +2929,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     if url in brand_allowed_urls
                 ]
                 package = _normalize_content_lengths(_sanitize_unbound_claims(package))
-        deterministic_errors = _deterministic_publication_errors(package, publication_contract)
-        if revenue_policy_enabled:
-            deterministic_errors.extend(_revenue_package_errors(package, revenue_intent or {}))
+        deterministic_errors = generation_issues + _content_candidate_errors(
+            package, brand_id=row.brand_id, focus=brand_focus,
+            contract=publication_contract, revenue_intent=revenue_intent,
+        )
         repair_result = None
         if deterministic_errors:
             try:
@@ -2866,8 +2947,15 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                             "a márka pozícióját, a természetes magyar hangot, az egyetlen CTA-t és "
                             "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. "
                             "Forrás nélküli anyagban kizárólag óvatos döntési útmutató "
-                            "maradhat. A teljes javított "
-                            "package objektumot add vissza."
+                            "maradhat. Egyetlen JSON objektumot adj package gyökérkulccsal, "
+                            "csak title, body, facebook_post és cta mezőkkel a schema szerint. "
+                            "Ne adj vissza revenue_intent, source_urls, brand_id vagy "
+                            "engedélyezési metaadatot; ezeket a szerver kapcsolja hozzá. "
+                            "A body_must_include két mondatát pontosan építsd a body első "
+                            "bekezdésébe. A CTA a jóváhagyott next_step legyen. A kérési út "
+                            "nem igazol ingyenességet, kötelezettségmentességet vagy garantált "
+                            "választ. Ilyen új ajánlati ígéretet törölj; szükség esetén a "
+                            "feltételek tisztázását javasold, ne találj ki helyettük más ígéretet."
                         ),
                         user_prompt=_json(
                             {
@@ -2876,14 +2964,16 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                                 "gate_errors": deterministic_errors,
                                 "repair_round": repair_number + 1,
                                 "source_urls_allowed": sorted(brand_allowed_urls),
-                                "blocked_package": package,
-                                "trusted_revenue_intent": revenue_intent,
-                                "schema": {
-                                    "package": _quality_artifact(package) | (
-                                        {"revenue_intent": revenue_intent}
-                                        if revenue_policy_enabled else {}
-                                    )
+                                "blocked_package": {
+                                    key: package.get(key)
+                                    for key in ("title", "body", "facebook_post", "cta")
                                 },
+                                "trusted_revenue_intent": revenue_intent,
+                                "requirements": {
+                                    "body_chars": "900-1600",
+                                    "body_must_include": _required_copy_spans(revenue_intent),
+                                },
+                                "schema": _content_output_schema(revenue_intent),
                             }
                         ),
                         purpose=(f"canonical_daily_content_deterministic_repair:{row.brand_id}"),
@@ -2891,24 +2981,23 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         high_stakes=False,
                         max_tokens=3500,
                     )
-                    repaired = _single_content_package(repaired_payload)
-                    repaired["brand_id"] = row.brand_id
-                    repaired_urls = repaired.get("source_urls")
-                    repaired["source_urls"] = (
-                        [
-                            url
-                            for url in repaired_urls
-                            if isinstance(url, str) and url in brand_allowed_urls
-                        ]
-                        if isinstance(repaired_urls, list)
-                        else []
+                    repaired, repair_issues = _normalize_generated_content_package(
+                        repaired_payload, brand_id=row.brand_id, revenue_intent=revenue_intent,
                     )
-                    repaired = _normalize_content_lengths(_sanitize_unbound_claims(repaired))
-                    repair_errors = _content_repair_errors(repaired, publication_contract)
+                    repaired_urls = repaired.get("source_urls")
                     if revenue_policy_enabled:
-                        repair_errors.extend(
-                            _revenue_package_errors(repaired, revenue_intent or {})
+                        repaired["source_urls"] = (
+                            [url for url in repaired_urls
+                             if isinstance(url, str) and url in brand_allowed_urls]
+                            if isinstance(repaired_urls, list) else []
                         )
+                    else:
+                        repaired["source_urls"] = sorted(brand_allowed_urls)
+                    repaired = _normalize_content_lengths(_sanitize_unbound_claims(repaired))
+                    repair_errors = repair_issues + _content_candidate_errors(
+                        repaired, brand_id=row.brand_id, focus=brand_focus,
+                        contract=publication_contract, revenue_intent=revenue_intent,
+                    )
                     if not repair_errors:
                         package = repaired
                         break
@@ -2964,9 +3053,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                 failed += 1
                 db.commit()
                 continue
+        package["generator_output_issues"] = generation_issues
         artifact_hash = _sha(_quality_artifact(package))
         try:
-            review_result = complete_json(
+            review_result = _complete_content_review(
                 db,
                 system_prompt=(
                     "Független, fail-closed magyar tartalomkiadási reviewer vagy; nem te "
@@ -3073,6 +3163,11 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "error_detail": str(exc)[:300],
                     "attempts": prior_attempts + 1,
                     "repair_version": CONTENT_FACTORY_REPAIR_VERSION,
+                    "review_pending_draft": _quality_artifact(package) | {
+                        "revenue_intent": revenue_intent,
+                        "generator_output_issues": generation_issues,
+                    },
+                    "draft_requires_review": True,
                 }
             )
             failed += 1

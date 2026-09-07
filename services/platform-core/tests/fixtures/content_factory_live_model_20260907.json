@@ -1,0 +1,33 @@
+{
+  "recorded_at": "2026-09-07T08:13:18.560590+00:00",
+  "model_id": "deepseek-v4-flash",
+  "provider_response_id": "5bdf76da-1b05-4c46-b366-cd5844081534",
+  "response_sha256": "b580c2ce95e29c1c610a6acd4b12ee0121c2cc94e46eb274b996e0857f0c3c30",
+  "model_output": {
+    "title": "Miért nem elég a telekre és a házra külön-külön figyelni?",
+    "article_body": "Amikor nekiállsz egy ház építésének, könnyű azt hinni, hogy a telek, a terv és a finanszírozás három külön feladat, amit egymás után le lehet tudni. Először veszel egy telket, aztán megrendeled a terveket, majd keresel egy kivitelezőt, és közben intézed a hitelt. Csakhogy ez a három dolog folyamatosan hat egymásra – és ha külön kezeled őket, könnyen olyan helyzetbe kerülsz, amit utólag már nehéz korrigálni.\n\nGondolj bele: a telek mérete, fekvése és adottságai alapvetően meghatározzák, milyen házat lehet rá tervezni. A terv viszont befolyásolja a kivitelezési költséget, ami pedig a finanszírozásodat. Ha például olyan telket választasz, amihez a későbbi házterv miatt drágább alapozás kell, az a teljes projektköltségedet megemeli – és ezt már a telek kiválasztásakor érdemes látni. A költözésig tartó teljes projektköltség ugyanis nem azonos a ház kivitelezési árával. Sok olyan tétel van, ami csak később derül ki, ha nem nézed meg előre az összefüggéseket.\n\nA Property360 pontosan ezt a problémát oldja meg: nem egymás mellé teszi a telket, a tervezést, a finanszírozást és a kivitelezést, hanem egyetlen projektben hangolja össze őket a költözésig. Ez azt jelenti, hogy már a legelején, a telek–ház elővizsgálat során érdemes tisztázni, hogy a kiszemelt telek és az elképzelt ház együtt működik-e – és hogy a finanszírozásod reálisan lefedi-e a teljes utat odáig.\n\nMit jelent ez a gyakorlatban? Ahelyett, hogy külön-külön foglalkoznál a telekkel, a tervekkel és a hitellel, egy olyan folyamatban gondolkodhatsz, ahol ezek a szálak már az elején összeérnek. Így elkerülheted, hogy olyan telket vegyél, amihez később nem találsz megfelelő tervet, vagy olyan tervet rendelj, amihez nem lesz elég a kereted. A cél az, hogy a döntéseid ne egymás ellenében, hanem egymást erősítve szülessenek meg.\n\nHa most épp ott tartasz, hogy telket nézel, vagy már van egy kiszemelt telked, de a házterv és a finanszírozás még kérdéses, érdemes lehet egy olyan elővizsgálatot kérned, ahol ezt a három szálat együtt vizsgálják meg. Két kérdés, amit érdemes feltenned magadnak: Vajon a kiszemelt telek valóban alkalmas arra a házra, amit elképzeltél? És a teljes projektköltség – nem csak a ház ára – belefér-e a keretedbe? Ha ezekre nincs még egyértelmű válaszod, egy telek–ház elővizsgálat segíthet tisztán látni.\n\nA Property360-nál a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítjük – így a következő lépésed megalapozottabb lehet. Ha szeretnéd, hogy a projektjeid ne egymás után, hanem összehangoltan haladjanak, kérd a telek–ház elővizsgálatot, és nézzük meg együtt, mi illik igazán egymáshoz.",
+    "facebook_post": "Telket nézel, de még nem tudod, milyen ház fér rá? Vagy már megvan a terv, de a finanszírozás még kérdéses? A telek, a terv és a pénz nem három külön feladat – folyamatosan hatnak egymásra. Ha külön kezeled őket, könnyen olyan döntést hozol, amit később bánnál. A Property360-nál egyetlen projektben hangoljuk össze ezeket a költözésig. Kérd a telek–ház elővizsgálatot, és nézzük meg, mi illik igazán egymáshoz! #Property360 #telek #házépítés #elővizsgálat #ingatlan #projektkoordináció",
+    "cta": "Kérek telek–ház elővizsgálatot.",
+    "interactive_questions": [
+      "Vajon a kiszemelt telek valóban alkalmas arra a házra, amit elképzeltél?",
+      "A teljes projektköltség – nem csak a ház ára – belefér-e a keretedbe?"
+    ],
+    "customer_benefits": [
+      "A telek, a terv és a finanszírozás összehangolása már a projekt elején.",
+      "A teljes projektköltség tisztább képe a kivitelezési áron túl.",
+      "Biztonságosabb döntések a költözésig vezető úton."
+    ],
+    "position": "A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút.",
+    "numeric_evidence_status": "missing",
+    "source_urls": [
+      "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+    ],
+    "revenue_intent": {
+      "approved_brand_facts": "required",
+      "buyer_problem": "required",
+      "next_step": "required",
+      "sales_goal": "required",
+      "source_refs": "required"
+    }
+  }
+}

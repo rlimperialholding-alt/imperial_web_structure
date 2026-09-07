@@ -26,7 +26,11 @@ def test_manifest_contains_read_back_documents_and_supported_brand_specific_step
             assert proof["drive_file_id"] in source["source_url"]
             assert len(proof["content_sha256"]) == 64
             assert proof["exact_excerpts"]
-            assert source["supersedes_versions"] == ["2026-09-06.v1"]
+            assert source["supersedes_versions"] == (
+                ["2026-09-06.v1"]
+                if brand["brand_id"] in {"Property360", "RED Property", "Venture Studio"}
+                else []
+            )
 
 
 def test_seed_supersedes_only_explicit_versions_and_is_idempotent(db):
