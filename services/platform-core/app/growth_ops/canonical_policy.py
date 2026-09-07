@@ -144,7 +144,10 @@ BRAND_CONTENT_FOCUS = {
     "BauFreund": ("építkezés", "kivitelezés", "ház", "költség", "műszaki", "munkadíj", "árajánlat"),
     "Danish Fabrik": ("készház", "faváz", "könnyűszerkezet", "szigetelés", "ház"),
     "TimberHaus": ("faház", "faváz", "könnyűszerkezet", "faépítés", "otthon"),
-    "RED Property": ("ingatlanfejlesztés", "ingatlan", "beruházás", "értékesítés", "projekt"),
+    "RED Property": (
+        "ingatlanfejlesztés", "ingatlan", "beruházás", "értékesítés", "projekt",
+        "típusterv", "típusház", "házválasztás",
+    ),
     "Property360": (
         "telek", "házterv", "finanszírozás", "kivitelezés", "beköltözés", "belsőépítészet",
     ),

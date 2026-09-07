@@ -105,7 +105,7 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v4"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v5"
 BRAND_POSITION_ANCHORS = {
     "BauShield": ("építési kockázat", "szerződés"),
     "Casa Moderna": ("prémium otthon", "komfort"),
@@ -191,16 +191,68 @@ def _complete_json_payload(db: Session, **kwargs: Any) -> tuple[Any, dict[str, A
     raise last_error
 
 
+def _review_decision_contradiction(review: Any, request: dict[str, Any]) -> bool:
+    """Only a fully valid all-PASS review with overall BLOCK is repairable here."""
+    if not isinstance(review, dict) or review.get("overall_decision") != "BLOCK":
+        return False
+    if set(review) != {"artifact_sha256", "overall_decision", "gate_results", "scores", "findings"}:
+        return False
+    expected_hash = request.get("artifact_sha256")
+    if not expected_hash or review.get("artifact_sha256") != expected_hash:
+        return False
+    gates = review.get("gate_results")
+    if not isinstance(gates, dict) or set(gates) != set(MANDATORY_GATES):
+        return False
+    if any(not isinstance(item, dict) or set(item) != {"decision", "reason"}
+           or item.get("decision") != "PASS" or not isinstance(item.get("reason"), str)
+           for item in gates.values()):
+        return False
+    scores = review.get("scores")
+    score_keys = {
+        "natural_hungarian", "brand_distinctiveness", "conversion_strength", "claim_safety",
+    }
+    if not isinstance(scores, dict) or set(scores) != score_keys:
+        return False
+    if any(type(value) is not int or not 80 <= value <= 100 for value in scores.values()):
+        return False
+    findings = review.get("findings")
+    return isinstance(findings, list) and all(isinstance(item, str) for item in findings)
+
+
 def _complete_content_review(db: Session, **kwargs: Any) -> Any:
-    """Retry one known technical failure against the exact same artifact only."""
+    """At most two calls total, including transport and decision-shape failures."""
     transient_errors = {
         "DeepSeek request failed: JSONDecodeError",
         "DeepSeek request failed: ReadTimeout",
         "DeepSeek request failed: ConnectError",
     }
+    request = json.loads(kwargs.get("user_prompt") or "{}")
+    request = request if isinstance(request, dict) else {}
     for attempt in range(2):
         try:
-            return complete_json(db, **kwargs)
+            result = complete_json(db, **kwargs)
+            review = json.loads(result.content)
+            if not _review_decision_contradiction(review, request):
+                return result
+            if attempt:
+                raise ValueError("release_review_inconsistent_decision")
+            # Preserve the original artifact, hash, evidence and findings. The
+            # reviewer must allocate real objections to the appropriate gate;
+            # this never changes its decision to PASS on the server.
+            recheck = dict(request, review_consistency_recheck={
+                "previous_review": {key: review[key] for key in (
+                    "artifact_sha256", "overall_decision", "gate_results", "scores", "findings",
+                )},
+                "instruction_hu": (
+                    "Az összdöntés BLOCK, de minden kapu PASS és minden pontszám elégséges. "
+                    "Vizsgáld újra ugyanazt a változatlan szöveget a korábbi findings alapján. "
+                    "Valódi kifogásnál a megfelelő kapu legyen BLOCK konkrét indokkal. "
+                    "Ha a megjegyzés csak javaslat, a kapuk és az összdöntés ezt tükrözzék. "
+                    "Önállóan dönts a korábbi követelmények szerint; nem PASS-t kérünk. "
+                    "Csak a döntési JSON-t add vissza, a cikket és forrásokat ne másold."
+                ),
+            })
+            kwargs = dict(kwargs, user_prompt=_json(recheck))
         except GrowthRegistryError as exc:
             retryable = str(exc) in transient_errors
             if str(exc) == "DeepSeek request failed: HTTPStatusError":
@@ -299,10 +351,86 @@ def _normalize_generated_content_package(
             issues.append("cta_not_approved_next_step")
     else:
         package["source_urls"] = observed.get("source_urls") or []
+    if revenue_intent is not None:
+        package, context_issues = _bind_required_content_context(
+            package, brand_id=brand_id, revenue_intent=revenue_intent,
+        )
+        issues.extend(context_issues)
     package = _complete_content_hashtags(
         package, brand_id=brand_id, focus=content_focus_for_brand(brand_id),
     )
     return package, sorted(set(issues))
+
+
+def _bind_required_content_context(
+    package: dict[str, Any], *, brand_id: str, revenue_intent: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Render missing source-bound context, never rescue an empty/off-topic draft."""
+    facts = revenue_intent.get("approved_brand_facts") if isinstance(revenue_intent, dict) else None
+    problem = revenue_intent.get("buyer_problem") if isinstance(revenue_intent, dict) else None
+    statements = [fact["payload"]["statement"] for fact in facts or []
+                  if isinstance(fact, dict) and isinstance(fact.get("payload"), dict)
+                  and isinstance(fact["payload"].get("statement"), str)
+                  and fact["payload"]["statement"].strip()] if isinstance(facts, list) else []
+    if not isinstance(problem, str) or not problem.strip() or not statements:
+        return package, ["source_context_input_invalid"]
+    statement = statements[0]
+    body = str(package.get("body") or "").strip()
+    normalized = _norm(body)
+    source = revenue_intent.get("source_problem_evidence")
+    radar_source = bool(
+        revenue_intent.get("radar_topic_id") and isinstance(source, dict)
+        and source.get("source_identity") and source.get("source_url")
+        and source.get("published_at")
+    )
+    attributed_problem = f"Fórumkérdés, szerkesztett részlet: „{problem}”"
+    needs_attribution = radar_source and _norm(attributed_problem) not in normalized
+    missing = []
+    if _norm(problem).rstrip(" .?!") not in normalized:
+        missing.append(problem)
+    if not any(_norm(item).rstrip(" .?!") in normalized for item in statements if item):
+        missing.append(statement)
+    if not missing and not needs_attribution:
+        return package, []
+    issues = []
+    if len(body) < 600:
+        issues.append("body_too_short")
+    original_topic = _content_topic_text(package)
+    if not any(_norm(word) in original_topic for word in content_focus_for_brand(brand_id)):
+        issues.append("off_brand_topic")
+    if issues:
+        return package, issues
+    if needs_attribution:
+        literal = r"\s+".join(re.escape(token) for token in problem.rstrip(" .?!").split())
+        body, count = re.subn(literal + r"[.!?]?", lambda _: attributed_problem, body,
+                             count=1, flags=re.IGNORECASE)
+        if not count and problem not in missing:
+            missing.append(problem)
+    if not missing:
+        return dict(package, body=body), []
+    # Only server-owned input is inserted. Conflicting model metadata stays
+    # in the normalization errors and all final claim/review checks still run.
+    for _attempt in range(3):
+        context = " ".join(attributed_problem if item == problem and radar_source else item
+                           for item in missing)
+        if len(context) > 1200:
+            return package, ["source_context_too_long"]
+        rendered = context + "\n\n" + _trim_complete_sentences(
+            body, limit=2200 - len(context) - 2,
+        )
+        normalized_rendered = _norm(rendered)
+        newly_missing = []
+        if _norm(problem).rstrip(" .?!") not in normalized_rendered:
+            newly_missing.append(problem)
+        if not any(_norm(item).rstrip(" .?!") in normalized_rendered
+                   for item in statements if item):
+            newly_missing.append(statement)
+        if not newly_missing:
+            return dict(package, body=rendered), []
+        # If length normalization removes a source sentence from the tail,
+        # reserve its space in the context too. Never silently lose the proof.
+        missing.extend(item for item in newly_missing if item not in missing)
+    return package, ["source_context_assembly_failed"]
 
 
 def _complete_content_hashtags(
@@ -3260,6 +3388,11 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "source_evidence forrásdokumentumokat SOHA ne másold a válaszba. "
                     "Ne írj artifact, package, forráspayload vagy más gyökérmezőt, ne add vissza "
                     "a bemenetet és ne írj javított cikket. Ne használj Markdown-kódkeretet."
+                    " Az overall_decision és a kapudöntések legyenek összhangban: valós kifogást "
+                    "a megfelelő gate BLOCK döntésében és indokában rögzíts. Bármely BLOCK kapu "
+                    "vagy 80 alatti pontszám mellett az összdöntés BLOCK. Ha minden kapu PASS "
+                    "és minden pontszám legalább 80, a findings csak nem blokkoló javaslatot "
+                    "tartalmazhat, és az összdöntés PASS."
                 ),
                 user_prompt=_json(
                     {

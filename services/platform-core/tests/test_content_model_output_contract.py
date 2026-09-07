@@ -132,8 +132,11 @@ def test_recorded_real_response_is_repaired_once_then_independently_reviewed(db,
             return deepcopy(recorded)
         assert request["repair_round"] == 1
         assert "model_revenue_metadata_untrusted" in request["gate_errors"]
-        assert "buyer_problem_missing_from_copy" in request["gate_errors"]
-        assert "approved_brand_fact_missing_from_copy" in request["gate_errors"]
+        assert "buyer_problem_missing_from_copy" not in request["gate_errors"]
+        assert "approved_brand_fact_missing_from_copy" not in request["gate_errors"]
+        for required in processing._required_copy_spans(request["trusted_revenue_intent"]):
+            body = processing._norm(request["blocked_package"]["body"])
+            assert processing._norm(required) in body
         assert "revenue_intent" not in request["blocked_package"]
         assert len(request["blocked_package"]["body"]) >= 600
         assert (
@@ -376,7 +379,11 @@ def test_review_budget_or_credential_error_is_not_retried_and_draft_is_preserved
 
 def test_reviewer_content_block_is_not_a_technical_retry(db, monkeypatch):
     def review(request):
-        return dict(_review(request), overall_decision="BLOCK", findings=["Unverified content"])
+        response = dict(_review(request), overall_decision="BLOCK", findings=["Unverified content"])
+        response["gate_results"]["claim_coverage"] = {
+            "decision": "BLOCK", "reason": "Unverified content",
+        }
+        return response
 
     result, row, calls = _run(
         db,
@@ -408,6 +415,7 @@ def test_repeated_review_transport_failure_stops_after_two_calls(db, monkeypatch
 @pytest.mark.parametrize("status", [401, 403, 429, 503])
 def test_review_http_retry_distinguishes_transient_status_from_auth(monkeypatch, status):
     requests = []
+    completed_result = SimpleNamespace(content=json.dumps({"overall_decision": "PASS"}))
 
     def complete(_db, **kwargs):
         requests.append(dict(kwargs))
@@ -421,7 +429,7 @@ def test_review_http_retry_distinguishes_transient_status_from_auth(monkeypatch,
                 raise processing.GrowthRegistryError(
                     "DeepSeek request failed: HTTPStatusError"
                 ) from exc
-        return "same-artifact-result"
+        return completed_result
 
     monkeypatch.setattr(processing, "complete_json", complete)
     kwargs = {"user_prompt": '{"artifact_sha256":"fixed-hash"}', "system_prompt": "unchanged"}
@@ -430,7 +438,7 @@ def test_review_http_retry_distinguishes_transient_status_from_auth(monkeypatch,
             processing._complete_content_review(None, **kwargs)
         assert len(requests) == 1
     else:
-        assert processing._complete_content_review(None, **kwargs) == "same-artifact-result"
+        assert processing._complete_content_review(None, **kwargs) is completed_result
         assert requests == [kwargs, kwargs]
 
 
@@ -443,7 +451,7 @@ def test_new_contract_version_gets_three_bounded_attempts_after_old_version_exha
             brand_id="Property360",
             status="failed",
             evidence_json=json.dumps(
-                {"attempts": 3, "repair_version": "20260907-model-contract-v3"}
+                {"attempts": 3, "repair_version": "20260907-model-contract-v4"}
             ),
             updated_at=NOW,
         )
@@ -461,7 +469,7 @@ def test_new_contract_version_gets_three_bounded_attempts_after_old_version_exha
     )
     assert result["failed"] == 1
     assert json.loads(row.evidence_json)["attempts"] == 1
-    assert processing.CONTENT_FACTORY_REPAIR_VERSION == "20260907-model-contract-v4"
+    assert processing.CONTENT_FACTORY_REPAIR_VERSION == "20260907-model-contract-v5"
     for attempt in (2, 3):
         row.updated_at = NOW + timedelta(minutes=(attempt - 2) * 6)
         db.commit()

@@ -1,0 +1,302 @@
+[
+  {
+    "brand_id": "RED Property",
+    "source_mode": "approved_brand_documents",
+    "calls": [
+      {
+        "purpose": "canonical_daily_content_factory:RED Property",
+        "output": {
+          "package": {
+            "title": "Látod egyben, mit kapsz a házadért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. Ezért aztán a legtöbb ajánlat úgy néz ki, hogy az ár csak a házra vonatkozik, a többi meg majd kiderül. Te is jártál már így? Végignéztél tíz típustervet, és fogalmad sem volt, melyikben mi van benne, és mennyiért is jön ki a végén a házad? A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, és nem kell apró betűk között keresgélned. Hanem? Hanem előre látod, hogy az adott árért milyen készültségi szintet kapsz, és mi az, ami nincs benne, de kérhető. Így már a legelején össze tudod hasonlítani a lehetőségeket, és nem a szerződéskötéskor derül ki, hogy a szigetelés vagy a nyílászáró külön tétel. Kérdés, hogy neked mi a fontosabb: a gyors költözés, vagy az, hogy a kulcsátadás után ne legyen meglepetés? Mert a RED Property-nél ezt a döntést nem bízzák a véletlenre. A típusterv-ajánlati rendszerben a ház ára, a készültségi szint és a tartalom együtt jelenik meg, így te döntheted el, hogy a keretedből mire futja, és mi az, amit később szeretnél hozzáépíteni. Gondold végig: ha most keresel házat, mennyi időt szánsz arra, hogy az ajánlatokat összehasonlítsd? És mennyi időt arra, hogy a részleteket kibogozd? A RED Property-nél a részletek nem rejtőzködnek. A műszaki csomagok és a készültségi szintek úgy vannak kialakítva, hogy egyértelmű legyen, mit kapsz a pénzedért. Nem kell hozzá építési szakértő, csak annyi, hogy tudd, mit szeretnél. Mielőtt belevágnál, érdemes tisztázni, hogy a telek ára benne van-e az ajánlatban, vagy az külön számolandó. Ez is olyan kérdés, amit a RED Property-nél előre látni fogsz. Ha pedig készen állsz arra, hogy konkrét számokat és tartalmakat láss, kérj árat azokhoz a háztípusokhoz, amelyek érdekelnek. Így nem álomrajzok alapján döntesz, hanem valós, összehasonlítható adatok alapján. A házválasztás amúgy is elég nagy döntés, ne hagyd, hogy az árképzés homálya miatt legyen még bonyolultabb. Nézd meg, mit kínál a RED Property, és kérd az árat – aztán már csak a helyszín és a stílus kérdése marad.",
+            "facebook_post": "Fárasztó, amikor a ház ára csak a házra vonatkozik, a többi meg majd kiderül. Nálunk a RED Property-nél az ár, a készültségi szint és a tartalom együtt jelenik meg. Világos, hogy mi van benne, és mi nincs. Így össze tudod hasonlítani a típusházakat anélkül, hogy apró betűket bogoznál. Mielőtt döntesz, nézd meg, mit kapsz a pénzedért. Kérd az árat, és hasonlítsd össze a csomagokat! #típusház #házépítés #ingatlanfejlesztés #REDProperty #áratakarodlátni",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        },
+        "response_sha256": "fcec9aa151d97f607aa52febf8d99a68677dec76d1030418118c3823812c3c8b"
+      },
+      {
+        "purpose": "canonical_daily_content_deterministic_repair:RED Property",
+        "output": {
+          "package": {
+            "title": "Látod egyben, mit kapsz a házadért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. Ezért aztán sok ajánlat úgy néz ki, hogy az ár csak a házra vonatkozik, a többi meg majd kiderül. Te is jártál már így? Végignéztél tíz típustervet, és fogalmad sem volt, melyikben mi van benne, és mennyiért is jön ki a végén a házad? A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, és nem kell apró betűk között keresgélned. Hanem? Hanem előre látod, hogy az adott árért milyen készültségi szintet kapsz, és mi az, ami nincs benne, de kérhető. Így már a legelején össze tudod hasonlítani a lehetőségeket, és nem a szerződéskötéskor derül ki, hogy a szigetelés vagy a nyílászáró külön tétel. Kérdés, hogy neked mi a fontosabb: a gyors költözés, vagy az, hogy a kulcsátadás után ne legyen meglepetés? Mert a RED Property-nél ezt a döntést nem bízzák a véletlenre. A típusterv-ajánlati rendszerben a ház ára, a készültségi szint és a tartalom együtt jelenik meg, így te döntheted el, hogy a keretedből mire futja, és mi az, amit később szeretnél hozzáépíteni. Gondold végig: ha most keresel házat, mennyi időt szánsz arra, hogy az ajánlatokat összehasonlítsd? És mennyi időt arra, hogy a részleteket kibogozd? A RED Property-nél a részletek nem rejtőzködnek. A műszaki csomagok és a készültségi szintek úgy vannak kialakítva, hogy egyértelmű legyen, mit kapsz a pénzedért. Nem kell hozzá építési szakértő, csak annyi, hogy tudd, mit szeretnél. Mielőtt belevágnál, érdemes tisztázni, hogy a telek ára benne van-e az ajánlatban, vagy az külön számolandó. Ez is olyan kérdés, amit a RED Property-nél előre látni fogsz. Ha pedig készen állsz arra, hogy konkrét számokat és tartalmakat láss, kérj árat azokhoz a háztípusokhoz, amelyek érdekelnek. Így nem álomrajzok alapján döntesz, hanem valós, összehasonlítható adatok alapján. A házválasztás amúgy is elég nagy döntés, ne hagyd, hogy az árképzés homálya miatt legyen még bonyolultabb. Nézd meg, mit kínál a RED Property, és kérd az árat – aztán már csak a helyszín és a stílus kérdése marad.",
+            "facebook_post": "Fárasztó, amikor a ház ára csak a házra vonatkozik, a többi meg majd kiderül. Nálunk a RED Property-nél az ár, a készültségi szint és a tartalom együtt jelenik meg. Világos, hogy mi van benne, és mi nincs. Így össze tudod hasonlítani a típusházakat anélkül, hogy apró betűket bogoznál. Mielőtt döntesz, nézd meg, mit kapsz a pénzedért. Kérd az árat, és hasonlítsd össze a csomagokat! #típusház #házépítés #ingatlanfejlesztés #REDProperty #áratakarodlátni",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        },
+        "response_sha256": "ed0e25cf4248ba6159cca396afec40d1d6d9bdd86b2c66ded8fe541edbba8ef0"
+      },
+      {
+        "purpose": "canonical_daily_content_deterministic_repair:RED Property",
+        "output": {
+          "package": {
+            "title": "Látod egyben, mit kapsz a házadért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. Ezért aztán sok ajánlat úgy néz ki, hogy az ár csak a házra vonatkozik, a többi meg majd kiderül. Te is jártál már így? Végignéztél tíz típustervet, és fogalmad sem volt, melyikben mi van benne, és mennyiért is jön ki a végén a házad? A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, és nem kell apró betűk között keresgélned. Hanem? Hanem előre látod, hogy az adott árért milyen készültségi szintet kapsz, és mi az, ami nincs benne, de kérhető. Így már a legelején össze tudod hasonlítani a lehetőségeket, és nem a szerződéskötéskor derül ki, hogy a szigetelés vagy a nyílászáró külön tétel. Kérdés, hogy neked mi a fontosabb: a gyors költözés, vagy az, hogy a kulcsátadás után ne legyen meglepetés? Mert a RED Property-nél ezt a döntést nem bízzák a véletlenre. A típusterv-ajánlati rendszerben a ház ára, a készültségi szint és a tartalom együtt jelenik meg, így te döntheted el, hogy a keretedből mire futja, és mi az, amit később szeretnél hozzáépíteni. Gondold végig: ha most keresel házat, mennyi időt szánsz arra, hogy az ajánlatokat összehasonlítsd? És mennyi időt arra, hogy a részleteket kibogozd? A RED Property-nél a részletek nem rejtőzködnek. A műszaki csomagok és a készültségi szintek úgy vannak kialakítva, hogy egyértelmű legyen, mit kapsz a pénzedért. Nem kell hozzá építési szakértő, csak annyi, hogy tudd, mit szeretnél. Mielőtt belevágnál, érdemes tisztázni, hogy a telek ára benne van-e az ajánlatban, vagy az külön számolandó. Ez is olyan kérdés, amit a RED Property-nél előre látni fogsz. Ha pedig készen állsz arra, hogy konkrét számokat és tartalmakat láss, kérj árat azokhoz a háztípusokhoz, amelyek érdekelnek. Így nem álomrajzok alapján döntesz, hanem valós, összehasonlítható adatok alapján. A házválasztás amúgy is elég nagy döntés, ne hagyd, hogy az árképzés homálya miatt legyen még bonyolultabb. Nézd meg, mit kínál a RED Property, és kérd az árat – aztán már csak a helyszín és a stílus kérdése marad.",
+            "facebook_post": "Fárasztó, amikor a ház ára csak a házra vonatkozik, a többi meg majd kiderül. Nálunk a RED Property-nél az ár, a készültségi szint és a tartalom együtt jelenik meg. Világos, hogy mi van benne, és mi nincs. Így össze tudod hasonlítani a típusházakat anélkül, hogy apró betűket bogoznál. Mielőtt döntesz, nézd meg, mit kapsz a pénzedért. Kérd az árat, és hasonlítsd össze a csomagokat! #típusház #házépítés #ingatlanfejlesztés #REDProperty #áratakarodlátni",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        },
+        "response_sha256": "ed0e25cf4248ba6159cca396afec40d1d6d9bdd86b2c66ded8fe541edbba8ef0"
+      }
+    ]
+  },
+  {
+    "brand_id": "Bautica",
+    "source_mode": "approved_brand_documents",
+    "calls": [
+      {
+        "purpose": "canonical_daily_content_factory:Bautica",
+        "output": {
+          "package": {
+            "title": "Ki ellenőrzi az építkezését? A mérnöki kontroll valódi szerepe",
+            "body": "Amikor elhatározza, hogy felújítja otthonát vagy hozzáépít egy szobát, az első kérdés nem a burkolat színe, hanem az: ki felel azért, hogy a terv és a valóság találkozzon? Sok építtetőben pontosan ez a bizonytalanság él: nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. Ez a homály később költséges váratlan fordulatokhoz vezethet – például amikor a statikai terv nem illik a meglévő falakhoz, vagy a kivitelező másként értelmezi a rajzot. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez nem marketingfogás, hanem működési elv: egy névvel és felelősséggel azonosítható mérnök kíséri végig a folyamatot, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi. Mit jelent ez az Ön számára? Ahelyett, hogy több szakember között kellene egyeztetnie, egyetlen felelős pontra támaszkodhat. A mérnök már a tervezés előtt megnézi a helyszínt, így kiderülhetnek azok a körülmények, amelyeket a papír nem mutat – például a falak állapota vagy a közművek elhelyezkedése. Ezután a kivitelezés során is van, aki ellenőrzi, hogy a munka a terv szerint halad-e. Az Ön dolga nem az, hogy minden részletet ismerjen, hanem hogy olyan partnert válasszon, aki ezt a felelősséget átveszi. Kérdezze meg bármelyik kivitelezőt: ki lesz a felelős mérnök, és milyen rendszerességgel ellenőrzi a munkát? Ha erre nincs egyértelmű válasz, érdemes tovább keresni. A felújítás vagy bővítés nagy döntés, és a szakmai kontroll nem luxus, hanem a biztonságos haladás feltétele. Ha szeretné látni, hogyan működik ez a gyakorlatban, kérjen műszaki kalkulációt, amely az Ön konkrét tervéhez és helyszínéhez igazodik.",
+            "facebook_post": "Amikor felújításba kezd, tisztában van vele, ki ellenőrzi a kivitelezést? Sok építtetőben pontosan ez a bizonytalanság marad: ki egyezteti a tervet, méri fel a helyszínt és felügyeli a munkát? A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Egy felelős mérnök kíséri végig a folyamatot, hogy a terv és a valóság találkozzon. Ha Ön is szeretné, hogy építkezésén legyen ilyen szakmai felügyelet, kérjen műszaki kalkulációt, amely az Ön helyszínére és tervére épül. #Bautica #felújítás #kivitelezés #mérnökiKontroll #építkezés #otthonfelújítás",
+            "cta": {
+              "label": "Kérek műszaki kalkulációt.",
+              "intent": "lead"
+            }
+          }
+        },
+        "response_sha256": "69166a6a54ab52fa17d09b9307cb9b9664831c73e2d824d2016f277cec19afea"
+      },
+      {
+        "purpose": "canonical_daily_content_deterministic_repair:Bautica",
+        "output": {
+          "package": {
+            "title": "Ki ellenőrzi az építkezését? A mérnöki kontroll valódi szerepe",
+            "body": "Amikor elhatározza, hogy felújítja otthonát vagy hozzáépít egy szobát, az első kérdés nem a burkolat színe, hanem az: ki felel azért, hogy a terv és a valóság találkozzon? Sok építtetőben pontosan ez a bizonytalanság él: nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. Ez a homály később költséges váratlan fordulatokhoz vezethet – például amikor a statikai terv nem illik a meglévő falakhoz, vagy a kivitelező másként értelmezi a rajzot. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez nem marketingfogás, hanem működési elv: egy névvel és felelősséggel azonosítható mérnök kíséri végig a folyamatot, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi. Mit jelent ez az Ön számára? Ahelyett, hogy több szakember között kellene egyeztetnie, egyetlen felelős pontra támaszkodhat. A mérnök már a tervezés előtt megnézi a helyszínt, így kiderülhetnek azok a körülmények, amelyeket a papír nem mutat – például a falak állapota vagy a közművek elhelyezkedése. Ezután a kivitelezés során is van, aki ellenőrzi, hogy a munka a terv szerint halad-e. Az Ön dolga nem az, hogy minden részletet ismerjen, hanem hogy olyan partnert válasszon, aki ezt a felelősséget átveszi. Kérdezze meg bármelyik kivitelezőt: ki lesz a felelős mérnök, és milyen rendszerességgel ellenőrzi a munkát? Ha erre nincs egyértelmű válasz, érdemes tovább keresni. A felújítás vagy bővítés nagy döntés, és a szakmai kontroll nem luxus, hanem a biztonságos haladás feltétele. Ha szeretné látni, hogyan működik ez a gyakorlatban, kérjen műszaki kalkulációt, amely az Ön konkrét tervéhez és helyszínéhez igazodik.",
+            "facebook_post": "Amikor felújításba kezd, tisztában van vele, ki ellenőrzi a kivitelezést? Sok építtetőben pontosan ez a bizonytalanság marad: ki egyezteti a tervet, méri fel a helyszínt és felügyeli a munkát? A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Egy felelős mérnök kíséri végig a folyamatot, hogy a terv és a valóság találkozzon. Ha Ön is szeretné, hogy építkezésén legyen ilyen szakmai felügyelet, kérjen műszaki kalkulációt, amely az Ön helyszínére és tervére épül. #Bautica #felújítás #kivitelezés #mérnökiKontroll #építkezés #otthonfelújítás",
+            "cta": {
+              "label": "Kérek műszaki kalkulációt.",
+              "intent": "lead"
+            }
+          }
+        },
+        "response_sha256": "69166a6a54ab52fa17d09b9307cb9b9664831c73e2d824d2016f277cec19afea"
+      },
+      {
+        "purpose": "canonical_daily_content_deterministic_repair:Bautica",
+        "output": {
+          "package": {
+            "title": "Ki ellenőrzi az építkezését? A mérnöki kontroll valódi szerepe",
+            "body": "Amikor elhatározza, hogy felújítja otthonát vagy hozzáépít egy szobát, az első kérdés nem a burkolat színe, hanem az: ki felel azért, hogy a terv és a valóság találkozzon? Sok építtetőben pontosan ez a bizonytalanság él: nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. Ez a homály később költséges váratlan fordulatokhoz vezethet – például amikor a statikai terv nem illik a meglévő falakhoz, vagy a kivitelező másként értelmezi a rajzot. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez nem marketingfogás, hanem működési elv: egy névvel és felelősséggel azonosítható mérnök kíséri végig a folyamatot, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi. Mit jelent ez az Ön számára? Ahelyett, hogy több szakember között kellene egyeztetnie, egyetlen felelős pontra támaszkodhat. A mérnök már a tervezés előtt megnézi a helyszínt, így kiderülhetnek azok a körülmények, amelyeket a papír nem mutat – például a falak állapota vagy a közművek elhelyezkedése. Ezután a kivitelezés során is van, aki ellenőrzi, hogy a munka a terv szerint halad-e. Az Ön dolga nem az, hogy minden részletet ismerjen, hanem hogy olyan partnert válasszon, aki ezt a felelősséget átveszi. Kérdezze meg bármelyik kivitelezőt: ki lesz a felelős mérnök, és milyen rendszerességgel ellenőrzi a munkát? Ha erre nincs egyértelmű válasz, érdemes tovább keresni. A felújítás vagy bővítés nagy döntés, és a szakmai kontroll nem luxus, hanem a biztonságos haladás feltétele. Ha szeretné látni, hogyan működik ez a gyakorlatban, kérjen műszaki kalkulációt, amely az Ön konkrét tervéhez és helyszínéhez igazodik.",
+            "facebook_post": "Amikor felújításba kezd, tisztában van vele, ki ellenőrzi a kivitelezést? Sok építtetőben pontosan ez a bizonytalanság marad: ki egyezteti a tervet, méri fel a helyszínt és felügyeli a munkát? A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Egy felelős mérnök kíséri végig a folyamatot, hogy a terv és a valóság találkozzon. Ha Ön is szeretné, hogy építkezésén legyen ilyen szakmai felügyelet, kérjen műszaki kalkulációt, amely az Ön helyszínére és tervére épül. #Bautica #felújítás #kivitelezés #mérnökiKontroll #építkezés #otthonfelújítás",
+            "cta": {
+              "label": "Kérek műszaki kalkulációt.",
+              "intent": "lead"
+            }
+          }
+        },
+        "response_sha256": "69166a6a54ab52fa17d09b9307cb9b9664831c73e2d824d2016f277cec19afea"
+      }
+    ]
+  },
+  {
+    "brand_id": "BauFreund",
+    "source_mode": "anonymized_original_source_replay",
+    "calls": [
+      {
+        "purpose": "canonical_daily_content_factory:BauFreund",
+        "output": {
+          "package": {
+            "title": "Végletes árajánlatok laminált padlóra és festésre? Így gondold át, mit is kérdezel",
+            "body": "Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi. Ha ilyen helyzetben vagy, ne azonnal a számokat hasonlítsd össze. A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez, és az első ilyen döntés az, hogy mit is kérdezel meg pontosan.\n\nA végletes árajánlatok mögött szinte mindig az húzódik, hogy a vállalkozók mást és mást értenek ugyanazon a munkán. A laminált padló lerakásánál például számít, hogy milyen aljzat van, kell-e szintezés, mit csinálnak a szegélyekkel, és ki viszi el a sittet. A festésnél pedig az, hogy milyen állapotú a fal, kell-e glettelés, hány réteg festéket számolnak, és milyen minőségű anyaggal dolgoznak. Ha ezeket nem rögzíted előre, az árajánlatok összehasonlíthatatlanok lesznek – és a legolcsóbb tétel könnyen a legdrágábbá válhat a végén.\n\nAhelyett, hogy újabb számokat kérnél, írd össze a munka pontos tartalmát: mekkora a helyiség, milyen az aljzat és a fal, milyen anyagokat szeretnél, és mi legyen a kész állapot. Ezt a listát küldd el minden vállalkozónak, és kérd meg őket, hogy tételesen adjanak rá árat. Így már nem almát hasonlítasz a körtével, hanem ugyanarra a feladatra kapsz ajánlatokat. Ha valamelyik tételben bizonytalan vagy, kérdezz rá – egy jó szakember szívesen elmagyarázza, miért kell az a munka.\n\nA BauFreund pontosan ebben segít: nem mondja meg helyetted, hogy mennyi a munkadíj, mert az a te konkrét helyzetedtől függ. De abban igen, hogy mit érdemes tisztázni, milyen kérdéseket tegyél fel, és hogyan kerüld el a későbbi meglepetéseket. Ha most tartasz ott, hogy az árajánlatok között vacillálsz, ne a legalacsonyabb számra hajts – előbb tedd egyenlővé a feltételeket. Ha pedig ehhez segítség kell, írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+            "facebook_post": "Végletes árajánlatokat kaptál laminált padlóra és festésre? Elbizonytalanodtál? 🏠\n\nA gond nem feltétlenül a számokban van, hanem abban, hogy a vállalkozók mást értenek ugyanazon a munkán. Aljzat, szintezés, sitt, glettelés – ha ezek nincsenek rögzítve, az ajánlatok összehasonlíthatatlanok.\n\nÍrd össze a pontos munkatartalmat, és kérd tételes árajánlatra. Így már nem almát hasonlítasz a körtével.\n\nA BauFreund segít eligazodni az építési döntésekben – közérthetően, barátságosan. Ha most tartasz ott, hogy az ajánlatok között vacillálsz, írd meg, milyen munkához keresel segítséget és hol tart a projekt.\n\n#építkezés #felújítás #munkadíj #árajánlat #lamináltpadló #festés #BauFreund",
+            "cta": {
+              "label": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+              "intent": "lead"
+            }
+          }
+        },
+        "response_sha256": "db7347320a988e184ed5dda6f1f484514d6b8c6b5f6dfa7705a246b925dfd6ac"
+      },
+      {
+        "purpose": "canonical_daily_content_release_review:BauFreund",
+        "output": {
+          "artifact_sha256": "9c55a94e4346e4bb778fb56f68b15a70e9e6b77261b44bd9c1063cbf3b8f6b17",
+          "overall_decision": "BLOCK",
+          "gate_results": {
+            "brand_anchor": {
+              "decision": "PASS",
+              "reason": "A BauFreund pozíciója és mechanizmusa egyértelműen jelen van."
+            },
+            "brand_voice": {
+              "decision": "PASS",
+              "reason": "Közvetlen, tegező, természetes magyar nyelv."
+            },
+            "channel_policy": {
+              "decision": "PASS",
+              "reason": "A Facebook-poszt önállóan érthető, link nélkül is."
+            },
+            "claim_coverage": {
+              "decision": "PASS",
+              "reason": "Minden állítás a forrásban igazolt márkatényre épül."
+            },
+            "claim_freshness": {
+              "decision": "PASS",
+              "reason": "A forrás friss, a tartalom nem évül el."
+            },
+            "conversion": {
+              "decision": "PASS",
+              "reason": "A CTA világos, a következő lépés vállalható."
+            },
+            "duplicate_cannibalization": {
+              "decision": "PASS",
+              "reason": "Nincs átfedés más tartalommal."
+            },
+            "legal_template": {
+              "decision": "PASS",
+              "reason": "Nincs jogi kifogás."
+            },
+            "natural_hungarian": {
+              "decision": "PASS",
+              "reason": "Természetes, gördülékeny magyar szöveg."
+            },
+            "security_privacy": {
+              "decision": "PASS",
+              "reason": "Nincs adatvédelmi vagy biztonsági probléma."
+            },
+            "seo": {
+              "decision": "PASS",
+              "reason": "A cím és a tartalom releváns kulcsszavakat tartalmaz."
+            },
+            "technical_render": {
+              "decision": "PASS",
+              "reason": "Nincs technikai akadály."
+            },
+            "visual_quality": {
+              "decision": "PASS",
+              "reason": "A kép minősége megfelelő."
+            },
+            "visual_rights_privacy": {
+              "decision": "PASS",
+              "reason": "Nincs jogi vagy adatvédelmi aggály a képpel."
+            }
+          },
+          "scores": {
+            "natural_hungarian": 95,
+            "brand_distinctiveness": 90,
+            "conversion_strength": 85,
+            "claim_safety": 100
+          },
+          "findings": [
+            "A Facebook-poszt önálló, de a CTA nem teljesen egyértelmű a lead szándék szempontjából.",
+            "A cikk jól magyarázza a probléma okát, de a BauFreund konkrét szolgáltatása kevésbé hangsúlyos."
+          ]
+        },
+        "response_sha256": "d526110312dfe9303494a6c6e801d6b4f12338691e0fca17fbaaa421a5e382ca"
+      }
+    ],
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "BauFreund",
+          "content_hash": "b092525ffc89c5a95a2ef405274ab84c0d05723fba24392814bb09ab6b55cc58",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól."
+            ],
+            "claim_limits": [
+              "Független ellenőrt és szerződéses garanciát nem állítunk; ezek külön bizonyítékot igényelnek.",
+              "A költségbecslés kérése nem jelent szerződéses árígéretet vagy működő online kalkulátor igazolását."
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; a forrás feltételes függetlenségi állítása nem lett márkatény.",
+            "next_steps": [
+              "Kérek egy őszinte költségbecslést."
+            ],
+            "record_id": "BAUFREUND-BUILDING-DECISIONS-V1",
+            "sales_goal": "A tervezett építkezés tartalmát tisztázó költségbecslési megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "8a8994149831e9f566191aaf5670a341b7851e14e64f6149728ebbb1c5216847",
+                "drive_file_id": "1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc",
+                "exact_excerpts": [
+                  "Pozicionálás: Közérthető, barátságos és független segítség az építési döntésekhez.",
+                  "Másodlagos CTA: Kérek egy őszinte költségbecslést.",
+                  "A kalkulátor nem keltheti tételes vállalási ajánlat látszatát.",
+                  "A „független” jelző csak tényleges szerződéses függetlenség esetén használható."
+                ],
+                "readback_at": "2026-09-07T08:26:41.073Z",
+                "source_modified_time": "2026-08-04T21:08:22.421Z",
+                "title": "BauFreund – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit"
+            ],
+            "statement": "A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez."
+          },
+          "source_key": "baufreund-brand-fact-building-decisions",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "BauFreund",
+      "buyer_problem": "Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.",
+      "next_step": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": "QRT-TRIAL-ORIGINAL-MUNKADIJAK",
+      "revalidation": {
+        "demand_decision": {
+          "age_hours_max": 23.84514741972222,
+          "contact_allowed": false,
+          "features": {
+            "size_defined": "20 m2"
+          },
+          "funding_status": "unknown",
+          "identity": "59984af22318bfcbfd9e989d6543929f5cdfb56fa8100e6ee1540f26d5f18fb3",
+          "intent_score": 10,
+          "lead_eligible": false,
+          "policy": "content-intent-revenue/2026-09-06.v1",
+          "published_at_earliest": "2026-09-06T09:45:34+00:00",
+          "published_at_latest": "2026-09-06T09:45:34+00:00",
+          "queue": "CONTENT_SIGNAL",
+          "reasons": [
+            "no_explicit_buying_trigger"
+          ]
+        },
+        "eligible": true,
+        "policy": "content-intent-revenue-v1",
+        "purpose": "content",
+        "reasons": [],
+        "revalidated_at": "2026-09-07T09:36:16.530711+00:00",
+        "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/"
+      },
+      "sales_goal": "BauFreund: minősített érdeklődőből ajánlatkérés",
+      "send_allowed": false,
+      "source_problem_evidence": {
+        "editorial_instruction": "A pontos méretek, összegek és időadatok a vevő saját helyzetének adatai. A nyilvános szövegben a buyer_problem számadatok nélkül megfogalmazott változatát használd; az eredeti számadatokat ne másold át. A cikk a munka tartalmáról és a döntési szempontokról szóljon; ezekből ne képezzen márkaárat, vállalási határidőt vagy teljesítményígéretet.",
+        "native_id": "post:1w8rs4c",
+        "observed_at": "2026-09-07T09:36:16.530711+00:00",
+        "original_problem": "Munkadíjak? Egy 20 m2-es szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.",
+        "original_text_sha256": "f6b9e02473b0fcf7bf6a6c3b717a8b9c4ee453285ee4f62e53d865821004f681",
+        "public_problem_derivation": "quantity_and_contact_generalization",
+        "published_at": "2026-09-06T09:45:34+00:00",
+        "published_at_raw": "2026-09-06T09:45:34+00:00",
+        "radar_identity_hash": "ffd1821576b79d31c93e9641fb8be126e1234b7f950965c5a9aeeb558cd19479",
+        "revalidated_at": "2026-09-07T09:36:16.530711+00:00",
+        "source_identity": "a44ac1f847ea9eaddd1761c5c0433c7488c5cef660a6cf7f18a65a3628540df3",
+        "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/",
+        "verification_mode": "source_refresh"
+      },
+      "source_refs": [
+        "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/"
+      ]
+    }
+  }
+]
