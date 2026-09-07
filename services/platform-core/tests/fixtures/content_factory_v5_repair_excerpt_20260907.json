@@ -1,0 +1,80 @@
+[
+  {
+    "brand_id": "RED Property",
+    "source_mode": "approved_brand_documents",
+    "recorded_commit": "c87543364e9dc1ed1700ce9b1360be9dc36e3db8",
+    "calls": [
+      {
+        "purpose": "canonical_daily_content_factory:RED Property",
+        "model_id": "deepseek-v4-flash",
+        "response_sha256": "0bc5bbad874fab3b66f19966135745b3576bbc49b5e38262413daf2e27f1cf7c",
+        "output": {
+          "package": {
+            "title": "Tudod, mit kapsz a ház áráért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. Ezért aztán a legtöbb ember úgy kezd házat nézni, hogy fogalma sincs, mennyi az annyi. A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, mi jár az árhoz – hanem előre látod, mit kapsz, és mennyiért.\n\nNézd meg a háztípusokat, és hasonlítsd össze őket. Mindegyiknél világos, milyen készültségi szinten adják át, és mi az, ami a csomagban van. Így nem érhet meglepetés, és nem kell utólag azon gondolkodnod, hogy a garázs, a nyílászárók vagy a gépészet benne van-e az árban. A döntésedhez szükséges infó egy helyen van – neked csak azt kell eldöntened, melyik illik az életedhez.\n\nMielőtt belevágnál, érdemes tisztázni, mire van szükséged: mekkora házat kerestek, milyen telken, és milyen határidővel. A RED Property-nél ezeket a szempontokat nézik, amikor a típustervet ajánlják. Nem kell azonnal elkötelezned magad – először csak nézd meg, mi a reális, és mi fér bele a keretedbe.\n\nHa szeretnéd tudni, pontosan mennyibe kerül a kiszemelt ház, és mi jár hozzá, kérd az árat. Így egy konkrét számot kapsz, amihez hozzá tudod igazítani a terveidet. Nem kell többé homályos ajánlatok között böngészned – elég egy kattintás, és máris tudod, hol állsz.\n\nA házválasztás nem arról szól, hogy a legszebb tervet válaszd, hanem hogy olyat találj, amit meg is tudsz valósítani. A RED Property pontosan ebben segít: megmutatja, mi fér bele a büdzsédbe, és mi az, amit az ár tartalmaz. Nézd meg a háztípusokat, hasonlítsd össze őket, és ha kész vagy, kérd az árat – hogy a következő lépés már konkrét legyen.",
+            "facebook_post": "Fárasztó, amikor egy ház árában nem tudod, mi fér bele? A RED Property-nél nem kell találgatnod: a típusterveknél világos, milyen készültségi szintet kapsz, és mi van az árban. Összehasonlítható csomagok, egyértelmű „benne van / nincs benne” lista – így tudod, mit fizetsz. Nézd meg a háztípusokat, és ha kész vagy, kérd az árat!",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "purpose": "canonical_daily_content_deterministic_repair:RED Property",
+        "model_id": "deepseek-v4-flash",
+        "response_sha256": "e90f1b5a35a385d39acd18e4b318238fa336db55eb71515b2ea2f11ec606211c",
+        "output": {
+          "package": {
+            "title": "Tudod, mit kapsz a ház áráért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, mi jár az árhoz – hanem előre látod, mit kapsz, és mennyiért. Nézd meg a háztípusokat, és hasonlítsd össze őket. Mindegyiknél világos, milyen készültségi szinten adják át, és mi az, ami a csomagban van. Így nem érhet meglepetés, és nem kell utólag azon gondolkodnod, hogy a garázs, a nyílászárók vagy a gépészet benne van-e az árban. A döntésedhez szükséges infó egy helyen van – neked csak azt kell eldöntened, melyik illik az életedhez. Mielőtt belevágnál, érdemes tisztázni, mire van szükséged: mekkora házat kerestek, milyen telken, és milyen határidővel. A RED Property-nél ezeket a szempontokat nézik, amikor a típustervet ajánlják. Nem kell azonnal elkötelezned magad – először csak nézd meg, mi a reális, és mi fér bele a keretedbe. Ha szeretnéd tudni, pontosan mennyibe kerül a kiszemelt ház, és mi jár hozzá, kérd az árat. Így egy konkrét számot kapsz, amihez hozzá tudod igazítani a terveidet. Nem kell többé homályos ajánlatok között böngészned – elég egy kattintás, és máris tudod, hol állsz. A házválasztás nem arról szól, hogy a legszebb tervet válaszd, hanem hogy olyat találj, amit meg is tudsz valósítani. A RED Property pontosan ebben segít: megmutatja, mi fér bele a büdzsédbe, és mi az, amit az ár tartalmaz. Nézd meg a háztípusokat, hasonlítsd össze őket, és ha kész vagy, kérd az árat – hogy a következő lépés már konkrét legyen.",
+            "facebook_post": "Fárasztó, amikor egy ház árában nem tudod, mi fér bele? A RED Property-nél nem kell találgatnod: a típusterveknél világos, milyen készültségi szintet kapsz, és mi van az árban. Összehasonlítható csomagok, egyértelmű „benne van / nincs benne” lista – így tudod, mit fizetsz. Nézd meg a háztípusokat, és ha kész vagy, kérd az árat! #REDProperty #ingatlanfejlesztés #ingatlan",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "purpose": "canonical_daily_content_deterministic_repair:RED Property",
+        "model_id": "deepseek-v4-flash",
+        "response_sha256": "e90f1b5a35a385d39acd18e4b318238fa336db55eb71515b2ea2f11ec606211c",
+        "output": {
+          "package": {
+            "title": "Tudod, mit kapsz a ház áráért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, mi jár az árhoz – hanem előre látod, mit kapsz, és mennyiért. Nézd meg a háztípusokat, és hasonlítsd össze őket. Mindegyiknél világos, milyen készültségi szinten adják át, és mi az, ami a csomagban van. Így nem érhet meglepetés, és nem kell utólag azon gondolkodnod, hogy a garázs, a nyílászárók vagy a gépészet benne van-e az árban. A döntésedhez szükséges infó egy helyen van – neked csak azt kell eldöntened, melyik illik az életedhez. Mielőtt belevágnál, érdemes tisztázni, mire van szükséged: mekkora házat kerestek, milyen telken, és milyen határidővel. A RED Property-nél ezeket a szempontokat nézik, amikor a típustervet ajánlják. Nem kell azonnal elkötelezned magad – először csak nézd meg, mi a reális, és mi fér bele a keretedbe. Ha szeretnéd tudni, pontosan mennyibe kerül a kiszemelt ház, és mi jár hozzá, kérd az árat. Így egy konkrét számot kapsz, amihez hozzá tudod igazítani a terveidet. Nem kell többé homályos ajánlatok között böngészned – elég egy kattintás, és máris tudod, hol állsz. A házválasztás nem arról szól, hogy a legszebb tervet válaszd, hanem hogy olyat találj, amit meg is tudsz valósítani. A RED Property pontosan ebben segít: megmutatja, mi fér bele a büdzsédbe, és mi az, amit az ár tartalmaz. Nézd meg a háztípusokat, hasonlítsd össze őket, és ha kész vagy, kérd az árat – hogy a következő lépés már konkrét legyen.",
+            "facebook_post": "Fárasztó, amikor egy ház árában nem tudod, mi fér bele? A RED Property-nél nem kell találgatnod: a típusterveknél világos, milyen készültségi szintet kapsz, és mi van az árban. Összehasonlítható csomagok, egyértelmű „benne van / nincs benne” lista – így tudod, mit fizetsz. Nézd meg a háztípusokat, és ha kész vagy, kérd az árat! #REDProperty #ingatlanfejlesztés #ingatlan",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "brand_id": "BauFreund",
+    "source_mode": "anonymized_original_source_replay",
+    "recorded_commit": "c87543364e9dc1ed1700ce9b1360be9dc36e3db8",
+    "calls": [
+      {
+        "purpose": "canonical_daily_content_factory:BauFreund",
+        "model_id": "deepseek-v4-flash",
+        "response_sha256": "6eb8b51210a9609207e9aeeb9fd9e9e71acb9c091a38f5997234e924644885b0",
+        "output": {
+          "package": {
+            "title": "Végletes árajánlatok kaptál? Így gondold át a munkadíjat, mielőtt döntesz",
+            "body": "Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi. Ha te is így jártál, ne lepődj meg: a munkadíj-árajánlatok között nagy szórás lehet, és ez nem feltétlenül azt jelenti, hogy valamelyik téved. A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez, ezért nézzük meg, mit érdemes tisztázni, mielőtt bárkinek igent mondasz.\n\nElőször is: mit tartalmaz az ajánlat? Egy laminált padló lerakásánál nem mindegy, hogy az aljzatkiegyenlítés, a szegélyek, a küszöbök vagy a régi padló bontása benne van-e. A festésnél pedig számít, hogy milyen állapotban van a fal, kell-e glettelni, alapozni, és hány réteg fedőfestéket vállalnak. Ha két árajánlat nagyon eltér, valószínűleg más-más munkamennyiséget takar – vagy más minőségi elvárást. Kérd meg mindkét vállalkozót, hogy tételesen írják le, mit vállalnak, és milyen anyaggal dolgoznának. Így könnyebben összehasonlíthatod, miért drágább az egyik.\n\nAzt is érdemes megnézni, hogy a munkadíj mellett hogyan számolnak az anyaggal. Van, aki az anyagot is hozza, van, aki csak a munkát vállalja, és az anyagot neked kell megvenned. Ha te veszed, kérj tételes listát, hogy pontosan miből mennyi kell. A padlónál a négyzetméterár gyakran tartalmazza a lerakást, de a lépcső, a sarok vagy a csőátvezetés külön tétel lehet. A festésnél a négyzetméterár általában a falfelületre vonatkozik, de a mennyezet és a nyílászárók körüli munka is változtathat rajta.\n\nNe feledd: az árajánlat nem ugyanaz, mint a költségbecslés. Egy becslés arra jó, hogy nagyságrendileg lásd, mire számíthatsz, de a végleges összeg a helyszíni felmérés és a pontos munkamennyiség után derül ki. Ha valaki már telefonon, fotók alapján pontos összeget mond, az lehet csábító, de kockázatos is. Érdemes olyan vállalkozót keresni, aki hajlandó kimenni, megnézni a helyszínt, és ez alapján ad tételes ajánlatot. Ez időbe telik, de sokkal kevésbé fogsz meglepetésekkel találkozni.\n\nA végletes árajánlatoknál az is gyanús lehet, ha valaki feltűnően olcsóbb, mint a többi. Lehet, hogy kevesebb munkát vállal, vagy gyengébb anyagot használ, de az is lehet, hogy csak nagyon szeretné a munkát. Kérdezd meg, hogyan dolgozik, mennyi időt szán a munkára, és van-e írásos garancia a munkájára. Ha valaki nem tud vagy nem akar válaszolni ezekre, az intő jel lehet. A legolcsóbb ajánlat nem mindig a legjobb, de a legdrágább sem garantálja a minőséget – a részletek döntenek.\n\nHa elbizonytalanodtál, ne dönts azonnal. Kérd el az ajánlatokat írásban, hasonlítsd össze a tartalmukat, és ha kell, kérdezz rá a vállalkozóknál a különbségekre. Egy jó szakember szívesen elmagyarázza, miért annyi a munkadíja, és miben más a munkamódszere. Ha pedig még mindig nem tiszta, hogy mit vállalnának, érdemes lehet egy független szakembert is megkérdezni, aki segít értelmezni az ajánlatokat. A BauFreund pontosan ebben segít: közérthetően végigvezet az építési döntéseken, hogy magabiztosan választhass.\n\nMielőtt aláírsz bármit, gondold át, hogy a munkadíj mellett milyen költségek merülhetnek még fel: anyag, szállítás, esetleg bontás vagy takarítás. Készíts egy listát, és kérj rá árat. Így nem fogsz meglepetésszerű pluszköltségekkel találkozni. És ha az ajánlatok között még mindig nagy a szórás, az nem baj – a lényeg, hogy tudd, mit kapsz a pénzedért. Ha ezt tisztáztad, már sokkal könnyebb dönteni.",
+            "facebook_post": "Végletes árajánlatokat kaptál egy szoba felújítására? Nem csoda, ha elbizonytalanodtál. A munkadíj nagy szórása mögött gyakran az áll, hogy más-más munkamennyiséget vagy minőséget takar. Mielőtt döntesz, kérd el tételesen, mit vállalnak, és miből számolnak. Így összehasonlíthatóvá válnak az ajánlatok. A BauFreund segít közérthetően végigvinni az építési döntéseidet. Ha szeretnéd, hogy segítsünk értelmezni az ajánlatodat, írd meg, milyen munkához keresel segítséget és hol tart a projekt. #munkadíj #felújítás #árajánlat #építkezés #BauFreund",
+            "cta": {
+              "label": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+              "intent": "lead"
+            }
+          }
+        }
+      }
+    ]
+  }
+]

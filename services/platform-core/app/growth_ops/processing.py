@@ -105,7 +105,7 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v5"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v6"
 BRAND_POSITION_ANCHORS = {
     "BauShield": ("építési kockázat", "szerződés"),
     "Casa Moderna": ("prémium otthon", "komfort"),
@@ -545,6 +545,47 @@ def _content_review_schema(artifact_hash: str) -> dict[str, Any]:
     }
 
 
+def _content_error_spans(
+    text: str, *, field: str, brand_id: object, error: str, contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Locate failing copy with the authoritative rule, without duplicating its patterns.
+
+    Offsets refer to the exact field sent in blocked_package (end exclusive).
+    Keep whole sentences: truncating a prefix can hide a late trigger or remove
+    a negation. Cross-sentence findings retain a contiguous failing context.
+    """
+    checks = 0
+
+    def fails(start: int, end: int) -> bool:
+        nonlocal checks
+        checks += 1
+        return error in _deterministic_publication_errors(
+            {"brand_id": brand_id, field: text[start:end]}, contract,
+        )
+
+    boundaries = [0, *(match.end() for match in re.finditer(r"(?<=[.!?])\s+", text))]
+    if boundaries[-1] != len(text):
+        boundaries.append(len(text))
+    sentences = [(start, end) for start, end in zip(boundaries, boundaries[1:], strict=False)
+                 if text[start:end].strip()]
+    matched = []
+    for start, end in sentences:
+        if checks >= 128 or len(matched) >= 8:
+            break
+        if fails(start, end):
+            matched.append((start, end))
+    if not matched and sentences:
+        # A mixed voice finding can require markers from different sentences.
+        # Narrow only while the same rule still identifies the exact error.
+        left, right = 0, len(sentences) - 1
+        while left < right and checks < 128 and fails(sentences[left + 1][0], sentences[right][1]):
+            left += 1
+        while left < right and checks < 128 and fails(sentences[left][0], sentences[right - 1][1]):
+            right -= 1
+        matched = [(sentences[left][0], sentences[right][1])]
+    return [{"start": start, "end": end, "text": text[start:end]} for start, end in matched]
+
+
 def _content_repair_instructions(
     package: dict[str, Any], errors: list[str], contract: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -587,13 +628,12 @@ def _content_repair_instructions(
         probe = {"brand_id": package.get("brand_id"), field: value}
         field_errors = set(_deterministic_publication_errors(probe, contract)) & set(errors)
         for error in sorted(field_errors & instructions.keys()):
-            matches = list(re.finditer(r"\d+(?:[.,]\d+)?", text))
-            excerpts = (
-                [text[max(0, match.start() - 55):match.end() + 75] for match in matches[:8]]
-                if error == "unverified_numeric_claim" else [text[:240]]
+            spans = _content_error_spans(
+                text, field=field, brand_id=package.get("brand_id"), error=error, contract=contract,
             )
             corrections.append({"field": field, "error": error,
-                                "instruction_hu": instructions[error], "excerpts": excerpts})
+                                "instruction_hu": instructions[error], "spans": spans,
+                                "excerpts": [span["text"] for span in spans]})
     return corrections
 
 
@@ -3147,6 +3187,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                 ),
                 purpose=f"canonical_daily_content_factory:{row.brand_id}",
                 run_id=None,
+                high_stakes=True,
                 max_tokens=3000,
             )
             package, generation_issues = _normalize_generated_content_package(
@@ -3234,7 +3275,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                             "blokkolt szöveget javítsd ki, ne magyarázd. A hibakódok minden okát "
                             "távolítsd el; ne helyettesítsd másik nem igazolt állítással. "
                             "A field_corrections minden eleménél a megnevezett mezőt javítsd a "
-                            "magyar instruction_hu szerint. Az excerpts a hibás részlet. "
+                            "magyar instruction_hu szerint. Az excerpts a valóban hibás mondat; "
+                            "a spans start/end a blocked_package adott mezőjének karakterhelye "
+                            "(az end már nem része a szakasznak). "
+                            "A teljes jelzett mondatot javítsd. "
                             "Ne hagyd változatlanul a jelzett ár- vagy időpéldát, és a Facebook "
                             "hibáját ne csak a cikk átírásával próbáld javítani. "
                             "Tartsd meg "
@@ -3283,7 +3327,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         ),
                         purpose=(f"canonical_daily_content_deterministic_repair:{row.brand_id}"),
                         run_id=None,
-                        high_stakes=False,
+                        high_stakes=True,
                         max_tokens=3500,
                     )
                     repaired, repair_issues = _normalize_generated_content_package(
