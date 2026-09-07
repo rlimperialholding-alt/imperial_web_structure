@@ -105,7 +105,15 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v6"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v7"
+CONTENT_SOURCE_SCOPE_INSTRUCTION = (
+    " A forrásban igazolt részfeladat nem jelent teljes felelősségátvállalást. "
+    "Tervellenőrzésből, felmérésből vagy mérnöki figyelemből ne következtess arra, "
+    "hogy az ügyfélnek már semmilyen koordinációs feladata nincs. Teljes projektkoordinációt "
+    "csak ezt kifejezetten igazoló márkaforrás alapján állíts. "
+    "A megszólítás névmása és igeragozása egyezzen: a 'maga dönts' és 'maga tudod' "
+    "hibás; tegezésnél 'te dönts' és 'te tudod', magázásnál 'Ön döntsön' és 'Ön tudja'. "
+)
 BRAND_POSITION_ANCHORS = {
     "BauShield": ("építési kockázat", "szerződés"),
     "Casa Moderna": ("prémium otthon", "komfort"),
@@ -458,6 +466,24 @@ def _complete_content_hashtags(
     return dict(package, facebook_post=text.rstrip() + "\n\n" + " ".join(additions))
 
 
+def _contract_with_approved_claims(
+    contract: dict[str, Any], facts: list[dict[str, Any]], *, brand_id: str,
+) -> dict[str, Any]:
+    """Use only the caller's DB-verified facts, never model/package annotations."""
+    statements = []
+    for fact in facts:
+        if _brand_key(fact.get("brand_id")) != _brand_key(brand_id):
+            continue
+        payload = fact.get("payload") or {}
+        statements.append(str(payload.get("statement") or ""))
+        for source in payload.get("source_evidence") or []:
+            if not isinstance(source, dict) or not isinstance(source.get("exact_excerpts"), list):
+                continue
+            statements.extend(value for value in source["exact_excerpts"]
+                              if isinstance(value, str))
+    return dict(contract, _approved_scope_claims=statements)
+
+
 def _content_voice_instruction(contract: dict[str, Any]) -> str:
     """Make grammatical address explicit instead of hiding it in a JSON contract."""
     voice = _norm(str(contract.get("voice") or ""))
@@ -476,7 +502,7 @@ def _content_voice_instruction(contract: dict[str, Any]) -> str:
         )
     else:
         instruction = " Kövesd a megadott márkahangot, és ne keverd a tegezést a magázással."
-    return instruction + (
+    return instruction + CONTENT_SOURCE_SCOPE_INSTRUCTION + (
         " A jóváhagyott, első személyű CTA-t és a kötelező szó szerinti forrásmondatokat "
         "változatlanul tartsd meg; a CTA felirata az olvasó kérése, nem megszólítás. "
         "A szlogen opcionális. Ha idézed, csak a locked_slogan vagy locked_slogans "
@@ -614,7 +640,8 @@ def _content_repair_instructions(
         ),
         "unverified_case_or_capability_claim": (
             "A kitalált ügyfélesetet és a forrással nem igazolt márkavállalást írd át "
-            "a vevő konkrét döntéséhez kapcsolódó ellenőrzési szemponttá."
+            "a vevő konkrét döntéséhez kapcsolódó ellenőrzési szemponttá. "
+            + CONTENT_SOURCE_SCOPE_INSTRUCTION
         ),
         "unsupported_absolute_claim": (
             "A felsőfokú és feltétlen eredményállítást cseréld körülhatárolt "
@@ -955,6 +982,27 @@ def _deterministic_publication_errors(
     ])
     normalized = _norm(raw)
     errors: list[str] = []
+    if re.search(r"\bmaga\s+(?:dönts|tudod)\b", normalized):
+        errors.append("mixed_formal_informal_address")
+    takeover_claims = re.finditer(
+        r"\b(?:önnek|neked)\b[^.!?]{0,100}\bnem kell\b[^.!?]{0,100}"
+        r"\b(?:koordinál|összehangol)\w*\b", normalized,
+    )
+    if any(not re.search(
+        r"\b(?:nem (?:jelenti|következik|állítjuk|ígérjük)(?: azt| az)?|"
+        r"ne (?:gondolja|feltételezze))\s*,?\s*hogy\s*$",
+        normalized[max(0, match.start() - 100):match.start()],
+    ) for match in takeover_claims):
+        source_sentences = [sentence for claim in contract.get("_approved_scope_claims") or []
+                            for sentence in re.split(r"(?<=[.!?])\s+", _norm(str(claim)))]
+        if not any(
+            re.search(r"\b(?:egyetlen projektben hangolja össze|"
+                      r"teljes projektkoordinációt (?:vállal|biztosít)\w*|"
+                      r"(?:át)?vállal\w* a (?:teljes )?projektkoordinációt)\b", sentence)
+            and not re.search(r"\b(?:nem|nincs)\b", sentence)
+            for sentence in source_sentences
+        ):
+            errors.append("unverified_case_or_capability_claim")
     # A documented request/CTA is not evidence of its contractual or fee terms.
     # Model-supplied annotations cannot authorize these promises. This finding
     # follows the existing bounded repair path and creates no global stop state.
@@ -3100,6 +3148,9 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
             # documented customer problem rather than today's forum posts.
             evidence_available = True
             brand_evidence["approved_brand_facts"] = approved_facts
+            publication_contract = _contract_with_approved_claims(
+                publication_contract, approved_facts, brand_id=row.brand_id,
+            )
         try:
             result, payload = _complete_json_payload(
                 db,
@@ -3437,6 +3488,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "vagy 80 alatti pontszám mellett az összdöntés BLOCK. Ha minden kapu PASS "
                     "és minden pontszám legalább 80, a findings csak nem blokkoló javaslatot "
                     "tartalmazhat, és az összdöntés PASS."
+                    + CONTENT_SOURCE_SCOPE_INSTRUCTION
                 ),
                 user_prompt=_json(
                     {

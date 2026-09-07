@@ -480,6 +480,124 @@
           "supersedes_versions": []
         }
       ]
+    },
+    {
+      "brand_id": "Casa Moderna",
+      "sources": [
+        {
+          "source_key": "casa-moderna-brand-fact-architect-led-home",
+          "source_type": "brand_fact",
+          "version": "2026-09-07.v1",
+          "source_url": "https://docs.google.com/document/d/1JWUFyUYqfTMCVwGDVETFTBBizjVbbrX0mTWht4a4Tlc/edit",
+          "payload": {
+            "statement": "A Casa Moderna építészvezérelt, prémium egyedi családi ház márka: építészet, enteriőr és személyes concierge egy folyamatban.",
+            "buyer_problems": [
+              "Az egyedi családi házat tervező vevő szeretné összehangolni az építészeti, térhasználati és belsőépítészeti igényeit."
+            ],
+            "buyer_problem_basis": "A kézikönyv dokumentált tervezési és minősítési feladatából szerkesztett probléma; nem megfigyelt fórumkérdés.",
+            "sales_goal": "Építészkonzultációhoz kapcsolódó tervezési igények és telekadottságok megismerése.",
+            "next_steps": [
+              "Építészkonzultációt kérek."
+            ],
+            "claim_limits": [
+              "A régi elsődleges Privát konzultáció CTA helyett a v2.0 pontos elsődleges CTA-ja szerepel.",
+              "Ár, határidő, díjmentesség, kötelezettségmentesség, teljesítménygarancia és aktív referencia nincs ebből engedélyezve.",
+              "A kézikönyvben szereplő One Price Residence csomag tényleges aktuális tartalmát nem igazolja ez a szűk márkatény."
+            ],
+            "record_id": "CASA-MODERNA-ARCHITECT-LED-HOME-V1",
+            "source_refs": [
+              "https://docs.google.com/document/d/1JWUFyUYqfTMCVwGDVETFTBBizjVbbrX0mTWht4a4Tlc/edit"
+            ],
+            "source_evidence": [
+              {
+                "drive_file_id": "1JWUFyUYqfTMCVwGDVETFTBBizjVbbrX0mTWht4a4Tlc",
+                "title": "Casa Moderna – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1JWUFyUYqfTMCVwGDVETFTBBizjVbbrX0mTWht4a4Tlc/edit",
+                "source_modified_time": "2026-08-04T21:15:06.551Z",
+                "readback_at": "2026-09-07 10:30:21 UTC",
+                "content_sha256": "e9ab3339801b35ec7a1d5a897b1837fc9615acf8941a3a7f9c75c041b22a1683",
+                "exact_excerpts": [
+                  "2026. augusztus 4. · Kötelező operatív szabvány",
+                  "Pozicionálás: Építészvezérelt, prémium egyedi családi ház: építészet, enteriőr és személyes concierge egy folyamatban.",
+                  "Elsődleges CTA (FELÜLÍRVA v1.0: „Privát konzultációt kérek.” helyett): Építészkonzultációt kérek.",
+                  "a részletes minősítés (telek státusza, finanszírozás, alapterület, szobaszám, anyag- és enteriőr-preferencia) több lépésben, diszkrét kérdésekkel történik."
+                ],
+                "all_excerpts_verified": true,
+                "verified_at": "2026-09-07"
+              }
+            ]
+          },
+          "supersedes_versions": []
+        }
+      ]
+    },
+    {
+      "brand_id": "Everyday Homes",
+      "sources": [
+        {
+          "source_key": "everyday-homes-brand-fact-practical-floorplan",
+          "source_type": "brand_fact",
+          "version": "2026-09-07.v1",
+          "source_url": "https://docs.google.com/document/d/19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4/edit",
+          "payload": {
+            "statement": "Az Everyday Homes a praktikus családi otthont az alaprajzi rutinok, a tárolás és a mindennapi kényelem felől mutatja be.",
+            "buyer_problems": [
+              "Az építkező család szeretné úgy elhelyezni az előszobát, a kamrát és a háztartási helyiséget, hogy azok a napi útvonalakat és a tárolást segítsék."
+            ],
+            "buyer_problem_basis": "A végleges alaprajzi útmutatóban leírt használati problémából szerkesztett brief; nem megfigyelt fórumkérdés.",
+            "sales_goal": "A család tárolási és napi térhasználati igényeire épülő alaprajzi konzultációs megkeresés.",
+            "next_steps": [
+              "Kérek alaprajzi konzultációt."
+            ],
+            "claim_limits": [
+              "Nem állítunk működő háromszintű csomagrendszert vagy adott kínálatot pusztán a kézikönyv oldalsorrendjéből.",
+              "Egy kézben kezelt teljes megvalósítás, finanszírozási eredmény, fix ár és aktuális kivitelezési kapacitás nem része ennek a ténynek.",
+              "A cikk Facebook-változatának hiányzó cikkre támaszkodó promóciós mondata nem került a briefbe.",
+              "Ár, idő, díjmentesség és kötelezettségmentesség nincs ebből engedélyezve."
+            ],
+            "record_id": "EVERYDAY-HOMES-PRACTICAL-FLOORPLAN-V1",
+            "source_refs": [
+              "https://docs.google.com/document/d/19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4/edit",
+              "https://docs.google.com/document/d/1RkxuxGVUvOPOsS3ytOG16UNRiD9RC4YpAv5Rj4e7UMc/edit"
+            ],
+            "source_evidence": [
+              {
+                "drive_file_id": "19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4",
+                "title": "Everyday Homes – Online és offline arculati és konverziós kézikönyv v1.1",
+                "url": "https://docs.google.com/document/d/19DL0k4Cl-HHHylak9xfc9C0QYDXDJd60_zRu06fCdS4/edit",
+                "source_modified_time": "2026-07-31T13:35:58.592Z",
+                "readback_at": "2026-09-07 10:30:21 UTC",
+                "content_sha256": "4441675974379f9e8e45fa0d26ee62241ed2b14461f2a0fff9731f530170a958",
+                "exact_excerpts": [
+                  "Kanonikus vezérmondat: „Otthon – egyszerűen.”",
+                  "Márkaesszencia: PRAKTIKUM · ÉRTHETŐ KÖLTSÉG · ELÉRHETŐ OTTHON · MINDENNAPI KÉNYELEM",
+                  "Elsődleges CTA: Kérek egyszerű költségbecslést.",
+                  "Alaprajzi rutin, tárolási tippek, havi költség, első otthon, családi élethelyzet, egyszerű döntési segítség, fix áras típusterv és elérhető otthonteremtés."
+                ],
+                "all_excerpts_verified": true,
+                "verified_at": "2026-09-07"
+              },
+              {
+                "drive_file_id": "1RkxuxGVUvOPOsS3ytOG16UNRiD9RC4YpAv5Rj4e7UMc",
+                "title": "Everyday Homes – Praktikus háttér a család mindennapjaihoz – végleges publikációs csomag – 2026-08-15",
+                "url": "https://docs.google.com/document/d/1RkxuxGVUvOPOsS3ytOG16UNRiD9RC4YpAv5Rj4e7UMc/edit",
+                "source_modified_time": "2026-08-15T06:36:44.193Z",
+                "readback_at": "2026-09-07 10:30:21 UTC",
+                "content_sha256": "41de607d2d822d1fe9e304d1e11c677e915ef63404fc21f4c673c23ecd70d170",
+                "exact_excerpts": [
+                  "EVERYDAY HOMES – VÉGLEGES PUBLIKÁCIÓS CSOMAG",
+                  "A tervezéshez hasznosabb a tárgylista és a folyamatlista, mint egy előre rögzített négyzetméterszám.",
+                  "Kérek alaprajzi konzultációt.",
+                  "A gombot az Everyday Homes jelenleg működő kapcsolatfelvételi oldalára vagy űrlapjára kell vezetni."
+                ],
+                "all_excerpts_verified": true,
+                "verified_at": "2026-09-07"
+              }
+            ]
+          },
+          "supersedes_versions": []
+        }
+      ]
     }
   ]
 }

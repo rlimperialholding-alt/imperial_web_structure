@@ -1,0 +1,362 @@
+[
+  {
+    "brand_id": "Property360",
+    "source_mode": "approved_brand_documents",
+    "recorded_commit": "76e73c9fd33f699e34b64f9beac1ad1f32a8e544",
+    "package": {
+      "title": "Telek, terv, finanszírozás: miért ne külön-külön kezeld őket?",
+      "body": "Amikor saját házat tervezel, a telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket. Ha előbb telket választasz, aztán rajzoltatsz egy tervet, és csak utána nézed meg, mire kaphatsz hitelt, könnyen olyan helyzetbe kerülsz, ahol a három dolog nem illik össze. A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút. Ez azt jelenti, hogy nem egymás mellé teszi a lépéseket, hanem egyetlen projektben hangolja össze őket a költözésig. A gyakorlatban ez úgy néz ki, hogy már a telek kiválasztásánál figyelembe veszed, milyen ház fér rá, mennyibe kerül a kivitelezés, és milyen finanszírozási feltételekkel tudod elindítani. Így elkerülheted azt a csapdát, hogy egy szép telekhez olyan tervet kell igazítanod, ami nem fér bele a költségvetésedbe, vagy hogy a hitelbírálatnál derül ki, hogy a telek és a ház együtt már nem finanszírozható a számodra elérhető feltételekkel. Érdemes ezért már az elején tisztázni, milyen telek, milyen ház és milyen finanszírozás illik össze a te helyzetedben. A Property360 ebben segít: a telek, a terv, a finanszírozás és a kivitelezés kérdéseit együtt vizsgálja, hogy ne különálló, egymásnak ellentmondó döntéseket kelljen hoznod. Így a beköltözésig tartó út átláthatóbbá válik, és nem a folyamat közben szembesülsz azzal, hogy valamelyik lépést újra kell tervezned. Ha már van konkrét telked vagy házterved, érdemes ellenőriztetni, hogy a kettő valóban összeillik-e, és milyen finanszírozási lehetőségeid vannak. A Property360 elővizsgálata éppen erre való: a te projektadataid alapján segít átlátni, milyen sorrendben és milyen feltételekkel érdemes továbblépned. Így nem kell egyedül találgatnod, hogy a telek, a terv és a hitel hogyan fér össze, hanem egy összehangolt következő lépést kapsz.",
+      "facebook_post": "A telek, a terv és a finanszírozás egymásra hat – ha külön-külön kezeled őket, könnyen olyan helyzetbe kerülsz, ahol a három dolog nem illik össze. A Property360 egyetlen projektben hangolja össze a telket, a háztervet, a finanszírozást és a kivitelezést a költözésig. Így már az elején látod, milyen telek, milyen ház és milyen hitel illik össze a te helyzetedben. Ha van konkrét telked vagy terved, érdemes elővizsgálatot kérni, hogy ne a folyamat közben derüljön ki, hogy valamit újra kell tervezned. #telek #házépítés #finanszírozás #kivitelezés #beköltözés #Property360",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek telek–ház elővizsgálatot."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Property360",
+          "content_hash": "059f933372cab71f8a83272a109b615240df788f7a7ae9598da3695ad00d10be",
+          "payload": {
+            "buyer_problems": [
+              "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+              "A költözésig tartó teljes projektköltség nem azonos a ház kivitelezési árával."
+            ],
+            "next_steps": [
+              "Kérek telek–ház elővizsgálatot."
+            ],
+            "record_id": "P360-BRAND-COORDINATION-V1",
+            "sales_goal": "A telek és a ház elővizsgálatára irányuló, konkrét projektadatokat tartalmazó megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "f62b1272dfabf9c3a8ca620e373e76d9544bbb28fd6b8b977fd58a0086815aca",
+                "drive_file_id": "1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs",
+                "exact_excerpts": [
+                  "A Property360 nem egymás mellé teszi a telket, a tervezést, a finanszírozást és a kivitelezést. Egyetlen projektben hangolja össze őket a költözésig.",
+                  "Kérek telek–ház elővizsgálatot."
+                ],
+                "source_modified_time": "2026-07-28T06:55:44.104Z",
+                "title": "2026-07-28 – Property360 – Telek, terv, finanszírozás – publikációs csomag",
+                "url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+            ],
+            "statement": "A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút."
+          },
+          "source_key": "property360-brand-fact-project-coordination",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        },
+        {
+          "brand_id": "Property360",
+          "content_hash": "90cd92849bd4fb0abf91d0c1bc2106f1875b7546c8fb9b63d06d22bc1b78408b",
+          "payload": {
+            "record_id": "P360-OFFER-INTERIOR-360-V1",
+            "source_evidence": [
+              {
+                "content_sha256": "58155677eeec7216792ee29dc330bba87d68d89e24d2eed1b5aea94fe1f9286c",
+                "drive_file_id": "13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD",
+                "exact_excerpts": [
+                  "2 óra belsőépítészeti tanácsadás · látványterv · burkolatkiosztási terv · választás a moodboardok közül",
+                  "A pontos helyiségkört, nézetszámot, módosítási kört és a megrendelhető termékeket a szerződéses műszaki tartalom rögzíti."
+                ],
+                "source_modified_time": "2026-08-08T23:05:01.525Z",
+                "title": "Property360-Interior-360-standalone.html",
+                "url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk"
+            ],
+            "statement": "A Property360 Interior 360 csomag belsőépítészeti tanácsadást, látványtervet, burkolatkiosztási tervet és moodboard-választást kapcsol össze."
+          },
+          "source_key": "property360-offer-interior-360",
+          "source_type": "offer",
+          "source_url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Property360",
+      "buyer_problem": "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek telek–ház elővizsgálatot.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A telek és a ház elővizsgálatára irányuló, konkrét projektadatokat tartalmazó megkeresés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+      ]
+    }
+  },
+  {
+    "brand_id": "Bautica",
+    "source_mode": "approved_brand_documents",
+    "recorded_commit": "76e73c9fd33f699e34b64f9beac1ad1f32a8e544",
+    "package": {
+      "title": "Ki viszi végig a felújítást? A mérnöki kontroll szerepe az építkezésben",
+      "body": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. Ez a bizonytalanság gyakran vezet félreértésekhez, csúszáshoz és olyan kompromisszumokhoz, amelyeket később nehéz korrigálni. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez azt jelenti, hogy a folyamat minden szakaszában van egy felelős szakember, aki érti a tervet, ismeri a helyszínt, és figyelemmel kíséri a kivitelezést. Önnek így nem kell különböző szereplők között koordinálnia, és nem marad egyedül a műszaki kérdésekkel. A mérnöki ok-okozat itt kézzelfogható: ha a terv és a valóság eltér, a helyszíni felmérés és a folyamatos ellenőrzés teszi lehetővé a gyors, szakszerű döntést. Ez az Ön számára kevesebb váratlan helyzetet, átláthatóbb folyamatot és nagyobb nyugalmat jelent. Érdemes ezért már a tervezés előtt tisztázni, ki lesz az a szakember, aki a teljes folyamatot végigkíséri. A Bautica esetében ez a szerep egyértelmű: a mérnök nem csupán tanácsot ad, hanem aktívan részt vesz a helyszín felmérésében és a kivitelezés ellenőrzésében. Így az Ön döntései megalapozottak, a kivitelezés pedig követhető marad. Ha Ön is szeretné elkerülni a koordinációs hiányosságokból fakadó kockázatokat, érdemes megvizsgálnia, hogyan tudja a Bautica ezt a kontrollt az Ön projektjében biztosítani.",
+      "facebook_post": "Egy felújítás vagy építkezés során jelentős bizonytalanságot gyakran az jelenti, hogy nem világos, ki egyezteti a tervet, ki méri fel a helyszínt, és ki ellenőrzi a kivitelezést. Ha ezek a szerepek nincsenek tisztázva, a folyamat könnyen szétesik, és a végeredmény nem tükrözi az eredeti elképzelést. A Bautica ezért a személyes mérnöki figyelemre és a végig követhető szakmai kontrollra épít. Ez azt jelenti, hogy egy felelős mérnök kíséri végig a projektet, aki érti a tervet, ismeri a helyszínt, és figyelemmel kíséri a kivitelezést. Így Ön nem marad egyedül a műszaki döntésekkel, és a folyamat minden lépése átlátható marad. Ha szeretné, hogy az Ön projektje is ilyen megalapozottan induljon, érdemes tisztázni a mérnöki kontroll kérdését már a kezdetektől. #felújítás #építkezés #mérnök #kivitelezés #Bautica #szakmaikontroll #építés",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek műszaki kalkulációt."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Bautica",
+          "content_hash": "59aa8aba48a393df8fff71b3840384c6aa018afd4d45a49c13d692186f9744bd",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést."
+            ],
+            "claim_limits": [
+              "A megszólítás későbbi módosítását ez a forrás nem igazolja; a hangvétel beállítása nem változik.",
+              "Nincs ár-, idő-, eredmény- vagy szerződéses garancia átvéve."
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; kizárólag a statikus pozicionálás és dokumentált kérési út került felhasználásra.",
+            "next_steps": [
+              "Kérek műszaki kalkulációt."
+            ],
+            "record_id": "BAUTICA-ENGINEERING-PREPARATION-V1",
+            "sales_goal": "A konkrét építési tervhez és helyszínhez kötött műszaki kalkulációkérés.",
+            "source_evidence": [
+              {
+                "content_sha256": "3781fd836611de6111d0d580cfd5cac243cfbaaee0886607b659492a2a5a9a09",
+                "drive_file_id": "1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA",
+                "exact_excerpts": [
+                  "Pozicionálás: Személyes mérnöki figyelem és végig követhető szakmai kontroll.",
+                  "Elsődleges CTA (FELÜLÍRVA v1.2: „Kérek helyszíni felmérést.” helyett): Kérek műszaki kalkulációt.",
+                  "A főszereplő nem a választék nagysága, hanem a névvel és felelősséggel azonosítható mérnök, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi."
+                ],
+                "readback_at": "2026-09-07T08:26:41.040Z",
+                "source_modified_time": "2026-08-04T20:58:14.602Z",
+                "title": "Bautica – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit"
+            ],
+            "statement": "A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését."
+          },
+          "source_key": "bautica-brand-fact-engineering-preparation",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Bautica",
+      "buyer_problem": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek műszaki kalkulációt.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A konkrét építési tervhez és helyszínhez kötött műszaki kalkulációkérés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit"
+      ]
+    }
+  },
+  {
+    "brand_id": "BauFreund",
+    "source_mode": "approved_brand_documents",
+    "recorded_commit": "76e73c9fd33f699e34b64f9beac1ad1f32a8e544",
+    "package": {
+      "title": "Költségbecslés vagy vállalási ajánlat? Így kerüld el a félreértést az építkezésed elején",
+      "body": "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól. Ez a különbségtétel nem szőrszálhasogatás: ha a két dokumentumot összekevered, könnyen olyan számok alapján döntesz, amelyek még nem tartalmaznak minden tételt. A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez, ezért érdemes már az elején tisztázni, mire való egy becslés, és mit várhatsz el egy ajánlattól. A költségbecslés arra jó, hogy nagyságrendileg lásd, milyen keretből indulhat a ház vagy felújítás. Nem tartalmaz minden anyag- és munkadíj-tételt, és nem is vállalási ár. A tételes vállalási ajánlat ezzel szemben konkrét műszaki tartalomra, anyagminőségre és munkafolyamatokra épül, ezért jóval pontosabb. Ha a kettőt összemosod, előfordulhat, hogy egy becslés alapján kötsz szerződést, és később meglepődsz a végösszegen. Mit tehetsz, hogy elkerüld ezt a csapdát? Először is kérd el a becslés mögötti feltételezéseket: milyen alaprajzzal, milyen anyagokkal és milyen munkadíjjal számoltak. Ha ezek nincsenek leírva, a szám csak tájékoztató jellegű. Másodszor, ha már konkrét terved van, kérj tételes ajánlatot, amelyben minden sor mögött látszik a mennyiség és az egységár. Így összehasonlíthatóvá válnak a kivitelezői ajánlatok, és nem csak a végösszeget nézed. A BauFreund abban segít, hogy a becslés és az ajánlat közötti különbséget a saját építkezésedre lefordítsd. Nem bonyolult műszaki zsargonnal magyaráz, hanem úgy, ahogy egy barátod tenné egy kávé mellett. Ha bizonytalan vagy abban, hogy a kapott számok mit takarnak, érdemes szakemberrel átnézetni a dokumentumot, mielőtt bármit aláírsz. Fontos, hogy ne érezd magad kellemetlenül, ha kérdéseket teszel fel. Az építkezés a te pénzedből és a te jövődből készül, ezért jogod van tudni, mit fizetsz. A becslés és az ajánlat közötti különbség megértése az első lépés ahhoz, hogy maga dönts.",
+      "facebook_post": "Építkezés előtt sokan összekeverik a költségbecslést a tételes vállalási ajánlattal. Pedig nem mindegy: a becslés csak nagyságrendet mutat, az ajánlat viszont konkrét tételeket és árakat tartalmaz. Ha rossz dokumentum alapján döntesz, később kellemetlen meglepetés érhet. Nézd meg, milyen feltételezésekkel készült a számodra adott becslés, és ha már van konkrét terved, kérj tételes ajánlatot. Így elkerülheted a félreértéseket, és nyugodtabban vághatsz bele az építkezésbe. #építkezés #költségbecslés #vállalásiajánlat #építőbarát #BauFreund #házépítés #felújítás",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek egy őszinte költségbecslést."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "BauFreund",
+          "content_hash": "b092525ffc89c5a95a2ef405274ab84c0d05723fba24392814bb09ab6b55cc58",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól."
+            ],
+            "claim_limits": [
+              "Független ellenőrt és szerződéses garanciát nem állítunk; ezek külön bizonyítékot igényelnek.",
+              "A költségbecslés kérése nem jelent szerződéses árígéretet vagy működő online kalkulátor igazolását."
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; a forrás feltételes függetlenségi állítása nem lett márkatény.",
+            "next_steps": [
+              "Kérek egy őszinte költségbecslést."
+            ],
+            "record_id": "BAUFREUND-BUILDING-DECISIONS-V1",
+            "sales_goal": "A tervezett építkezés tartalmát tisztázó költségbecslési megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "8a8994149831e9f566191aaf5670a341b7851e14e64f6149728ebbb1c5216847",
+                "drive_file_id": "1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc",
+                "exact_excerpts": [
+                  "Pozicionálás: Közérthető, barátságos és független segítség az építési döntésekhez.",
+                  "Másodlagos CTA: Kérek egy őszinte költségbecslést.",
+                  "A kalkulátor nem keltheti tételes vállalási ajánlat látszatát.",
+                  "A „független” jelző csak tényleges szerződéses függetlenség esetén használható."
+                ],
+                "readback_at": "2026-09-07T08:26:41.073Z",
+                "source_modified_time": "2026-08-04T21:08:22.421Z",
+                "title": "BauFreund – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit"
+            ],
+            "statement": "A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez."
+          },
+          "source_key": "baufreund-brand-fact-building-decisions",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "BauFreund",
+      "buyer_problem": "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek egy őszinte költségbecslést.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A tervezett építkezés tartalmát tisztázó költségbecslési megkeresés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit"
+      ]
+    }
+  },
+  {
+    "brand_id": "BauFreund",
+    "source_mode": "anonymized_original_source_replay",
+    "recorded_commit": "76e73c9fd33f699e34b64f9beac1ad1f32a8e544",
+    "package": {
+      "title": "Munkadíjak: hogyan kerülj ki a végletes árajánlatok csapdájából?",
+      "body": "Fórumkérdés, szerkesztett részlet: „Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.” A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez. A helyzet ismerős: az egyik ajánlat gyanúsan alacsony, a másik ijesztően magas, és nem tudod, melyik mögött van valódi tartalom. A munkadíj nem egyetlen szám, hanem több tényező eredője: a felület előkészítése, a padló állapota, a falak jelenlegi rétegei, a szoba sarkai és a helyszín megközelíthetősége. Ezért ahelyett, hogy egyetlen összeget keresnél, érdemes a munkát tartalmilag összehasonlítani. Kérj minden ajánlattevőtől tételes felsorolást: mit tartalmaz a munkadíj, mi számít felárnak, és milyen anyagokkal dolgoznak. Így kiderül, hogy az olcsóbb ajánlat nem tartalmazza-e a szegélyezést vagy a régi padló elszállítását, a drágább pedig nem tartalmaz-e olyan munkafázist, amire nincs is szükséged. A BauFreund abban segít, hogy a kapott ajánlatokat közérthetően értelmezd, és a saját projektedre szabott döntési szempontokat kapj. Nem kalkulátort adunk, hanem egy barátságos szakmai beszélgetést, amelyben tisztázzuk, milyen munkára van szükséged, és milyen kérdéseket érdemes feltenned a kivitelezőnek. Így nem a végletek között fogsz ingadozni, hanem maga tudod kiválasztani azt az ajánlatot, amelyik a te helyzetedben valóban megéri.",
+      "facebook_post": "Kaptál már olyan árajánlatot, aminél az egyik összeg túl szép, a másik meg túl sok? A munkadíj nem egyetlen szám, hanem a munka tartalmának a tükre. Ahelyett, hogy a végletek között őrlődsz, tedd fel a megfelelő kérdéseket: mit tartalmaz pontosan a munkadíj, mi számít felárnak, és milyen anyagokkal dolgoznak? Így kiderül, miért térhet el két ajánlat ennyire. Ha szeretnéd, hogy valaki barátságosan és közérthetően segítsen értelmezni a helyzetedet, írd meg, milyen munkához keresel segítséget és hol tart a projekt. #építkezés #felújítás #munkadíj #árajánlat #BauFreund #építőbarát",
+      "cta": {
+        "intent": "lead",
+        "label": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "BauFreund",
+          "content_hash": "b092525ffc89c5a95a2ef405274ab84c0d05723fba24392814bb09ab6b55cc58",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól."
+            ],
+            "claim_limits": [
+              "Független ellenőrt és szerződéses garanciát nem állítunk; ezek külön bizonyítékot igényelnek.",
+              "A költségbecslés kérése nem jelent szerződéses árígéretet vagy működő online kalkulátor igazolását."
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; a forrás feltételes függetlenségi állítása nem lett márkatény.",
+            "next_steps": [
+              "Kérek egy őszinte költségbecslést."
+            ],
+            "record_id": "BAUFREUND-BUILDING-DECISIONS-V1",
+            "sales_goal": "A tervezett építkezés tartalmát tisztázó költségbecslési megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "8a8994149831e9f566191aaf5670a341b7851e14e64f6149728ebbb1c5216847",
+                "drive_file_id": "1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc",
+                "exact_excerpts": [
+                  "Pozicionálás: Közérthető, barátságos és független segítség az építési döntésekhez.",
+                  "Másodlagos CTA: Kérek egy őszinte költségbecslést.",
+                  "A kalkulátor nem keltheti tételes vállalási ajánlat látszatát.",
+                  "A „független” jelző csak tényleges szerződéses függetlenség esetén használható."
+                ],
+                "readback_at": "2026-09-07T08:26:41.073Z",
+                "source_modified_time": "2026-08-04T21:08:22.421Z",
+                "title": "BauFreund – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit"
+            ],
+            "statement": "A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez."
+          },
+          "source_key": "baufreund-brand-fact-building-decisions",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "BauFreund",
+      "buyer_problem": "Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.",
+      "next_step": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": "QRT-TRIAL-ORIGINAL-MUNKADIJAK",
+      "revalidation": {
+        "demand_decision": {
+          "age_hours_max": 24.694908408055554,
+          "contact_allowed": false,
+          "features": {
+            "size_defined": "20 m2"
+          },
+          "funding_status": "unknown",
+          "identity": "59984af22318bfcbfd9e989d6543929f5cdfb56fa8100e6ee1540f26d5f18fb3",
+          "intent_score": 10,
+          "lead_eligible": false,
+          "policy": "content-intent-revenue/2026-09-06.v1",
+          "published_at_earliest": "2026-09-06T09:45:34+00:00",
+          "published_at_latest": "2026-09-06T09:45:34+00:00",
+          "queue": "CONTENT_SIGNAL",
+          "reasons": [
+            "no_explicit_buying_trigger"
+          ]
+        },
+        "eligible": true,
+        "policy": "content-intent-revenue-v1",
+        "purpose": "content",
+        "reasons": [],
+        "revalidated_at": "2026-09-07T10:27:15.670269+00:00",
+        "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/"
+      },
+      "sales_goal": "BauFreund: minősített érdeklődőből ajánlatkérés",
+      "send_allowed": false,
+      "source_problem_evidence": {
+        "editorial_instruction": "A pontos méretek, összegek és időadatok a vevő saját helyzetének adatai. A nyilvános szövegben a buyer_problem számadatok nélkül megfogalmazott változatát használd; az eredeti számadatokat ne másold át. A cikk a munka tartalmáról és a döntési szempontokról szóljon; ezekből ne képezzen márkaárat, vállalási határidőt vagy teljesítményígéretet.",
+        "native_id": "post:1w8rs4c",
+        "observed_at": "2026-09-07T10:27:15.670269+00:00",
+        "original_problem": "Munkadíjak? Egy 20 m2-es szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.",
+        "original_text_sha256": "f6b9e02473b0fcf7bf6a6c3b717a8b9c4ee453285ee4f62e53d865821004f681",
+        "public_problem_derivation": "quantity_and_contact_generalization",
+        "published_at": "2026-09-06T09:45:34+00:00",
+        "published_at_raw": "2026-09-06T09:45:34+00:00",
+        "radar_identity_hash": "ffd1821576b79d31c93e9641fb8be126e1234b7f950965c5a9aeeb558cd19479",
+        "revalidated_at": "2026-09-07T10:27:15.670269+00:00",
+        "source_identity": "a44ac1f847ea9eaddd1761c5c0433c7488c5cef660a6cf7f18a65a3628540df3",
+        "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/",
+        "verification_mode": "source_refresh"
+      },
+      "source_refs": [
+        "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/"
+      ]
+    }
+  }
+]

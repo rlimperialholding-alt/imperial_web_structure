@@ -21,7 +21,10 @@ def test_manifest_contains_read_back_documents_and_supported_brand_specific_step
     for brand in manifest["brands"]:
         for source in brand["sources"]:
             payload = source["payload"]
-            assert payload["source_refs"] == [source["source_url"]]
+            assert payload["source_refs"][0] == source["source_url"]
+            assert payload["source_refs"] == [
+                item["url"] for item in payload["source_evidence"]
+            ]
             proof = payload["source_evidence"][0]
             assert proof["drive_file_id"] in source["source_url"]
             assert len(proof["content_sha256"]) == 64

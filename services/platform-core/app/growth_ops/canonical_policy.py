@@ -188,9 +188,16 @@ BRAND_PUBLICATION_CONTRACTS = {
         "forbidden": ["általános családiház-szöveg", "favázas életmódhangulat", "nem igazolt gyorsasági állítás"],
     },
     "Casa Moderna": {
-        "position": "Kortárs, prémium otthon és építészeti komfort; az átgondolt tér és technológia mindennapi értéke.",
-        "voice": "Elegáns, érzékletes, visszafogottan értékesítő magázó magyar.",
-        "required": ["konkrét lakóhelyzet", "építészeti vagy komfortdöntés", "prémium ügyfélhaszon"],
+        "position": (
+            "Építészvezérelt, prémium egyedi családi ház: építészet, enteriőr és személyes "
+            "concierge egy folyamatban."
+        ),
+        "voice": "Magázó, kurátori, szűkszavú és ítéletmentes magyar.",
+        "required": [
+            "konkrét lakóhelyzet",
+            "egyedi ház építészeti vagy enteriőrdöntése",
+            "a brief igazolt következő lépése; márkaforrásnál: Építészkonzultációt kérek.",
+        ],
         "forbidden": ["olcsóság vagy finanszírozás mint főígéret", "generikus luxusjelzők", "nem igazolt okosotthon-funkció"],
     },
     "BauFreund": {
@@ -228,9 +235,16 @@ BRAND_PUBLICATION_CONTRACTS = {
         "forbidden": ["ingatlanbefektetési hozam", "értékbecslés mint főajánlat", "ingatlanüzemeltetés", "általános projektmenedzsment"],
     },
     "Everyday Homes": {
-        "position": "Elérhető, praktikus családi otthon és egyszerűbb, egy kézben kezelt megvalósítás.",
-        "voice": "Közvetlen, tegező, hétköznapi, reményt adó és konkrét magyar.",
-        "required": ["felismerhető családi helyzet", "kézzelfogható otthon- vagy folyamategy­szerűsítési előny", "egy termék- vagy cselekvési CTA"],
+        "position": (
+            "Praktikus családi otthon: alaprajzi rutinok, tárolás és mindennapi kényelem, "
+            "a család használati igényeiből kiindulva."
+        ),
+        "voice": "Tegező, életközeli, egyszerű, megnyugtató és közérthető magyar.",
+        "required": [
+            "felismerhető családi helyzet",
+            "kézzelfogható alaprajzi, tárolási vagy térhasználati előny",
+            "a brief igazolt következő lépése; alaprajzi forrásnál: Kérek alaprajzi konzultációt.",
+        ],
         "forbidden": ["bizonyíték nélküli finanszírozási összeg", "Family Homes karakter- és napirend-mechanizmusa", "száraz mérnöki konzultáció mint főtéma"],
     },
     "Family Homes": {
