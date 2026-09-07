@@ -13,18 +13,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from app.models import (
-    AuditLog,
-    FinanceAllocationSnapshot,
-    FinanceCommitment,
-    MarginGateDecision,
-    MarginGateVatRule,
-    ProjectFinancePlan,
-)
-from app.services.budget_allocation import (
-    build_allocation_from_detailed_lines,
-    create_allocation_snapshot,
-)
+from app.models import ( AuditLog, FinanceAllocationSnapshot, FinanceCommitment, MarginGateDecision, MarginGateVatRule, ProjectFinancePlan, )
+from app.services.budget_allocation import ( build_allocation_from_detailed_lines, create_allocation_snapshot, )
 from app.services.tender_margin_gate import (
     MarginGateBlocked,
     MarginGateStalePlan,
@@ -172,10 +162,7 @@ def test_invalid_plan_or_line_states_block(db, mutator, expected_code):
     assert excinfo.value.reason_code == expected_code
 
 
-@pytest.mark.parametrize(
-    "cost_code,expected_code",
-    [("NEM-LETEZO", "unknown_cost_code"), ("", "missing_cost_code_mapping")],
-)
+@pytest.mark.parametrize( "cost_code,expected_code", [("NEM-LETEZO", "unknown_cost_code"), ("", "missing_cost_code_mapping")], )
 def test_unknown_or_missing_cost_code_blocks(db, cost_code, expected_code):
     seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
     with pytest.raises(MarginGateBlocked) as excinfo:
@@ -349,10 +336,7 @@ def test_direct_cost_baseline_package_requires_full_revenue(db):
     db.commit()
 
 
-@pytest.mark.parametrize(
-    "revenue,amount",
-    [("9230769.23", "6000000"), ("9000000", "100")],
-)
+@pytest.mark.parametrize( "revenue,amount", [("9230769.23", "6000000"), ("9000000", "100")], )
 def test_direct_cost_baseline_insufficient_revenue_blocks_fail_closed(db, revenue, amount):
     # Kerekített elvárt bevétel (6,000,000 / 0.65 → 9,230,769.23) mellett a
     # pontos hányados 35.00 ALATT marad; a kapu a kerekítetlen értékkel dönt,
@@ -452,6 +436,73 @@ def test_detailed_stale_snapshot_blocks_after_plan_change(db):
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="REINFORCING", amount="100")
     assert excinfo.value.reason_code == "allocation_stale_snapshot"
+
+
+# --- Task78: részleges gyerekallokáció margin-bypass zárása ---
+
+
+def _partial_detailed_plan(db, *, children=("2000000", "2000000"), project=PROJECT):
+    """NRE-csomag (boríték 6.5M) gyerekekkel + 2M külön direct sor: a
+    gyerekösszeg < boríték, a fel nem osztott maradék a bypass-célpont."""
+    plan = seed_gate_plan(db, project_id=project, revenue="10000000", direct_lines=[("MAT-X", "2000000", "material")], summary_lines=[{"cost_code": "PACK-PART", "amount": "10000000", "amount_basis": "NET_REVENUE_ENVELOPE", "component": "other"}],)
+    parent_id = get_line(db, plan, "PACK-PART").line_id
+    for code, amount in zip(("CHILD-P1", "CHILD-P2"), children):
+        add_child_line(db, plan, cost_code=code, amount=amount, component="labour", parent_summary_line_id=parent_id)
+    build_allocation_from_detailed_lines(db, plan_id=plan.plan_id, summary_line_id=parent_id, approver="fixture-finance@imperial.local", rationale="Szintetikus gyerekallokáció a bypass-remediációs teszthez.",)
+    return plan
+
+
+def test_partial_detailed_allocation_unallocated_blocks_before_mutation(db):
+    # A korábbi vetület csak a gyerekeket (4M+2M) számította volna: 40%
+    # fedezet → PASS. A kapu a fel nem osztott 2.5M boríték-maradékot
+    # fail-closed zárolja, MUTÁCIÓ ELŐTT: a teljes 65%-os borítékkal (8.5M)
+    # a fedezet 15% — részleges allokáció nem javíthat fedezetet, nem érhet
+    # át egyetlen award/order/commitment/contract határt sem.
+    plan = _partial_detailed_plan(db)
+    with pytest.raises(MarginGateBlocked) as excinfo:
+        _evaluate(db, cost_code="CHILD-P1", amount="100")
+    assert excinfo.value.reason_code == "allocation_unallocated"
+    assert db.scalars(select(FinanceCommitment)).all() == []
+    decisions = list(db.scalars(select(MarginGateDecision)).all())
+    assert decisions and decisions[0].decision == "BLOCK"
+    assert decisions[0].block_reason_code == "allocation_unallocated"
+    snapshot = db.scalar(select(FinanceAllocationSnapshot).where(FinanceAllocationSnapshot.plan_id_fk == plan.id))
+    assert snapshot.unallocated_amount == Decimal("2500000.00")
+
+
+def test_partial_detailed_allocation_remainder_counted_once_not_outperforming(db):
+    # Inkonzisztens/kézzel rögzített pillanatkép (unallocated=0, gyerekösszeg
+    # < boríték): a fedetlen maradék konzervatívan EGYSZER kerül a vetületbe
+    # — (10M − 8.5M) / 10M = 15% → BLOCK, a vetület pontosan a teljes boríték.
+    plan = _partial_detailed_plan(db)
+    snapshot = db.scalar(select(FinanceAllocationSnapshot).where(FinanceAllocationSnapshot.plan_id_fk == plan.id))
+    snapshot.unallocated_amount = Decimal("0")
+    db.commit()
+    with pytest.raises(MarginGateBlocked) as excinfo:
+        _evaluate(db, cost_code="CHILD-P1", amount="100")
+    assert excinfo.value.reason_code == "margin_below_minimum"
+    assert excinfo.value.margin_percent == Decimal("15.00")
+    assert db.scalars(select(FinanceCommitment)).all() == []
+    evidence = list(db.scalars(select(MarginGateDecision)).all())[-1]
+    assert evidence.projected_direct_cost_huf == Decimal("8500000.00")
+    import json
+    calc = json.loads(evidence.calculation_json)
+    parent_id = get_line(db, plan, "PACK-PART").line_id
+    # A csomag-vetület pontosan a fedetlen maradék (2.5M), a gyereksorok a
+    # per-line ciklusban (4M), a külön direct sor 2M — dupla számolás nélkül.
+    assert calc["packages"][parent_id]["projected_direct"] == "2500000.00"
+    assert calc["projected_total_direct"] == "8500000.00"
+    # Teljes, pontosan egyeztetett gyerekallokáció (6.5M = boríték): a vetület
+    # AZONOS (8.5M, 15% BLOCK) — a részleges pillanatkép ugyanarra a
+    # konzervatív vetületre zárul, soha nem „javíthat" a teljes allokációhoz
+    # képest.
+    complete = _partial_detailed_plan(db, children=("3250000", "3250000"), project="GATE-TEST-CMPL")
+    with pytest.raises(MarginGateBlocked) as excinfo:
+        _evaluate(db, cost_code="CHILD-P1", amount="100", project="GATE-TEST-CMPL")
+    assert excinfo.value.reason_code == "margin_below_minimum"
+    assert excinfo.value.margin_percent == Decimal("15.00")
+    complete_evidence = list(db.scalars(select(MarginGateDecision)).all())[-1]
+    assert complete_evidence.projected_direct_cost_huf == Decimal("8500000.00")
 
 
 # --- AC-02: snapshot-only szakágkód gyereksoros csomagnál (Review B CRITICAL) ---

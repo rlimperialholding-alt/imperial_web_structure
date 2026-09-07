@@ -88,6 +88,7 @@ from .models import (
     PilotRun,
     PMGateCheck,
     PMWorkPackage,
+    ProjectBudgetImport,
     ProjectRegistry,
     PublicationBundleRecord,
     ReleaseRecord,
@@ -15136,6 +15137,18 @@ def api_budget_import_approve(
     # A generikus API token nem ad platform-admin szerepkört: a jóváhagyó a
     # bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó (az ő e-mailje
     # az auditált actor), a token csak a szállítási réteg azonosítása.
+    # Task78: az import projektjét ELŐBB fel kell oldani, és a bejelentkezett
+    # actor hozzáférése az import PONTOS projektjéhez kötelező — a szolgáltatás
+    # import-terv egyezése nem helyettesíti az actor-jogosultságot.
+    import_row = db.scalar(
+        select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id)
+    )
+    if import_row is None:
+        raise HTTPException(404, import_id)
+    try:
+        require_project_finance_scope(db, user, import_row.project_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     try:
         row = approve_budget_import_record(
             db,
@@ -15267,6 +15280,7 @@ async def tender_purchase_order_preparation_approve_ui(
 
 
 @app.get("/margin-gate/decisions")
+@app.get("/api/margin-gate/decisions")
 def api_margin_gate_decisions(
     project_id: str | None = None,
     db: Session = Depends(get_db),
@@ -15274,6 +15288,7 @@ def api_margin_gate_decisions(
 ):
     # Task77 Gate7: a generikus token soha nem fedhet fel keresztprojekt
     # döntést — pénzügyi/vezetői actor kell, a lista projektscope-ra szűrt.
+    # Task78: a kötelező /api út ugyanazzal a jogosultsági/szűrési lánccal.
     allowed = finance_project_ids_for_user(db, user)
     if project_id is not None:
         try:
@@ -15318,7 +15333,17 @@ def margin_gate_dashboard(
         raise HTTPException(
             403, "A TENDER-kapu döntésnaplója csak pénzügyi/vezetői jogosultsággal érhető el."
         )
-    rows = list_decisions(db, project_id=project_id, limit=200)
+    # Task78: a dashboard az actor engedélyezett projektkörét használja —
+    # körön kívüli projekt 403, a naplólista ugyanazzal a scope-szűréssel
+    # (keresztprojekt-döntés soha nem renderelődik). None = teljes portfólió.
+    allowed = finance_project_ids_for_user(db, user)
+    if project_id and allowed is not None and project_id not in allowed:
+        raise HTTPException(
+            403, "A kért projekt nincs a felhasználó TENDER-kapu projektkörében."
+        )
+    rows = list_decisions(
+        db, project_id=project_id, limit=200, allowed_project_ids=allowed
+    )
     decisions = [
         {
             "decision_id": row.decision_id,

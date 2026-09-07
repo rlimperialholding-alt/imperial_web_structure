@@ -24,21 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
-from ..models import (
-    ProjectBudgetImport,
-    ProjectFinanceBudgetLine,
-    ProjectFinancePlan,
-)
-from .tender_margin_gate import (
-    AMOUNT_BASES,
-    COST_CLASSES,
-    DIRECT_COMPONENTS,
-    MarginGateBlocked,
-    _id,
-    canonical_json,
-    sha256_hex,
-    utcnow,
-)
+from ..models import (ProjectBudgetImport, ProjectFinanceBudgetLine, ProjectFinancePlan,)
+from .tender_margin_gate import (AMOUNT_BASES, COST_CLASSES, DIRECT_COMPONENTS, MarginGateBlocked, _id, canonical_json, sha256_hex, utcnow,)
 
 MAX_UPLOAD_BYTES = 1_000_000
 MAX_DATA_ROWS = 500
@@ -47,8 +34,7 @@ MAX_DESCRIPTION_LEN = 500
 MAX_COST_CODE_LEN = 100
 MAX_AMOUNT = Decimal("9999999999999999.99")
 
-REQUIRED_HEADERS = (
-    "cost_code",
+REQUIRED_HEADERS = ("cost_code",
     "category",
     "description",
     "amount",
@@ -57,8 +43,7 @@ REQUIRED_HEADERS = (
     "direct_cost_component",
     "amount_basis",
     "is_summary_package",
-    "parent_summary_line_id",
-)
+    "parent_summary_line_id",)
 
 IMPORT_ROLES = {"finance", "managing-director", "owner", "platform-admin"}
 
@@ -152,8 +137,7 @@ def _validate_rows(rows: list[dict[str, str]]) -> tuple[list[dict[str, Any]], st
             raise BudgetImportError([_fail("Hiányzó leírás.", index, "missing_description")])
         if len(description) > MAX_DESCRIPTION_LEN:
             raise BudgetImportError([_fail("Túl hosszú leírás.", index, "description_too_long")])
-        normalized.append(
-            {
+        normalized.append({
                 "cost_code": cost_code,
                 "category": (row.get("category") or "").strip()[:120] or "egyéb",
                 "description": description,
@@ -164,23 +148,17 @@ def _validate_rows(rows: list[dict[str, str]]) -> tuple[list[dict[str, Any]], st
                 "amount_basis": amount_basis or None,
                 "is_summary_package": is_summary,
                 "parent_summary_line_id": parent or None,
-            }
-        )
+            })
     unknown_parents = child_parents - summary_codes
     if unknown_parents:
-        raise BudgetImportError([ _fail( "A gyereksor ismeretlen összegző csomagra hivatkozik: " + ", ".join(sorted(unknown_parents)), None, "unknown_parent_summary",)
-            ]
-        )
+        raise BudgetImportError([ _fail("A gyereksor ismeretlen összegző csomagra hivatkozik: " + ", ".join(sorted(unknown_parents)), None, "unknown_parent_summary",)
+            ])
     if len(file_amount_bases) > 1:
-        raise BudgetImportError([ _fail( "Egy fájlban az összegző csomagsorok amount_basis értékének " "egységesnek kell lennie.", None, "mixed_amount_basis",)
-            ]
-        )
+        raise BudgetImportError([ _fail("Egy fájlban az összegző csomagsorok amount_basis értékének " "egységesnek kell lennie.", None, "mixed_amount_basis",) ])
     return normalized, (sorted(file_amount_bases)[0] if file_amount_bases else "")
 
 
-def parse_budget_file(
-    filename: str, data: bytes
-) -> tuple[list[dict[str, str]], list[str], str]:
+def parse_budget_file(filename: str, data: bytes) -> tuple[list[dict[str, str]], list[str], str]:
     """Szigorú CSV/XLSX feldolgozás; a visszatérés (sorok, fejléc, formátum)."""
     name = (filename or "").strip().lower()
     if len(data) > MAX_UPLOAD_BYTES:
@@ -288,14 +266,10 @@ def _validate_headers(headers: list[str]) -> None:
     if len(cleaned) > MAX_COLUMNS:
         raise BudgetImportError([_fail(f"A fejléc több mint {MAX_COLUMNS} oszlopot tartalmaz.", None, "too_many_columns")])
     if sorted(cleaned) != sorted(REQUIRED_HEADERS):
-        raise BudgetImportError([ _fail( "A fejlécnek pontosan a következő oszlopokat kell tartalmaznia: " + ", ".join(REQUIRED_HEADERS), None, "invalid_headers",)
-            ]
-        )
+        raise BudgetImportError([ _fail("A fejlécnek pontosan a következő oszlopokat kell tartalmaznia: " + ", ".join(REQUIRED_HEADERS), None, "invalid_headers",) ])
 
 
-def preview_budget_import(
-    db: Session, *, project_id: str, file_name: str, data: bytes, actor: str
-) -> ProjectBudgetImport:
+def preview_budget_import(db: Session, *, project_id: str, file_name: str, data: bytes, actor: str) -> ProjectBudgetImport:
     """Preview: semmilyen tervmódosítás; a rekord a parse-eredménnyel jön létre."""
     content_sha256 = hashlib.sha256(data).hexdigest()
     try:
@@ -303,26 +277,22 @@ def preview_budget_import(
         _validate_headers(headers)
         normalized, file_amount_basis = _validate_rows(rows)
     except BudgetImportError as exc:
-        row = ProjectBudgetImport(
-            import_id=_id("BIMP"), project_id=project_id, file_name=file_name[:500],
+        row = ProjectBudgetImport(import_id=_id("BIMP"), project_id=project_id, file_name=file_name[:500],
             source_format=("xlsx" if (file_name or "").strip().lower().endswith(".xlsx") else "csv"),
             content_sha256=content_sha256, preview_sha256="0" * 64, row_count=0,
             amount_basis="NET_REVENUE_ENVELOPE", currency="HUF", status="rejected",
-            preview_json="{}", error_json=canonical_json(exc.errors), imported_by=actor,
-        )
+            preview_json="{}", error_json=canonical_json(exc.errors), imported_by=actor,)
         db.add(row)
         audit(db, actor=actor, action="budget.import.rejected", entity_type="finance_budget_import", entity_id=row.import_id, after={"content_sha256": content_sha256, "errors": exc.errors[:10]},)
         db.commit()
         db.refresh(row)
         return row
     preview_json = canonical_json({"rows": normalized, "content_sha256": content_sha256, "amount_basis": file_amount_basis})
-    row = ProjectBudgetImport(
-        import_id=_id("BIMP"), project_id=project_id, file_name=file_name[:500],
+    row = ProjectBudgetImport(import_id=_id("BIMP"), project_id=project_id, file_name=file_name[:500],
         source_format=source_format, content_sha256=content_sha256,
         preview_sha256=sha256_hex(preview_json), row_count=len(normalized),
         amount_basis=file_amount_basis or "NET_REVENUE_ENVELOPE", currency="HUF",
-        status="preview", preview_json=preview_json, error_json="[]", imported_by=actor,
-    )
+        status="preview", preview_json=preview_json, error_json="[]", imported_by=actor,)
     db.add(row)
     audit(db, actor=actor, action="budget.import.previewed", entity_type="finance_budget_import", entity_id=row.import_id, after={"content_sha256": content_sha256, "row_count": len(normalized)},)
     db.commit()
@@ -330,9 +300,7 @@ def preview_budget_import(
     return row
 
 
-def approve_budget_import(
-    db: Session, *, import_id: str, plan_id: str, actor: str, actor_role: str
-) -> ProjectBudgetImport:
+def approve_budget_import(db: Session, *, import_id: str, plan_id: str, actor: str, actor_role: str) -> ProjectBudgetImport:
     """Jóváhagyás kizárólag draft tervre, a tárolt, hash-elt preview-ból; a
     „preview után megváltozott bemenet" fail-closed elutasítás."""
     if actor_role not in IMPORT_ROLES:
@@ -348,17 +316,21 @@ def approve_budget_import(
     # ellenőrzés a zár UTÁN fut (konkurens jóváhagyás nem írathat immutable
     # tervre); a populate_existing az elavult identitástérkép-objektumot is
     # frissíti.
-    plan = db.scalar(
-        select(ProjectFinancePlan)
-        .where(ProjectFinancePlan.plan_id == plan_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    plan = db.scalar(select(ProjectFinancePlan) .where(ProjectFinancePlan.plan_id == plan_id) .with_for_update() .execution_options(populate_existing=True))
     if plan is None:
         raise KeyError(plan_id)
     # Projekt-scope (Review A HIGH / Task76): keresztprojekt-import fail-closed.
     if plan.project_id != row.project_id:
         raise MarginGateBlocked("import_plan_project_mismatch", "A költségvetés-import projektje és a célterv projektje nem " "egyezik; a jóváhagyás fail-closed elutasítva.",)
+    # Task78: a tervzár UTÁN az import sor újrazárolása és a preview-állapot
+    # ÚJRAELLENŐRZÉSE a védett tranzakcióban — két konkurens jóváhagyás közül
+    # a második itt már approved státuszt lát, a sorok legfeljebb egyszer
+    # kerülnek a tervre.
+    row = db.scalar(select(ProjectBudgetImport) .where(ProjectBudgetImport.import_id == import_id) .with_for_update() .execution_options(populate_existing=True))
+    if row is None:
+        raise KeyError(import_id)
+    if row.status != "preview":
+        raise MarginGateBlocked("import_not_preview", "Csak hibátlan preview állapotú import hagyható jóvá.",)
     if plan.status != "draft":
         raise MarginGateBlocked("import_target_not_draft", "A költségvetés-import kizárólag draft tervre írható; jóváhagyott " "terv immutable.",)
     payload = json.loads(row.preview_json)
@@ -367,10 +339,8 @@ def approve_budget_import(
     # menet oldja fel a terv sorazonosítóira (line_id).
     pending_parents: dict[int, str] = {}
     for index, entry in enumerate(payload["rows"]):
-        existing_line = db.scalar(select(ProjectFinanceBudgetLine).where( ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.cost_code == entry["cost_code"],)
-        )
-        line_fields = dict(
-            category=entry["category"],
+        existing_line = db.scalar(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.cost_code == entry["cost_code"],))
+        line_fields = dict(category=entry["category"],
             description=entry["description"],
             budget_net=Decimal(entry["amount"]),
             cost_class=entry["cost_class"],
@@ -379,18 +349,15 @@ def approve_budget_import(
             is_summary_package=bool(entry["is_summary_package"]),
             currency="HUF",
             source_type="budget_import",
-            source_id=row.import_id,
-        )
+            source_id=row.import_id,)
         if existing_line is None:
-            existing_line = ProjectFinanceBudgetLine(
-                line_id=_id("FBL"),
+            existing_line = ProjectFinanceBudgetLine(line_id=_id("FBL"),
                 plan_id_fk=plan.id,
                 cost_code=entry["cost_code"],
                 committed_net=Decimal("0"),
                 actual_net=Decimal("0"),
                 estimate_to_complete_net=Decimal("0"),
-                **line_fields,
-            )
+                **line_fields,)
             db.add(existing_line)
         else:
             existing_line.parent_summary_line_id = None
@@ -403,14 +370,11 @@ def approve_budget_import(
     if pending_parents:
         code_to_line_id = {
             line.cost_code: line.line_id
-            for line in db.scalars(
-                select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)
-            ).all()
+            for line in db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all()
         }
         for index, parent_code in pending_parents.items():
             entry = payload["rows"][index]
-            line = db.scalar(select(ProjectFinanceBudgetLine).where( ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.cost_code == entry["cost_code"],)
-            )
+            line = db.scalar(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.cost_code == entry["cost_code"],))
             parent_line_id = code_to_line_id.get(parent_code)
             if parent_line_id is None:
                 raise MarginGateBlocked("unknown_parent_summary", "A gyereksor ismeretlen összegző csomagra hivatkozik; " "a jóváhagyás fail-closed elutasítva.",)

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.43.1 – TENDER-kapu: margin-bypass, scope és konkurencia remediáció (Task78)
+
+- Részleges gyerekallokáció nem javíthat fedezetet: gyereksoros csomagnál a nem nulla `unallocated_amount` fail-closed blokk a mutáció ELŐTT, az esetleges fedetlen boríték-maradék konzervatívan egyszer a direct vetületbe számít.
+- Kötelező `/api/margin-gate/decisions` elérési út azonos jogosultsági/szűrési lánccal; a HTML `/margin-gate` dashboard az actor projektkörére szűr, a körön kívüli projekt kérése 403.
+- Az import-jóváhagyás az import projektjének feloldása után az actor projekt-hozzáférését ellenőrzi, a tervzár után az import sorállapotát újraellenőrzi (konkurens jóváhagyásnál a sorok legfeljebb egyszer kerülnek a tervre).
+- A 0073-as migráció downgrade-je a selection-id egyedi kényszert is eldobja (guarddal, a függő táblák ELŐTT) — a séma pontosan a 0072-es headet állítja vissza, a re-upgrade idempotens.
+
 ## 1.43.0 – TENDER-kapu: 35% direct-margin hard gate és summary-budget allokáció (Task75/Task76)
 
 - Egyetlen kanonikus, tranzakcióba ágyazott, fail-closed 35% direct-margin kapu a tender-odaítélés, PO-előkészítés-jóváhagyás, beszerzési döntés véglegesítés, megrendelés létrehozás/visszaigazolás, finance-commitment outbox és alvállalkozói szerződés-átmenetek elé; nincs admin/owner override, a kapu nettó alapon, determinisztikus Decimal aritmetikával dönt; immutable PASS/BLOCK döntéspillanatképek, TOCTOU-őr.

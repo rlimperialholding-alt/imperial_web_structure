@@ -80,14 +80,7 @@ def seed_gate_plan(
     return plan
 
 
-def ensure_gate_plan(
-    db: Session,
-    *,
-    project_id: str,
-    revenue: str,
-    direct_lines: Iterable[tuple[str, str, str]],
-    plan_id: str | None = None,
-) -> ProjectFinancePlan:
+def ensure_gate_plan( db: Session, *, project_id: str, revenue: str, direct_lines: Iterable[tuple[str, str, str]], plan_id: str | None = None, ) -> ProjectFinancePlan:
     """Jóváhagyott, hash-elt kapu-terv, ha még nincs ilyen."""
     from app.models import ProjectFinancePlan
     existing = db.scalar(select(ProjectFinancePlan).where( ProjectFinancePlan.project_id == project_id, ProjectFinancePlan.status == "approved",)
@@ -106,15 +99,7 @@ def get_line(db: Session, plan: ProjectFinancePlan, cost_code: str) -> ProjectFi
     return line
 
 
-def add_child_line(
-    db: Session,
-    plan: ProjectFinancePlan,
-    *,
-    cost_code: str,
-    amount: str,
-    component: str,
-    parent_summary_line_id: str,
-) -> ProjectFinanceBudgetLine:
+def add_child_line( db: Session, plan: ProjectFinancePlan, *, cost_code: str, amount: str, component: str, parent_summary_line_id: str, ) -> ProjectFinanceBudgetLine:
     """Gyereksor hozzáadása összegző csomagsorhoz."""
     line = ProjectFinanceBudgetLine(
         line_id=_line_id(),

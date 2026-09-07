@@ -17,8 +17,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
-from app.models import (
-    ContractWorkflowRecord,
+from app.models import (ContractWorkflowRecord,
     FinanceCommitment,
     MarginGateDecision,
     OutboxMessage,
@@ -29,14 +28,11 @@ from app.models import (
     TenderBid,
     TenderInvitation,
     TenderPackage,
-    TenderPurchaseOrderPreparation,
-)
+    TenderPurchaseOrderPreparation,)
 from app.seed import DEMO_PASSWORD
 from app.services import procurement as procurement_service
 from app.services.commercial_integration import generate_contract_package
-from app.services.tender_portal import (
-    create_tender,
-)
+from app.services.tender_portal import (create_tender,)
 from app.services.tender_margin_gate import MarginGateBlocked
 from margin_gate_fixtures import seed_gate_plan
 
@@ -56,18 +52,14 @@ def _login(client, email: str = "platform-admin@imperial.local") -> None:
 
 def _project(db):
     if not db.scalar(select(ProjectRegistry).where(ProjectRegistry.project_id == PROJECT)):
-        db.add(ProjectRegistry(
-            project_id=PROJECT, name="Enforcement tesztprojekt", status="active",
-            responsible="project-manager@imperial.local",
-        ))
+        db.add(ProjectRegistry(project_id=PROJECT, name="Enforcement tesztprojekt", status="active", responsible="project-manager@imperial.local",))
         db.commit()
 
 
 def _tender(db, *, cost_code: str | None = None) -> TenderPackage:
     _project(db)
     now = datetime.now(UTC)
-    tender = create_tender(
-        db,
+    tender = create_tender(db,
         _user("project-manager"),
         tender_id=TENDER_ID,
         project_id=PROJECT,
@@ -77,8 +69,7 @@ def _tender(db, *, cost_code: str | None = None) -> TenderPackage:
         question_deadline_at=now + timedelta(days=2),
         submission_deadline_at=now + timedelta(days=5),
         cost_code=cost_code,
-        prequalification_required=False,
-    )
+        prequalification_required=False,)
     tender.status = "evaluation"
     db.commit()
     db.refresh(tender)
@@ -90,33 +81,27 @@ def _bid(db, tender: TenderPackage, *, net_total: str = "5000000") -> TenderBid:
     token = uuid.uuid4().hex
     partner_email = f"partner-{token[:8]}@example.com"
     partner = create_partner(db, _user("project-manager"), company_name="Szintetikus Partner Kft.", primary_email=partner_email, partner_id=f"PAR-{token[:8]}",)
-    invitation = TenderInvitation(
-        invitation_id=f"INV-{token[:10]}",
+    invitation = TenderInvitation(invitation_id=f"INV-{token[:10]}",
         tender_id_fk=tender.id, partner_id=partner.partner_id,
         partner_email=partner_email, company_name="Szintetikus Partner Kft.",
         contact_name="Partner Péter", access_token=token * 2,
-        expires_at=datetime.now(UTC) + timedelta(days=30), status="sent",
-    )
+        expires_at=datetime.now(UTC) + timedelta(days=30), status="sent",)
     db.add(invitation)
     db.flush()
     bid = TenderBid(bid_id=f"BID-{uuid.uuid4().hex[:10]}", tender_id_fk=tender.id, invitation_id_fk=invitation.id, status="submitted", currency="HUF", net_total=Decimal(net_total),)
     db.add(bid)
     db.flush()
     from app.models import TenderBidVersion, TenderEvaluation
-    db.add(TenderBidVersion(
-        bid_version_id=f"BV-{uuid.uuid4().hex[:10]}", bid_id_fk=bid.id, version=1,
+    db.add(TenderBidVersion(bid_version_id=f"BV-{uuid.uuid4().hex[:10]}", bid_id_fk=bid.id, version=1,
         lifecycle_status="submitted", currency="HUF", net_total=Decimal(net_total),
         vat_total=Decimal("0"), gross_total=Decimal(net_total),
         normalization_status="clean", normalization_issues_json="[]",
-        content_sha256="a" * 64,
-    ))
-    db.add(TenderEvaluation(
-        evaluation_id=f"EVAL-{uuid.uuid4().hex[:10]}", tender_id_fk=tender.id,
+        content_sha256="a" * 64,))
+    db.add(TenderEvaluation(evaluation_id=f"EVAL-{uuid.uuid4().hex[:10]}", tender_id_fk=tender.id,
         bid_id_fk=bid.id, evaluator_email="project-manager@imperial.local",
         price_score=80, technical_score=80, timeline_score=80, references_score=80,
         weighted_total=Decimal("80.00"), recommendation="recommended",
-        notes="Szintetikus értékelés a kapu teszthez.",
-    ))
+        notes="Szintetikus értékelés a kapu teszthez.",))
     db.commit()
     return bid
 
@@ -172,12 +157,10 @@ def test_award_with_approved_budget_passes(client, db):
 
 
 def _preparation(db, preparation_id: str, *, bid=None, status="draft") -> TenderPurchaseOrderPreparation:
-    preparation = TenderPurchaseOrderPreparation(
-        preparation_id=preparation_id, tender_id=TENDER_ID, project_id=PROJECT,
+    preparation = TenderPurchaseOrderPreparation(preparation_id=preparation_id, tender_id=TENDER_ID, project_id=PROJECT,
         partner_id="PAR-X", bid_id=bid.bid_id if bid else "BID-X", bid_version_id="BV-X",
         line_snapshot_json="[]", status=status, eligibility_snapshot_json="{}",
-        content_sha256="a" * 64, prepared_by="fixture@imperial.local",
-    )
+        content_sha256="a" * 64, prepared_by="fixture@imperial.local",)
     db.add(preparation)
     db.commit()
     return preparation
@@ -432,11 +415,9 @@ def _previewed_import(client, project_id: str = PROJECT) -> str:
 
 
 def _draft_plan_row(db, *, project_id: str, plan_id: str) -> None:
-    db.add(ProjectFinancePlan(
-        plan_id=plan_id, project_id=project_id, version=1, status="draft",
+    db.add(ProjectFinancePlan(plan_id=plan_id, project_id=project_id, version=1, status="draft",
         currency="HUF", contract_revenue_net=Decimal("10000000"),
-        created_by="fixture@imperial.local",
-    ))
+        created_by="fixture@imperial.local",))
     db.commit()
 
 
@@ -472,31 +453,41 @@ def test_budget_import_approve_api_requires_finance_actor(client, db):
     assert preview_audit is not None and preview_audit.actor == "finance@imperial.local"
 
 
-def test_margin_gate_decisions_api_role_and_scope(client, db):
-    # Task77 AC-02: a generikus token soha nem fedhet fel keresztprojekt
-    # döntést; a lista az actor projektscope-jára szűrt (a szolgáltatási
-    # szűrőt a gate tesztfájl bizonyítja).
+def test_margin_gate_decisions_api_role_and_scope(client, db, monkeypatch):
+    # Task77 AC-02 + Task78: a generikus token soha nem fedhet fel
+    # keresztprojekt döntést; a lista az actor projektscope-jára szűrt —
+    # a kötelező /api elérési úton is, azonos jogosultsági/szűrési lánccal.
     from app.models import MarginGateDecision
     for project_id, decision_id in ((PROJECT, "MGD-API-1"), ("TASK77-002", "MGD-API-2")):
-        db.add(MarginGateDecision(
-            decision_id=decision_id, project_id=project_id,
+        db.add(MarginGateDecision(decision_id=decision_id, project_id=project_id,
             plan_id=f"FIN-PLAN-{project_id}", plan_version=1,
             action_type="procurement_order_create",
             subject_type="procurement_selection", subject_id=f"SEL-{project_id}",
             proposed_net_huf=Decimal("1000"), decision="PASS",
             required_margin_percent=Decimal("35.00"),
             input_snapshot_json="{}", input_sha256="0" * 64,
-            created_by="fixture@imperial.local", created_at=datetime.now(UTC),
-        ))
+            created_by="fixture@imperial.local", created_at=datetime.now(UTC),))
     db.commit()
-    client.cookies.clear()
-    assert client.get("/margin-gate/decisions").status_code == 401
-    _login(client, "project-manager@imperial.local")
-    assert client.get("/margin-gate/decisions").status_code == 403
+    for path in ("/margin-gate/decisions", "/api/margin-gate/decisions"):
+        client.cookies.clear()
+        assert client.get(path).status_code == 401
+        _login(client, "project-manager@imperial.local")
+        assert client.get(path).status_code == 403
     _login(client, "finance@imperial.local")
     response = client.get("/margin-gate/decisions", params={"project_id": PROJECT})
     assert response.status_code == 200
     assert [d["decision_id"] for d in response.json()["decisions"]] == ["MGD-API-1"]
+    api_response = client.get("/api/margin-gate/decisions", params={"project_id": PROJECT})
+    assert api_response.status_code == 200
+    assert [d["decision_id"] for d in api_response.json()["decisions"]] == ["MGD-API-1"]
+    # Task78: szűkített projektkörű actor — a körön kívüli projekt kérése 403,
+    # a lista csak a kör döntéseit adja vissza (keresztprojekt szivárgás tilos).
+    monkeypatch.setattr("app.services.project_finance.finance_project_ids_for_user", lambda db, user: {PROJECT})
+    monkeypatch.setattr("app.main.finance_project_ids_for_user", lambda db, user: {PROJECT})
+    restricted = client.get("/api/margin-gate/decisions")
+    assert restricted.status_code == 200
+    assert [d["project_id"] for d in restricted.json()["decisions"]] == [PROJECT]
+    assert client.get("/api/margin-gate/decisions", params={"project_id": "TASK77-002"}).status_code == 403
 
 
 def test_budget_import_approve_api_rejects_cross_project_plan(client, db):
@@ -505,6 +496,61 @@ def test_budget_import_approve_api_rejects_cross_project_plan(client, db):
     _login(client, "finance@imperial.local")
     response = client.post(f"/api/budget-imports/{import_id}/approve", json={"plan_id": "FIN-PLAN-API-02"})
     assert response.status_code == 409
+
+
+def test_budget_import_approve_requires_actor_project_access(client, db, monkeypatch):
+    # Task78: a jóváhagyás az import projektjét ELŐSZÖR feloldja, és a
+    # bejelentkezett actor hozzáférése az import PONTOS projektjéhez kötelező —
+    # a szolgáltatás import-terv egyezése nem helyettesíti az actor-jogosultságot.
+    from app.models import AuditLog, ProjectBudgetImport, ProjectFinanceBudgetLine
+    import_id = _previewed_import(client, project_id="TASK77-002")
+    _draft_plan_row(db, project_id="TASK77-002", plan_id="FIN-PLAN-API-03")
+    monkeypatch.setattr("app.services.project_finance.finance_project_ids_for_user", lambda db, user: {PROJECT})
+    monkeypatch.setattr("app.main.finance_project_ids_for_user", lambda db, user: {PROJECT})
+    _login(client, "finance@imperial.local")
+    response = client.post(f"/api/budget-imports/{import_id}/approve", json={"plan_id": "FIN-PLAN-API-03"})
+    assert response.status_code == 403
+    row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id))
+    assert row.status == "preview" and row.approved_by is None
+    plan = db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == "FIN-PLAN-API-03"))
+    assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+    assert db.scalars(select(AuditLog).where(AuditLog.action == "budget.import.approved")).all() == []
+    # A körön belüli projekt jóváhagyása változatlanul átmegy.
+    in_scope = _previewed_import(client, project_id=PROJECT)
+    _draft_plan_row(db, project_id=PROJECT, plan_id="FIN-PLAN-API-04")
+    _login(client, "finance@imperial.local")
+    assert client.post(f"/api/budget-imports/{in_scope}/approve", json={"plan_id": "FIN-PLAN-API-04"}).status_code == 200
+
+
+def test_margin_gate_dashboard_scopes_to_authorized_projects(client, db, monkeypatch):
+    # Task78: a HTML dashboard az actor engedélyezett projektkörét használja;
+    # körön kívüli projekt kérése 403, keresztprojekt-döntés nem renderelődik.
+    from app.models import MarginGateDecision
+    for project_id, decision_id in ((PROJECT, "MGD-DASH-1"), ("TASK77-002", "MGD-DASH-2")):
+        db.add(MarginGateDecision(decision_id=decision_id, project_id=project_id,
+            plan_id=f"FIN-PLAN-{project_id}", plan_version=1,
+            action_type="procurement_order_create",
+            subject_type="procurement_selection", subject_id=f"SEL-{project_id}",
+            proposed_net_huf=Decimal("1000"), decision="PASS",
+            required_margin_percent=Decimal("35.00"),
+            input_snapshot_json="{}", input_sha256="0" * 64,
+            created_by="fixture@imperial.local", created_at=datetime.now(UTC),))
+    db.commit()
+    monkeypatch.setattr("app.services.project_finance.finance_project_ids_for_user", lambda db, user: {PROJECT})
+    monkeypatch.setattr("app.main.finance_project_ids_for_user", lambda db, user: {PROJECT})
+    _login(client, "finance@imperial.local")
+    response = client.get("/margin-gate")
+    assert response.status_code == 200
+    assert PROJECT in response.text and "TASK77-002" not in response.text
+    assert client.get("/margin-gate", params={"project_id": "TASK77-002"}).status_code == 403
+    scoped = client.get("/margin-gate", params={"project_id": PROJECT})
+    assert scoped.status_code == 200
+    assert PROJECT in scoped.text and "TASK77-002" not in scoped.text
+    # Teljes portfólió (pénzügyi/vezetői szerepkör): a szűrés feloldódik.
+    monkeypatch.undo()
+    full = client.get("/margin-gate")
+    assert full.status_code == 200
+    assert PROJECT in full.text and "TASK77-002" in full.text
 
 
 def test_allocation_snapshot_api_binds_real_actor(client, db):

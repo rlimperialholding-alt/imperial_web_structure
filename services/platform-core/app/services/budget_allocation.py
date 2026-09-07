@@ -17,14 +17,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
-from ..models import (
-    FinanceAllocationSnapshot,
-    FinanceAllocationSnapshotRow,
-    ProjectFinanceBudgetLine,
-    ProjectFinancePlan,
-)
-from .tender_margin_gate import (
-    APPROVED_ALLOCATION_SOURCES,
+from ..models import (FinanceAllocationSnapshot, FinanceAllocationSnapshotRow, ProjectFinanceBudgetLine, ProjectFinancePlan,)
+from .tender_margin_gate import (APPROVED_ALLOCATION_SOURCES,
     DIRECT_COMPONENTS,
     FULL_COVERAGE_PERCENT,
     FULL_RATIO_TOTAL,
@@ -35,8 +29,7 @@ from .tender_margin_gate import (
     _package_metrics,
     canonical_json,
     sha256_hex,
-    utcnow,
-)
+    utcnow,)
 
 DETAILED_LINES = "DETAILED_LINES"
 MAX_ALLOCATION_ROWS = 100
@@ -48,10 +41,7 @@ def _ratio(value: object) -> Decimal:
     try:
         ratio = Decimal(str(value))
     except (InvalidOperation, ValueError, TypeError) as exc:
-        raise MarginGateBlocked(
-            "invalid_ratio",
-            "Az allokációs arány érvénytelen numerikus érték.",
-        ) from exc
+        raise MarginGateBlocked("invalid_ratio", "Az allokációs arány érvénytelen numerikus érték.",) from exc
     if not ratio.is_finite():
         raise MarginGateBlocked("invalid_ratio", "Az allokációs arány nem lehet NaN/Inf.",)
     return ratio.quantize(Decimal("0.0001"), ROUND_HALF_UP)
@@ -70,9 +60,8 @@ def _load_plan(db: Session, plan_id: str, *, for_update: bool = True) -> Project
 
 
 def _summary_line(db: Session, plan: ProjectFinancePlan, summary_line_id: str) -> ProjectFinanceBudgetLine:
-    line = db.scalar(select(ProjectFinanceBudgetLine) .where( ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.line_id == summary_line_id,)
-        .with_for_update()
-    )
+    line = db.scalar(select(ProjectFinanceBudgetLine) .where(ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.line_id == summary_line_id,)
+        .with_for_update())
     if line is None:
         raise KeyError(summary_line_id)
     if not line.is_summary_package:
@@ -92,13 +81,9 @@ def _normalized_ratios(ratios: list[Decimal]) -> list[Decimal]:
     return quantized
 
 
-def _detailed_rows(
-    db: Session, plan: ProjectFinancePlan, line: ProjectFinanceBudgetLine
-) -> tuple[list[dict[str, Any]], Decimal]:
-    children = sorted(db.scalars( select(ProjectFinanceBudgetLine).where( ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.parent_summary_line_id == line.line_id,)
-        ).all(),
-        key=lambda item: item.cost_code,
-    )
+def _detailed_rows(db: Session, plan: ProjectFinancePlan, line: ProjectFinanceBudgetLine) -> tuple[list[dict[str, Any]], Decimal]:
+    children = sorted(db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.parent_summary_line_id == line.line_id,)).all(),
+        key=lambda item: item.cost_code,)
     if not children:
         raise MarginGateBlocked("no_detailed_children", "A részletes-sor forráshoz a csomagnak gyereksorokkal kell " "rendelkeznie; ellenkező esetben arányforrást kell megadni.",)
     if len(children) > MAX_ALLOCATION_ROWS:
@@ -123,8 +108,7 @@ def _detailed_rows(
     return rows, children_sum
 
 
-def create_allocation_snapshot(
-    db: Session,
+def create_allocation_snapshot(db: Session,
     *,
     plan_id: str,
     summary_line_id: str,
@@ -137,8 +121,7 @@ def create_allocation_snapshot(
     coverage_percent: Decimal = Decimal("100"),
     rows: list[dict[str, Any]] | None = None,
     approver: str,
-    rationale: str,
-) -> FinanceAllocationSnapshot:
+    rationale: str,) -> FinanceAllocationSnapshot:
     """Jóváhagyott, verziózott allokációs pillanatkép; DETAILED_LINES-nál a
     gyereksorokból épül (rows tilos), arányforrásnál a rows és a forrás-
     verzió/lenyomat kötelező."""
@@ -200,24 +183,19 @@ def create_allocation_snapshot(
     # (keresztfinanszírozás tilalma).
     other_trade_codes = {
         code
-        for code in db.scalars(
-            select(FinanceAllocationSnapshotRow.trade_code)
+        for code in db.scalars(select(FinanceAllocationSnapshotRow.trade_code)
             .join(FinanceAllocationSnapshot, FinanceAllocationSnapshotRow.allocation_id_fk == FinanceAllocationSnapshot.id,)
-            .where(FinanceAllocationSnapshot.plan_id_fk == plan.id, FinanceAllocationSnapshot.parent_summary_line_id != line.line_id,)
-        ).all()
+            .where(FinanceAllocationSnapshot.plan_id_fk == plan.id, FinanceAllocationSnapshot.parent_summary_line_id != line.line_id,)).all()
     }
     proposed_codes = {entry["trade_code"] for entry in final_rows}
     overlap = sorted(other_trade_codes & proposed_codes)
     if overlap:
         raise MarginGateBlocked("trade_code_cross_package_conflict", "A szakágkód más összegző csomaghoz is hozzá van rendelve; " "keresztfinanszírozás tiltott: " + ", ".join(overlap),)
-    version = 1 + int(db.scalar( select(FinanceAllocationSnapshot.version) .where( FinanceAllocationSnapshot.plan_id_fk == plan.id, FinanceAllocationSnapshot.parent_summary_line_id == line.line_id,)
+    version = 1 + int(db.scalar(select(FinanceAllocationSnapshot.version) .where(FinanceAllocationSnapshot.plan_id_fk == plan.id, FinanceAllocationSnapshot.parent_summary_line_id == line.line_id,)
             .order_by(desc(FinanceAllocationSnapshot.version))
-            .limit(1)
-        )
-        or 0
-    )
-    fields = dict(
-        plan_id_fk=plan.id,
+            .limit(1))
+        or 0)
+    fields = dict(plan_id_fk=plan.id,
         parent_summary_line_id=line.line_id,
         summary_work_type=line.category,
         package_net_revenue_huf=package_net_revenue,
@@ -228,8 +206,7 @@ def create_allocation_snapshot(
         source_version=source_version,
         source_hash=effective_source_hash,
         confidence_percent=confidence_percent,
-        coverage_percent=coverage_percent,
-    )
+        coverage_percent=coverage_percent,)
     payload = {
         "plan_id": plan.plan_id,
         "plan_content_sha256": plan_hash,
@@ -246,8 +223,7 @@ def create_allocation_snapshot(
         "coverage_percent": str(coverage_percent),
         "rows": final_rows,
     }
-    snapshot = FinanceAllocationSnapshot(
-        allocation_id=_id("ALLOC"),
+    snapshot = FinanceAllocationSnapshot(allocation_id=_id("ALLOC"),
         status="approved",
         effective_from=effective_from or utcnow(),
         effective_to=effective_to,
@@ -256,24 +232,18 @@ def create_allocation_snapshot(
         rationale=rationale.strip(),
         snapshot_sha256=sha256_hex(canonical_json(payload)),
         created_at=utcnow(),
-        **fields,
-    )
+        **fields,)
     db.add(snapshot)
     db.flush()
     for entry in final_rows:
-        db.add(
-            FinanceAllocationSnapshotRow(
-                row_id=_id("ALLOCR"),
+        db.add(FinanceAllocationSnapshotRow(row_id=_id("ALLOCR"),
                 allocation_id_fk=snapshot.id,
                 trade_code=entry["trade_code"],
                 direct_cost_component=entry["direct_cost_component"],
                 normalized_ratio=entry["normalized_ratio"],
                 allocated_net_huf=entry["allocated_net_huf"],
-                created_at=utcnow(),
-            )
-        )
-    audit(
-        db,
+                created_at=utcnow(),))
+    audit(db,
         actor=approver,
         action="budget.allocation.snapshot_created",
         entity_type="finance_allocation_snapshot",
@@ -284,40 +254,33 @@ def create_allocation_snapshot(
             "source_type": source_type,
             "version": version,
             "snapshot_sha256": snapshot.snapshot_sha256,
-        },
-    )
+        },)
     db.commit()
     db.refresh(snapshot)
     return snapshot
 
 
-def build_allocation_from_detailed_lines(
-    db: Session,
+def build_allocation_from_detailed_lines(db: Session,
     *,
     plan_id: str,
     summary_line_id: str,
     approver: str,
     rationale: str,
     effective_from: datetime | None = None,
-    effective_to: datetime | None = None,
-) -> FinanceAllocationSnapshot:
+    effective_to: datetime | None = None,) -> FinanceAllocationSnapshot:
     """Precedencia (1): a pillanatkép a részletes jóváhagyott sorokból épül."""
-    return create_allocation_snapshot(
-        db,
+    return create_allocation_snapshot(db,
         plan_id=plan_id,
         summary_line_id=summary_line_id,
         source_type=DETAILED_LINES,
         effective_from=effective_from,
         effective_to=effective_to,
         approver=approver,
-        rationale=rationale,
-    )
+        rationale=rationale,)
 
 
-def list_allocations(
-    db: Session, plan_id: str
-) -> list[FinanceAllocationSnapshot]:
+def list_allocations(db: Session, plan_id: str) -> list[FinanceAllocationSnapshot]:
     plan = db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == plan_id))
     if plan is None:
         raise KeyError(plan_id)
-    return list(db.scalars( select(FinanceAllocationSnapshot) .where(FinanceAllocationSnapshot.plan_id_fk == plan.id) .order_by(desc(FinanceAllocationSnapshot.version)) ).all())
+    return list(db.scalars(select(FinanceAllocationSnapshot) .where(FinanceAllocationSnapshot.plan_id_fk == plan.id) .order_by(desc(FinanceAllocationSnapshot.version))).all())
