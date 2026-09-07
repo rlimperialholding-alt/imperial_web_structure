@@ -105,7 +105,7 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v9"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v10"
 CONTENT_SOURCE_SCOPE_INSTRUCTION = (
     " Az approved statement az igazolt márkatény; a source_evidence exact_excerpts "
     "háttérbizonyíték. A kézikönyvben előírt webes elrendezésből, űrlapból vagy kapacitásból "
@@ -1100,8 +1100,8 @@ def _deterministic_publication_errors(
         r"ingyenes(?:en)?|költségmentes(?:en)?)(?!-e\b)\b",
         r"\b(?:ingyen|kötelezettség nélkül|költség nélkül)\b",
         r"\bnem\s+vállal(?:sz|tok|unk)?\s+(?:semmit|(?:semmilyen\s+)?kötelezettség\w*)\b",
-        r"\bsemmire\s+(?:sem\s+)?kötelez\w*\b",
-        r"\bnem\s+kötelez\w*\s+semmire\b",
+        r"\bsemmire\s+(?:(?:nem(?:\s+is)?|sem)\s+)?kötelez\w*\b",
+        r"\bnem\s+(?:is\s+)?kötelez\w*\s+(?:(?:téged|önt|önöket)\s+)?semmire\b",
         r"\bnem\s+jár\s+(?:semmilyen\s+)?kötelezettség\w*\b",
         r"\bnem\s+kerül\s+semmibe\b",
         r"\bnem\s+kell\s+fizetn\w*\b",

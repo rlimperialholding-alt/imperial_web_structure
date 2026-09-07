@@ -1,0 +1,74 @@
+{
+  "brand_id": "BauFreund",
+  "recorded_commit": "ee1f849a6e69e0dfdd3224b502cd2c4c9e467daf",
+  "package": {
+    "title": "Hogyan különböztesd meg az induló költségbecslést a tételes vállalási ajánlattól?",
+    "body": "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól. Ez a különbségtétel azért fontos, mert a két dokumentum más célt szolgál, és más döntési helyzetben van rá szükséged. A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez, ezért érdemes tisztáznod, mire számíthatsz egy becsléstől, és mire egy ajánlattól. Az induló költségbecslés arra való, hogy nagyságrendileg lásd, milyen keretek között mozoghat a tervezett építkezés. Nem tartalmaz tételesen minden anyag- és munkadíjat, és nem is vállalási ár. A tételes vállalási ajánlat ezzel szemben már konkrét műszaki tartalomra, részletes anyagkiírásra és munkafolyamatokra épül, ezért az abban szereplő összeg szerződéses alap lehet. Ha ezt a két fogalmat összekevered, könnyen félreértheted a kivitelezői szándékot, és később kellemetlen egyeztetésekbe futhatsz. Érdemes ezért már az első megkeresésnél jelezned, hogy most csak egy őszinte költségbecslést kérsz, nem pedig végleges ajánlatot. Így a válasz is a megfelelő részletezettséggel érkezik, és te is nyugodtabban tudsz tervezni. A BauFreund segít abban, hogy a kérdéseidet úgy tedd fel, hogy a válasz valóban a te döntési helyzetedre illeszkedjen. Nem kell műszaki zsargont használnod, elég, ha leírod, mit szeretnél építeni, és milyen bizonytalanságod van a költségekkel kapcsolatban. A becslés kérése nem jelenti azt, hogy azonnal szerződést kell kötnöd, és nem is kötelez semmire. Arra viszont jó, hogy reálisabb képet kapj arról, milyen nagyságrendű beruházással érdemes számolnod. Ha később már konkrét terveid vannak, akkor lehet értelme tételes ajánlatot kérni, de addig is fontos, hogy a két dokumentumtípust ne mosd össze. Így elkerülheted, hogy egy becslést vállalási árnak nézz, vagy éppen egy részletes ajánlatot túlzottan korainak érezz. A BauFreund abban tud segíteni, hogy a megfelelő kérdést tedd fel a megfelelő időben, és a válaszokat is a helyükön kezeld. Ezzel a döntési folyamatod átláthatóbb lesz, és kevesebb félreértés terheli az egyeztetéseket.",
+    "facebook_post": "Építkezés előtt sokan keverik az induló költségbecslést a tételes vállalási ajánlattal. Pedig nem mindegy, melyiket kéred, mert másra valók. A becslés nagyságrendi tájékozódásra jó, az ajánlat már konkrét műszaki tartalomra épül. Ha ezt tisztázod, elkerülheted a félreértéseket. A BauFreund segít, hogy a megfelelő kérdést tedd fel. #építkezés #költségbecslés #vállalásiajánlat #építőbarát #BauFreund #házépítés #döntéselőkészítés",
+    "cta": {
+      "intent": "lead",
+      "label": "Kérek egy őszinte költségbecslést."
+    }
+  },
+  "trusted_intent": {
+    "approved_brand_facts": [
+      {
+        "brand_id": "BauFreund",
+        "content_hash": "b092525ffc89c5a95a2ef405274ab84c0d05723fba24392814bb09ab6b55cc58",
+        "payload": {
+          "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+          "buyer_problems": [
+            "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól."
+          ],
+          "claim_limits": [
+            "Független ellenőrt és szerződéses garanciát nem állítunk; ezek külön bizonyítékot igényelnek.",
+            "A költségbecslés kérése nem jelent szerződéses árígéretet vagy működő online kalkulátor igazolását."
+          ],
+          "evidence_scope": "Operatív arculati és konverziós kézikönyv; a forrás feltételes függetlenségi állítása nem lett márkatény.",
+          "next_steps": [
+            "Kérek egy őszinte költségbecslést."
+          ],
+          "record_id": "BAUFREUND-BUILDING-DECISIONS-V1",
+          "sales_goal": "A tervezett építkezés tartalmát tisztázó költségbecslési megkeresés.",
+          "source_evidence": [
+            {
+              "content_sha256": "8a8994149831e9f566191aaf5670a341b7851e14e64f6149728ebbb1c5216847",
+              "drive_file_id": "1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc",
+              "exact_excerpts": [
+                "Pozicionálás: Közérthető, barátságos és független segítség az építési döntésekhez.",
+                "Másodlagos CTA: Kérek egy őszinte költségbecslést.",
+                "A kalkulátor nem keltheti tételes vállalási ajánlat látszatát.",
+                "A „független” jelző csak tényleges szerződéses függetlenség esetén használható."
+              ],
+              "readback_at": "2026-09-07T08:26:41.073Z",
+              "source_modified_time": "2026-08-04T21:08:22.421Z",
+              "title": "BauFreund – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+              "url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+              "verified_at": "2026-09-07"
+            }
+          ],
+          "source_refs": [
+            "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit"
+          ],
+          "statement": "A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez."
+        },
+        "source_key": "baufreund-brand-fact-building-decisions",
+        "source_type": "brand_fact",
+        "source_url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+        "version": "2026-09-07.v1"
+      }
+    ],
+    "brand_id": "BauFreund",
+    "buyer_problem": "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól.",
+    "input_type": "approved_brand_customer_problem",
+    "next_step": "Kérek egy őszinte költségbecslést.",
+    "policy": "content-intent-revenue-v1",
+    "publication_allowed": false,
+    "radar_topic_id": null,
+    "sales_goal": "A tervezett építkezés tartalmát tisztázó költségbecslési megkeresés.",
+    "send_allowed": false,
+    "source_refs": [
+      "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit"
+    ]
+  }
+}
