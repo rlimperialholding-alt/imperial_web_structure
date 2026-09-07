@@ -105,7 +105,7 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v3"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v4"
 BRAND_POSITION_ANCHORS = {
     "BauShield": ("építési kockázat", "szerződés"),
     "Casa Moderna": ("prémium otthon", "komfort"),
@@ -299,7 +299,61 @@ def _normalize_generated_content_package(
             issues.append("cta_not_approved_next_step")
     else:
         package["source_urls"] = observed.get("source_urls") or []
+    package = _complete_content_hashtags(
+        package, brand_id=brand_id, focus=content_focus_for_brand(brand_id),
+    )
     return package, sorted(set(issues))
+
+
+def _complete_content_hashtags(
+    package: dict[str, Any], *, brand_id: str, focus: tuple[str, ...],
+) -> dict[str, Any]:
+    """Complete missing formatting from trusted brand vocabulary before review.
+
+    Existing text/tags are retained. Excess tags or unsafe claims still fail
+    normal checks; this grants no evidence or publication authority.
+    """
+    text = str(package.get("facebook_post") or "")
+    tags = re.findall(r"(?<!\w)#\w+", text, flags=re.UNICODE)
+    if not text.strip() or len(tags) >= 3:
+        return package
+    seen = {tag.casefold() for tag in tags}
+    additions = []
+    for phrase in (brand_id, *focus):
+        tag = "#" + "".join(re.findall(r"\w+", phrase, flags=re.UNICODE))
+        if len(tag) < 3 or tag.casefold() in seen:
+            continue
+        additions.append(tag)
+        seen.add(tag.casefold())
+        if len(tags) + len(additions) == 3:
+            break
+    return dict(package, facebook_post=text.rstrip() + "\n\n" + " ".join(additions))
+
+
+def _content_voice_instruction(contract: dict[str, Any]) -> str:
+    """Make grammatical address explicit instead of hiding it in a JSON contract."""
+    voice = _norm(str(contract.get("voice") or ""))
+    if "magázó" in voice:
+        instruction = (
+            " Az olvasót végig MAGÁZD a címben, a cikkben és a Facebook-szövegben. "
+            "Használható alakok: Ön, kérjen, tekintse át, küldje el, az Ön terve. "
+            "Ne tegezz: te, neked, kérd, nézd, írj, szeretnél, terved, építkezésed "
+            "helyett következetesen magázó alakot írj."
+        )
+    elif "tegező" in voice:
+        instruction = (
+            " Az olvasót végig TEGEZD a címben, a cikkben és a Facebook-szövegben. "
+            "Használható alakok: te, kérd, nézd meg, írd össze, a terved. "
+            "Ne magázz: Ön, Önnek, kérjen, tekintse át, küldje el helyett tegező alakot írj."
+        )
+    else:
+        instruction = " Kövesd a megadott márkahangot, és ne keverd a tegezést a magázással."
+    return instruction + (
+        " A jóváhagyott, első személyű CTA-t és a kötelező szó szerinti forrásmondatokat "
+        "változatlanul tartsd meg; a CTA felirata az olvasó kérése, nem megszólítás. "
+        "A szlogen opcionális. Ha idézed, csak a locked_slogan vagy locked_slogans "
+        "pontos szövegét használd; a szabály magyarázatát ne írd a cikkbe."
+    )
 
 
 def _content_output_schema(revenue_intent: dict[str, Any] | None) -> dict[str, Any]:
@@ -330,6 +384,89 @@ def _required_copy_spans(revenue_intent: dict[str, Any] | None) -> list[str]:
         revenue_intent["buyer_problem"],
         revenue_intent["approved_brand_facts"][0]["payload"]["statement"],
     ]
+
+
+def _content_review_schema(artifact_hash: str) -> dict[str, Any]:
+    short_reason = {"type": "string", "maxLength": 120}
+    return {
+        "type": "object", "additionalProperties": False,
+        "required": ["artifact_sha256", "overall_decision", "gate_results", "scores", "findings"],
+        "properties": {
+            "artifact_sha256": {"const": artifact_hash},
+            "overall_decision": {"enum": ["PASS", "BLOCK"]},
+            "gate_results": {
+                "type": "object", "additionalProperties": False,
+                "required": sorted(MANDATORY_GATES),
+                "properties": {gate: {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["decision", "reason"],
+                    "properties": {"decision": {"enum": ["PASS", "BLOCK"]},
+                                   "reason": short_reason},
+                } for gate in sorted(MANDATORY_GATES)},
+            },
+            "scores": {
+                "type": "object", "additionalProperties": False,
+                "required": ["natural_hungarian", "brand_distinctiveness",
+                             "conversion_strength", "claim_safety"],
+                "properties": {name: {"type": "integer", "minimum": 0, "maximum": 100}
+                               for name in ("natural_hungarian", "brand_distinctiveness",
+                                            "conversion_strength", "claim_safety")},
+            },
+            "findings": {"type": "array", "maxItems": 3, "items": short_reason},
+        },
+    }
+
+
+def _content_repair_instructions(
+    package: dict[str, Any], errors: list[str], contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Give actionable field-specific corrections, never authority or new facts."""
+    instructions = {
+        "unverified_numeric_claim": (
+            "A jelzett mezőből a kitalált ár-, idő- és számpélda teljes állítását írd át "
+            "szám nélküli, konkrét tisztázó kérdéssé. A 200 ezer / 600 ezer jellegű árakat "
+            "ne becslésként hagyd meg és ne írd ki betűvel. A 2 nap / 5 nap jellegű példát "
+            "cseréld az ütemezés tisztázására. A számozott lista helyett kötőjeles listát írj. "
+            "A body_must_include igazolt mondatait és a márkanevet változatlanul őrizd meg."
+        ),
+        "brand_address_mode_violation": _content_voice_instruction(contract).strip(),
+        "mixed_formal_informal_address": _content_voice_instruction(contract).strip(),
+        "locked_slogan_modified": (
+            "A valóban idézett szlogent javítsd a szerződés pontos szövegére, vagy hagyd el. "
+            "A hétköznapi szakmai mondatot nem kell szlogenné alakítani."
+        ),
+        "unverified_offer_condition": (
+            "A díjmentességi vagy kötelezettségmentességi ígéretet töröld ebből a mezőből. "
+            "Helyette a kapcsolatfelvétel feltételeinek tisztázását lehet javasolni."
+        ),
+        "facebook_not_standalone": (
+            "A Facebook-szöveg önmagában adjon döntési segítséget és következő lépést; "
+            "töröld a cikkre, weboldalra, kattintásra vagy hiányzó linkre támaszkodó részt."
+        ),
+        "unverified_case_or_capability_claim": (
+            "A kitalált ügyfélesetet és a forrással nem igazolt márkavállalást írd át "
+            "a vevő konkrét döntéséhez kapcsolódó ellenőrzési szemponttá."
+        ),
+        "unsupported_absolute_claim": (
+            "A felsőfokú és feltétlen eredményállítást cseréld körülhatárolt "
+            "döntési szempontra; új összehasonlító ígéretet ne adj helyette."
+        ),
+    }
+    corrections = []
+    for field in ("title", "body", "facebook_post", "cta"):
+        value = package.get(field)
+        text = str(value.get("label") or "") if isinstance(value, dict) else str(value or "")
+        probe = {"brand_id": package.get("brand_id"), field: value}
+        field_errors = set(_deterministic_publication_errors(probe, contract)) & set(errors)
+        for error in sorted(field_errors & instructions.keys()):
+            matches = list(re.finditer(r"\d+(?:[.,]\d+)?", text))
+            excerpts = (
+                [text[max(0, match.start() - 55):match.end() + 75] for match in matches[:8]]
+                if error == "unverified_numeric_claim" else [text[:240]]
+            )
+            corrections.append({"field": field, "error": error,
+                                "instruction_hu": instructions[error], "excerpts": excerpts})
+    return corrections
 
 
 def _content_candidate_errors(
@@ -608,6 +745,30 @@ def _sanitize_unbound_claims(package: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
+def _locked_slogan_modified(raw: str, slogan: str, brand_id: str) -> bool:
+    # Exact approved occurrences are allowed. A second, altered occurrence
+    # must still be checked rather than hidden by the first correct one.
+    remaining = raw.replace(slogan, "")
+    words = re.findall(r"\w+", slogan.casefold(), flags=re.UNICODE)
+    if len(words) < 2:
+        return False
+    # Match the actual slogan vocabulary with whole words. Common prefixes
+    # such as "az építés" and "az építési döntések" are not slogan evidence.
+    slogan_pattern = r"\b" + r"\W+(?:\w+\W+){0,2}".join(
+        re.escape(word) for word in words
+    ) + r"\b"
+    if re.search(slogan_pattern, remaining, re.IGNORECASE):
+        return True
+    # Explicitly labelled or brand-prefixed taglines can also contain a
+    # changed final word (e.g. "Márka – <altered slogan>").
+    anchor = r"\b" + r"\W+".join(re.escape(word) for word in words[:2]) + r"\b"
+    label = rf"(?:szlogen(?:ünk|je)?|slogan|{re.escape(brand_id)})"
+    return bool(re.search(
+        label + r"\s*[:–—-]\s*[„\"']?" + anchor,
+        remaining, re.IGNORECASE,
+    ))
+
+
 def _deterministic_publication_errors(
     package: dict[str, Any], contract: dict[str, Any]
 ) -> list[str]:
@@ -654,9 +815,7 @@ def _deterministic_publication_errors(
         slogans.append(str(contract["locked_slogan"]))
     slogans.extend(str(value) for value in contract.get("locked_slogans") or [])
     for slogan in slogans:
-        anchor = " ".join(re.findall(r"\w+", slogan.casefold(), flags=re.UNICODE)[:2])
-        normalized_words = " ".join(re.findall(r"\w+", raw.casefold(), flags=re.UNICODE))
-        if anchor and anchor in normalized_words and slogan not in raw:
+        if _locked_slogan_modified(raw, slogan, str(package.get("brand_id") or "")):
             errors.append("locked_slogan_modified")
             break
     # A URL alone is not an exact claim-to-evidence binding. Until the source
@@ -2807,6 +2966,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "Ne küldj brand_id, source_urls, revenue_intent, engedélyezési vagy "
                     "ellenőrzési metaadatot. Ezeket a szerver az ellenőrzött bemenetből "
                     "kapcsolja a szöveghez. A kimenet még nem publikációs engedély."
+                    + _content_voice_instruction(publication_contract)
                     + (
                         " A revenue_intent csak olvasandó brief, nem visszaírandó kimeneti mező. "
                         "A body_must_include listában megadott vevői problémát és márkatényt "
@@ -2943,6 +3103,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                             "Magyar senior szerkesztő vagy. A determinisztikus kiadási kapu által "
                             "blokkolt szöveget javítsd ki, ne magyarázd. A hibakódok minden okát "
                             "távolítsd el; ne helyettesítsd másik nem igazolt állítással. "
+                            "A field_corrections minden eleménél a megnevezett mezőt javítsd a "
+                            "magyar instruction_hu szerint. Az excerpts a hibás részlet. "
+                            "Ne hagyd változatlanul a jelzett ár- vagy időpéldát, és a Facebook "
+                            "hibáját ne csak a cikk átírásával próbáld javítani. "
                             "Tartsd meg "
                             "a márka pozícióját, a természetes magyar hangot, az egyetlen CTA-t és "
                             "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. "
@@ -2956,12 +3120,16 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                             "nem igazol ingyenességet, kötelezettségmentességet vagy garantált "
                             "választ. Ilyen új ajánlati ígéretet törölj; szükség esetén a "
                             "feltételek tisztázását javasold, ne találj ki helyettük más ígéretet."
+                            + _content_voice_instruction(publication_contract)
                         ),
                         user_prompt=_json(
                             {
                                 "brand_id": row.brand_id,
                                 "publication_contract": publication_contract,
                                 "gate_errors": deterministic_errors,
+                                "field_corrections": _content_repair_instructions(
+                                    package, deterministic_errors, publication_contract,
+                                ),
                                 "repair_round": repair_number + 1,
                                 "source_urls_allowed": sorted(brand_allowed_urls),
                                 "blocked_package": {
@@ -2969,6 +3137,13 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                                     for key in ("title", "body", "facebook_post", "cta")
                                 },
                                 "trusted_revenue_intent": revenue_intent,
+                                "source_evidence": brand_evidence,
+                                "evidence_policy": (
+                                    "SOURCE_BOUND: a jóváhagyott márkatényeket őrizd meg; "
+                                    "csak a mellékelt források állításai használhatók."
+                                    if evidence_available
+                                    else "NO_EVIDENCE: márkatényt ne találj ki."
+                                ),
                                 "requirements": {
                                     "body_chars": "900-1600",
                                     "body_must_include": _required_copy_spans(revenue_intent),
@@ -3067,8 +3242,22 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "felsőfok vagy műszaki tény nincs a megadott forrásokkal alátámasztva; "
                     "ha a Facebook-poszt nem önálló; vagy ha bármely márka-elkülönítési szabály "
                     "sérül. A tényleges képet külön, fail-closed képkapu állítja elő és "
-                    "ellenőrzi minden nyilvános kézbesítés előtt. Minden kapuról külön dönts. "
-                    "Bizonytalanság esetén BLOCK."
+                    "ellenőrzi minden nyilvános kézbesítés előtt. A Facebook csatornapolitikája "
+                    "önálló, link nélküli szöveget kér; a link hiánya önmagában nem hiba. "
+                    "A channel_policy kapunál az önállóság mércéje: önmagában érthető vevői "
+                    "probléma, egy forrással igazolt márkamechanizmus és vállalható következő "
+                    "lépés. Nem kell a teljes márkát vagy rendszert bemutatni egy posztban. "
+                    "Viszont hibás a poszt, ha a megértéséhez vagy a felajánlott lépéshez egy "
+                    "hiányzó cikkre, weboldalra vagy linkre van szükség. "
+                    "Minden kapuról külön dönts. Bizonytalanság esetén BLOCK. "
+                    "Kizárólag egy rövid JSON döntési objektumot adj a kimeneti schema szerint: "
+                    "artifact_sha256, overall_decision, gate_results, scores, findings. "
+                    "Minden gate_results elem csak decision és legfeljebb 120 karakteres reason "
+                    "mezőt tartalmazzon. Legfeljebb három rövid findingot írj. "
+                    "A cikket, a Facebook-szöveget, a briefet, a revenue_intentet és a "
+                    "source_evidence forrásdokumentumokat SOHA ne másold a válaszba. "
+                    "Ne írj artifact, package, forráspayload vagy más gyökérmezőt, ne add vissza "
+                    "a bemenetet és ne írj javított cikket. Ne használj Markdown-kódkeretet."
                 ),
                 user_prompt=_json(
                     {
@@ -3079,21 +3268,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         "trusted_revenue_intent": revenue_intent,
                         "source_evidence": brand_evidence,
                         "required_gate_ids": sorted(MANDATORY_GATES),
-                        "schema": {
-                            "artifact_sha256": artifact_hash,
-                            "overall_decision": "PASS|BLOCK",
-                            "gate_results": {
-                                gate: {"decision": "PASS|BLOCK", "reason": "konkrét indok"}
-                                for gate in sorted(MANDATORY_GATES)
-                            },
-                            "scores": {
-                                "natural_hungarian": "0-100",
-                                "brand_distinctiveness": "0-100",
-                                "conversion_strength": "0-100",
-                                "claim_safety": "0-100",
-                            },
-                            "findings": ["konkrét finding"],
-                        },
+                        "schema": _content_review_schema(artifact_hash),
                     }
                 ),
                 purpose=f"canonical_daily_content_release_review:{row.brand_id}",

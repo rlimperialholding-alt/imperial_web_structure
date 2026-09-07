@@ -1,0 +1,240 @@
+[
+  {
+    "brand_id": "RED Property",
+    "source_mode": "approved_brand_documents",
+    "calls": [
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_factory:RED Property",
+        "response_sha256": "43114baac32820b3f88bde80e22c7bf2606c1d099543c7c22aa2ffd365abb5d4",
+        "output": {
+          "package": {
+            "title": "Tudod, mit kapsz a ház áráért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. Ezért aztán a legtöbb családi ház-keresés ott akad el, hogy az ember nem tudja összehasonlítani a lehetőségeket. A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, mi jár az árhoz. De hogyan segít ez a döntésben? Nézzük meg, mit érdemes tisztázni, mielőtt elkötelezed magad.\n\nElőször is: mi a készültségi szint? A RED Property-nál a házak különböző készültségi fokozatokban érhetők el – de ez nem marketingfogás. Azt jelenti, hogy te döntöd el, mennyi munkát vállalsz magadra a kulcsátadás után. Ha kevesebb időd van, választhatsz magasabb készültséget; ha szívesebben intéznéd a belső munkákat, akkor az alacsonyabb készültségi szint is jó irány lehet. A lényeg: minden szinthez tartozik egy lista, ami pontosan megmondja, mi van benne és mi nincs. Így nem érhet meglepetés.\n\nAztán ott van az ár. A RED Property-nál az ár mindig egy konkrét típustervhez és készültségi szinthez van kötve. Nem kell külön kérdezgetned, hogy „és ez most mire elég?” – mert az ajánlat eleve úgy épül fel, hogy lásd, mit kapsz a pénzedért. Ez azért fontos, mert így a házak összehasonlíthatók: nemcsak a négyzetméterár számít, hanem az is, hogy mi van benne. Két hasonló méretű ház között óriási lehet a különbség a műszaki tartalomban – a RED Property rendszere ezt a különbséget teszi láthatóvá.\n\nMit érdemes tehát megvizsgálnod? Először is azt, hogy a kiválasztott háztípusnál milyen készültségi szintek közül választhatsz, és az egyes szinteknél pontosan mi a tartalom. Másodszor: hogy az ár tartalmazza-e a telket, az alapozást, a közműveket – vagy ezek külön tételek. Harmadszor: hogy a megadott határidő mire vonatkozik – a tervezésre, az építésre vagy a kulcsátadásra. Ezeket a kérdéseket érdemes tisztázni, mielőtt aláírsz bármit.\n\nA RED Property nem közvetítőként, hanem ingatlanfejlesztőként van jelen a piacon. Ez azt jelenti, hogy a saját típusterveit és készültségi csomagjait kínálja – nem mások házait árulja. Így a felelősség is egyértelműbb: ha kérdésed van a műszaki tartalomról, tudod, kihez fordulj. Ráadásul a rendszer úgy épül fel, hogy a döntésed ne azon múljon, hogy ki tud jobban rábeszélni, hanem hogy lássad a tényeket.\n\nSzóval, ha már elegéd van abból, hogy a házkeresés során homályos árajánlatokkal és rejtett költségekkel találkozol, akkor érdemes lehet megnézni, hogy a RED Property típusterv-ajánlatai között van-e olyan, ami illik az elképzeléseidhez. A következő lépés nem egy kötelezettségvállalás – csak annyi, hogy elkérjed az árat, és megnézd, hogy a rendszer valóban olyan átlátható-e, mint amilyennek ígéri. Ha igen, akkor már egy konkrét háztípushoz és készültségi szinthez kötött áron tudsz továbbgondolkodni. Ha nem, akkor legalább tudni fogod, hogy mit érdemes máshol keresned.\n\nA döntés úgyis a tiéd – de ne homályos árajánlatok alapján szülessen. Kérd az árat, és nézd meg, mit kapsz érte.",
+            "facebook_post": "Tudod, mit kapsz a ház áráért? Vagy csak annyit látsz, hogy „ház, kulcsátadással”? A RED Property-nál az ár mindig egy konkrét tervhez és készültségi szinthez van kötve – és azt is látod, mi van benne, és mi nincs. Így nem kell találgatnod, hogy mire futja a keretedből. Ha kíváncsi vagy, hogyan működik ez a gyakorlatban, kérdezd meg: „Kérem az árat.”",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_deterministic_repair:RED Property",
+        "response_sha256": "2afa9a575f9159d891c3a726b7e505a7c5139f53226b8e68b33cd72c91f4967e",
+        "output": {
+          "package": {
+            "title": "Tudod, mit kapsz a ház áráért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, mi jár az árhoz. De hogyan segít ez a döntésben? Nézzük meg, mit érdemes tisztázni, mielőtt elkötelezed magad. Először is: mi a készültségi szint? A RED Property-nál a házak különböző készültségi fokozatokban érhetők el – de ez nem marketingfogás. Azt jelenti, hogy te döntöd el, mennyi munkát vállalsz magadra a kulcsátadás után. Ha kevesebb időd van, választhatsz magasabb készültséget; ha szívesebben intéznéd a belső munkákat, akkor az alacsonyabb készültségi szint is jó irány lehet. A lényeg: minden szinthez tartozik egy lista, ami pontosan megmondja, mi van benne és mi nincs. Így nem érhet meglepetés. Aztán ott van az ár. A RED Property-nál az ár mindig egy konkrét típustervhez és készültségi szinthez van kötve. Nem kell külön kérdezgetned, hogy „és ez most mire elég?” – mert az ajánlat eleve úgy épül fel, hogy lásd, mit kapsz a pénzedért. Ez azért fontos, mert így a házak összehasonlíthatók: nemcsak a négyzetméterár számít, hanem az is, hogy mi van benne. Két hasonló méretű ház között óriási lehet a különbség a műszaki tartalomban – a RED Property rendszere ezt a különbséget teszi láthatóvá. Mit érdemes tehát megvizsgálnod? Először is azt, hogy a kiválasztott háztípusnál milyen készültségi szintek közül választhatsz, és az egyes szinteknél pontosan mi a tartalom. Másodszor: hogy az ár tartalmazza-e a telket, az alapozást, a közműveket – vagy ezek külön tételek. Harmadszor: hogy a megadott határidő mire vonatkozik – a tervezésre, az építésre vagy a kulcsátadásra. Ezeket a kérdéseket érdemes tisztázni, mielőtt aláírsz bármit. A RED Property nem közvetítőként, hanem ingatlanfejlesztőként van jelen a piacon. Ez azt jelenti, hogy a saját típusterveit és készültségi csomagjait kínálja – nem mások házait árulja.",
+            "facebook_post": "Tudod, mit kapsz a ház áráért? Vagy csak annyit látsz, hogy „ház, kulcsátadással”? A RED Property-nál az ár mindig egy konkrét tervhez és készültségi szinthez van kötve – és azt is látod, mi van benne, és mi nincs. Így nem kell találgatnod, hogy mire futja a keretedből. Ha kíváncsi vagy, hogyan működik ez a gyakorlatban, kérdezd meg: „Kérem az árat.”",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_deterministic_repair:RED Property",
+        "response_sha256": "2afa9a575f9159d891c3a726b7e505a7c5139f53226b8e68b33cd72c91f4967e",
+        "output": {
+          "package": {
+            "title": "Tudod, mit kapsz a ház áráért?",
+            "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell találgatnod, mi jár az árhoz. De hogyan segít ez a döntésben? Nézzük meg, mit érdemes tisztázni, mielőtt elkötelezed magad. Először is: mi a készültségi szint? A RED Property-nál a házak különböző készültségi fokozatokban érhetők el – de ez nem marketingfogás. Azt jelenti, hogy te döntöd el, mennyi munkát vállalsz magadra a kulcsátadás után. Ha kevesebb időd van, választhatsz magasabb készültséget; ha szívesebben intéznéd a belső munkákat, akkor az alacsonyabb készültségi szint is jó irány lehet. A lényeg: minden szinthez tartozik egy lista, ami pontosan megmondja, mi van benne és mi nincs. Így nem érhet meglepetés. Aztán ott van az ár. A RED Property-nál az ár mindig egy konkrét típustervhez és készültségi szinthez van kötve. Nem kell külön kérdezgetned, hogy „és ez most mire elég?” – mert az ajánlat eleve úgy épül fel, hogy lásd, mit kapsz a pénzedért. Ez azért fontos, mert így a házak összehasonlíthatók: nemcsak a négyzetméterár számít, hanem az is, hogy mi van benne. Két hasonló méretű ház között óriási lehet a különbség a műszaki tartalomban – a RED Property rendszere ezt a különbséget teszi láthatóvá. Mit érdemes tehát megvizsgálnod? Először is azt, hogy a kiválasztott háztípusnál milyen készültségi szintek közül választhatsz, és az egyes szinteknél pontosan mi a tartalom. Másodszor: hogy az ár tartalmazza-e a telket, az alapozást, a közműveket – vagy ezek külön tételek. Harmadszor: hogy a megadott határidő mire vonatkozik – a tervezésre, az építésre vagy a kulcsátadásra. Ezeket a kérdéseket érdemes tisztázni, mielőtt aláírsz bármit. A RED Property nem közvetítőként, hanem ingatlanfejlesztőként van jelen a piacon. Ez azt jelenti, hogy a saját típusterveit és készültségi csomagjait kínálja – nem mások házait árulja.",
+            "facebook_post": "Tudod, mit kapsz a ház áráért? Vagy csak annyit látsz, hogy „ház, kulcsátadással”? A RED Property-nál az ár mindig egy konkrét tervhez és készültségi szinthez van kötve – és azt is látod, mi van benne, és mi nincs. Így nem kell találgatnod, hogy mire futja a keretedből. Ha kíváncsi vagy, hogyan működik ez a gyakorlatban, kérdezd meg: „Kérem az árat.”",
+            "cta": {
+              "label": "Kérem az árat.",
+              "intent": "lead"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "brand_id": "Bautica",
+    "source_mode": "approved_brand_documents",
+    "calls": [
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_factory:Bautica",
+        "response_sha256": "d44da4a3e77e5fef560f5e23eee54fb1680471ba3302a7d9bedc55e3cada2b52",
+        "output": {
+          "package": {
+            "title": "Ki felel az építkezésedért? A mérnöki kontroll szerepe a felújításban",
+            "body": "Amikor nekiállsz egy felújításnak vagy építkezésnek, az egyik legnagyobb bizonytalanság nem a falakban, hanem a folyamatban van: az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez azt jelenti, hogy nem egy értékesítő ígérget, hanem egy mérnök érti meg a tervet, nézi meg a helyszínt, és kíséri végig a kivitelezést. De mit jelent ez a gyakorlatban? Nézzük meg, miért érdemes ezt a szempontot előtérbe helyezni, és mire figyelj, amikor kivitelezőt választasz.\n\nA legtöbb építtető ott érzi elveszettnek magát, amikor a terv és a valóság találkozik. A papíron minden szép, de a helyszínen kiderül, hogy a fal nem pontosan ott van, ahol a rajzon, vagy a tartószerkezet máshogy viselkedik, mint ahogy azt a terv feltételezi. Ilyenkor nem elég egy kivitelező, aki „megoldja” – olyan szakemberre van szükség, aki a tervet értelmezni tudja, a helyszínt felméri, és a kivitelezést ellenőrzi. Ez a fajta mérnöki hozzáállás nem luxus, hanem a hibák megelőzésének eszköze. Gondolj bele: egy rosszul egyeztetett terv vagy egy elnézett helyszíni adottság később sokkal többe kerülhet, mint amennyit egy alapos előkészítés igényel.\n\nA mérnöki kontroll nem azt jelenti, hogy minden lépésnél ott áll valaki és „felügyel”, hanem hogy van egy felelős szakember, aki érti az összefüggéseket. Ő az, aki a terv és a helyszín között hidat épít, és aki a kivitelezés során észreveszi, ha valami nem stimmel. Ez a fajta hozzáállás csökkenti a félreértések kockázatát, és segít abban, hogy a döntéseid ne érzelmekre, hanem szakmai alapokra épüljenek. Ha például egy régi házat újítasz fel, a mérnök felméri a falak állapotát, a statikai adottságokat, és ez alapján mondja meg, mi lehetséges és mi nem – nem pedig általánosságokban beszél.\n\nA Bautica pozicionálása éppen ezt a személyes mérnöki figyelmet helyezi a középpontba. Nem a választék nagysága a főszereplő, hanem az a szakember, aki névvel és felelősséggel azonosítható. Ez a megközelítés azért lehet hasznos a számodra, mert így nem egy névtelen csapatra bízod a projektet, hanem egy olyan mérnökre, aki végigkíséri a folyamatot. De hogyan ismered fel, hogy egy kivitelező valóban így dolgozik? Kérdezd meg, ki lesz a felelős mérnök, és milyen szerepet vállal a terv egyeztetésében, a helyszíni felmérésben és a kivitelezés ellenőrzésében. Ha erre konkrét választ kapsz, az jó jel. Ha csak homályos ígéreteket, akkor érdemes tovább keresned.\n\nA döntés előtt érdemes tisztázni, hogy a kivitelező milyen módon készíti elő a munkát. Egy alapos műszaki kalkuláció – amely a konkrét tervhez és helyszínhez igazodik – sokkal többet mond, mint egy árajánlat, amely csak négyzetméter alapján készül. Ez a kalkuláció nemcsak a költségeket becsüli meg, hanem feltárja a lehetséges kockázatokat is. Ha ilyet kérsz, azzal azt is jelzed, hogy te komolyan veszed a projektet, és elvárod, hogy a másik fél is így tegyen. A Bautica esetében ez a fajta előkészítés a működés alapja, de bármelyik kivitelezőnél érdemes ezt számon kérned.\n\nVégül pedig ne feledd: az építkezés nem sprint, hanem maraton. A legjobb döntés az, ha olyan partnert választasz, aki nemcsak a munkát vállalja el, hanem a felelősséget is. Ha szeretnéd, hogy a terved és a helyszín közötti különbségek ne meglepetésként érjenek, hanem előre tisztázott kérdésként, akkor érdemes olyan szakemberrel dolgoznod, aki ezt a fajta kontrollt biztosítja. A következő lépés nem egy kötelezettség, hanem egy lehetőség arra, hogy pontosabb képet kapj a projektedről.",
+            "facebook_post": "Amikor felújítasz, nem csak a falakkal kell megküzdened. A legnagyobb kérdés: ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést? Ha ez nem világos, a projekt könnyen káoszba fulladhat. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését – ez azt jelenti, hogy egy mérnök érti meg a terved, nézi meg a helyszínt, és kíséri végig a munkát. Nem a választék a lényeg, hanem a felelős szakember. Mielőtt aláírsz bármit, kérdezd meg: ki lesz a mérnök, és hogyan készíti elő a munkát? Egy konkrét műszaki kalkuláció sokkal többet mond, mint egy árajánlat. Ha szeretnéd, hogy a döntésed szakmai alapokon nyugodjon, kérd a műszaki kalkulációt. #felújítás #építkezés #mérnökiKontroll #Bautica #kivitelezés #otthonfelújítás #szakmaiDöntés",
+            "cta": {
+              "label": "Kérek műszaki kalkulációt.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_deterministic_repair:Bautica",
+        "response_sha256": "c01dd0b69e44be675cc0ebdc9f76a5580e1e0bb2585da70399a40da0a90edf66",
+        "output": {
+          "package": {
+            "title": "Ki felel az építkezésedért? A mérnöki kontroll szerepe a felújításban",
+            "body": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez azt jelenti, hogy nem egy értékesítő ígérget, hanem egy mérnök érti meg a tervet, nézi meg a helyszínt, és kíséri végig a kivitelezést. De mit jelent ez a gyakorlatban? Nézzük meg, miért érdemes ezt a szempontot előtérbe helyezni, és mire figyelj, amikor kivitelezőt választasz.\n\nSok építtető ott érzi elveszettnek magát, amikor a terv és a valóság találkozik. A papíron minden szép, de a helyszínen kiderül, hogy a fal nem pontosan ott van, ahol a rajzon, vagy a tartószerkezet máshogy viselkedik, mint ahogy azt a terv feltételezi. Ilyenkor nem elég egy kivitelező, aki „megoldja” – olyan szakemberre van szükség, aki a tervet értelmezni tudja, a helyszínt felméri, és a kivitelezést ellenőrzi. Ez a fajta mérnöki hozzáállás nem luxus, hanem a hibák megelőzésének eszköze. Gondolj bele: egy rosszul egyeztetett terv vagy egy elnézett helyszíni adottság később sokkal többe kerülhet, mint amennyit egy alapos előkészítés igényel.\n\nA mérnöki kontroll nem azt jelenti, hogy minden lépésnél ott áll valaki és „felügyel”, hanem hogy van egy felelős szakember, aki érti az összefüggéseket. Ő az, aki a terv és a helyszín között hidat épít, és aki a kivitelezés során észreveszi, ha valami nem stimmel. Ez a fajta hozzáállás csökkenti a félreértések kockázatát, és segít abban, hogy a döntéseid ne érzelmekre, hanem szakmai alapokra épüljenek. Ha például egy régi házat újítasz fel, a mérnök felméri a falak állapotát, a statikai adottságokat, és ez alapján mondja meg, mi lehetséges és mi nem – nem pedig általánosságokban beszél.\n\nA Bautica pozicionálása éppen ezt a személyes mérnöki figyelmet helyezi a középpontba. Nem a választék nagysága a főszereplő, hanem az a szakember, aki névvel és felelősséggel azonosítható. Ha konkrét építési terved van, érdemes olyan partnert keresni, aki már az előkészítésnél kézzelfogható szakmai eredményt ad: egy műszaki kalkulációt, ami a te helyszíneden és a te terveiden alapul. Így a döntésed nem becsléseken, hanem mértékadó számokon nyugszik.",
+            "facebook_post": "Amikor felújítasz, nem csak a falakkal kell megküzdened. Jelentős kérdés: ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést? Ha ez nem világos, a projekt könnyen káoszba fulladhat. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését – ez azt jelenti, hogy egy mérnök érti meg a terved, nézi meg a helyszínt, és kíséri végig a munkát. Nem a választék a lényeg, hanem a felelős szakember. Mielőtt aláírsz bármit, kérdezd meg: ki lesz a mérnök, és hogyan készíti elő a munkát? Egy konkrét műszaki kalkuláció sokkal többet mond, mint egy árajánlat. Ha szeretnéd, hogy a döntésed szakmai alapokon nyugodjon, kérd a műszaki kalkulációt. #felújítás #építkezés #mérnökiKontroll #Bautica #kivitelezés #otthonfelújítás #szakmaiDöntés",
+            "cta": {
+              "label": "Kérek műszaki kalkulációt.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_deterministic_repair:Bautica",
+        "response_sha256": "58be268f8349ae5b3d25e88243658c0507cb5c55714864f5eeedd64a25fd7526",
+        "output": {
+          "package": {
+            "title": "Ki felel az építkezésedért? A mérnöki kontroll szerepe a felújításban",
+            "body": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez azt jelenti, hogy nem egy értékesítő ígérget, hanem egy mérnök érti meg a tervet, nézi meg a helyszínt, és kíséri végig a kivitelezést. De mit jelent ez a gyakorlatban? Nézzük meg, miért érdemes ezt a szempontot előtérbe helyezni, és mire figyelj, amikor kivitelezőt választasz.\n\nSok építtető ott érzi elveszettnek magát, amikor a terv és a valóság találkozik. A papíron minden szép, de a helyszínen kiderül, hogy a fal nem pontosan ott van, ahol a rajzon, vagy a tartószerkezet máshogy viselkedik, mint ahogy azt a terv feltételezi. Ilyenkor nem elég egy kivitelező, aki „megoldja” – olyan szakemberre van szükség, aki a tervet értelmezni tudja, a helyszínt felméri, és a kivitelezést ellenőrzi. Ez a fajta mérnöki hozzáállás nem luxus, hanem a hibák megelőzésének eszköze.\n\nGondolj bele: egy rosszul egyeztetett terv vagy egy elnézett helyszíni adottság később sokkal többe kerülhet, mint amennyit egy alapos előkészítés igényel. A mérnöki kontroll nem azt jelenti, hogy minden lépésnél ott áll valaki és „felügyel”, hanem hogy van egy felelős szakember, aki érti az összefüggéseket. Ő az, aki a terv és a helyszín között hidat épít, és aki a kivitelezés során észreveszi, ha valami nem stimmel. Ez a fajta hozzáállás csökkenti a félreértések kockázatát, és segít abban, hogy a döntéseid ne érzelmekre, hanem szakmai alapokra épüljenek.\n\nHa például egy régi házat újítasz fel, a mérnök felméri a falak állapotát, a statikai adottságokat, és ez alapján mondja meg, mi lehetséges és mi nem – nem pedig általánosságokban beszél. A Bautica pozicionálása éppen ezt a személyes mérnöki figyelmet helyezi a középpontba. Nem a választék nagysága a főszereplő, hanem az a szakember, aki névvel és felelősséggel azonosítható. Ha konkrét építési terved van, érdemes olyan partnert keresni, aki már az előkészítésnél kézzelfogható szakmai eredményt ad: egy műszaki kalkulációt, ami a te helyszíneden és a te terveiden alapul.",
+            "facebook_post": "Amikor felújítasz, nem csak a falakkal kell megküzdened. Jelentős kérdés: ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést? Ha ez nem világos, a projekt könnyen káoszba fulladhat. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését – ez azt jelenti, hogy egy mérnök érti meg a terved, nézi meg a helyszínt, és kíséri végig a munkát. Nem a választék a lényeg, hanem a felelős szakember. Mielőtt aláírsz bármit, kérdezd meg: ki lesz a mérnök, és hogyan készíti elő a munkát? Egy konkrét műszaki kalkuláció sokkal többet mond, mint egy árajánlat. Ha szeretnéd, hogy a döntésed szakmai alapokon nyugodjon, kérd a műszaki kalkulációt. #felújítás #építkezés #mérnökiKontroll #Bautica #kivitelezés #otthonfelújítás #szakmaiDöntés",
+            "cta": {
+              "label": "Kérek műszaki kalkulációt.",
+              "intent": "lead"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "brand_id": "BauFreund",
+    "source_mode": "approved_brand_documents",
+    "calls": [
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_factory:BauFreund",
+        "response_sha256": "3b8094ad8b80b323424e19f54a903d2dfaddbd73c2a294cd45ea84148c706842",
+        "output": {
+          "package": {
+            "title": "Költségbecslés vagy árajánlat? Így kerüld el a félreértést az építkezésnél",
+            "body": "Amikor belevágsz egy építkezésbe, az első szám, amit kérsz, még nem a végleges ár. Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól – és ez teljesen rendben van. A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez, ezért nézzük meg, miért fontos ez a különbségtétel, és hogyan kerülheted el a későbbi meglepetéseket.\n\nA költségbecslés egy tájékoztató jellegű szám, ami segít eldönteni, hogy egyáltalán belefér-e a projekt a keretedbe. Az árajánlat ezzel szemben konkrét tételeket, mennyiségeket és munkafolyamatokat tartalmaz, ami már szerződéses alap lehet. Ha a kettőt összekevered, könnyen úgy érzed, hogy az építő „átverte”, pedig csak más szinten jártatok. Ezért az első lépés mindig az, hogy tisztázd: most csak tájékozódni szeretnél, vagy konkrét ajánlatot vársz?\n\nA BauFreund abban segít, hogy ezt a különbséget világosan lásd. Nem dobunk rád egy kalkulált számot, ami aztán a végén máshogy alakul. Inkább végigvezetünk azon, milyen kérdéseket érdemes feltenned magadnak és a kivitelezőnek, mielőtt bármit aláírnál. Így a költségbecslés valóban a döntésed eszköze lesz, nem pedig egy újabb bizonytalansági tényező.\n\nGondolj bele: ha van egy őszinte becslésed, ami világosan mutatja a várható nagyságrendet, akkor nyugodtabban tervezhetsz. Nem kell attól tartanod, hogy az első számhoz képest duplájára nőnek a költségek, mert tudod, hogy az csak egy irányadó érték. Ráadásul a BauFreund barátságos hangvétele miatt nem érzed magad egyedül a döntésben – kérdezhetsz, és számíthatsz arra, hogy érthető választ kapsz.\n\nHa most tartasz ott, hogy kérsz egy költségbecslést, de nem vagy biztos benne, mit is kérj pontosan, az a jó hír, hogy ezt nem kell egyedül kitalálnod. A BauFreund segít abban, hogy a megkeresésed annyira konkrét legyen, hogy a válasz is használható legyen. Így a következő lépés nem egy vak repülés, hanem egy tudatos döntés alapja.",
+            "facebook_post": "Építkezel? Az első költségbecslés még nem árajánlat – és ez így jó. A BauFreund abban segít, hogy tudd, mit kérsz, és mit kapsz. Ha szeretnéd elkerülni a későbbi félreértéseket, kérj őszinte költségbecslést, és nézzük meg együtt, mi fér bele a terveidbe. #építkezés #költségbecslés #árajánlat #BauFreund #építőbarát",
+            "cta": {
+              "label": "Kérek egy őszinte költségbecslést.",
+              "intent": "lead"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "brand_id": "Prefab",
+    "source_mode": "approved_brand_documents",
+    "calls": [
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_factory:Prefab",
+        "response_sha256": "9e15da7ba69d8ef02da4faf2b2d324492b0d3e672ef53970cd52d356b0212819",
+        "output": {
+          "package": {
+            "title": "Előregyártott ház: így hasonlítsd össze a valós ajánlatokat",
+            "body": "Az építtető nem tudja összehasonlítani az előregyártott házak ajánlatait, ha a készültségi fok és a műszaki tartalom nincs egyértelműen megadva. A Prefab előregyártott masszívház-rendszert kínál; a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció. Ez a két mondat kulcs a döntéshez: amíg nem tudod minden ajánlatnál ugyanazt a készültségi szintet és műszaki tartalmat összehasonlítani, addig csak látszólagos árkülönbségeket látsz.\n\nA Prefab rendszerében a gyárban előregyártott masszív elemekből épül fel a ház szerkezete. Ez azt jelenti, hogy a falak, födémek és egyéb szerkezeti elemek ellenőrzött körülmények között készülnek, nem az építkezésen, időjárástól függően. A helyszíni munka így inkább összeszerelés és a kapcsolódó szakipari munkák elvégzése. Ez a megközelítés tervezhetőbbé teszi a kivitelezést, és kevesebb váratlan helyszíni körülmény befolyásolja a minőséget.\n\nA gyakorlatban ez azt jelenti, hogy amikor ajánlatokat kérsz, nem egy „kulcsrakész ház” homályos kategóriáját kell összevetned, hanem pontosan meg kell határoznod, mi szerepel az árban. A Prefabnál a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció – ezért az ajánlatkérésnél érdemes ezeket tételesen rögzíteni. Így elkerülheted, hogy később derüljön ki: a burkolat, a nyílászárók vagy épp a gépészet nem része az árnak.\n\nMielőtt aláírnál bármit, tisztázd a következőket: Milyen készültségi fokra kérsz árat? Melyik technológiai megoldást szeretnéd? Milyen műszaki tartalommal? Ha ezekre a kérdésekre minden ajánlattevő egyértelműen válaszol, akkor már valóban összehasonlítható ajánlatokkal dolgozol. Ellenkező esetben az árkülönbségek félrevezetők lehetnek.\n\nA Prefab rendszerében az ajánlatkéréshez nem kell előre elkötelezned magad egy konkrét típusház mellett. A konfiguráció választhatósága miatt érdemes szakemberrel átbeszélni, hogy a tervezett épülethez melyik készültségi fok és műszaki tartalom a leginkább megfelelő. Így az ajánlatban szereplő tételek valóban a te építkezésedre vonatkoznak, nem egy általános csomagra.\n\nHa szeretnéd elkerülni, hogy az ajánlatok összehasonlítása önmagában is fejtörést okozzon, kérd azt, hogy az ár, a határidő, a készültség és a kizárások egy helyen, egymás mellett szerepeljenek. Így egyetlen dokumentumból látod, mit kapsz a pénzedért, és mi az, ami külön fizetendő. Ez a fajta átláthatóság segít abban, hogy a döntésed ne az apró betűs részen múljon.\n\nA következő lépés nem egy kötelezettségvállalás, hanem egy tisztázó beszélgetés: kérd el a tételes mérnöki ajánlatot, és nézd meg, hogy a fenti szempontok szerint összeállított dokumentumot kapsz-e. Ha igen, akkor már van miben döntened. Ha nem, akkor érdemes továbbkérdezned.",
+            "facebook_post": "Előregyártott házat tervezel? Az ajánlatok összehasonlítása csak akkor működik, ha a készültségi fok és a műszaki tartalom mindenhol egyértelműen meg van adva. A Prefab előregyártott masszívház-rendszerénél a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció – így az ajánlatkérésnél pontosan meghatározhatod, mit szeretnél. Mielőtt aláírnál, kérd azt, hogy az ár, a határidő, a készültség és a kizárások egy helyen szerepeljenek. Így elkerülheted a későbbi meglepetéseket. Kérd a tételes mérnöki ajánlatot, és hasonlítsd össze a valós tartalmakat! #előregyártottház #masszívház #építkezés #ajánlatkérés #Prefab #kivitelezés",
+            "cta": {
+              "label": "Kérek tételes mérnöki ajánlatot.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_deterministic_repair:Prefab",
+        "response_sha256": "0f8a48e76ae732f1e24c4df866710b2fbdc6b180572a961b85dca2213c39d80e",
+        "output": {
+          "package": {
+            "title": "Előregyártott ház: így hasonlítsd össze a valós ajánlatokat",
+            "body": "Az építtető nem tudja összehasonlítani az előregyártott házak ajánlatait, ha a készültségi fok és a műszaki tartalom nincs egyértelműen megadva. A Prefab előregyártott masszívház-rendszert kínál; a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció. Ez a két mondat kulcs a döntéshez: amíg nem tudod minden ajánlatnál ugyanazt a készültségi szintet és műszaki tartalmat összehasonlítani, addig csak látszólagos árkülönbségeket látsz. A Prefab rendszerében a gyárban előregyártott masszív elemekből épül fel a ház szerkezete. Ez azt jelenti, hogy a falak, födémek és egyéb szerkezeti elemek ellenőrzött körülmények között készülnek, nem az építkezésen, időjárástól függően. A helyszíni munka így inkább összeszerelés és a kapcsolódó szakipari munkák elvégzése. Ez a megközelítés tervezhetőbbé teszi a kivitelezést, és kevesebb váratlan helyszíni körülmény befolyásolja a minőséget. A gyakorlatban ez azt jelenti, hogy amikor ajánlatokat kérsz, nem egy „kulcsrakész ház” homályos kategóriáját kell összevetned, hanem pontosan meg kell határoznod, mi szerepel az árban. A Prefabnál a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció – ezért az ajánlatkérésnél érdemes ezeket tételesen rögzíteni. Így elkerülheted, hogy később derüljön ki: a burkolat, a nyílászárók vagy épp a gépészet nem része az árnak. Mielőtt aláírnál bármit, tisztázd a következőket: Milyen készültségi fokra kérsz árat? Melyik technológiai megoldást szeretnéd? Milyen műszaki tartalommal? Ha ezekre a kérdésekre minden ajánlattevő egyértelműen válaszol, akkor már valóban összehasonlítható ajánlatokkal dolgozol. Ellenkező esetben az árkülönbségek félrevezetők lehetnek. A Prefab rendszerében az ajánlatkéréshez nem kell előre elkötelezned magad egy konkrét típusház mellett. A konfiguráció választhatósága miatt érdemes szakemberrel átbeszélni, hogy a tervezett épülethez melyik készültségi fok és műszaki tartalom a leginkább megfelelő. Így az ajánlatban szereplő tételek valóban a te építkezésedre vonatkoznak, nem egy általános csomagra.",
+            "facebook_post": "Előregyártott házat tervezel? Az ajánlatok összehasonlítása csak akkor működik, ha a készültségi fok és a műszaki tartalom mindenhol egyértelműen meg van adva. A Prefab előregyártott masszívház-rendszerénél a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció – így az ajánlatkérésnél pontosan meghatározhatod, mit szeretnél. Mielőtt aláírnál, kérd azt, hogy az ár, a határidő, a készültség és a kizárások egy helyen szerepeljenek. Így elkerülheted a későbbi meglepetéseket. Kérd a tételes mérnöki ajánlatot, és hasonlítsd össze a valós tartalmakat! #előregyártottház #masszívház #építkezés #ajánlatkérés #Prefab #kivitelezés",
+            "cta": {
+              "label": "Kérek tételes mérnöki ajánlatot.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_deterministic_repair:Prefab",
+        "response_sha256": "0f8a48e76ae732f1e24c4df866710b2fbdc6b180572a961b85dca2213c39d80e",
+        "output": {
+          "package": {
+            "title": "Előregyártott ház: így hasonlítsd össze a valós ajánlatokat",
+            "body": "Az építtető nem tudja összehasonlítani az előregyártott házak ajánlatait, ha a készültségi fok és a műszaki tartalom nincs egyértelműen megadva. A Prefab előregyártott masszívház-rendszert kínál; a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció. Ez a két mondat kulcs a döntéshez: amíg nem tudod minden ajánlatnál ugyanazt a készültségi szintet és műszaki tartalmat összehasonlítani, addig csak látszólagos árkülönbségeket látsz. A Prefab rendszerében a gyárban előregyártott masszív elemekből épül fel a ház szerkezete. Ez azt jelenti, hogy a falak, födémek és egyéb szerkezeti elemek ellenőrzött körülmények között készülnek, nem az építkezésen, időjárástól függően. A helyszíni munka így inkább összeszerelés és a kapcsolódó szakipari munkák elvégzése. Ez a megközelítés tervezhetőbbé teszi a kivitelezést, és kevesebb váratlan helyszíni körülmény befolyásolja a minőséget. A gyakorlatban ez azt jelenti, hogy amikor ajánlatokat kérsz, nem egy „kulcsrakész ház” homályos kategóriáját kell összevetned, hanem pontosan meg kell határoznod, mi szerepel az árban. A Prefabnál a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció – ezért az ajánlatkérésnél érdemes ezeket tételesen rögzíteni. Így elkerülheted, hogy később derüljön ki: a burkolat, a nyílászárók vagy épp a gépészet nem része az árnak. Mielőtt aláírnál bármit, tisztázd a következőket: Milyen készültségi fokra kérsz árat? Melyik technológiai megoldást szeretnéd? Milyen műszaki tartalommal? Ha ezekre a kérdésekre minden ajánlattevő egyértelműen válaszol, akkor már valóban összehasonlítható ajánlatokkal dolgozol. Ellenkező esetben az árkülönbségek félrevezetők lehetnek. A Prefab rendszerében az ajánlatkéréshez nem kell előre elkötelezned magad egy konkrét típusház mellett. A konfiguráció választhatósága miatt érdemes szakemberrel átbeszélni, hogy a tervezett épülethez melyik készültségi fok és műszaki tartalom a leginkább megfelelő. Így az ajánlatban szereplő tételek valóban a te építkezésedre vonatkoznak, nem egy általános csomagra.",
+            "facebook_post": "Előregyártott házat tervezel? Az ajánlatok összehasonlítása csak akkor működik, ha a készültségi fok és a műszaki tartalom mindenhol egyértelműen meg van adva. A Prefab előregyártott masszívház-rendszerénél a technológia, a készültségi fok és a műszaki tartalom választható konfiguráció – így az ajánlatkérésnél pontosan meghatározhatod, mit szeretnél. Mielőtt aláírnál, kérd azt, hogy az ár, a határidő, a készültség és a kizárások egy helyen szerepeljenek. Így elkerülheted a későbbi meglepetéseket. Kérd a tételes mérnöki ajánlatot, és hasonlítsd össze a valós tartalmakat! #előregyártottház #masszívház #építkezés #ajánlatkérés #Prefab #kivitelezés",
+            "cta": {
+              "label": "Kérek tételes mérnöki ajánlatot.",
+              "intent": "lead"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "brand_id": "BauFreund",
+    "source_mode": "anonymized_original_source_replay",
+    "calls": [
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_factory:BauFreund",
+        "response_sha256": "62b2c20881dd3ee5ca6f06fac028700a913b13dc1b484f9606d3682ee917394e",
+        "output": {
+          "package": {
+            "title": "Végletes árajánlatok laminált padlóra és festésre – mit nézzünk, mielőtt döntünk?",
+            "body": "Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi. Ha így jártál, nem vagy egyedül: a munkadíjakról kérdezni olyan, mintha egy homályos tükörbe néznél – mindenki mást mutat. A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez, ezért most nem egy újabb „átlagárat” mondunk, hanem azt mutatjuk meg, miért lehet ekkora a szórás, és mire kérdezz rá, mielőtt bárkinek igent mondasz.\n\nA gond általában nem az, hogy az egyik árajánlat „jó”, a másik „rossz”. Hanem az, hogy a szakik mást és mást értenek a feladat alatt. A laminált padlónál például nem mindegy, hogy az aljzatot is ki kell-e egyenlíteni, kell-e párazáró fólia, és mi történik a lábazattal. A festésnél pedig ott a kérdés: glettelés is kell, vagy csak egy réteg színező festék? A végletes árajánlatok mögött gyakran ilyen tartalmi különbségek húzódnak meg – nem feltétlenül átverés, hanem más munkamennyiség.\n\nA BauFreund abban segít, hogy ezeket a különbségeket kibogozd. Nem vállalunk helyetted döntést, de végigvezetünk azokon a pontokon, amiket érdemes tisztázni. Íme néhány konkrét kérdés, amit mindenképp tegyél fel a következő árajánlatkérésnél:\n\n1. **Mi szerepel pontosan az árban?** Kérd el tételesen: anyag, munkadíj, kiszállás, esetleges sittszállítás. Ha az egyik árajánlat csak annyit ír, hogy „padlózás”, az nem ugyanaz, mint a „laminált padló lerakása aljzatkiegyenlítéssel”.\n2. **Milyen állapotban van most a helyiség?** Ha a falak festhetők, de a padló alatt egyenetlen az aljzat, az plusz munka. Kérdezd meg, látta-e a szaki a helyszínt, vagy csak fotók alapján árazott.\n3. **Mennyi időt vállal?** A munkadíj gyakran az időtől függ. Ha valaki 2 napot mond, más pedig 5-öt, az nem feltétlenül lustaság – lehet, hogy az egyik alaposabb előkészítést csinál.\n4. **Mi a garancia?** Nem a szerződéses garanciára gondolok, hanem arra, hogy ha valami nem sikerül, ki javítja ki. Ezt érdemes írásban kérni.\n\nA BauFreund nem egy online kalkulátor, ami bedob egy számot, és kész. Mi abban vagyunk jók, hogy segítünk neked olyan kérdéseket feltenni, amiktől az árajánlatok összehasonlíthatóvá válnak. Mert a végletes árajánlatoknál a legfontosabb nem az, hogy melyik a legolcsóbb, hanem hogy melyik fedi le azt a munkát, amit tényleg el kell végezni.\n\nHa most tartasz ott, hogy kaptál pár árajánlatot, de fogalmad sincs, hogyan hasonlítsd össze őket, ne ess pánikba. A BauFreund szívesen segít abban, hogy a következő lépésed egy tiszta, érthető költségbecslés legyen – nem pedig egy újabb fejvakarás. Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+            "facebook_post": "Laminált padló + festés: az egyik árajánlat 200 ezer, a másik 600 ezer. Melyik az igazi? 🤔\n\nHa kaptál már végletes árajánlatokat, tudod, milyen érzés: fogalmad sincs, mit nézz. A BauFreund abban segít, hogy ne a számokon izgulj, hanem a tartalmon – mert a különbség gyakran a munkamennyiségben van.\n\n👉 Kérd el tételesen, mit tartalmaz az ár.\n👉 Kérdezd meg, látta-e a szaki a helyszínt.\n👉 Tisztázd, mi a garancia.\n\nNem ígérünk olcsóbbat, de segítünk, hogy érthető legyen. Írd meg, milyen munkához keresel segítséget és hol tart a projekt – nézzük meg együtt!\n\n#BauFreund #építkezés #felújítás #munkadíj #árajánlat #költségbecslés #lakásfelújítás",
+            "cta": {
+              "label": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_deterministic_repair:BauFreund",
+        "response_sha256": "dc87f243377dac3f07bec8241de4749d9914205aac23b41117e3b2fa88a57f4c",
+        "output": {
+          "package": {
+            "title": "Végletes árajánlatok laminált padlóra és festésre – mit nézzünk, mielőtt döntünk?",
+            "body": "Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi. Ha így jártál, nem vagy egyedül: a munkadíjakról kérdezni olyan, mintha egy homályos tükörbe néznél – mindenki mást mutat. A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez, ezért most nem egy újabb „átlagárat” mondunk, hanem azt mutatjuk meg, miért lehet ekkora a szórás, és mire kérdezz rá, mielőtt bárkinek igent mondasz. A gond általában nem az, hogy az egyik árajánlat „jó”, a másik „rossz”. Hanem az, hogy a szakik mást és mást értenek a feladat alatt. A laminált padlónál például nem mindegy, hogy az aljzatot is ki kell-e egyenlíteni, kell-e párazáró fólia, és mi történik a lábazattal. A festésnél pedig ott a kérdés: glettelés is kell, vagy csak egy réteg színező festék? A végletes árajánlatok mögött gyakran ilyen tartalmi különbségek húzódnak meg – nem feltétlenül átverés, hanem más munkamennyiség. A BauFreund abban segít, hogy ezeket a különbségeket kibogozd. Nem vállalunk helyetted döntést, de végigvezetünk azokon a pontokon, amiket érdemes tisztázni. Íme néhány konkrét kérdés, amit mindenképp tegyél fel a következő árajánlatkérésnél: 1. **Mi szerepel pontosan az árban?** Kérd el tételesen: anyag, munkadíj, kiszállás, esetleges sittszállítás. Ha az egyik árajánlat csak annyit ír, hogy „padlózás”, az nem ugyanaz, mint a „laminált padló lerakása aljzatkiegyenlítéssel”. 2. **Milyen állapotban van most a helyiség?** Ha a falak festhetők, de a padló alatt egyenetlen az aljzat, az plusz munka. Kérdezd meg, látta-e a szaki a helyszínt, vagy csak fotók alapján árazott. 3. **Mennyi időt vállal?** A munkadíj gyakran az időtől függ. Ha valaki 2 napot mond, más pedig 5-öt, az nem feltétlenül lustaság – lehet, hogy az egyik alaposabb előkészítést csinál. 4. **Mi a garancia?** Nem a szerződéses garanciára gondolok, hanem arra, hogy ha valami nem sikerül, ki javítja ki. Ezt érdemes írásban kérni. A BauFreund nem egy online kalkulátor, ami bedob egy számot, és kész.",
+            "facebook_post": "Laminált padló + festés: az egyik árajánlat 200 ezer, a másik 600 ezer. Melyik az igazi? 🤔 Ha kaptál már végletes árajánlatokat, tudod, milyen érzés: fogalmad sincs, mit nézz. A BauFreund abban segít, hogy ne a számokon izgulj, hanem a tartalmon – mert a különbség gyakran a munkamennyiségben van. 👉 Kérd el tételesen, mit tartalmaz az ár. 👉 Kérdezd meg, látta-e a szaki a helyszínt. 👉 Tisztázd, mi a garancia. Nem ígérünk olcsóbbat, de segítünk, hogy érthető legyen. Írd meg, milyen munkához keresel segítséget és hol tart a projekt – nézzük meg együtt! #BauFreund #építkezés #felújítás #munkadíj #árajánlat #költségbecslés #lakásfelújítás",
+            "cta": {
+              "label": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+              "intent": "lead"
+            }
+          }
+        }
+      },
+      {
+        "model_id": "deepseek-v4-flash",
+        "purpose": "canonical_daily_content_deterministic_repair:BauFreund",
+        "response_sha256": "dc87f243377dac3f07bec8241de4749d9914205aac23b41117e3b2fa88a57f4c",
+        "output": {
+          "package": {
+            "title": "Végletes árajánlatok laminált padlóra és festésre – mit nézzünk, mielőtt döntünk?",
+            "body": "Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi. Ha így jártál, nem vagy egyedül: a munkadíjakról kérdezni olyan, mintha egy homályos tükörbe néznél – mindenki mást mutat. A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez, ezért most nem egy újabb „átlagárat” mondunk, hanem azt mutatjuk meg, miért lehet ekkora a szórás, és mire kérdezz rá, mielőtt bárkinek igent mondasz. A gond általában nem az, hogy az egyik árajánlat „jó”, a másik „rossz”. Hanem az, hogy a szakik mást és mást értenek a feladat alatt. A laminált padlónál például nem mindegy, hogy az aljzatot is ki kell-e egyenlíteni, kell-e párazáró fólia, és mi történik a lábazattal. A festésnél pedig ott a kérdés: glettelés is kell, vagy csak egy réteg színező festék? A végletes árajánlatok mögött gyakran ilyen tartalmi különbségek húzódnak meg – nem feltétlenül átverés, hanem más munkamennyiség. A BauFreund abban segít, hogy ezeket a különbségeket kibogozd. Nem vállalunk helyetted döntést, de végigvezetünk azokon a pontokon, amiket érdemes tisztázni. Íme néhány konkrét kérdés, amit mindenképp tegyél fel a következő árajánlatkérésnél: 1. **Mi szerepel pontosan az árban?** Kérd el tételesen: anyag, munkadíj, kiszállás, esetleges sittszállítás. Ha az egyik árajánlat csak annyit ír, hogy „padlózás”, az nem ugyanaz, mint a „laminált padló lerakása aljzatkiegyenlítéssel”. 2. **Milyen állapotban van most a helyiség?** Ha a falak festhetők, de a padló alatt egyenetlen az aljzat, az plusz munka. Kérdezd meg, látta-e a szaki a helyszínt, vagy csak fotók alapján árazott. 3. **Mennyi időt vállal?** A munkadíj gyakran az időtől függ. Ha valaki 2 napot mond, más pedig 5-öt, az nem feltétlenül lustaság – lehet, hogy az egyik alaposabb előkészítést csinál. 4. **Mi a garancia?** Nem a szerződéses garanciára gondolok, hanem arra, hogy ha valami nem sikerül, ki javítja ki. Ezt érdemes írásban kérni. A BauFreund nem egy online kalkulátor, ami bedob egy számot, és kész.",
+            "facebook_post": "Laminált padló + festés: az egyik árajánlat 200 ezer, a másik 600 ezer. Melyik az igazi? 🤔 Ha kaptál már végletes árajánlatokat, tudod, milyen érzés: fogalmad sincs, mit nézz. A BauFreund abban segít, hogy ne a számokon izgulj, hanem a tartalmon – mert a különbség gyakran a munkamennyiségben van. 👉 Kérd el tételesen, mit tartalmaz az ár. 👉 Kérdezd meg, látta-e a szaki a helyszínt. 👉 Tisztázd, mi a garancia. Nem ígérünk olcsóbbat, de segítünk, hogy érthető legyen. Írd meg, milyen munkához keresel segítséget és hol tart a projekt – nézzük meg együtt! #BauFreund #építkezés #felújítás #munkadíj #árajánlat #költségbecslés #lakásfelújítás",
+            "cta": {
+              "label": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+              "intent": "lead"
+            }
+          }
+        }
+      }
+    ]
+  }
+]

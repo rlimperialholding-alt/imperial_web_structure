@@ -443,7 +443,7 @@ def test_new_contract_version_gets_three_bounded_attempts_after_old_version_exha
             brand_id="Property360",
             status="failed",
             evidence_json=json.dumps(
-                {"attempts": 3, "repair_version": "20260906-content-repair-v2"}
+                {"attempts": 3, "repair_version": "20260907-model-contract-v3"}
             ),
             updated_at=NOW,
         )
@@ -461,7 +461,7 @@ def test_new_contract_version_gets_three_bounded_attempts_after_old_version_exha
     )
     assert result["failed"] == 1
     assert json.loads(row.evidence_json)["attempts"] == 1
-    assert processing.CONTENT_FACTORY_REPAIR_VERSION == "20260907-model-contract-v3"
+    assert processing.CONTENT_FACTORY_REPAIR_VERSION == "20260907-model-contract-v4"
     for attempt in (2, 3):
         row.updated_at = NOW + timedelta(minutes=(attempt - 2) * 6)
         db.commit()
