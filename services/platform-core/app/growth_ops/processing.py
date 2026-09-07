@@ -105,7 +105,7 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v11"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v12"
 CONTENT_SOURCE_SCOPE_INSTRUCTION = (
     " Az approved statement az igazolt márkatény; a source_evidence exact_excerpts "
     "háttérbizonyíték. A kézikönyvben előírt webes elrendezésből, űrlapból vagy kapacitásból "
@@ -115,6 +115,11 @@ CONTENT_SOURCE_SCOPE_INSTRUCTION = (
     "Tervellenőrzésből, felmérésből vagy mérnöki figyelemből ne következtess arra, "
     "hogy az ügyfélnek már semmilyen koordinációs feladata nincs. Teljes projektkoordinációt "
     "csak ezt kifejezetten igazoló márkaforrás alapján állíts. "
+    "A teljes egyeztetési felmentést ne írd át puszta szinonimára: a szakemberek közötti "
+    "koordinálás, összehangolás, egyeztetés, közvetítés és szervezés átvétele ugyanazt "
+    "az igazolt hatáskört igényli, akkor is, ha nincs kiírva az Ön/te névmás. "
+    "Helyette csak a forrásban bizonyított részfeladat előnyét fogalmazd meg, vagy "
+    "adj konkrét egyeztetési szempontot; ne ígérd az ügyfél teljes felmentését. "
     "A kockázat csökkentése nem jelenti minden váratlan helyzet kizárását. "
     "A 'nem érhet meglepetés' és 'nem lehet váratlan költség' helyett a tisztázott "
     "tartalomról és a félreértések kockázatának csökkentéséről írj, ne hibamentességet ígérj. "
@@ -130,6 +135,8 @@ CONTENT_SOURCE_SCOPE_INSTRUCTION = (
     "a főmondat és mellékmondat alany-állítmány kapcsolatát. Íráskor csak a helyes kész "
     "szöveget add; független ellenőrzéskor a findings mezőben idézd a hibás mondatot "
     "és adj helyes mondatjavaslatot, ne csak tiltószavakat keress. "
+    "A 'sok múlik' szerkezetnél ellenőrizd, min múlik valami: például az elrendezésén "
+    "sok múlik a hétköznapokban. A teljes mondat vonzatát és jelentését együtt javítsd. "
 )
 BRAND_POSITION_ANCHORS = {
     "BauShield": ("építési kockázat", "szerződés"),
@@ -217,7 +224,7 @@ def _complete_json_payload(db: Session, **kwargs: Any) -> tuple[Any, dict[str, A
 
 
 def _review_decision_contradiction(review: Any, request: dict[str, Any]) -> bool:
-    """Only a fully valid all-PASS review with overall BLOCK is repairable here."""
+    """Recheck contradictory review metadata once; never change a verdict here."""
     if not isinstance(review, dict) or review.get("overall_decision") != "BLOCK":
         return False
     if set(review) != {"artifact_sha256", "overall_decision", "gate_results", "scores", "findings"}:
@@ -229,7 +236,8 @@ def _review_decision_contradiction(review: Any, request: dict[str, Any]) -> bool
     if not isinstance(gates, dict) or set(gates) != set(MANDATORY_GATES):
         return False
     if any(not isinstance(item, dict) or set(item) != {"decision", "reason"}
-           or item.get("decision") != "PASS" or not isinstance(item.get("reason"), str)
+           or item.get("decision") not in {"PASS", "BLOCK"}
+           or not isinstance(item.get("reason"), str)
            for item in gates.values()):
         return False
     scores = review.get("scores")
@@ -241,7 +249,21 @@ def _review_decision_contradiction(review: Any, request: dict[str, Any]) -> bool
     if any(type(value) is not int or not 80 <= value <= 100 for value in scores.values()):
         return False
     findings = review.get("findings")
-    return isinstance(findings, list) and all(isinstance(item, str) for item in findings)
+    if not isinstance(findings, list) or not all(isinstance(item, str) for item in findings):
+        return False
+    blocked = {name for name, item in gates.items() if item["decision"] == "BLOCK"}
+    if not blocked:
+        return True
+    # The recorded reviewer both rejected the language and explicitly stated
+    # that its rejection was mistaken and that there was no grammar error.
+    # A high score alone or disagreement with a real objection is insufficient.
+    if blocked != {"natural_hungarian"}:
+        return False
+    reason = _norm(gates["natural_hungarian"]["reason"]).rstrip(" .!;")
+    return reason.endswith("nincs nyelvtani hiba") and any(
+        re.search(r"\bnatural_hungarian kapu block döntése téves\b", _norm(item))
+        for item in findings
+    )
 
 
 def _actionable_content_review_block(review: Any, artifact_hash: str) -> bool:
@@ -294,7 +316,7 @@ def _complete_content_review(db: Session, **kwargs: Any) -> Any:
                     "artifact_sha256", "overall_decision", "gate_results", "scores", "findings",
                 )},
                 "instruction_hu": (
-                    "Az összdöntés BLOCK, de minden kapu PASS és minden pontszám elégséges. "
+                    "A kapudöntések, az összdöntés vagy a saját indoklásod ellentmond egymásnak. "
                     "Vizsgáld újra ugyanazt a változatlan szöveget a korábbi findings alapján. "
                     "Valódi kifogásnál a megfelelő kapu legyen BLOCK konkrét indokkal. "
                     "Ha a megjegyzés csak javaslat, a kapuk és az összdöntés ezt tükrözzék. "
@@ -669,8 +691,9 @@ def _content_repair_instructions(
         "brand_address_mode_violation": _content_voice_instruction(contract).strip(),
         "mixed_formal_informal_address": _content_voice_instruction(contract).strip(),
         "hungarian_sentence_structure": (
-            "A jelzett teljes mondat fő- és mellékmondatát szerkeszd újra: az derül ki, "
-            "hogy az elhelyezés nem megfelelő; az elhelyezés legyen a mellékmondat alanya. "
+            "A jelzett teljes mondat alanyát és vonzatát szerkeszd újra. A 'derül ki, hogy' "
+            "szerkezetben az elhelyezés legyen a mellékmondat alanya. A 'sok múlik' "
+            "szerkezetben nevezd meg, min múlik: például az elrendezésén sok múlik. "
             "A konkrét helyiségeket és állítást tartsd meg, csak a hibás mondatszerkezetet "
             "javítsd, ne általános tanácsmondatra cseréld."
         ),
@@ -997,6 +1020,73 @@ def _claim_is_denied(text: str, start: int) -> bool:
     ))
 
 
+def _has_coordination_exemption(copy_text: str) -> bool:
+    """Detect a duty exemption plus coordination action and group-wide scope.
+
+    A single technical meeting or its timing is not full project takeover.
+    The caller separately checks the same brand's DB-verified scope evidence.
+    """
+    exemption = (
+        r"\b(?:(?:(?:önnek|neked)\s+(?:így\s+)?)?nem\s+"
+        r"(?:(?:önnek|neked)\s+)?kell|"
+        r"(?:nem\s+(?:(?:a|az)\s+)?(?:(?:ön|te|ügyfél)\s+)?feladat(?:a|od)|"
+        r"(?:(?:a|az)\s+)?(?:(?:ön|te|ügyfél)\s+)?feladat(?:a|od)\s+nem)"
+        r"(?:\s+az)?)\b"
+    )
+    action = r"\b(?:koordinál|összehangol|egyezte(?:t|ss)|közvetít|(?:meg)?szervez)\w*\b"
+    group_scope = (
+        r"\b(?:szakembere(?:k|i)|(?:szereplő|alvállalkozó|kivitelező|résztvevő)(?:k|i))\w*\b|"
+        r"\bműszaki\s+részletek\w*\b|\bteljes\s+(?:projekt|folyamat)\w*\b"
+    )
+    for sentence in re.split(r"(?<=[.!?])\s+", _norm(copy_text)):
+        for match in re.finditer(exemption, sentence):
+            if _claim_is_denied(sentence, match.start()):
+                continue
+            tail = sentence[match.end():match.end() + 220]
+            if tail.startswith("-e"):
+                continue  # a question about scope is not an asserted exemption
+            clause_boundary = r";|,\s*(?:de|mert|miközben|hiszen|és|hanem|csak|elég)\b"
+            tail = re.split(clause_boundary, tail)[0]
+            prefix = re.split(clause_boundary, sentence[:match.start()])[-1][-100:]
+            verb = re.search(action, tail)
+            before_action = False
+            if not verb:
+                # A nominal action can precede the same duty predicate:
+                # "A szakemberek összehangolása nem az Ön feladata."
+                verb = re.search(
+                    r"\b(?:koordinálás|összehangolás|egyeztetés|közvetítés|(?:meg)?szervezés)"
+                    r"(?:a|e|uk|ük)?\b", prefix,
+                )
+                before_action = True
+                if not verb:
+                    continue
+                subject = re.search(r"\b(?:(?:a|az)\s+)?(?:" + group_scope + ")", prefix)
+                if subject and _claim_is_denied(
+                    sentence, match.start() - len(prefix) + subject.start(),
+                ):
+                    continue
+            if not before_action and re.search(
+                r"\b(?:azonnal|rögtön|most|újra|ismét)\b", tail[:verb.start()],
+            ):
+                continue  # not having to arrange it now is not full exemption
+            context = prefix + match.group() + tail
+            single_item = re.search(
+                r"\b(?:egy(?:etlen)?|egy-egy)\s+(?:műszaki\s+)?"
+                r"(?:méret|csomópont|részlet|időpont)\w*\b|"
+                r"\b(?:szín(?:ét|éről)|méret(?:ét|éről)|időpont(?:ját|járól))\b",
+                prefix if before_action else tail,
+            )
+            if single_item and not re.search(r"\b(?:sem|minden|összes|teljes)\b", context):
+                continue
+            explicit_coordination = (
+                re.search(r"\b(?:önnek|neked)\b", match.group())
+                and re.match(r"(?:koordinál|összehangol)", verb.group())
+            )
+            if re.search(group_scope, context) or explicit_coordination:
+                return True
+    return False
+
+
 def _deterministic_publication_errors(
     package: dict[str, Any], contract: dict[str, Any]
 ) -> list[str]:
@@ -1019,6 +1109,11 @@ def _deterministic_publication_errors(
         r"(?:(?:sok családnál|gyakran|csak)\s+){0,2}(?:utólag|később)\s+"
         r"derül ki\s*,\s*hogy\b", normalized,
     ):
+        errors.append("hungarian_sentence_structure")
+    if any(re.search(
+        r"\b(?:elrendezése|elhelyezése)\s+(?:(?:nagyon|igen)\s+)?sok\s+múlik\b",
+        _norm(copy_text),
+    ) for copy_text in public_texts):
         errors.append("hungarian_sentence_structure")
     no_risk_claims = re.finditer(
         r"\bnem\s+(?:érhet(?:i)?\s+(?:(?:önt|téged)\s+)?"
@@ -1048,16 +1143,7 @@ def _deterministic_publication_errors(
                )
                for match in immediate_decisions) and sentence not in source_sentences:
             errors.append("unverified_case_or_capability_claim")
-    takeover_pattern = (
-        r"\b(?:önnek|neked)\b[^.!?]{0,100}\bnem kell\b[^.!?]{0,100}"
-        r"\b(?:koordinál|összehangol)\w*\b|"
-        r"\b(?:(?:(?:az\s+)?ön\s+feladata|(?:a\s+)?te\s+feladatod)\s+nem\s+az|"
-        r"nem\s+(?:az\s+ön\s+feladata|a\s+te\s+feladatod))\s*,?\s*hogy\b"
-        r"[^.!?]{0,70}\bműszaki\s+részlet\w*\s+egyezte(?:t|ss)\w*\b"
-    )
-    if any(not _claim_is_denied(copy_text, match.start())
-           for copy_text in map(_norm, public_texts)
-           for match in re.finditer(takeover_pattern, copy_text)):
+    if any(_has_coordination_exemption(copy_text) for copy_text in public_texts):
         if not any(
             re.search(r"\b(?:egyetlen projektben hangolja össze|"
                       r"teljes projektkoordinációt (?:vállal|biztosít)\w*|"

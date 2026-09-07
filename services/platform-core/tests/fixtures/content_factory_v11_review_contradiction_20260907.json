@@ -1,0 +1,81 @@
+{
+  "provenance": {
+    "mode": "recorded_actual_provider_review",
+    "commit": "c6f26f9583440ce29d3ad94b00f1d44618c12a7d",
+    "client_request_id": "DS-7E2F8A00DD8443CD8190",
+    "response_sha256": "8be4df385748f52790f8b68589e1a816d72c84d6dde64db798065bc209cde626",
+    "source_file": "final-model-reports-v11-all.json"
+  },
+  "review": {
+    "artifact_sha256": "579185b9ac12e4c849723bed76021bbda4cb316b2d347411941966954be74adc",
+    "overall_decision": "BLOCK",
+    "gate_results": {
+      "brand_anchor": {
+        "decision": "PASS",
+        "reason": "A BauFreund mint barátságos segítő jelenik meg, és a márka mechanizmusa (ajánlatok közös nevezőre hozása) konkrét."
+      },
+      "brand_voice": {
+        "decision": "PASS",
+        "reason": "Közvetlen, tegező, természetes hangvétel, megfelel a márka hangjának."
+      },
+      "channel_policy": {
+        "decision": "PASS",
+        "reason": "A Facebook-poszt önállóan érthető, link nélkül is megállja a helyét."
+      },
+      "claim_coverage": {
+        "decision": "PASS",
+        "reason": "A cikk nem tesz alátámasztatlan állítást; a márkaállítás forrással igazolt."
+      },
+      "claim_freshness": {
+        "decision": "PASS",
+        "reason": "Nincs időhöz kötött állítás, a forrás friss."
+      },
+      "conversion": {
+        "decision": "PASS",
+        "reason": "A CTA egyértelmű és a következő lépésre irányít."
+      },
+      "duplicate_cannibalization": {
+        "decision": "PASS",
+        "reason": "Nincs utalás más tartalomra, nem kannibalizál."
+      },
+      "legal_template": {
+        "decision": "PASS",
+        "reason": "Nincs jogi kifogás, nem ígér garanciát vagy független ellenőrt."
+      },
+      "natural_hungarian": {
+        "decision": "BLOCK",
+        "reason": "A 'a te projektedhez' helyes, de a 'te projekted' birtokos szerkezet a cikkben 'a te projektedhez tényleg illik' formában szerepel, ami nyelvtanilag helyes. Azonban a Facebook-posztban 'a te projektedhez illik' szintén helyes. Nincs nyelvtani hiba."
+      },
+      "security_privacy": {
+        "decision": "PASS",
+        "reason": "Nincs személyes adat vagy biztonsági kockázat."
+      },
+      "seo": {
+        "decision": "PASS",
+        "reason": "A cím és a tartalom releváns kulcsszavakat tartalmaz."
+      },
+      "technical_render": {
+        "decision": "PASS",
+        "reason": "Nincs technikai renderelési probléma."
+      },
+      "visual_quality": {
+        "decision": "PASS",
+        "reason": "A kép minősége nem értékelhető, de a szöveg nem utal vizuális hibára."
+      },
+      "visual_rights_privacy": {
+        "decision": "PASS",
+        "reason": "Nincs vizuális tartalom, így nincs jogi vagy adatvédelmi aggály."
+      }
+    },
+    "scores": {
+      "natural_hungarian": 95,
+      "brand_distinctiveness": 85,
+      "conversion_strength": 80,
+      "claim_safety": 90
+    },
+    "findings": [
+      "A natural_hungarian kapu BLOCK döntése téves, mert a szöveg nyelvtanilag helyes; a kapu döntését PASS-ra kell javítani.",
+      "A Facebook-posztban a 'a te projektedhez illik' kifejezés helyes, nem igényel javítást."
+    ]
+  }
+}

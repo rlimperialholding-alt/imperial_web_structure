@@ -342,8 +342,22 @@ def test_reviewer_prompt_accepts_standalone_linkless_post_without_overriding_rev
     actual = recorded_danish["model_output"]
     assert "konyhaszekrény" in actual["package"]["facebook_post"].casefold()
     assert "http" not in actual["package"]["facebook_post"]
+    assert "unsupported_absolute_claim" in processing._deterministic_publication_errors(
+        actual["package"], processing.publication_contract_for_brand("Danish Fabrik"),
+    )
+    # Exercise the linkless review contract with explicitly corrected copy.
+    # Keep the real historical response unchanged; silent word rewriting is gone.
+    review_copy = deepcopy(actual)
+    review_copy["package"]["facebook_post"] = review_copy["package"]["facebook_post"].replace(
+        "A legtöbb építtető csak a kivitelezéskor gondol erre, pedig már a tervezéskor "
+        "el kell dönteni, hova kerülnek a függesztett tárgyak.",
+        "Érdemes már a tervezéskor tisztázni, hova kerülnek a függesztett tárgyak.",
+    )
+    assert not processing._deterministic_publication_errors(
+        review_copy["package"], processing.publication_contract_for_brand("Danish Fabrik"),
+    )
     result, row, calls = run_brand(
-        db, monkeypatch, "Danish Fabrik", lambda request, system: deepcopy(actual)
+        db, monkeypatch, "Danish Fabrik", lambda request, system: deepcopy(review_copy)
     )
     assert result["generated"] == 1, row.evidence_json
     review_prompt = calls[-1]["system_prompt"]

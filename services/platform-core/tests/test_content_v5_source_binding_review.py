@@ -228,6 +228,25 @@ def test_contradictory_review_rechecks_same_artifact_once_and_only_pass_can_be_s
     second,
 ):
     sample = record("BauFreund")
+    # This test isolates review consistency. The historical writer's unsupported
+    # claims now correctly need a copy repair instead of silent word replacement.
+    original_copy = sample["calls"][0]["output"]["package"]
+    assert "unsupported_absolute_claim" in processing._deterministic_publication_errors(
+        original_copy, processing.publication_contract_for_brand("BauFreund"),
+    )
+    review_copy = deepcopy(sample["calls"][0]["output"])
+    review_copy["package"]["body"] = review_copy["package"]["body"].replace(
+        "A végletes árajánlatok mögött szinte mindig az húzódik, hogy a vállalkozók "
+        "mást és mást értenek ugyanazon a munkán.",
+        "Érdemes tisztázni, hogy a vállalkozók ugyanazt értik-e a megadott munkán.",
+    ).replace(
+        "Ha ezeket nem rögzíted előre, az árajánlatok összehasonlíthatatlanok lesznek "
+        "– és a legolcsóbb tétel könnyen a legdrágábbá válhat a végén.",
+        "Ha ezeket nem rögzíted előre, a különböző tartalmú ajánlatokat nehéz összehasonlítani.",
+    )
+    assert not processing._deterministic_publication_errors(
+        review_copy["package"], processing.publication_contract_for_brand("BauFreund"),
+    )
     monkeypatch.setattr(
         processing,
         "_prepare_content_revenue_intent",
@@ -267,7 +286,7 @@ def test_contradictory_review_rechecks_same_artifact_once_and_only_pass_can_be_s
         db,
         monkeypatch,
         "BauFreund",
-        lambda request, system: deepcopy(sample["calls"][0]["output"]),
+        lambda request, system: deepcopy(review_copy),
     )
     # A real second BLOCK may now request two bounded copy repairs; returning the same
     # draft does not rerun its review. Technical consistency still has only two calls.
