@@ -1003,8 +1003,11 @@ from .services.project_finance import (
     create_finance_plan,
     finance_approve_plan,
     finance_plan_workspace,
+    finance_project_ids_for_user,
     leadership_approve_plan,
     reject_finance_plan,
+    require_finance_plan_project_scope,
+    require_project_finance_scope,
     submit_finance_plan,
 )
 from .services.project_finance import (
@@ -15090,12 +15093,19 @@ def api_usage_control(payload: MaterialUsageIn, db: Session = Depends(get_db)):
 # --- TENDER-kapu: költségvetés-import, allokáció, kapu-döntések (Task75) ---
 
 
-@app.post("/api/budget-imports/preview", dependencies=[Depends(require_api_token)])
+@app.post("/api/budget-imports/preview")
 async def api_budget_import_preview(
     file: UploadFile = File(...),
     project_id: str = Form(...),
     db: Session = Depends(get_db),
+    user: User = Depends(require_api_token_finance_actor),
 ):
+    # Task77 Gate7: bejelentkezett pénzügyi actor + projekt-scope, valós
+    # actor az auditban (az "api" literál helyett).
+    try:
+        require_project_finance_scope(db, user, project_id)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     try:
         data = await file.read()
     except Exception as exc:  # noqa: BLE001 - fail-closed az olvasási hibára
@@ -15103,7 +15113,7 @@ async def api_budget_import_preview(
     try:
         row = preview_budget_import(
             db, project_id=project_id, file_name=file.filename or "upload",
-            data=data, actor="api",
+            data=data, actor=user.email,
         )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -15147,7 +15157,9 @@ def api_allocation_snapshot(
     db: Session = Depends(get_db),
     user: User = Depends(require_api_token_finance_actor),
 ):
+    # Task77 Gate7: a célterv feloldása és fail-closed projekt-scope előbb.
     try:
+        require_finance_plan_project_scope(db, user, payload.plan_id)
         row = create_allocation_snapshot(
             db,
             plan_id=payload.plan_id,
@@ -15165,6 +15177,8 @@ def api_allocation_snapshot(
         )
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {
@@ -15181,7 +15195,9 @@ def api_allocation_from_detailed_lines(
     db: Session = Depends(get_db),
     user: User = Depends(require_api_token_finance_actor),
 ):
+    # Task77 Gate7: ugyanaz a fail-closed projekt-scope ellenőrzés.
     try:
+        require_finance_plan_project_scope(db, user, payload.plan_id)
         row = build_allocation_from_detailed_lines(
             db,
             plan_id=payload.plan_id,
@@ -15191,6 +15207,8 @@ def api_allocation_from_detailed_lines(
         )
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {
@@ -15206,11 +15224,14 @@ def api_allocation_snapshots(
     db: Session = Depends(get_db),
     user: User = Depends(require_api_token_finance_actor),
 ):
-    del user  # a lista csak bejelentkezett finance/vezetői szerepkörrel
+    # Task77 Gate7: a lista is projekt-scope ellenőrzött (defense-in-depth).
     try:
+        require_finance_plan_project_scope(db, user, plan_id)
         rows = list_allocations(db, plan_id)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     return {
         "plan_id": plan_id,
         "snapshots": [
@@ -15245,11 +15266,23 @@ async def tender_purchase_order_preparation_approve_ui(
     return RedirectResponse("/tenders", status_code=303)
 
 
-@app.get("/margin-gate/decisions", dependencies=[Depends(require_api_token)])
+@app.get("/margin-gate/decisions")
 def api_margin_gate_decisions(
-    project_id: str | None = None, db: Session = Depends(get_db)
+    project_id: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_api_token_finance_actor),
 ):
-    rows = list_decisions(db, project_id=project_id)
+    # Task77 Gate7: a generikus token soha nem fedhet fel keresztprojekt
+    # döntést — pénzügyi/vezetői actor kell, a lista projektscope-ra szűrt.
+    allowed = finance_project_ids_for_user(db, user)
+    if project_id is not None:
+        try:
+            require_project_finance_scope(db, user, project_id)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+    rows = list_decisions(
+        db, project_id=project_id, allowed_project_ids=allowed
+    )
     return {
         "decisions": [
             {

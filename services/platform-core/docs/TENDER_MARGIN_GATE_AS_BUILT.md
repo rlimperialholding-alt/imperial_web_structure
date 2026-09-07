@@ -1,4 +1,4 @@
-# TENDER-kapu: 35% direct-margin hard gate és summary-budget allokáció – as-built (Task75/Task76)
+# TENDER-kapu: 35% direct-margin hard gate és summary-budget allokáció – as-built (Task75/76/77)
 
 Egyetlen kanonikus, tranzakcióba ágyazott, fail-closed kapu a tender-
 odaítélés, beszerzési döntés véglegesítés, megrendelés létrehozás/
@@ -9,10 +9,9 @@ override. A kiadás státusza STOP.
 ## Kanonikus számítás (determinisztikus Decimal)
 
 - Bevétel = `contract_revenue_net + approved_change_revenue_net` > 0.
-- Minden sor explicit `cost_class` (direct/indirect); besorolatlan sor és
-  indirect csomag-gyereksor blokkol (`indirect_child_forbidden`).
-- Tartalékkeret konzervatívan direct, amíg jóváhagyott revízió TELJES
-  explicit tartalék-allokációt nem ad (részleges → blokk).
+- Minden sor explicit `cost_class`; besorolatlan sor és indirect csomag-
+  gyereksor blokkol (`indirect_child_forbidden`). A tartalékkeret konzervatívan
+  direct, amíg jóváhagyott revízió TELJES explicit tartalék-allokációt nem ad.
 - Soronkénti várható direct költség = `max(sorkeret, actual + ETC,
   committed_baseline + idempotens lekötések)`; az árva lekötések teljes
   összege konzervatívan a vetületben (soha nem tűnhet el).
@@ -22,33 +21,37 @@ override. A kiadás státusza STOP.
 
 ## Summary-budget roll-down
 
-- Összegző sor kötelező `amount_basis`: `NET_REVENUE_ENVELOPE` → max direct
-  boríték = sorbudget × 0.65; `DIRECT_COST_BASELINE` → elvárt bevétel =
-  sorbudget / 0.65. Csomag-elköteleződés ≤ boríték (korai blokk); roll-
-  downnál a teljes boríték konzervatívan várható direct költség;
-  keresztfinanszírozás tilos.
+- Összegző sor kötelező `amount_basis`: `NET_REVENUE_ENVELOPE` → boríték =
+  sorbudget × 0.65; `DIRECT_COST_BASELINE` → elvárt bevétel = sorbudget / 0.65.
+  Csomag-elköteleződés ≤ boríték (korai blokk); roll-downnál a teljes boríték
+  konzervatívan várható direct költség; keresztfinanszírozás tilos.
 - Minden csomaghoz jóváhagyott, verziózott, immutable allokációs pillanatkép
-  tartozik; az arányok 0.0001-re kvantáltak és pontosan 100.0000 összeget
-  adnak. Forrás-precedencia: (1) DETAILED_LINES (terv-lenyomathoz kötött
-  stale-detekció), (2) normatábla, (3) historikus tény vagy szállítói
-  bizonyíték; minden más ALLOCATION_UNRESOLVED. Alacsony megbízhatóság,
-  részleges lefedettség, lejárt/inkonzisztens pillanatkép, nem nulla
-  unallocated (roll-down) blokkol. Gyereksoros csomagnál a snapshot-only
-  szakágkódok a csomag-elköteleződésbe és a vetületbe is beleszámítanak
-  (commitment nem tűnhet el); a gyerekösszeg egyeztetése minden
-  forrástípusnál kötelező.
+  tartozik; az arányok 0.0001-re kvantáltak, pontosan 100.0000 összeget adnak.
+  Forrás-precedencia: (1) DETAILED_LINES (terv-lenyomathoz kötött stale-
+  detekció), (2) normatábla, (3) historikus tény vagy szállítói bizonyíték;
+  minden más ALLOCATION_UNRESOLVED. Alacsony megbízhatóság, részleges
+  lefedettség, lejárt/inkonzisztens pillanatkép, nem nulla unallocated (roll-
+  down) blokkol. A snapshot-only szakágkódok a csomag-elköteleződésbe és a
+  vetületbe is beleszámítanak; a gyerekösszeg-egyeztetés minden forrásnál
+  kötelező.
 
 ## Idempotencia, TOCTOU és döntés-bizonyíték
 
 - Lekötések: egyedi `(subject_type, subject_id, cost_code)`; újrabeküldés
   csere, kódváltás blokk, kettős számolás kizárt. Tervverzió-jóváhagyáskor a
-  lekötések csak akkor kötődnek át, ha a költségkód az új terv érvényes
-  direct sorai között szerepel (árva kód → az aktiválás ELŐTT fail-closed).
+  lekötések csak akkor kötődnek át, ha a költségkód az új terv direct sorai
+  közt szerepel (árva kód → fail-closed az aktiválás ELŐTT).
 - A kapu `FOR UPDATE` zárral dolgozik; `verify_plan_unchanged` a commit előtt
-  ellenőrzi a verziót/lenyomatot (TOCTOU → teljes visszagördítés).
-- PASS: döntéspillanatkép + audit a mutáció tranzakciójában. BLOCK: az
-  immutable bizonyíték független tranzakcióban rögzül (FK-mentes plan-
-  hivatkozás), majd `MarginGateBlocked`; a hibaüzenet csak aggregált adat.
+  ellenőrzi a verziót/lenyomatot. Az import-jóváhagyás a céltervet szintén
+  sorzárral tölti, a draft-ellenőrzést a zár UTÁN, a védett tranzakcióban
+  ismétli meg (jóváhagyott terv immutable).
+- PASS: pillanatkép + audit a mutáció tranzakciójában. BLOCK: immutable
+  bizonyíték független tranzakcióban (FK-mentes plan-hivatkozás), majd
+  `MarginGateBlocked`; a hibaüzenet csak aggregált adat.
+- Egy döntéshez legfeljebb egy megrendelés: a kódbeli ellenőrzés mellett az
+  `uq_ops_procurement_orders_selection_id` kényszer (0073) atomi módon zárja
+  ki a konkurens kettőst; az ütközés a kanonikus fail-closed domain hibára
+  képeződik (409), a visszagördült mutációt külön tranzakció auditálja.
 
 ## Szigorú CSV/XLSX költségvetés-import
 
@@ -78,25 +81,33 @@ típus `unclassified_contract_type` blokk.
 + `_rows`, `margin_gate_decisions` (immutable PASS/BLOCK), `margin_gate_vat_rules`;
 oszlopbővítések: `finance_project_plans.content_sha256/provenance_json`,
 `finance_project_budget_lines.*` besorolási mezők, `tender_packages.cost_code`,
-`procurement_requirements.cost_code`. A downgrade üres tábláknál, FK-gyerekek
-a szülők ELŐTT (PostgreSQL RESTRICT-biztos); üzleti soroknál RuntimeError.
+`procurement_requirements.cost_code`; `uq_ops_procurement_orders_selection_id`
+egyedi kényszer (guarddal, batch-rebuild). A downgrade üres tábláknál,
+FK-gyerekek a szülők ELŐTT (PostgreSQL RESTRICT-biztos); üzleti soroknál
+RuntimeError; a kényszer és az oszlopok adatőrző no-op módon maradnak.
 
 ## Jogosultság és felületek
 
-- Import-jóváhagyás és allokáció-rögzítés: a generikus API token mellett a
-  bejelentkezett felhasználó kötelező, és csak finance/managing-director/
-  owner/platform-admin szerepkör fogadható el (a token ÖNMAGÁBAN nem ad
-  platform-admin-t); az audit a valódi actor e-mailjét rögzíti.
-- `/api/budget-imports/preview`, `/api/margin-gate/decisions` (API token);
-  `/margin-gate` csak olvasható döntésnapló (finance/owner/MD/admin).
+- Import-preview/jóváhagyás, allokáció-rögzítés és `/margin-gate/decisions`:
+  a generikus API token mellett a bejelentkezett felhasználó kötelező, és
+  csak finance/managing-director/owner/platform-admin szerepkör fogadható el
+  (a token ÖNMAGÁBAN nem ad platform-admin-t); az audit a valódi actor
+  e-mailjét rögzíti.
+- Projekt-scope (Task77): az allokációs API-k a céltervet ELŐSZÖR oldják fel,
+  majd fail-closed ellenőrzik az actor projekt-hozzáférését; a döntésnapló
+  csak az actor számára elérhető projektek döntéseit adja vissza; az import-
+  preview a megadott projekt elérhetőségét ellenőrzi.
+- `/margin-gate` csak olvasható döntésnapló (finance/owner/MD/admin).
+- Klónozás: a parent_summary_line_id remap két menetben, a TELJES forrás→klón
+  térkép után fut (a sorrend nem rontja el a szülő-mutatókat).
 
 ## Bizonyító tesztek
 
-`tests/test_tender_margin_gate.py` (számítási határok, validációk,
-allokációk, idempotencia, bizonyíték, ÁFA-izoláció, TOCTOU, szivárgásgátlás,
-arány-pontosság, snapshot-only kódok), `tests/test_budget_import.py`
-(CSV/XLSX sikeres és fail-closed utak), `tests/test_tender_margin_enforcement.py`
-(minden enforcement határ, rollback, outbox-elnyomás, szerepkörök,
-API-identitás-kötés), `tests/test_tender_margin_gate_remediation.py`
-(review-remediációk), `scripts/verify_tender_margin_gate_migration.py`
+`test_tender_margin_gate.py` (határok, validációk, allokációk, bizonyíték,
+ÁFA-izoláció, TOCTOU, szivárgásgátlás, arány-pontosság, snapshot-only kódok),
+`test_budget_import.py` (CSV/XLSX fail-closed utak), `test_tender_margin_enforcement.py`
+(enforcement határok, rollback, outbox-elnyomás, szerepkörök, API-identitás-
+kötés), `test_tender_margin_gate_remediation.py` (review-remediációk),
+`test_tender_margin_gate_task77.py` (authorization/concurrency Gate7
+remediációk), `scripts/verify_tender_margin_gate_migration.py`
 (upgrade/downgrade/upgrade bizonyíték). Minden fixture szintetikus.

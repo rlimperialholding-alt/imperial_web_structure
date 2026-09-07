@@ -40,9 +40,8 @@ def seed_gate_plan(
     version: int = 1,
     summary_lines: Iterable[dict] = (),
 ) -> ProjectFinancePlan:
-    """Jóváhagyott, hash-elt terv az adatbázisban; direct_lines:
-    (költségkód, nettó HUF, költségnem) hármasok, summary_lines:
-    {cost_code, amount, amount_basis, component} dict-ek."""
+    """Jóváhagyott, hash-elt terv; direct_lines: (kód, HUF, költségnem)
+    hármasok, summary_lines: {cost_code, amount, amount_basis, component}."""
     plan = ProjectFinancePlan(
         plan_id=plan_id or f"FIN-PLAN-GATE-{project_id}-{version:02d}",
         project_id=project_id,
@@ -89,7 +88,7 @@ def ensure_gate_plan(
     direct_lines: Iterable[tuple[str, str, str]],
     plan_id: str | None = None,
 ) -> ProjectFinancePlan:
-    """Jóváhagyott, hash-elt kapu-terv, ha a projektnek még nincs ilyen."""
+    """Jóváhagyott, hash-elt kapu-terv, ha még nincs ilyen."""
     from app.models import ProjectFinancePlan
     existing = db.scalar(select(ProjectFinancePlan).where( ProjectFinancePlan.project_id == project_id, ProjectFinancePlan.status == "approved",)
     )

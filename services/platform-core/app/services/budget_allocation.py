@@ -2,18 +2,16 @@
 
 Forrás-precedencia: (1) részletes jóváhagyott sorok, (2) verziózott
 normatábla, (3) historikus tény vagy szállítói bizonyíték; minden más
-ALLOCATION_UNRESOLVED és a kapu fail-closed blokkol. A normalizált arányok
-determinisztikusan pontosan 100.0000 összeget adnak (utolsó sor nyel el), az
-allokált nettó HUF összegek összege pontosan a direct boríték; a pillanatkép
-írásvédett, a verziószám (terv, csomagsor) páron belül monoton nő.
+ALLOCATION_UNRESOLVED és fail-closed blokk. Az arányok determinisztikusan
+pontosan 100.0000 összeget adnak, az allokált nettó HUF pontosan a direct
+boríték; a pillanatkép írásvédett, a verziószám monoton nő.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
-from uuid import uuid4
 
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
@@ -32,31 +30,16 @@ from .tender_margin_gate import (
     FULL_RATIO_TOTAL,
     MIN_ALLOCATION_CONFIDENCE,
     MarginGateBlocked,
+    _id,
+    _money,
     _package_metrics,
     canonical_json,
     sha256_hex,
+    utcnow,
 )
 
 DETAILED_LINES = "DETAILED_LINES"
 MAX_ALLOCATION_ROWS = 100
-
-
-def utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
-def _id(prefix: str) -> str:
-    return f"{prefix}-{uuid4().hex[:12].upper()}"
-
-
-def _money(value: object) -> Decimal:
-    try:
-        return Decimal(str(value)).quantize(Decimal("0.01"))
-    except (InvalidOperation, ValueError, TypeError) as exc:
-        raise MarginGateBlocked(
-            "invalid_numeric",
-            "Az allokáció érvénytelen numerikus értéket tartalmaz.",
-        ) from exc
 
 
 def _ratio(value: object) -> Decimal:
@@ -156,11 +139,9 @@ def create_allocation_snapshot(
     approver: str,
     rationale: str,
 ) -> FinanceAllocationSnapshot:
-    """Jóváhagyott, verziózott allokációs pillanatkép létrehozása.
-
-    DETAILED_LINES-nál a gyereksorokból épül a pillanatkép (rows tilos);
-    arányforrásnál a rows lista kötelező, a forrás verziója/lenyomata explicit.
-    """
+    """Jóváhagyott, verziózott allokációs pillanatkép; DETAILED_LINES-nál a
+    gyereksorokból épül (rows tilos), arányforrásnál a rows és a forrás-
+    verzió/lenyomat kötelező."""
     if not rationale.strip():
         raise MarginGateBlocked("missing_rationale", "Az allokáció indoklása kötelező.")
     plan = _load_plan(db, plan_id)

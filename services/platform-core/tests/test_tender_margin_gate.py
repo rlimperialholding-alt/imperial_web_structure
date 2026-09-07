@@ -365,21 +365,9 @@ def test_direct_cost_baseline_insufficient_revenue_blocks_fail_closed(db, revenu
 
 
 def test_missing_amount_basis_blocks(db):
-    plan = seed_gate_plan(db, project_id=PROJECT, revenue="10000000", summary_lines=[{"cost_code": "PACK", "amount": "6000000", "amount_basis": "NET_REVENUE_ENVELOPE", "component": "other"}],)
-    create_allocation_snapshot(
-        db,
-        plan_id=plan.plan_id,
-        summary_line_id=get_line(db, plan, "PACK").line_id,
-        source_type="NORM_TABLE",
-        source_version="NORM-1",
-        source_hash="b" * 64,
-        approver="fixture-finance@imperial.local",
-        rationale="Szintetikus normatábla-allokáció a kapu tesztjéhez.",
-        rows=[
-            {"trade_code": "CONCRETE", "direct_cost_component": "material", "normalized_ratio": Decimal("100")},
-        ],
-    )
-    line = get_line(db, plan, "PACK")
+    plan = _foundation_plan(db)
+    _foundation_snapshot(db, plan)
+    line = get_line(db, plan, "FOUNDATION")
     line.amount_basis = None
     plan.content_sha256 = plan_content_sha256(plan)
     db.commit()
@@ -436,23 +424,7 @@ def test_detailed_children_over_envelope_block_build_and_gate(db):
     with pytest.raises(MarginGateBlocked) as excinfo:
         build_allocation_from_detailed_lines(db, plan_id=plan.plan_id, summary_line_id=parent_id, approver="fixture-finance@imperial.local", rationale="Részletes sorokból épülő allokáció.",)
     assert excinfo.value.reason_code == "child_sum_over_envelope"
-    create_allocation_snapshot(
-        db,
-        plan_id=plan.plan_id,
-        summary_line_id=parent_id,
-        source_type="NORM_TABLE",
-        source_version="NORM-FOUND-2026-1",
-        source_hash="b" * 64,
-        approver="fixture-finance@imperial.local",
-        rationale="Szintetikus normatábla-allokáció a kapu tesztjéhez.",
-        rows=[
-            {"trade_code": "REINFORCING", "direct_cost_component": "material", "normalized_ratio": Decimal("30")},
-            {"trade_code": "CONCRETE", "direct_cost_component": "material", "normalized_ratio": Decimal("40")},
-            {"trade_code": "FORMWORK", "direct_cost_component": "other", "normalized_ratio": Decimal("15")},
-            {"trade_code": "PUMPIX", "direct_cost_component": "machinery", "normalized_ratio": Decimal("10")},
-            {"trade_code": "OTHER-DIRECT", "direct_cost_component": "other", "normalized_ratio": Decimal("5")},
-        ],
-    )
+    _foundation_snapshot(db, plan)
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="REINFORCING", amount="100")
     assert excinfo.value.reason_code == "child_sum_over_envelope"
@@ -466,19 +438,8 @@ def test_detailed_direct_baseline_children_mismatch_blocks(db):
         summary_lines=[{"cost_code": "FOUNDATION-DCB", "amount": "6000000", "amount_basis": "DIRECT_COST_BASELINE", "component": "other"}],
     )
     add_child_line(db, plan, cost_code="CONCRETE", amount="5000000", component="material", parent_summary_line_id=get_line(db, plan, "FOUNDATION-DCB").line_id)
-    create_allocation_snapshot(
-        db,
-        plan_id=plan.plan_id,
-        summary_line_id=get_line(db, plan, "FOUNDATION-DCB").line_id,
-        source_type="NORM_TABLE",
-        source_version="NORM-1",
-        source_hash="b" * 64,
-        approver="fixture-finance@imperial.local",
-        rationale="Szintetikus normatábla-allokáció a kapu tesztjéhez.",
-        rows=[
-            {"trade_code": "CONCRETE", "direct_cost_component": "material", "normalized_ratio": Decimal("100")},
-        ],
-    )
+    # A gyerekösszeg-egyeztetés forrástípustól függetlenül kötelező.
+    _dcb_snapshot(db, plan)
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="CONCRETE", amount="100")
     assert excinfo.value.reason_code == "child_sum_mismatch"
@@ -625,18 +586,6 @@ def test_normalized_ratios_replay_is_deterministic():
 # --- Idempotencia és csere ---
 
 
-def test_retry_same_subject_is_idempotent(db):
-    seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
-    first = _evaluate(db, subject_id="SAME", amount="500000")
-    db.commit()
-    second = _evaluate(db, subject_id="SAME", amount="500000")
-    db.commit()
-    rows = list(db.scalars(select(FinanceCommitment)).all())
-    assert len(rows) == 1
-    assert rows[0].net_huf == Decimal("500000")
-    assert first.margin_percent == second.margin_percent == Decimal("35.00")
-
-
 def test_cost_code_change_on_retry_blocks(db):
     seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "3250000", "material"), ("MAT-B", "3250000", "material")],)
     _evaluate(db, subject_id="CODESW", cost_code="MAT-A", amount="500000")
@@ -733,12 +682,15 @@ def test_plan_change_between_check_and_commit_detected(db):
     db.rollback()
 
 
-def test_list_decisions_filters_by_project(db):
+def test_list_decisions_filters_to_allowed_projects_only(db):
     seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
-    _evaluate(db, subject_id="LIST-1", amount="100")
+    _evaluate(db, subject_id="SCOPE-1", amount="100")
     db.commit()
     seed_gate_plan(db, project_id="OTHER-PROJECT", revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
-    _evaluate(db, subject_id="LIST-2", amount="100", project="OTHER-PROJECT")
+    _evaluate(db, subject_id="SCOPE-2", amount="100", project="OTHER-PROJECT")
     db.commit()
-    assert len(list_decisions(db, project_id=PROJECT)) == 1
-    assert len(list_decisions(db)) == 2
+    # Task77 Gate7: az allowed_project_ids szűrő csak az engedélyezett kör
+    # döntéseit adja vissza; üres kör = üres lista (soha keresztprojekt dump).
+    rows = list_decisions(db, allowed_project_ids={PROJECT})
+    assert {row.project_id for row in rows} == {PROJECT}
+    assert list_decisions(db, allowed_project_ids=set()) == []

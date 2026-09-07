@@ -1,9 +1,8 @@
 """Szigorú CSV/XLSX költségvetés-import tesztjei — Task75.
 
-Fail-closed esetek: képlet, makró, külső hivatkozás, ismétlődő kód,
-hibás fejléc, méret-/sor-/oszlopkorlát, vegyes devizanem, amount_basis
-szabályok, preview utáni változás és nem-draft célterv. Kizárólag
-szintetikus fixture-ek.
+Fail-closed esetek: képlet, makró, külső hivatkozás, ismétlődő kód, hibás
+fejléc, méret-/sor-/oszlopkorlát, vegyes devizanem, amount_basis szabályok,
+preview utáni változás és nem-draft célterv. Kizárólag szintetikus fixture-ek.
 """
 
 from __future__ import annotations

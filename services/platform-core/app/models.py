@@ -4322,6 +4322,13 @@ class SiteIssue(Base):
 
 class ProcurementOrderProjection(Base):
     __tablename__ = "ops_procurement_orders"
+    __table_args__ = (
+        # Task77 Gate7: egy döntéshez egy megrendelés (0073-ban is; a NULL
+        # selection értékek nem ütköznek).
+        UniqueConstraint(
+            "selection_id", name="uq_ops_procurement_orders_selection_id"
+        ),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     order_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     project_id: Mapped[str] = mapped_column(String(100), index=True)

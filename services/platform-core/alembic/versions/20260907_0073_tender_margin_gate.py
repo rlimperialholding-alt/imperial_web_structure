@@ -59,6 +59,17 @@ def _add_missing_index(table: str, index_name: str, columns: tuple[str, ...]) ->
         op.create_index(index_name, table, list(columns))
 
 
+def _add_missing_unique_constraint(table: str, name: str, columns: tuple[str, ...]) -> None:
+    # Task77 Gate7: egy döntéshez legfeljebb egy megrendelés; a 0001 bootstrap
+    # már létrehozta (guard-skip), a migrált adatbázisban batch-rebuild adja.
+    inspector = sa.inspect(op.get_bind())
+    names = {item.get("name") for item in inspector.get_unique_constraints(table)}
+    if name in names:
+        return
+    with op.batch_alter_table(table) as batch_op:
+        batch_op.create_unique_constraint(name, list(columns))
+
+
 def upgrade() -> None:
     inspector = sa.inspect(op.get_bind())
     existing = set(inspector.get_table_names())
@@ -355,6 +366,14 @@ def upgrade() -> None:
         "procurement_requirements", "ix_procurement_requirements_cost_code", ("cost_code",)
     )
 
+    # Task77 Gate7: egy döntéshez legfeljebb egy megrendelés — atomi kényszer
+    # a create_order ellenőrzése mellé; konkurens kettősnél a kényszer dönt.
+    _add_missing_unique_constraint(
+        "ops_procurement_orders",
+        "uq_ops_procurement_orders_selection_id",
+        ("selection_id",),
+    )
+
 
 def downgrade() -> None:
     # Az új táblák csak üres állapotban dobhatók el (0050-es minta); üzleti
@@ -377,5 +396,7 @@ def downgrade() -> None:
             )
         op.drop_table(table)
     # Az új oszlopok adatőrző no-op módon maradnak (0064-es minta): a
-    # visszaállítás nem töröl osztályozási/provenance adatot.
+    # visszaállítás nem töröl osztályozási/provenance adatot. Ugyanez igaz az
+    # uq_ops_procurement_orders_selection_id kényszerre (Task77): a downgrade
+    # nem gyengíti az invariánst, a re-upgrade a guard miatt idempotens.
     return None

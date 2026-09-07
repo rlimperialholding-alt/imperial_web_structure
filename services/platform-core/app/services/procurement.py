@@ -7,6 +7,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -341,7 +342,29 @@ def create_order(db: Session, data: ProcurementOrderIn, actor: str) -> Procureme
     _event(db, project_id=requirement.project_id, event_type="PROCUREMENT_ORDERED", object_type="ProcurementOrder", object_id=row.order_id, title="Jóváhagyott megrendelés létrejött", financial_impact_huf=row.total_huf)
     audit(db, actor=actor, action="procurement.order.create", entity_type="procurement_order", entity_id=row.order_id, after={"selection_id": selection.selection_id, "sha256": row.content_sha256, "ordered_quantity": str(row.ordered_quantity)})
     verify_plan_unchanged(db, decision)
-    db.commit(); db.refresh(row)
+    pending_order_id = row.order_id
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # Task77 Gate7: az uq_ops_procurement_orders_selection_id kényszer
+        # konkurens kettős megrendelésnél atomi módon zár; az ütközést a
+        # kanonikus fail-closed domain hibára képezzük (API 409), a
+        # visszagördült mutációt külön tranzakció auditálja.
+        db.rollback()
+        audit(
+            db,
+            actor=actor,
+            action="procurement.order.duplicate_blocked",
+            entity_type="procurement_order",
+            entity_id=pending_order_id,
+            after={"selection_id": selection.selection_id},
+        )
+        db.commit()
+        raise ValueError(
+            "Ehhez a beszerzési döntéshez már készült megrendelés; a "
+            "szétbontott szállítás külön igényrevízióval indítható."
+        ) from exc
+    db.refresh(row)
     return row
 
 

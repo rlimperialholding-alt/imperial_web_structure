@@ -10,13 +10,12 @@ visszaigazolás, finance-commitment outbox és alvállalkozói szerződés-
 - minden sor explicit direct/indirect besorolású (besorolatlan = blokk), a
   tartalék konzervatívan direct, a summary-csomag gyereksora csak direct;
 - soronkénti várható direct költség = max(sorkeret, actual + ETC, lekötött);
-  a tervhez kötött árva lekötések teljes összege konzervatívan a vetületben;
+  az árva lekötések teljes összege konzervatívan a vetületben;
 - összegző csomaghoz jóváhagyott, verziózott, immutable allokációs
-  pillanatkép kötelező (terv-lenyomat a stale-detekció); roll-downnál a
-  teljes 65%-os boríték várható direct költség, a boríték feletti
-  elköteleződés csomag-blokk;
+  pillanatkép kötelező (stale-detekció); roll-downnál a teljes 65%-os
+  boríték várható direct költség, a boríték feletti elköteleződés blokk;
 - a kapu nettó alapon számol; ÁFA kizárólag külön auditált konfigurációban
-  él, és a számítást soha nem módosítja.
+  él, a számítást soha nem módosítja.
 Kizárólag szintetikus fixture-ek; éles tender/megrendelés/külső írás kizárt.
 """
 
@@ -489,8 +488,8 @@ def _decision_row(
 
 
 def _commit_block_evidence(row: MarginGateDecision, actor: str) -> None:
-    """BLOCK-bizonyíték + audit független tranzakcióban: a hívó tranzakció
-    visszagördülése után is megmarad."""
+    """BLOCK-bizonyíték + audit független tranzakcióban (visszagördülés után
+    is megmarad)."""
     from ..database import SessionLocal
 
     with SessionLocal() as session:
@@ -501,22 +500,11 @@ def _commit_block_evidence(row: MarginGateDecision, actor: str) -> None:
             action="margin_gate.blocked",
             entity_type="margin_gate_decision",
             entity_id=row.decision_id,
-            after={
-                "reason_code": row.block_reason_code,
-                "decision": row.decision,
-                "subject_type": row.subject_type,
-                "subject_id": row.subject_id,
-                "plan_version": row.plan_version,
-            },
+            after={"reason_code": row.block_reason_code, "decision": row.decision,
+                   "subject_type": row.subject_type, "subject_id": row.subject_id,
+                   "plan_version": row.plan_version},
         )
         session.commit()
-
-
-def _persist_block_evidence(
-    decision_fields: dict[str, Any], actor: str, input_snapshot: dict[str, Any]
-) -> None:
-    row = _decision_row(**decision_fields, actor=actor, input_snapshot=input_snapshot, plan_fk=False)
-    _commit_block_evidence(row, actor)
 
 
 def _persist_minimal_block_evidence(
@@ -569,7 +557,7 @@ def blocked_with_evidence(
     actor: str,
 ) -> MarginGateBlocked:
     """Wrapper-szintű blokk immutable bizonyítékkal (Review A LOW-3): a kapu
-    értékelése ELÉ helyezett ellenőrzések is döntési bizonyítékot rögzítenek."""
+    ELÉ helyezett ellenőrzések is döntési bizonyítékot rögzítenek."""
     exc = MarginGateBlocked(reason_code, message_hu, evidence_persisted=True)
     _persist_minimal_block_evidence(
         exc,
@@ -595,10 +583,9 @@ def evaluate_commitment_gate(
     proposed_net_huf: Decimal,
     actor: str,
 ) -> MarginGateDecision:
-    """A kanonikus TENDER-kapu egy javasolt elköteleződésre. PASS: döntés-
-    pillanatkép + audit a hívó tranzakciójában; BLOCK: bizonyíték független
-    tranzakcióban, majd MarginGateBlocked — a mutáció visszagördül, outbox nem
-    születik."""
+    """A kanonikus TENDER-kapu egy javasolt elköteleződésre. PASS: pillanatkép
+    + audit a hívó tranzakciójában; BLOCK: bizonyíték független tranzakcióban,
+    majd MarginGateBlocked — a mutáció visszagördül, outbox nem születik."""
     try:
         return _evaluate_commitment_gate_inner(
             db,
@@ -904,7 +891,7 @@ def _evaluate_commitment_gate_inner(
         f"(tervverzió: {plan.version}, költségkód: {cost_code}). Elhárítás: "
         f"{REMEDIATION_LINK} jóváhagyott költségvetési revízió, majd újraindítás."
     )
-    decision_fields = {
+    decision_fields: dict[str, Any] = {
         "plan": plan,
         "project_id": project_id,
         "action_type": action_type,
@@ -920,7 +907,10 @@ def _evaluate_commitment_gate_inner(
         "block_reason_hu": block_reason,
         "calculation": calculation,
     }
-    _persist_block_evidence(decision_fields, actor, input_snapshot)
+    _commit_block_evidence(
+        _decision_row(**decision_fields, actor=actor, input_snapshot=input_snapshot, plan_fk=False),
+        actor,
+    )
     raise _block("margin_below_minimum", block_reason, margin_percent=margin_display, plan_version=plan.version, plan_id=plan.plan_id, evidence_persisted=True,)
 
 
@@ -947,9 +937,19 @@ def verify_plan_unchanged(db: Session, decision: MarginGateDecision) -> None:
 
 
 def list_decisions(
-    db: Session, *, project_id: str | None = None, limit: int = 200
+    db: Session,
+    *,
+    project_id: str | None = None,
+    limit: int = 200,
+    allowed_project_ids: set[str] | None = None,
 ) -> list[MarginGateDecision]:
+    """Döntésnapló-lekérdezés; ``allowed_project_ids`` nem-None esetén csak az
+    actor számára elérhető projektek döntéseit adja vissza (Task77 Gate7)."""
     stmt = select(MarginGateDecision).order_by(desc(MarginGateDecision.created_at)).limit(limit)
+    if allowed_project_ids is not None:
+        stmt = stmt.where(
+            MarginGateDecision.project_id.in_(sorted(allowed_project_ids))
+        )
     if project_id:
         stmt = stmt.where(MarginGateDecision.project_id == project_id)
     return list(db.scalars(stmt).all())

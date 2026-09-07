@@ -424,6 +424,8 @@ def _previewed_import(client, project_id: str = PROJECT) -> str:
     writer = csv.writer(buffer, delimiter=";")
     writer.writerow(headers)
     writer.writerow(["MAT-X", "szerkezet", "Teszt sor", "1000", "", "direct", "material", "", "false", ""])
+    # Task77 AC-03: a preview a bejelentkezett pénzügyi actorhoz kötött.
+    _login(client, "finance@imperial.local")
     response = client.post("/api/budget-imports/preview", files={"file": ("budget.csv", buffer.getvalue().encode("utf-8-sig"), "text/csv")}, data={"project_id": project_id},)
     assert response.status_code == 200
     return response.json()["import_id"]
@@ -443,6 +445,7 @@ def test_budget_import_approve_api_requires_finance_actor(client, db):
     import_id = _previewed_import(client)
     _draft_plan_row(db, project_id=PROJECT, plan_id="FIN-PLAN-API-01")
     # Generikus API token bejelentkezés nélkül nem ad platform-admin-t.
+    client.cookies.clear()
     assert client.post(f"/api/budget-imports/{import_id}/approve", json={"plan_id": "FIN-PLAN-API-01"}).status_code == 401
     _login(client, "project-manager@imperial.local")
     assert client.post(f"/api/budget-imports/{import_id}/approve", json={"plan_id": "FIN-PLAN-API-01"}).status_code == 403
@@ -453,6 +456,47 @@ def test_budget_import_approve_api_requires_finance_actor(client, db):
     assert row.approved_by == "finance@imperial.local"
     audit_row = db.scalar(select(AuditLog).where(AuditLog.action == "budget.import.approved"))
     assert audit_row is not None and audit_row.actor == "finance@imperial.local"
+    # Task77 AC-03: a preview ugyanahhoz a pénzügyi actorhoz kötött; a valós
+    # actor kerül az import-rekordba és az auditba (nem az "api").
+    preview_files = {"file": ("budget.csv", b"cost_code;category;description;amount;currency;cost_class;direct_cost_component;amount_basis;is_summary_package;parent_summary_line_id\r\nMAT-X;szerkezet;Teszt sor;1000;;direct;material;;false;\r\n", "text/csv")}
+    client.cookies.clear()
+    assert client.post("/api/budget-imports/preview", files=preview_files, data={"project_id": PROJECT}).status_code == 401
+    _login(client, "project-manager@imperial.local")
+    assert client.post("/api/budget-imports/preview", files=preview_files, data={"project_id": PROJECT}).status_code == 403
+    _login(client, "finance@imperial.local")
+    preview_response = client.post("/api/budget-imports/preview", files=preview_files, data={"project_id": PROJECT})
+    assert preview_response.status_code == 200, preview_response.text
+    preview_row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == preview_response.json()["import_id"]))
+    assert preview_row.imported_by == "finance@imperial.local"
+    preview_audit = db.scalar(select(AuditLog).where(AuditLog.action == "budget.import.previewed"))
+    assert preview_audit is not None and preview_audit.actor == "finance@imperial.local"
+
+
+def test_margin_gate_decisions_api_role_and_scope(client, db):
+    # Task77 AC-02: a generikus token soha nem fedhet fel keresztprojekt
+    # döntést; a lista az actor projektscope-jára szűrt (a szolgáltatási
+    # szűrőt a gate tesztfájl bizonyítja).
+    from app.models import MarginGateDecision
+    for project_id, decision_id in ((PROJECT, "MGD-API-1"), ("TASK77-002", "MGD-API-2")):
+        db.add(MarginGateDecision(
+            decision_id=decision_id, project_id=project_id,
+            plan_id=f"FIN-PLAN-{project_id}", plan_version=1,
+            action_type="procurement_order_create",
+            subject_type="procurement_selection", subject_id=f"SEL-{project_id}",
+            proposed_net_huf=Decimal("1000"), decision="PASS",
+            required_margin_percent=Decimal("35.00"),
+            input_snapshot_json="{}", input_sha256="0" * 64,
+            created_by="fixture@imperial.local", created_at=datetime.now(UTC),
+        ))
+    db.commit()
+    client.cookies.clear()
+    assert client.get("/margin-gate/decisions").status_code == 401
+    _login(client, "project-manager@imperial.local")
+    assert client.get("/margin-gate/decisions").status_code == 403
+    _login(client, "finance@imperial.local")
+    response = client.get("/margin-gate/decisions", params={"project_id": PROJECT})
+    assert response.status_code == 200
+    assert [d["decision_id"] for d in response.json()["decisions"]] == ["MGD-API-1"]
 
 
 def test_budget_import_approve_api_rejects_cross_project_plan(client, db):
@@ -486,3 +530,16 @@ def test_allocation_snapshot_api_binds_real_actor(client, db):
     assert snapshot.approved_by == "finance@imperial.local"
     audit_row = db.scalar(select(AuditLog).where(AuditLog.action == "budget.allocation.snapshot_created"))
     assert audit_row is not None and audit_row.actor == "finance@imperial.local"
+    # Task77 AC-01: a részletes-soros allokációs API ugyanazt a fail-closed
+    # szerepköri + projekt-scope kötést követeli meg.
+    from margin_gate_fixtures import add_child_line
+    add_child_line(db, plan, cost_code="CHILD-API", amount="3000000",
+                   component="labour", parent_summary_line_id=get_line(db, plan, "PACK-API").line_id)
+    detailed_payload = {"plan_id": plan.plan_id, "summary_line_id": get_line(db, plan, "PACK-API").line_id,
+                        "rationale": "Részletes sorokból épülő allokáció (Task77)."}
+    client.cookies.clear()
+    assert client.post("/api/allocation-snapshots/from-detailed-lines", json=detailed_payload).status_code == 401
+    _login(client, "project-manager@imperial.local")
+    assert client.post("/api/allocation-snapshots/from-detailed-lines", json=detailed_payload).status_code == 403
+    _login(client, "finance@imperial.local")
+    assert client.post("/api/allocation-snapshots/from-detailed-lines", json=detailed_payload).status_code == 200

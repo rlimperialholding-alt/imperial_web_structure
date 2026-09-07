@@ -146,6 +146,23 @@ def _require_project_scope(
         )
 
 
+def require_project_finance_scope(db: Session, user: object, project_id: str) -> None:
+    """Fail-closed projekt-scope a kapu-döntésnapló és import-preview API-khoz
+    (Task77); szűkített körű actor esetén a projekten kívüli azonosító
+    PermissionError-t ad."""
+    _require_project_scope(db, user, project_id)
+
+
+def require_finance_plan_project_scope(
+    db: Session, user: object, plan_id: str
+) -> ProjectFinancePlan:
+    """A célterv feloldása ELŐSZÖR, majd fail-closed projekt-scope (Task77);
+    a sorzár (FOR UPDATE) a tranzakció végéig tart."""
+    plan = _plan(db, plan_id)
+    _require_project_scope(db, user, plan.project_id)
+    return plan
+
+
 def _require_draft(plan: ProjectFinancePlan) -> None:
     if plan.status != "draft":
         raise ValueError("A benyújtott pénzügyi terv nem módosítható; készítsen új verziót.")
@@ -716,36 +733,40 @@ def clone_finance_plan(db: Session, plan_id: str, user: object) -> ProjectFinanc
     )
     db.add(clone)
     db.flush()
-    # A TENDER-kapu osztályozási oszlopai a klónozott sorokra is átkerülnek;
-    # a gyereksorok szülő-mutatóját az új sorazonosítókra térképezzük át.
+    # KÉT menet (Task77 Gate7): az első a TELJES forrás→klón sorazonosító-
+    # térképet építi, a második ezután oldja fel a parent_summary_line_id
+    # mutatókat — a sorrend (gyerek a szülő ELŐTT) nem rontja el a remap-et.
     line_id_map: dict[str, str] = {}
+    cloned_lines: list[ProjectFinanceBudgetLine] = []
     for budget_row in source.budget_lines:
         new_line_id = f"FIN-LINE-{uuid4().hex[:12].upper()}"
         line_id_map[budget_row.line_id] = new_line_id
-        db.add(
-            ProjectFinanceBudgetLine(
-                line_id=new_line_id,
-                plan_id_fk=clone.id,
-                cost_code=budget_row.cost_code,
-                category=budget_row.category,
-                description=budget_row.description,
-                budget_net=budget_row.budget_net,
-                committed_net=budget_row.committed_net,
-                actual_net=budget_row.actual_net,
-                estimate_to_complete_net=budget_row.estimate_to_complete_net,
-                cost_class=budget_row.cost_class,
-                direct_cost_component=budget_row.direct_cost_component,
-                amount_basis=budget_row.amount_basis,
-                is_summary_package=budget_row.is_summary_package,
-                parent_summary_line_id=(
-                    line_id_map.get(budget_row.parent_summary_line_id)
-                    if budget_row.parent_summary_line_id
-                    else None
-                ),
-                currency=budget_row.currency,
-                source_type=budget_row.source_type,
-                source_id=budget_row.source_id,
-            )
+        line = ProjectFinanceBudgetLine(
+            line_id=new_line_id,
+            plan_id_fk=clone.id,
+            cost_code=budget_row.cost_code,
+            category=budget_row.category,
+            description=budget_row.description,
+            budget_net=budget_row.budget_net,
+            committed_net=budget_row.committed_net,
+            actual_net=budget_row.actual_net,
+            estimate_to_complete_net=budget_row.estimate_to_complete_net,
+            cost_class=budget_row.cost_class,
+            direct_cost_component=budget_row.direct_cost_component,
+            amount_basis=budget_row.amount_basis,
+            is_summary_package=budget_row.is_summary_package,
+            parent_summary_line_id=None,
+            currency=budget_row.currency,
+            source_type=budget_row.source_type,
+            source_id=budget_row.source_id,
+        )
+        db.add(line)
+        cloned_lines.append(line)
+    for budget_row, line in zip(source.budget_lines, cloned_lines):
+        line.parent_summary_line_id = (
+            line_id_map.get(budget_row.parent_summary_line_id)
+            if budget_row.parent_summary_line_id
+            else None
         )
     for cashflow_row in source.cashflow_lines:
         db.add(

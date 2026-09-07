@@ -17,10 +17,8 @@ import hashlib
 import io
 import json
 import zipfile
-from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,8 +34,10 @@ from .tender_margin_gate import (
     COST_CLASSES,
     DIRECT_COMPONENTS,
     MarginGateBlocked,
+    _id,
     canonical_json,
     sha256_hex,
+    utcnow,
 )
 
 MAX_UPLOAD_BYTES = 1_000_000
@@ -61,14 +61,6 @@ REQUIRED_HEADERS = (
 )
 
 IMPORT_ROLES = {"finance", "managing-director", "owner", "platform-admin"}
-
-
-def utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
-def _id(prefix: str) -> str:
-    return f"{prefix}-{uuid4().hex[:12].upper()}"
 
 
 class BudgetImportError(ValueError):
@@ -341,11 +333,8 @@ def preview_budget_import(
 def approve_budget_import(
     db: Session, *, import_id: str, plan_id: str, actor: str, actor_role: str
 ) -> ProjectBudgetImport:
-    """Jóváhagyás: kizárólag draft tervre ír, a tárolt, hash-elt preview-ból.
-
-    A preview rekord tartalma a jóváhagyáskor újra hash-elődik: a „preview
-    után megváltozott bemenet" fail-closed elutasítás.
-    """
+    """Jóváhagyás kizárólag draft tervre, a tárolt, hash-elt preview-ból; a
+    „preview után megváltozott bemenet" fail-closed elutasítás."""
     if actor_role not in IMPORT_ROLES:
         raise PermissionError("A költségvetés-import jóváhagyására nincs jogosultság.")
     row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id))
@@ -355,7 +344,16 @@ def approve_budget_import(
         raise MarginGateBlocked("import_not_preview", "Csak hibátlan preview állapotú import hagyható jóvá.",)
     if sha256_hex(row.preview_json) != row.preview_sha256:
         raise MarginGateBlocked("import_changed_after_preview", "Az import tartalma a preview óta megváltozott; a jóváhagyás " "fail-closed elutasítva.",)
-    plan = db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == plan_id))
+    # Task77 Gate7: a célterv sorzárral (FOR UPDATE) töltődik, a draft-
+    # ellenőrzés a zár UTÁN fut (konkurens jóváhagyás nem írathat immutable
+    # tervre); a populate_existing az elavult identitástérkép-objektumot is
+    # frissíti.
+    plan = db.scalar(
+        select(ProjectFinancePlan)
+        .where(ProjectFinancePlan.plan_id == plan_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if plan is None:
         raise KeyError(plan_id)
     # Projekt-scope (Review A HIGH / Task76): keresztprojekt-import fail-closed.
