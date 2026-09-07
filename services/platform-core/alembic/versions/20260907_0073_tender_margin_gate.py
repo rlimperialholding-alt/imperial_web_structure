@@ -36,6 +36,26 @@ _DOWNGRADE_DROP_ORDER = ("finance_budget_imports",
     "finance_allocation_snapshots",
     "margin_gate_vat_rules",)
 
+# Task79 (Review HIGH): a 0073 által MEGLÉVŐ táblákra felvett oszlopok
+# (tábla, oszlop, nullable, üres/alapértelmezett érték) és indexeik — a
+# downgrade csak adatmentes oszlopot dobhat el (pontos 0072-visszaállítás).
+_ADDED_COLUMNS = (("finance_project_plans", "content_sha256", True, None),
+    ("finance_project_plans", "provenance_json", False, "{}"),
+    ("finance_project_budget_lines", "cost_class", True, None),
+    ("finance_project_budget_lines", "direct_cost_component", True, None),
+    ("finance_project_budget_lines", "amount_basis", True, None),
+    ("finance_project_budget_lines", "is_summary_package", False, False),
+    ("finance_project_budget_lines", "parent_summary_line_id", True, None),
+    ("finance_project_budget_lines", "currency", False, "HUF"),
+    ("tender_packages", "cost_code", True, None),
+    ("procurement_requirements", "cost_code", True, None),)
+# Az upgrade által az új oszlopokra felvett indexek (tábla -> nevek).
+_ADDED_INDEXES = {"finance_project_plans": ("ix_finance_project_plans_content_sha256",),
+    "finance_project_budget_lines": ("ix_finance_project_budget_lines_cost_class",
+        "ix_finance_project_budget_lines_parent_summary_line_id",),
+    "tender_packages": ("ix_tender_packages_cost_code",),
+    "procurement_requirements": ("ix_procurement_requirements_cost_code",),}
+
 
 def _indexes(table: str, prefix: str, columns: tuple[str, ...]) -> None:
     for column in columns:
@@ -76,6 +96,28 @@ def _drop_unique_constraint_if_exists(table: str, name: str) -> None:
         return
     with op.batch_alter_table(table) as batch_op:
         batch_op.drop_constraint(name, type_="unique")
+
+
+def _drop_index_if_exists(table: str, name: str) -> None:
+    inspector = sa.inspect(op.get_bind())
+    names = {item.get("name") for item in inspector.get_indexes(table)}
+    if name in names:
+        op.drop_index(name, table_name=table)
+
+
+def _drop_column_if_exists(table: str, name: str) -> None:
+    inspector = sa.inspect(op.get_bind())
+    columns = {item["name"] for item in inspector.get_columns(table)}
+    if name in columns:
+        op.drop_column(table, name)
+
+
+def _added_column_has_data(table: str, column: str, nullable: bool, default) -> bool:
+    # Task79: valós (nem alapértelmezett) oszlopadatnál a downgrade fail-closed.
+    probe = sa.table(table, sa.column(column))
+    expression = probe.c[column].isnot(None) if nullable else (probe.c[column] != default)
+    count = op.get_bind().execute(sa.select(sa.func.count()).select_from(probe).where(expression)).scalar()
+    return bool(count)
 
 
 def upgrade() -> None:
@@ -273,16 +315,33 @@ def downgrade() -> None:
         count = op.get_bind().execute(sa.select(sa.func.count()).select_from(sa.table(table))).scalar()
         if count:
             raise RuntimeError(f"0073 downgrade refused: {table} contains business rows; " "use an approved forward migration instead.")
+    # Task79 (Review HIGH): meglévő táblák 0073-oszlopai is eldobandók; valós
+    # oszlopadatnál fail-closed elutasítás (nincs részleges visszaállítás).
+    for table, column, nullable, default in _ADDED_COLUMNS:
+        if table not in existing:
+            continue
+        if column not in {item["name"] for item in inspector.get_columns(table)}:
+            continue
+        if _added_column_has_data(table, column, nullable, default):
+            raise RuntimeError(f"0073 downgrade refused: {table}.{column} contains business data; " "use an approved forward migration instead.")
     # Task78: az upgrade által hozzáadott egyedi kényszer eldobása a függő
     # táblák ELŐTT (FK-biztos sorrend) — a downgrade pontosan a 0072-es head
     # sémát állítja vissza, a re-upgrade a guard miatt idempotens. Üzleti
     # soroknál a downgrade fent fail-closed elutasításra került, így itt
     # részleges visszaállítás nem történhet.
     _drop_unique_constraint_if_exists("ops_procurement_orders", "uq_ops_procurement_orders_selection_id")
+    # FK-biztos sorrend: kényszer → oszlopindexek → oszlopok → új táblák.
+    for table, index_names in _ADDED_INDEXES.items():
+        if table not in existing:
+            continue
+        for index_name in index_names:
+            _drop_index_if_exists(table, index_name)
+    for table, column, _nullable, _default in _ADDED_COLUMNS:
+        if table not in existing:
+            continue
+        _drop_column_if_exists(table, column)
     for table in _DOWNGRADE_DROP_ORDER:
         if table not in existing:
             continue
         op.drop_table(table)
-    # Az új oszlopok adatőrző no-op módon maradnak (0064-es minta): a
-    # visszaállítás nem töröl osztályozási/provenance adatot.
     return None

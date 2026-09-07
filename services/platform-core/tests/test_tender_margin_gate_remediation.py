@@ -47,6 +47,7 @@ def _load_migration_module():
 
 def test_migration_0073_downgrade_restores_previous_schema_exactly():
     from pathlib import Path
+    import re
     migration, migration_path = _load_migration_module()
     order = list(migration._DOWNGRADE_DROP_ORDER)
     assert set(order) == set(migration._NEW_TABLES)
@@ -61,13 +62,22 @@ def test_migration_0073_downgrade_restores_previous_schema_exactly():
     assert 'batch_op.drop_constraint(name, type_="unique")' in source
     assert "uq_ops_procurement_orders_selection_id" in source
     assert source.index("_drop_unique_constraint_if_exists(") < source.index("op.drop_table")
+    # Task79: a regiszterek pontosan az upgrade-felvételeket fedik le, a
+    # downgrade FK-biztos sorrendben (kényszer < index < oszlop < tábla) dob.
+    upgrade_columns = set(re.findall(r'_add_missing_column\(inspector, "([^"]+)", sa\.Column\("([^"]+)"', source))
+    assert upgrade_columns == {(table, column) for table, column, _n, _d in migration._ADDED_COLUMNS}
+    upgrade_indexes = set(re.findall(r'_add_missing_index\("([^"]+)", "([^"]+)"', source))
+    assert upgrade_indexes == {(table, name) for table, names in migration._ADDED_INDEXES.items() for name in names}
+    assert source.index("_drop_unique_constraint_if_exists(") < source.index("_drop_index_if_exists(") < source.index("_drop_column_if_exists(") < source.index("op.drop_table")
+    assert "_added_column_has_data" in source
 
 
 def test_migration_0073_upgrade_downgrade_reupgrade_and_row_refusal(tmp_path):
     # Futás idejű lánc (a kanonikus alembic-futtatási kontextusban, izolált
     # alprocesszben — az env.py importkészletével): upgrade head → üzleti soros
     # downgrade fail-closed elutasítás (részleges visszaállítás nélkül) → üres
-    # downgrade → re-upgrade.
+    # downgrade (teljes séma-objektum összehasonlítás a 0072-es állapottal) →
+    # re-upgrade.
     import os
     import subprocess
     import sys
@@ -75,6 +85,7 @@ def test_migration_0073_upgrade_downgrade_reupgrade_and_row_refusal(tmp_path):
     from pathlib import Path
     import sqlalchemy as sa
     from sqlalchemy import create_engine
+    migration, _ = _load_migration_module()
     repo = Path(__file__).resolve().parents[1]
     db_path = tmp_path / "migration-0073.db"
     env = dict(os.environ, DATABASE_URL=f"sqlite:///{db_path.as_posix()}")
@@ -92,6 +103,38 @@ def test_migration_0073_upgrade_downgrade_reupgrade_and_row_refusal(tmp_path):
     def table_names():
         return set(sa.inspect(engine).get_table_names())
 
+    def schema_snapshot():
+        inspector = sa.inspect(engine)
+        snapshot = {}
+        for name in sorted(inspector.get_table_names()):
+            snapshot[name] = {
+                "columns": tuple(sorted((c["name"], str(c["type"]), bool(c["nullable"])) for c in inspector.get_columns(name))),
+                "indexes": tuple(sorted(((i.get("name"), tuple(i.get("column_names") or ())) for i in inspector.get_indexes(name)), key=str)),
+                "uniques": tuple(sorted(((u.get("name"),) for u in inspector.get_unique_constraints(name)), key=str)),
+                "fks": tuple(sorted(((tuple(f.get("constrained_columns") or ()), f.get("referred_table"), tuple(f.get("referred_columns") or ())) for f in inspector.get_foreign_keys(name)), key=str)),
+                "checks": tuple(sorted(((c.get("name"),) for c in inspector.get_check_constraints(name)), key=str)),
+            }
+        return snapshot
+
+    def assert_0073_columns_and_indexes_present(snap):
+        for table, column, _n, _d in migration._ADDED_COLUMNS:
+            assert column in {c[0] for c in snap[table]["columns"]}
+        for table, index_names in migration._ADDED_INDEXES.items():
+            assert set(index_names) <= {i[0] for i in snap[table]["indexes"]}
+
+    def assert_only_0073_objects_removed(after):
+        # A downgrade UTÁN a head sémából CSAK a 0073-objektumok hiányoznak.
+        assert set(after) == set(head) - set(migration._NEW_TABLES)
+        for table, objects in after.items():
+            dropped_columns = {column for t, column, _n, _d in migration._ADDED_COLUMNS if t == table}
+            dropped_indexes = set(migration._ADDED_INDEXES.get(table, ()))
+            dropped_uniques = {"uq_ops_procurement_orders_selection_id"} if table == "ops_procurement_orders" else set()
+            assert objects["columns"] == tuple(item for item in head[table]["columns"] if item[0] not in dropped_columns)
+            assert objects["indexes"] == tuple(item for item in head[table]["indexes"] if item[0] not in dropped_indexes)
+            assert objects["uniques"] == tuple(item for item in head[table]["uniques"] if item[0] not in dropped_uniques)
+            assert objects["fks"] == head[table]["fks"]
+            assert objects["checks"] == head[table]["checks"]
+
     imports_table = sa.table("finance_budget_imports",
         sa.column("import_id"), sa.column("project_id"), sa.column("file_name"),
         sa.column("source_format"), sa.column("content_sha256"), sa.column("preview_sha256"),
@@ -102,6 +145,10 @@ def test_migration_0073_upgrade_downgrade_reupgrade_and_row_refusal(tmp_path):
     engine = create_engine(f"sqlite:///{db_path.as_posix()}")
     assert "uq_ops_procurement_orders_selection_id" in unique_constraint_names()
     assert "finance_budget_imports" in table_names()
+    head = schema_snapshot()
+    for table in migration._NEW_TABLES:
+        assert table in head
+    assert_0073_columns_and_indexes_present(head)
     # Üzleti sor: a downgrade elutasít, sem tábla, sem kényszer nem tűnik el.
     with engine.connect() as connection:
         connection.execute(imports_table.insert().values(import_id="BIMP-MIG-ROW", project_id="MIG-1", file_name="b.csv",
@@ -115,16 +162,29 @@ def test_migration_0073_upgrade_downgrade_reupgrade_and_row_refusal(tmp_path):
     assert "0073 downgrade refused" in refused.stdout + refused.stderr
     assert "finance_budget_imports" in table_names()
     assert "uq_ops_procurement_orders_selection_id" in unique_constraint_names()
-    # Üres állapot: a downgrade a kényszert és az új táblákat is eldobja.
+    assert schema_snapshot() == head  # részleges visszaállítás nem történt
     with engine.connect() as connection:
         connection.execute(imports_table.delete())
         connection.commit()
     expect_ok("downgrade", "20260816_0072")
     assert "finance_budget_imports" not in table_names()
     assert "uq_ops_procurement_orders_selection_id" not in unique_constraint_names()
-    # A re-upgrade determinisztikusan helyreállítja a teljes sémát.
+    assert_only_0073_objects_removed(schema_snapshot())
+    # Re-upgrade: a 0073-objektumok determinisztikusan helyreállnak.
     expect_ok("upgrade", "20260907_0073")
     assert "finance_budget_imports" in table_names()
+    assert "uq_ops_procurement_orders_selection_id" in unique_constraint_names()
+    assert_0073_columns_and_indexes_present(schema_snapshot())
+    # Oszlopadat-őr: valós adatú oszlopnál a downgrade fail-closed elutasít.
+    from sqlalchemy.orm import Session as MigrationSession
+    from app.models import TenderPackage
+    with MigrationSession(engine) as session:
+        session.add(TenderPackage(tender_id="TEN-MIG-ROW", project_id="MIG-1", title="Szintetikus tender", scope="Szintetikus kör", cost_code="DATA-CODE", question_deadline_at=datetime.now(UTC), submission_deadline_at=datetime.now(UTC), created_by="fixture@imperial.local",))
+        session.commit()
+    refused = run_alembic("downgrade", "20260816_0072")
+    assert refused.returncode != 0
+    assert "0073 downgrade refused" in refused.stdout + refused.stderr
+    assert "tender_packages.cost_code" in refused.stdout + refused.stderr
     assert "uq_ops_procurement_orders_selection_id" in unique_constraint_names()
     engine.dispose()
 
@@ -483,6 +543,74 @@ def test_second_order_for_same_selection_is_rejected(client, db):
     assert len(orders) == 1
     # A lekötés a döntés-jóváhagyáskori egyetlen sor marad.
     assert len(list(db.scalars(select(FinanceCommitment)).all())) == 1
+
+
+# --- Task79: commit-kori IntegrityError pontos kezelése ---
+
+
+def _order_payload(selection_id):
+    from app.schemas import ProcurementOrderIn
+    return ProcurementOrderIn(selection_id=selection_id, ordered_quantity=Decimal("100"),
+        delivery_due=datetime.now(UTC) + timedelta(days=5))
+
+
+def _approved_selection(client, db, cost_code="MAT-ENF"):
+    from tests.test_tender_margin_enforcement import _approved_requirement, _selected
+    seed_gate_plan(db, project_id="ENF-001", revenue="10000000", direct_lines=[(cost_code, "6000000", "labour")])
+    requirement_id = _approved_requirement(client, db, cost_code=cost_code)
+    selection_id = _selected(client, requirement_id)
+    assert client.post(f"/api/procurement/selections/{selection_id}/approvals/managing_director").status_code == 200
+    return selection_id
+
+
+def test_commit_time_selection_unique_conflict_maps_to_duplicate_and_audits_selection(client, db, monkeypatch):
+    # BIZONYÍTOTT selection-unique ütközés → duplicate hiba; az audit a
+    # perzisztált DÖNTÉSRE hivatkozik (a nem perzisztált rendeléssorról nincs lelet).
+    from sqlalchemy.exc import IntegrityError
+    from app.models import AuditLog, ProcurementOrderProjection as OrderRow
+    from app.services.procurement import create_order
+    selection_id = _approved_selection(client, db)
+    original_commit = db.commit
+    calls: list[int] = []
+
+    def fail_once_commit():
+        calls.append(1)
+        if len(calls) == 1:
+            raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: ops_procurement_orders.selection_id"))
+        original_commit()
+
+    monkeypatch.setattr(db, "commit", fail_once_commit)
+    with pytest.raises(ValueError, match="már készült megrendelés"):
+        create_order(db, _order_payload(selection_id), actor="fixture@imperial.local")
+    assert db.scalar(select(OrderRow.id).where(OrderRow.selection_id == selection_id)) is None
+    assert db.scalar(select(AuditLog.id).where(AuditLog.action == "procurement.order.create")) is None
+    blocked = list(db.scalars(select(AuditLog).where(AuditLog.action == "procurement.order.duplicate_blocked")).all())
+    assert len(blocked) == 1
+    assert blocked[0].entity_type == "procurement_selection"
+    assert blocked[0].entity_id == selection_id
+
+
+def test_commit_time_unrelated_integrity_error_stays_visible_without_audit(client, db, monkeypatch):
+    # Más integritás-hiba eredeti formában terjed (nincs téves mapping/audit).
+    from sqlalchemy.exc import IntegrityError
+    from app.models import AuditLog, ProcurementOrderProjection as OrderRow
+    from app.services.procurement import create_order
+    selection_id = _approved_selection(client, db)
+    original_commit = db.commit
+
+    def fail_once_commit():
+        if getattr(fail_once_commit, "failed", False):
+            original_commit()
+            return
+        fail_once_commit.failed = True
+        raise IntegrityError("INSERT", {}, Exception("NOT NULL constraint failed: ops_procurement_orders.status"))
+
+    monkeypatch.setattr(db, "commit", fail_once_commit)
+    with pytest.raises(IntegrityError):
+        create_order(db, _order_payload(selection_id), actor="fixture@imperial.local")
+    assert db.scalar(select(OrderRow.id).where(OrderRow.selection_id == selection_id)) is None
+    assert db.scalar(select(AuditLog.id).where(AuditLog.action == "procurement.order.duplicate_blocked")) is None
+    assert db.scalar(select(AuditLog.id).where(AuditLog.action == "procurement.order.create")) is None
 
 
 def test_award_then_po_preparation_approval_counts_once(client, db):

@@ -146,7 +146,8 @@ def test_import_approval_rechecks_draft_after_lock_acquisition(db):
         other.commit()
     with pytest.raises(MarginGateBlocked, match="draft"):
         approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
-                              actor="fixture-finance@imperial.local", actor_role="finance")
+                              actor="fixture-finance@imperial.local", actor_role="finance",
+                              user=_user("finance", "fixture-finance@imperial.local"))
     # A jóváhagyott terv immutable maradt: egyetlen import-sor sem került rá.
     db.expire_all()
     fresh_plan = db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == plan.plan_id))
@@ -181,13 +182,13 @@ def test_concurrent_import_approval_applies_lines_at_most_once(db):
         if args and args[0] is ProjectFinancePlan and not fired["value"]:
             fired["value"] = True
             with SessionLocal() as other:
-                approve_budget_import(other, import_id=row.import_id, plan_id=plan.plan_id, actor="other-finance@imperial.local", actor_role="finance",)
+                approve_budget_import(other, import_id=row.import_id, plan_id=plan.plan_id, actor="other-finance@imperial.local", actor_role="finance", user=_user("finance", "other-finance@imperial.local"),)
         return original_select(*args, **kwargs)
 
     budget_import_service.select = select_hook
     try:
         with pytest.raises(MarginGateBlocked, match="preview"):
-            approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="first-finance@imperial.local", actor_role="finance",)
+            approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="first-finance@imperial.local", actor_role="finance", user=_user("finance", "first-finance@imperial.local"),)
     finally:
         budget_import_service.select = original_select
     db.expire_all()

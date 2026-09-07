@@ -277,6 +277,13 @@ def approve_selection(db: Session, selection_id: str, stage: str, actor: str, ac
     return row
 
 
+def _selection_unique_conflict(message: str) -> bool:
+    # Task79: csak a BIZONYÍTOTT selection-unique ütközés képezhető duplicate-
+    # hibára (SQLite/PG üzenetforma); más integritás-hiba látható marad.
+    return ("uq_ops_procurement_orders_selection_id" in message
+        or "ops_procurement_orders.selection_id" in message)
+
+
 def create_order(db: Session, data: ProcurementOrderIn, actor: str) -> ProcurementOrderProjection:
     selection = db.scalar(select(ProcurementSelection).where(ProcurementSelection.selection_id == data.selection_id))
     if not selection:
@@ -342,22 +349,25 @@ def create_order(db: Session, data: ProcurementOrderIn, actor: str) -> Procureme
     _event(db, project_id=requirement.project_id, event_type="PROCUREMENT_ORDERED", object_type="ProcurementOrder", object_id=row.order_id, title="Jóváhagyott megrendelés létrejött", financial_impact_huf=row.total_huf)
     audit(db, actor=actor, action="procurement.order.create", entity_type="procurement_order", entity_id=row.order_id, after={"selection_id": selection.selection_id, "sha256": row.content_sha256, "ordered_quantity": str(row.ordered_quantity)})
     verify_plan_unchanged(db, decision)
-    pending_order_id = row.order_id
+    selection_key = selection.selection_id
     try:
         db.commit()
     except IntegrityError as exc:
-        # Task77 Gate7: az uq_ops_procurement_orders_selection_id kényszer
-        # konkurens kettős megrendelésnél atomi módon zár; az ütközést a
-        # kanonikus fail-closed domain hibára képezzük (API 409), a
-        # visszagördült mutációt külön tranzakció auditálja.
+        # Task77 Gate7: a kényszer konkurens kettősnél atomi módon zár.
+        # Task79: csak a BIZONYÍTOTT ütközés képeződik domain hibára (409);
+        # más integritás-hiba eredeti formában látható. Az audit a
+        # perzisztált DÖNTÉSRE hivatkozik (a nem perzisztált rendeléssorról
+        # nincs lelet).
         db.rollback()
+        if not _selection_unique_conflict(f"{exc} {exc.orig}"):
+            raise
         audit(
             db,
             actor=actor,
             action="procurement.order.duplicate_blocked",
-            entity_type="procurement_order",
-            entity_id=pending_order_id,
-            after={"selection_id": selection.selection_id},
+            entity_type="procurement_selection",
+            entity_id=selection_key,
+            after={"selection_id": selection_key},
         )
         db.commit()
         raise ValueError(

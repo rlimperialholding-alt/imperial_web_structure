@@ -17,7 +17,7 @@ import pytest
 from openpyxl import Workbook
 from sqlalchemy import select
 
-from app.models import ProjectFinanceBudgetLine, ProjectFinancePlan
+from app.models import ProjectBudgetImport, ProjectFinanceBudgetLine, ProjectFinancePlan
 from app.services.budget_import import (
     BudgetImportError,
     approve_budget_import,
@@ -85,6 +85,18 @@ def _draft_plan(db, *, project_id="IMP-IMPORT-001", plan_id="FIN-PLAN-IMPORT-01"
     return plan
 
 
+def _user(role: str, email: str | None = None):
+    from types import SimpleNamespace
+    return SimpleNamespace(role=role, email=email or f"{role}@imperial.local")
+
+
+def _approve(db, row, plan, *, role="finance", user_email=None):
+    # Task79: a jóváhagyó szolgáltatáshívás kötelezően actor-kontextust visz.
+    return approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
+        actor=user_email or f"{role}@imperial.local", actor_role=role,
+        user=_user(role, user_email or f"{role}@imperial.local"),)
+
+
 def _happy_rows():
     return [
         _row("FOUNDATION", amount="6000000", component="other", basis="NET_REVENUE_ENVELOPE", summary="true"),
@@ -101,7 +113,7 @@ def test_csv_preview_and_approve_applies_classified_lines(db):
     assert row.row_count == 2 and len(row.content_sha256) == 64
     assert json.loads(row.error_json) == []
     plan = _draft_plan(db)
-    approved = approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="fixture-finance@imperial.local", actor_role="finance",)
+    approved = _approve(db, row, plan)
     assert approved.status == "approved"
     lines = list(db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all())
     by_code = {line.cost_code: line for line in lines}
@@ -239,7 +251,7 @@ def test_approve_rejected_or_changed_import_blocks(db):
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes([_row("A", amount="=1+1")]), actor="fixture@imperial.local",)
     plan = _draft_plan(db)
     with pytest.raises(ValueError, match="Csak hibátlan preview"):
-        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="fixture-finance@imperial.local", actor_role="finance",)
+        _approve(db, row, plan)
     # A preview után megváltozott bemenet fail-closed elutasítás.
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     tampered = json.loads(row.preview_json)
@@ -247,7 +259,7 @@ def test_approve_rejected_or_changed_import_blocks(db):
     row.preview_json = json.dumps(tampered, ensure_ascii=False)
     db.commit()
     with pytest.raises(ValueError, match="megváltozott"):
-        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="fixture-finance@imperial.local", actor_role="finance",)
+        _approve(db, row, plan)
 
 
 def test_approve_to_approved_plan_blocks(db):
@@ -256,7 +268,7 @@ def test_approve_to_approved_plan_blocks(db):
     plan.status = "approved"
     db.commit()
     with pytest.raises(ValueError, match="draft"):
-        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="fixture-finance@imperial.local", actor_role="finance",)
+        _approve(db, row, plan)
 
 
 def test_approve_requires_finance_role(db):
@@ -272,4 +284,37 @@ def test_approve_unknown_import_or_plan_key_errors(db):
         approve_budget_import(db, import_id="NINCS", plan_id=plan.plan_id, actor="fixture-finance@imperial.local", actor_role="finance",)
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     with pytest.raises(KeyError):
-        approve_budget_import(db, import_id=row.import_id, plan_id="NINCS-PLAN", actor="fixture-finance@imperial.local", actor_role="finance",)
+        approve_budget_import(db, import_id=row.import_id, plan_id="NINCS-PLAN", actor="fixture-finance@imperial.local", actor_role="finance", user=_user("finance", "fixture-finance@imperial.local"),)
+
+
+# --- Task79: szolgáltatás-szintű projekt-jogosultság ---
+
+
+def test_approve_without_actor_context_fails_closed(db):
+    # Közvetlen hívás actor-kontextus nélkül: PermissionError, mutáció nélkül.
+    row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
+    plan = _draft_plan(db)
+    with pytest.raises(PermissionError):
+        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="fixture-finance@imperial.local", actor_role="finance",)
+    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
+    assert len(list(db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all())) == 0
+
+
+def test_approve_enforces_user_context_project_scope(db):
+    # A HITELESÍTETT user-kontextus projektjoga dönt: a kanonikus körön kívül
+    # PermissionError mutáció nélkül, a körön belül a jóváhagyás lefut.
+    from app.models import ProjectRegistry
+    row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
+    plan = _draft_plan(db)
+    with pytest.raises(PermissionError):
+        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
+            actor="fixture-finance@imperial.local", actor_role="finance",
+            user=_user("project-manager", "pm-other@imperial.local"),)
+    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
+    assert len(list(db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all())) == 0
+    db.add(ProjectRegistry(project_id="IMP-IMPORT-001", name="Szintetikus projekt", responsible="pm-canon@imperial.local",))
+    db.commit()
+    approved = approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
+        actor="fixture-finance@imperial.local", actor_role="finance",
+        user=_user("project-manager", "pm-canon@imperial.local"),)
+    assert approved.status == "approved"

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..models import (ProjectBudgetImport, ProjectFinanceBudgetLine, ProjectFinancePlan,)
+from .project_finance import require_project_finance_scope
 from .tender_margin_gate import (AMOUNT_BASES, COST_CLASSES, DIRECT_COMPONENTS, MarginGateBlocked, _id, canonical_json, sha256_hex, utcnow,)
 
 MAX_UPLOAD_BYTES = 1_000_000
@@ -300,7 +301,7 @@ def preview_budget_import(db: Session, *, project_id: str, file_name: str, data:
     return row
 
 
-def approve_budget_import(db: Session, *, import_id: str, plan_id: str, actor: str, actor_role: str) -> ProjectBudgetImport:
+def approve_budget_import(db: Session, *, import_id: str, plan_id: str, actor: str, actor_role: str, user: object | None = None) -> ProjectBudgetImport:
     """Jóváhagyás kizárólag draft tervre, a tárolt, hash-elt preview-ból; a
     „preview után megváltozott bemenet" fail-closed elutasítás."""
     if actor_role not in IMPORT_ROLES:
@@ -308,6 +309,10 @@ def approve_budget_import(db: Session, *, import_id: str, plan_id: str, actor: s
     row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id))
     if row is None:
         raise KeyError(import_id)
+    # Task79: az import PONTOS projektjének jogosultsága a SZOLGÁLTATÁSBAN
+    # ellenőrzött; actor-kontextus nélkül vagy a kanonikus projekthalmazon
+    # kívül fail-closed elutasítás.
+    require_project_finance_scope(db, user, row.project_id)
     if row.status != "preview":
         raise MarginGateBlocked("import_not_preview", "Csak hibátlan preview állapotú import hagyható jóvá.",)
     if sha256_hex(row.preview_json) != row.preview_sha256:

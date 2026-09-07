@@ -15156,6 +15156,9 @@ def api_budget_import_approve(
             plan_id=payload.plan_id,
             actor=user.email,
             actor_role=user.role,
+            # Task79: a hitelesített actor-kontextus kötelező — a szolgáltatás
+            # a mutáció előtt belső projekt-scope ellenőrzést végez.
+            user=user,
         )
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc

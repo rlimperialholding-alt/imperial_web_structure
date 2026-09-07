@@ -71,10 +71,11 @@ számítást soha nem módosítja (`vat_applied_in_math: false`).
   immutable margin decisions, VAT-rules), oszlopbővítések
   (content_sha256/provenance_json, besorolási mezők, cost_code-ok),
   `uq_ops_procurement_orders_selection_id` (guarddal, batch-rebuild). A
-  downgrade üres tábláknál a kényszert a függő táblák ELŐTT dobja el, az
-  FK-gyerekek a szülők ELŐTT törlődnek (PostgreSQL RESTRICT-biztos); üzleti
-  soroknál a teljes downgrade fail-closed RuntimeError; a re-upgrade guarddal
-  idempotens.
+  downgrade üres tábláknál a kényszert, az oszlopbővítéseket és azok
+  indexeit a függő táblák ELŐTT dobja el (pontos 0072-visszaállítás,
+  valós oszlopadatnál fail-closed elutasítás), az FK-gyerekek a szülők
+  ELŐTT törlődnek (PostgreSQL RESTRICT-biztos); üzleti soroknál a teljes
+  downgrade fail-closed RuntimeError; a re-upgrade guarddal idempotens.
 
 ## Jogosultság és felületek
 
