@@ -477,9 +477,7 @@ def _content_candidate_errors(
     errors = _content_repair_errors(package, contract)
     if _brand_key(package.get("brand_id")) != _brand_key(brand_id):
         errors.append("brand_mismatch")
-    copy_text = _norm(" ".join(
-        str(package.get(key) or "") for key in ("title", "body", "facebook_post")
-    ))
+    copy_text = _content_topic_text(package)
     if not any(_norm(keyword) in copy_text for keyword in focus):
         errors.append("off_brand_topic")
     if re.search(r"\b(?:19|20)\d{2}\b", copy_text):
@@ -495,6 +493,15 @@ def _content_candidate_errors(
         errors.extend(f"revenue_{reason}" for reason in decision["reasons"])
         errors.extend(_revenue_package_errors(package, revenue_intent))
     return sorted(set(errors))
+
+
+def _content_topic_text(package: dict[str, Any]) -> str:
+    # Hashtags are formatting, including deterministic additions. They cannot
+    # prove that the actual article or social copy addresses the brand's topic.
+    return _norm(" ".join(
+        re.sub(r"(?<!\w)#\w+", "", str(package.get(key) or ""), flags=re.UNICODE)
+        for key in ("title", "body", "facebook_post")
+    ))
 
 
 def _trim_complete_sentences(value: object, *, limit: int) -> str:
@@ -3069,12 +3076,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         package = _normalize_content_lengths(_sanitize_unbound_claims(package))
         anchors = BRAND_POSITION_ANCHORS.get(row.brand_id, ())
         if not revenue_policy_enabled and anchors:
-            package_text = _norm(
-                " ".join(
-                    str(package.get(field) or "")
-                    for field in ("title", "body", "facebook_post")
-                )
-            )
+            package_text = _content_topic_text(package)
             if not any(_norm(anchor) in package_text for anchor in anchors):
                 package = _content_factory_fallback_package(
                     brand_id=row.brand_id,

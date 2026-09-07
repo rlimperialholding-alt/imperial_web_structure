@@ -130,6 +130,30 @@ def test_hashtag_completion_never_removes_excess_or_unsafe_claims():
     assert "unverified_numeric_claim" in errors
 
 
+def test_generated_hashtags_cannot_make_an_unrelated_recipe_on_brand():
+    brand = "Imperial"
+    focus = processing.content_focus_for_brand(brand)
+    contract = processing.publication_contract_for_brand(brand)
+    recipe = {
+        "brand_id": brand,
+        "title": "A kenyértészta összeállítása",
+        "body": ("A kenyértésztát keverjük össze, majd pihentessük. " * 16),
+        "facebook_post": ("A kenyértésztát óvatosan keverjük össze, majd hagyjuk pihenni. " * 4),
+        "cta": {"label": "Írja össze a hozzávalókat.", "intent": "lead"},
+    }
+    completed = processing._complete_content_hashtags(recipe, brand_id=brand, focus=focus)
+    assert "#Imperial" in completed["facebook_post"]
+    assert completed["body"] == recipe["body"]
+    assert "off_brand_topic" in processing._content_candidate_errors(
+        completed, brand_id=brand, focus=focus, contract=contract, revenue_intent=None,
+    )
+    assert processing._content_topic_text(completed) == processing._content_topic_text(recipe)
+    meaningful = dict(completed, title="Az építkezés előkészítésének döntési pontjai")
+    assert "off_brand_topic" not in processing._content_candidate_errors(
+        meaningful, brand_id=brand, focus=focus, contract=contract, revenue_intent=None,
+    )
+
+
 @pytest.mark.parametrize(
     "text",
     [
