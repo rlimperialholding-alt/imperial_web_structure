@@ -105,7 +105,7 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v10"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v11"
 CONTENT_SOURCE_SCOPE_INSTRUCTION = (
     " Az approved statement az igazolt márkatény; a source_evidence exact_excerpts "
     "háttérbizonyíték. A kézikönyvben előírt webes elrendezésből, űrlapból vagy kapacitásból "
@@ -924,29 +924,9 @@ def _quality_artifact(package: dict[str, Any]) -> dict[str, Any]:
 
 
 def _sanitize_unbound_claims(package: dict[str, Any]) -> dict[str, Any]:
+    # Never replace claim words in-place: suffixes and sentence grammar would be
+    # corrupted. Preserve the original claim for the existing bounded repair.
     sanitized = dict(package)
-    replacements = {
-        "szinte mindig": "gyakran",
-        "minden esetben": "sok esetben",
-        "a legtöbb": "sok",
-        "legtöbb": "sok",
-        "a legnagyobb": "jelentős",
-        "legnagyobb": "jelentős",
-        "a legolcsóbb": "költségkímélő",
-        "legolcsóbb": "költségkímélő",
-        "a leggyakoribb": "gyakori",
-        "leggyakoribb": "gyakori",
-        "a legjobb": "megfelelő",
-        "legjobb": "megfelelő",
-        "a legfontosabb": "fontos",
-        "legfontosabb": "fontos",
-        "a legbiztosabb": "körültekintő",
-        "legbiztosabb": "körültekintő",
-        "a legmegfelelőbb": "megfelelő",
-        "legmegfelelőbb": "megfelelő",
-        "garantáltan": "",
-        "biztosan": "",
-    }
     remove_sentence_fragments = (
         "vegyünk egy konkrét",
         "vegyük például",
@@ -973,17 +953,6 @@ def _sanitize_unbound_claims(package: dict[str, Any]) -> dict[str, Any]:
     )
     for field in ("title", "body", "facebook_post"):
         text = str(sanitized.get(field) or "")
-        for source, target in replacements.items():
-            text = re.sub(
-                re.escape(source),
-                lambda match, replacement=target: (
-                    replacement[:1].upper() + replacement[1:]
-                    if replacement and match.group(0)[:1].isupper()
-                    else replacement
-                ),
-                text,
-                flags=re.IGNORECASE,
-            )
         sentences = re.split(r"(?<=[.!?])\s+", text)
         text = " ".join(
             sentence.strip()
@@ -1079,11 +1048,16 @@ def _deterministic_publication_errors(
                )
                for match in immediate_decisions) and sentence not in source_sentences:
             errors.append("unverified_case_or_capability_claim")
-    takeover_claims = re.finditer(
+    takeover_pattern = (
         r"\b(?:önnek|neked)\b[^.!?]{0,100}\bnem kell\b[^.!?]{0,100}"
-        r"\b(?:koordinál|összehangol)\w*\b", normalized,
+        r"\b(?:koordinál|összehangol)\w*\b|"
+        r"\b(?:(?:(?:az\s+)?ön\s+feladata|(?:a\s+)?te\s+feladatod)\s+nem\s+az|"
+        r"nem\s+(?:az\s+ön\s+feladata|a\s+te\s+feladatod))\s*,?\s*hogy\b"
+        r"[^.!?]{0,70}\bműszaki\s+részlet\w*\s+egyezte(?:t|ss)\w*\b"
     )
-    if any(not _claim_is_denied(normalized, match.start()) for match in takeover_claims):
+    if any(not _claim_is_denied(copy_text, match.start())
+           for copy_text in map(_norm, public_texts)
+           for match in re.finditer(takeover_pattern, copy_text)):
         if not any(
             re.search(r"\b(?:egyetlen projektben hangolja össze|"
                       r"teljes projektkoordinációt (?:vállal|biztosít)\w*|"

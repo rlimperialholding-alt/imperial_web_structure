@@ -1,0 +1,168 @@
+[
+  {
+    "brand_id": "Bautica",
+    "recorded_commit": "93b8449e2c38e859264be66b9a2776de6b857be4",
+    "package": {
+      "title": "Ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést?",
+      "body": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez a gyakorlatban azt jelenti, hogy a tervet nem csak átnézzük, hanem értelmezzük is: a helyszíni adottságokkal együtt vizsgáljuk, hol érdemes pontosítani, és hol van szükség műszaki döntésre, mielőtt a kivitelezés elindul. A felmérés során a mérnök a helyszínen rögzíti azokat a méreteket, állapotokat és csatlakozási pontokat, amelyek a kalkuláció alapját adják. Így a számok nem általános feltételezésből, hanem az Ön konkrét épületéből indulnak ki. A kivitelezés alatt a szakmai kontroll azt jelenti, hogy a mérnök figyelemmel kíséri a munkafolyamatokat, és időben jelez, ha egy részlet eltér a tervtől vagy a műszaki elvárástól. Ezzel csökken annak az esélye, hogy egy félreértés csak a végén derüljön ki, amikor a javítás már költségesebb. Érdemes ezért már a tervezési szakaszban tisztázni, ki felel a koordinációért, és milyen dokumentumokkal tudja Ön nyomon követni a döntéseket. A Bautica esetében ez a felelősség névvel azonosítható mérnökhöz kötődik, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi. Így az Ön feladata nem az, hogy műszaki részleteket egyeztessen, hanem hogy a kalkuláció alapján megalapozott döntést hozzon. A műszaki kalkuláció kérése az első lépés ahhoz, hogy a terv és a helyszín valós adatai alapján lássa, milyen műszaki tartalommal és milyen feltételekkel érdemes továbblépni.",
+      "facebook_post": "Amikor egy építkezés vagy felújítás elindul, gyakran nem egyértelmű, ki egyezteti a tervet, ki méri fel a helyszínt, és ki ellenőrzi a kivitelezést. A Bautica ezt a feladatot személyes mérnöki figyelemmel és végig követhető szakmai kontrollal oldja meg. A mérnök a tervet a helyszínnel együtt értelmezi, a felmérés alapján készül a kalkuláció, és a kivitelezés alatt is figyelemmel kíséri a folyamatokat. Így a döntések nem általános feltételezésből, hanem az Ön épületének valós adataiból indulnak ki. Ha szeretné tisztán látni, milyen műszaki tartalommal és feltételekkel érdemes továbblépni, kérjen műszaki kalkulációt. #Bautica #építés #felújítás #mérnök #kivitelezés #műszakikalkuláció #építkezés",
+      "cta": {
+        "label": "Kérek műszaki kalkulációt.",
+        "intent": "lead"
+      }
+    },
+    "recorded_final_package": {
+      "title": "Ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést?",
+      "body": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést. A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését. Ez a gyakorlatban azt jelenti, hogy a tervet nem csak átnézzük, hanem értelmezzük is: a helyszíni adottságokkal együtt vizsgáljuk, hol érdemes pontosítani, és hol van szükség műszaki döntésre, mielőtt a kivitelezés elindul. A felmérés során a mérnök a helyszínen rögzíti azokat a méreteket, állapotokat és csatlakozási pontokat, amelyek a kalkuláció alapját adják. Így a számok nem általános feltételezésből, hanem az Ön konkrét épületéből indulnak ki. A kivitelezés alatt a szakmai kontroll azt jelenti, hogy a mérnök figyelemmel kíséri a munkafolyamatokat, és időben jelez, ha egy részlet eltér a tervtől vagy a műszaki elvárástól. Ezzel csökken annak az esélye, hogy egy félreértés csak a végén derüljön ki, amikor a javítás már költségesebb. Érdemes ezért már a tervezési szakaszban tisztázni, ki felel a koordinációért, és milyen dokumentumokkal tudja Ön nyomon követni a döntéseket. A Bautica esetében ez a felelősség névvel azonosítható mérnökhöz kötődik, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi. Így az Ön feladata nem az, hogy műszaki részleteket egyeztessen, hanem hogy a kalkuláció alapján megalapozott döntést hozzon. A műszaki kalkuláció kérése az első lépés ahhoz, hogy a terv és a helyszín valós adatai alapján lássa, milyen műszaki tartalommal és milyen feltételekkel érdemes továbblépni.",
+      "facebook_post": "Amikor egy építkezés vagy felújítás elindul, gyakran nem egyértelmű, ki egyezteti a tervet, ki méri fel a helyszínt, és ki ellenőrzi a kivitelezést. A Bautica ezt a feladatot személyes mérnöki figyelemmel és végig követhető szakmai kontrollal oldja meg. A mérnök a tervet a helyszínnel együtt értelmezi, a felmérés alapján készül a kalkuláció, és a kivitelezés alatt is figyelemmel kíséri a folyamatokat. Így a döntések nem általános feltételezésből, hanem az Ön épületének valós adataiból indulnak ki. Ha szeretné tisztán látni, milyen műszaki tartalommal és feltételekkel érdemes továbblépni, kérjen műszaki kalkulációt. #Bautica #építés #felújítás #mérnök #kivitelezés #műszakikalkuláció #építkezés",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek műszaki kalkulációt."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Bautica",
+          "content_hash": "591ac5726a61892193fa6515a7369b36a5cde45503f4d98efab0dab01f5ac85b",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést."
+            ],
+            "claim_limits": [
+              "A megszólítás későbbi módosítását ez a forrás nem igazolja; a hangvétel beállítása nem változik.",
+              "A mérnöki figyelem és ellenőrzés nem igazol azonnali döntési határidőt, teljes döntési hatáskört vagy a későbbi problémák kizárását.",
+              "Nincs ár-, idő-, eredmény- vagy szerződéses garancia átvéve."
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; kizárólag a statikus pozicionálás és dokumentált kérési út került felhasználásra.",
+            "next_steps": [
+              "Kérek műszaki kalkulációt."
+            ],
+            "record_id": "BAUTICA-ENGINEERING-PREPARATION-V1",
+            "sales_goal": "A konkrét építési tervhez és helyszínhez kötött műszaki kalkulációkérés.",
+            "source_evidence": [
+              {
+                "content_sha256": "3781fd836611de6111d0d580cfd5cac243cfbaaee0886607b659492a2a5a9a09",
+                "drive_file_id": "1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA",
+                "exact_excerpts": [
+                  "Pozicionálás: Személyes mérnöki figyelem és végig követhető szakmai kontroll.",
+                  "Elsődleges CTA (FELÜLÍRVA v1.2: „Kérek helyszíni felmérést.” helyett): Kérek műszaki kalkulációt.",
+                  "A főszereplő nem a választék nagysága, hanem a névvel és felelősséggel azonosítható mérnök, aki a tervet megérti, a helyszínt felméri és az építést ellenőrzi."
+                ],
+                "readback_at": "2026-09-07T08:26:41.040Z",
+                "source_modified_time": "2026-08-04T20:58:14.602Z",
+                "title": "Bautica – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit"
+            ],
+            "statement": "A Bautica személyes mérnöki figyelemre és végig követhető szakmai kontrollra építi az építési döntések előkészítését."
+          },
+          "source_key": "bautica-brand-fact-engineering-preparation",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Bautica",
+      "buyer_problem": "Az építtetőnek nem világos, ki egyezteti a tervet, méri fel a helyszínt és ellenőrzi a kivitelezést.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek műszaki kalkulációt.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A konkrét építési tervhez és helyszínhez kötött műszaki kalkulációkérés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1U3KF_wpbnQ410L5m06xDsQxWoE-t9NOo3Fk_NVPiBUA/edit"
+      ]
+    }
+  },
+  {
+    "brand_id": "Imperial",
+    "recorded_commit": "93b8449e2c38e859264be66b9a2776de6b857be4",
+    "package": {
+      "title": "Tervezés és kivitelezés egy kézben: így kerülheti el az építkezés félreértéseit",
+      "body": "Az építtető a tervezést és a kivitelezést egymással összehangolt folyamatként szeretné előkészíteni. Ez a gyakorlatban azt jelenti, hogy a műszaki elképzelések, a költségkeret és a kivitelezési ütem már a tervezési szakaszban együtt értelmezhető, nem pedig külön szerződésekben, eltérő felelősségi körökkel. Az Imperial Holding kínálatában a tervezés és a generálkivitelezés egy kézben kapcsolódik össze, így a folyamat szereplői közös műszaki tartalommal dolgozhatnak. Érdemes ezért már az első egyeztetésen tisztázni, hogy a tervezői és kivitelezői szempontok hogyan találkoznak a konkrét projektben, és milyen döntési pontokon kell az építtetőnek jóváhagynia a részleteket. A cél nem az, hogy minden kérdés azonnal lezáruljon, hanem hogy a fontos műszaki és költségvetési összefüggések ne maradjanak rejtve. Aki így készíti elő a folyamatot, az a későbbi egyeztetéseken kevesebb félreértéssel és jobban átlátható döntési helyzetekkel találkozhat. A tervezési és kivitelezési feladatok összehangolása ezért nem csupán szervezési kérdés, hanem a nyugodt építkezés egyik alapfeltétele is.",
+      "facebook_post": "Az építkezés előkészítésekor gyakran a tervezés és a kivitelezés összehangolása jelenti a legnagyobb kihívást. Ha a műszaki elképzelések, a költségkeret és az ütemezés már az elején együtt értelmezhető, a későbbi döntések is átláthatóbbá válnak. Az Imperial Holding kínálatában a tervezés és a generálkivitelezés egy kézben kapcsolódik össze, így a folyamat szereplői közös műszaki tartalommal dolgozhatnak. Érdemes már az első egyeztetésen tisztázni, hogyan találkoznak a tervezői és kivitelezői szempontok a konkrét projektben. #építkezés #kivitelezés #tervezés #generálkivitelezés #ingatlan #projekt #műszaki",
+      "cta": {
+        "label": "Költségbecslést kérek.",
+        "intent": "lead"
+      }
+    },
+    "recorded_final_package": {
+      "title": "Tervezés és kivitelezés egy kézben: így kerülheti el az építkezés félreértéseit",
+      "body": "Az építtető a tervezést és a kivitelezést egymással összehangolt folyamatként szeretné előkészíteni. Ez a gyakorlatban azt jelenti, hogy a műszaki elképzelések, a költségkeret és a kivitelezési ütem már a tervezési szakaszban együtt értelmezhető, nem pedig külön szerződésekben, eltérő felelősségi körökkel. Az Imperial Holding kínálatában a tervezés és a generálkivitelezés egy kézben kapcsolódik össze, így a folyamat szereplői közös műszaki tartalommal dolgozhatnak. Érdemes ezért már az első egyeztetésen tisztázni, hogy a tervezői és kivitelezői szempontok hogyan találkoznak a konkrét projektben, és milyen döntési pontokon kell az építtetőnek jóváhagynia a részleteket. A cél nem az, hogy minden kérdés azonnal lezáruljon, hanem hogy a fontos műszaki és költségvetési összefüggések ne maradjanak rejtve. Aki így készíti elő a folyamatot, az a későbbi egyeztetéseken kevesebb félreértéssel és jobban átlátható döntési helyzetekkel találkozhat. A tervezési és kivitelezési feladatok összehangolása ezért nem csupán szervezési kérdés, hanem a nyugodt építkezés egyik alapfeltétele is.",
+      "facebook_post": "Az építkezés előkészítésekor gyakran a tervezés és a kivitelezés összehangolása jelenti jelentős kihívást. Ha a műszaki elképzelések, a költségkeret és az ütemezés már az elején együtt értelmezhető, a későbbi döntések is átláthatóbbá válnak. Az Imperial Holding kínálatában a tervezés és a generálkivitelezés egy kézben kapcsolódik össze, így a folyamat szereplői közös műszaki tartalommal dolgozhatnak. Érdemes már az első egyeztetésen tisztázni, hogyan találkoznak a tervezői és kivitelezői szempontok a konkrét projektben. #építkezés #kivitelezés #tervezés #generálkivitelezés #ingatlan #projekt #műszaki",
+      "cta": {
+        "intent": "lead",
+        "label": "Költségbecslést kérek."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Imperial",
+          "content_hash": "3a1f866fe198f71b309accfef626dffdfc6fb0ea84115ec8d744609560c5e5d3",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtető a tervezést és a kivitelezést egymással összehangolt folyamatként szeretné előkészíteni."
+            ],
+            "claim_limits": [
+              "A régi profil kockázatmentességi, fix ár-, fix határidő-, választékméret- és minősítési állításait nem vesszük át.",
+              "Imperial Intelligence és Imperial Knowledge nem kerültek márkaként létrehozásra."
+            ],
+            "evidence_scope": "Júliusi márkaprofil; kizárólag az Imperial Holding statikus tervezési és kivitelezési szerepe, valamint a dokumentált költségbecslési kapcsolatfelvétel került felhasználásra.",
+            "next_step_provenance": "A dokumentum költségbecslési CTA-stílusának magyar cselekvő megfogalmazása; nem szó szerinti CTA-idézet és nem új szolgáltatási ígéret.",
+            "next_steps": [
+              "Költségbecslést kérek."
+            ],
+            "record_id": "IMPERIAL-DESIGN-AND-CONSTRUCTION-V1",
+            "sales_goal": "A tervezési és kivitelezési igényekkel alátámasztott előzetes költségbecslési megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "73b52d447c9958487c21941dc3e8bc6ea8206e94698a6991cbe79cd2849a075a",
+                "drive_file_id": "1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA",
+                "exact_excerpts": [
+                  "Egy kézben a teljes folyamat: tervezés, generálkivitelezés, bútorozás, hitelügyintézés, akár telekkel együtt.",
+                  "Buyer persona: középosztálybeli család, aki nem kalandot, hanem nyugodt építkezést akar.",
+                  "CTA-stílus: költségbecslés, konzultáció, referencia-megtekintés."
+                ],
+                "readback_at": "2026-09-07T08:26:41.188Z",
+                "source_modified_time": "2026-07-06T18:42:34.941Z",
+                "title": "04 - Brand Profiles v1.0",
+                "url": "https://docs.google.com/document/d/1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA/edit"
+            ],
+            "statement": "Az Imperial Holding kínálatában a tervezés és a generálkivitelezés egy kézben kapcsolódik össze."
+          },
+          "source_key": "imperial-brand-fact-design-and-construction",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Imperial",
+      "buyer_problem": "Az építtető a tervezést és a kivitelezést egymással összehangolt folyamatként szeretné előkészíteni.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Költségbecslést kérek.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A tervezési és kivitelezési igényekkel alátámasztott előzetes költségbecslési megkeresés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1U02M8W8IUj4jzBcM7eln_pueU1671-yzShCMOrWhabA/edit"
+      ]
+    }
+  }
+]
