@@ -31,7 +31,7 @@ from urllib.parse import urlsplit
 SOURCE_VERSION = "2026-09-07.v1"
 TRIAL_BRANDS = (
     "Property360", "RED Property", "Venture Studio", "Bautica", "BauFreund",
-    "Prefab", "TimberHaus", "Danish Fabrik", "Imperial",
+    "Prefab", "TimberHaus", "Danish Fabrik", "Imperial", "Casa Moderna", "Everyday Homes",
 )
 
 
@@ -40,7 +40,7 @@ def _allowed_model_purposes(brand_id: str) -> set[str]:
         raise TrialIsolationError("unsupported_trial_brand")
     return {f"{purpose}:{brand_id}" for purpose in (
         "canonical_daily_content_factory", "canonical_daily_content_deterministic_repair",
-        "canonical_daily_content_release_review",
+        "canonical_daily_content_release_review", "canonical_daily_content_review_repair",
     )}
 DEEPSEEK_ENV = {
     "DEEPSEEK_API_KEY_FILE",

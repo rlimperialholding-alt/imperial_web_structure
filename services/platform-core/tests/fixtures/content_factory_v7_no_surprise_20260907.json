@@ -1,0 +1,165 @@
+[
+  {
+    "brand_id": "Property360",
+    "recorded_commit": "c80224b7ab7fc68fd4a1cfd79685bcf009330da4",
+    "package": {
+      "title": "Telek, terv, finanszírozás: miért ne külön-külön kezeld őket?",
+      "body": "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket. Ha előbb telket nézel, aztán terveztetsz, végül hitelért folyamodsz, könnyen kiderülhet, hogy a kiválasztott telek nem bírja el azt a házat, amit szeretnél, vagy a bank másképp értékeli a projektet, mint te. A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút. Ez azt jelenti, hogy már az elején együtt vizsgáljuk meg a telek adottságait, a házterv megvalósíthatóságát és a finanszírozási lehetőségeket, így elkerülheted a későbbi kellemetlen meglepetéseket. A cél, hogy a költözésig egyetlen projektben haladj, ne pedig egymástól független lépésekben. Így nem csak időt spórolsz, hanem olyan döntéseket hozhatsz, amelyek valóban illeszkednek a teljes folyamathoz. Érdemes már a legelején tisztázni, milyen sorrendben érdemes haladni, és milyen buktatókra figyelj. A Property360 ebben segít: összehangolja a lépéseket, hogy te a beköltözésre koncentrálhass. Ha szeretnéd, hogy a te projekted is így induljon, kérd a telek–ház elővizsgálatot, és nézzük meg együtt, mire van szükséged.",
+      "facebook_post": "Telket nézel, de nem tudod, milyen ház fér rá? Terveztetnél, de nem tudod, hogyan finanszírozod? A telek, a terv és a finanszírozás egymásra hat, ezért nem érdemes külön-külön kezelni őket. A Property360 egyetlen projektben hangolja össze ezeket a költözésig, hogy elkerüld a felesleges köröket és a kellemetlen meglepetéseket. Nézd meg, milyen elővizsgálattal indulhat a te projekted is. #telek #házépítés #finanszírozás #ingatlan #Property360 #költözés #elővizsgálat",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek telek–ház elővizsgálatot."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Property360",
+          "content_hash": "059f933372cab71f8a83272a109b615240df788f7a7ae9598da3695ad00d10be",
+          "payload": {
+            "buyer_problems": [
+              "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+              "A költözésig tartó teljes projektköltség nem azonos a ház kivitelezési árával."
+            ],
+            "next_steps": [
+              "Kérek telek–ház elővizsgálatot."
+            ],
+            "record_id": "P360-BRAND-COORDINATION-V1",
+            "sales_goal": "A telek és a ház elővizsgálatára irányuló, konkrét projektadatokat tartalmazó megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "f62b1272dfabf9c3a8ca620e373e76d9544bbb28fd6b8b977fd58a0086815aca",
+                "drive_file_id": "1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs",
+                "exact_excerpts": [
+                  "A Property360 nem egymás mellé teszi a telket, a tervezést, a finanszírozást és a kivitelezést. Egyetlen projektben hangolja össze őket a költözésig.",
+                  "Kérek telek–ház elővizsgálatot."
+                ],
+                "source_modified_time": "2026-07-28T06:55:44.104Z",
+                "title": "2026-07-28 – Property360 – Telek, terv, finanszírozás – publikációs csomag",
+                "url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+            ],
+            "statement": "A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút."
+          },
+          "source_key": "property360-brand-fact-project-coordination",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        },
+        {
+          "brand_id": "Property360",
+          "content_hash": "90cd92849bd4fb0abf91d0c1bc2106f1875b7546c8fb9b63d06d22bc1b78408b",
+          "payload": {
+            "record_id": "P360-OFFER-INTERIOR-360-V1",
+            "source_evidence": [
+              {
+                "content_sha256": "58155677eeec7216792ee29dc330bba87d68d89e24d2eed1b5aea94fe1f9286c",
+                "drive_file_id": "13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD",
+                "exact_excerpts": [
+                  "2 óra belsőépítészeti tanácsadás · látványterv · burkolatkiosztási terv · választás a moodboardok közül",
+                  "A pontos helyiségkört, nézetszámot, módosítási kört és a megrendelhető termékeket a szerződéses műszaki tartalom rögzíti."
+                ],
+                "source_modified_time": "2026-08-08T23:05:01.525Z",
+                "title": "Property360-Interior-360-standalone.html",
+                "url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk"
+            ],
+            "statement": "A Property360 Interior 360 csomag belsőépítészeti tanácsadást, látványtervet, burkolatkiosztási tervet és moodboard-választást kapcsol össze."
+          },
+          "source_key": "property360-offer-interior-360",
+          "source_type": "offer",
+          "source_url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Property360",
+      "buyer_problem": "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek telek–ház elővizsgálatot.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A telek és a ház elővizsgálatára irányuló, konkrét projektadatokat tartalmazó megkeresés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+      ]
+    }
+  },
+  {
+    "brand_id": "RED Property",
+    "recorded_commit": "c80224b7ab7fc68fd4a1cfd79685bcf009330da4",
+    "package": {
+      "title": "Házválasztás? Így látod egyben az árat, a készültséget és a tartalmat",
+      "body": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat. Ez jelentős bizonytalanság, amikor típusházat választasz: nem tudod, mit kapsz a pénzedért, és mennyi munka vár még rád. A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával. Ez azt jelenti, hogy nem kell külön bogarásznod a műszaki leírásokat, és nem érhet meglepetés a kivitelezés közben. A csomagok egymás mellé téve mutatják meg, melyik készültségi szint mit tartalmaz, így te döntöd el, hol húzod meg a határt a saját munkád és a készre szerelt ház között. Érdemes először azt tisztáznod, milyen készültségi szintre van szükséged: szerkezetkészre, kulcsrakészre, vagy valami köztes megoldásra? A RED Property rendszerében ezt nem neked kell kitalálnod – a csomagok pontosan megmondják, mi jár az árral, és mi az, amit neked kell hozzátenned. Így a ház áráról, a határidőről és a tartalomról is egyetlen ajánlatban kapsz képet, nem pedig szétszórt ígéretekben. Ha konkrét háztípusra vagy kíváncsi, kérd az árat, és hasonlítsd össze a csomagokat a saját tempódban.",
+      "facebook_post": "Házat nézel, de nem látod egyben az árat, a készültséget és azt, hogy mi van benne? A RED Property típusterv-ajánlatai pont erre adnak megoldást: összehasonlítható műszaki és készültségi csomagok, világos „benne van / nincs benne” struktúrával. Nem kell találgatnod, mit kapsz a pénzedért. Nézd meg a háztípusokat, és kérd az árat arra, amelyik a legközelebb áll hozzád. #típusház #házépítés #ingatlanfejlesztés #REDProperty #házválasztás #készültségicsomag #ártranszparencia",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérem az árat."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "RED Property",
+          "content_hash": "2334be289fbc6e67f8ecc003121bf715f71c49617700cbfab5ef9e626d6a4579",
+          "payload": {
+            "buyer_problems": [
+              "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat."
+            ],
+            "next_steps": [
+              "Kérem az árat.",
+              "Megnézem a háztípusokat."
+            ],
+            "record_id": "RED-BRAND-TYPESHOUSES-V1",
+            "sales_goal": "Konkrét háztípushoz és készültségi szinthez kötött árkérés.",
+            "source_evidence": [
+              {
+                "content_sha256": "da4dbb138d04076b0161a3dd2db958297b42f580c957bc6271fe6f949a0f6523",
+                "drive_file_id": "11DGGtDJ_Lwstdixq0n_LbL_L8e19rt1CCLrQRXG0IBc",
+                "exact_excerpts": [
+                  "ár- és időelső típusterv-ajánlati rendszer",
+                  "egyszerűen összehasonlítható műszaki és készültségi csomagok",
+                  "Elsődleges CTA: „Kérem az árat.”",
+                  "Másodlagos CTA: „Megnézem a háztípusokat.”"
+                ],
+                "source_modified_time": "2026-08-09T13:25:40.647Z",
+                "title": "RED Property – Online és offline arculati és konverziós kézikönyv v3.0 – Danwood-hatású design system",
+                "url": "https://docs.google.com/document/d/11DGGtDJ_Lwstdixq0n_LbL_L8e19rt1CCLrQRXG0IBc/edit?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/11DGGtDJ_Lwstdixq0n_LbL_L8e19rt1CCLrQRXG0IBc/edit?usp=drivesdk"
+            ],
+            "statement": "A RED Property ár- és időelső típusterv-ajánlati rendszer, összehasonlítható műszaki és készültségi csomagokkal, valamint világos „benne van / nincs benne” struktúrával."
+          },
+          "source_key": "red-property-brand-fact-typeshouses",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/11DGGtDJ_Lwstdixq0n_LbL_L8e19rt1CCLrQRXG0IBc/edit?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "RED Property",
+      "buyer_problem": "A házkereső nem látja egyben a ház árát, készültségi szintjét és az árban foglalt tartalmat.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérem az árat.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "Konkrét háztípushoz és készültségi szinthez kötött árkérés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/11DGGtDJ_Lwstdixq0n_LbL_L8e19rt1CCLrQRXG0IBc/edit?usp=drivesdk"
+      ]
+    }
+  }
+]

@@ -71,7 +71,7 @@ def test_documented_request_and_cautious_condition_language_are_retained(text):
     assert "unverified_offer_condition" not in _condition_errors(text)
 
 
-def test_all_nine_real_brand_ctas_survive_the_new_offer_condition_check():
+def test_all_eleven_real_brand_ctas_survive_the_new_offer_condition_check():
     manifest = json.loads(
         (Path(seed.__file__).parent / "content_factory_source_manifest.json").read_text("utf8")
     )
@@ -91,7 +91,7 @@ def test_all_nine_real_brand_ctas_survive_the_new_offer_condition_check():
                 )
                 assert "unverified_offer_condition" not in errors, (brand["brand_id"], step)
                 checked_brands.add(brand["brand_id"])
-    assert len(checked_brands) == 9
+    assert len(checked_brands) == 11
 
 
 def test_actual_bad_ending_goes_to_existing_repair_before_review(db, monkeypatch):

@@ -1,0 +1,335 @@
+[
+  {
+    "brand_id": "Danish Fabrik",
+    "recorded_commit": "c80224b7ab7fc68fd4a1cfd79685bcf009330da4",
+    "source_mode": "approved_brand_documents",
+    "package": {
+      "title": "Favázas fal, nehéz konyhaszekrények: mit érdemes már a tervezéskor tisztázni?",
+      "body": "Az építtetőnek már a favázas fal tervezésekor tisztáznia kell, hogyan rögzíthetők a nehéz konyhaszekrények és más függesztett tárgyak. Ez nem utólagos barkácskérdés, hanem a falrendszer tervezési logikájának része. A Danish Fabrik favázas házainál a falpanelek méretét és csatlakozásait gyártmányterv rögzíti; az előre összeállított paneleket a helyszínen kapcsolják össze. A falak mérete, a nyílászárók helye, a tartóelemek kiosztása és a csatlakozási pontok a gyártmánytervben szerepelnek. Ezért a konyha, a fürdőszobai bútor, a nagy televízió, a függesztett szekrény és más nehezebb tárgy helyét érdemes már a tervezés során megadni. Nagyobb terhelésnél a rögzítést a favázhoz vagy előre elhelyezett megerősítéshez kell kapcsolni. Így a fal nemcsak tartószerkezet, hanem a mindennapi használathoz igazodó, előre átgondolt rendszer. Aki ezt a lépést kihagyja, később kompromisszumokra kényszerülhet a bútorok elhelyezésében. A Danish Fabrik megközelítése az iparosított favázas építés: a paneleket előre összeállítjuk, a helyszínen ezeket a készre tervezett elemeket állítjuk a helyükre és kapcsoljuk össze. Ez a folyamat teszi lehetővé, hogy a függesztett tárgyak rögzítési pontjai már a gyártmánytervben megjelenjenek. Érdemes tehát a tervezés elején összegyűjteni, hol lesznek nehéz elemek, és ezt a terv részeként kezelni. Így a kivitelezés nem hagy nyitott kérdéseket, és a falak használata is kiszámítható marad.",
+      "facebook_post": "A favázas falaknál a nehéz konyhaszekrények rögzítése nem utólagos kérdés. A Danish Fabrik házainál a falpanelek méretét és csatlakozásait gyártmányterv rögzíti, ezért a függesztett tárgyak helyét már a tervezés során érdemes megadni. Így a rögzítés a favázhoz vagy előre elhelyezett megerősítéshez kapcsolható, és a fal a mindennapi használathoz igazodik. Gondolja át, hol lesznek nehéz elemei, és kérjen ajánlatot a tervezett házához. #faváz #készház #könnyűszerkezet #szigetelés #ház #DanishFabrik",
+      "cta": {
+        "intent": "lead",
+        "label": "Kérek árajánlatot"
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Danish Fabrik",
+          "content_hash": "ea8c5ebe5afa56259b28f99dd6cf47fe05a187768cbf1e3df0d0b06153ae0bb3",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtetőnek már a favázas fal tervezésekor tisztáznia kell, hogyan rögzíthetők a nehéz konyhaszekrények és más függesztett tárgyak."
+            ],
+            "claim_limits": [
+              "Ár, négyzetméterár, időígéret, promóció, energetikai osztály és számszerű rétegrendi adat nincs átvéve.",
+              "A falrögzítés részletei az adott terv és szakmai ellenőrzés függvényei; univerzális teherbírási ígéret nem készül."
+            ],
+            "evidence_scope": "A dokumentum saját státusza: jóváhagyott vizsgálati szöveg, felhasználói kézi szerkesztéssel; csak a leírt, nem számszerű tervezési és szerelési folyamat került átvételre.",
+            "next_steps": [
+              "Kérek árajánlatot"
+            ],
+            "record_id": "DANISH-FABRIK-TIMBER-WALL-PLANNING-V1",
+            "sales_goal": "A tervezett házhoz és a falak használati igényeihez kötött ajánlatkérés.",
+            "source_evidence": [
+              {
+                "content_sha256": "42b92e47ef4984c827d35dbe59fabf6900a7a4fd243d9db707e110957019a8e2",
+                "drive_file_id": "1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70",
+                "exact_excerpts": [
+                  "A falak mérete, a nyílászárók helye, a tartóelemek kiosztása és a csatlakozási pontok a gyártmánytervben szerepelnek.",
+                  "A paneleket előre összeállítjuk.",
+                  "A helyszínen ezeket a készre tervezett elemeket állítjuk a helyükre és kapcsoljuk össze.",
+                  "Nagyobb terhelésnél a rögzítést a favázhoz vagy előre elhelyezett megerősítéshez kell kapcsolni.",
+                  "Ezért a konyha, a fürdőszobai bútor, a nagy televízió, a függesztett szekrény és más nehezebb tárgy helyét érdemes már a tervezés során megadni.",
+                  "**Kérek árajánlatot**"
+                ],
+                "readback_at": "2026-09-07T08:26:41.158Z",
+                "source_modified_time": "2026-08-07T21:59:10.310Z",
+                "title": "Danish Fabrik – Favázas falrendszer – JÓVÁHAGYOTT – 2026-08-07",
+                "url": "https://docs.google.com/document/d/1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70/edit"
+            ],
+            "statement": "A Danish Fabrik favázas házainál a falpanelek méretét és csatlakozásait gyártmányterv rögzíti; az előre összeállított paneleket a helyszínen kapcsolják össze."
+          },
+          "source_key": "danish-fabrik-brand-fact-timber-wall-planning",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Danish Fabrik",
+      "buyer_problem": "Az építtetőnek már a favázas fal tervezésekor tisztáznia kell, hogyan rögzíthetők a nehéz konyhaszekrények és más függesztett tárgyak.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek árajánlatot",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A tervezett házhoz és a falak használati igényeihez kötött ajánlatkérés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1ay_c53o2U6sKSdpeqeCjzQdJ6uyON-HuUsh0RyLeN70/edit"
+      ]
+    },
+    "review": {
+      "artifact_sha256": "d3eb7c8fe279fe4de0860de8b2d2aeb9fb60bc16d3a54f430db477e11370e448",
+      "overall_decision": "PASS",
+      "gate_results": {
+        "brand_anchor": {
+          "decision": "PASS",
+          "reason": "A szöveg a Danish Fabrik favázas rendszerét és gyártmánytervi logikáját mutatja be, nem cserélhető más márkára."
+        },
+        "brand_voice": {
+          "decision": "PASS",
+          "reason": "Letisztult, nyugodt, magázó magyar nyelvű megfogalmazás, illeszkedik a márka hangjához."
+        },
+        "channel_policy": {
+          "decision": "PASS",
+          "reason": "A Facebook-poszt önállóan érthető: probléma, márkamechanizmus és ajánlatkérési CTA szerepel."
+        },
+        "claim_coverage": {
+          "decision": "PASS",
+          "reason": "Minden állítás a jóváhagyott forrásból származik, nincs alátámasztatlan tény vagy felsőfok."
+        },
+        "claim_freshness": {
+          "decision": "PASS",
+          "reason": "A forrás friss, 2026-os jóváhagyott dokumentum, nincs elavult adat."
+        },
+        "conversion": {
+          "decision": "PASS",
+          "reason": "A CTA egyértelmű: 'Kérek árajánlatot', és a szöveg a tervezési igényhez köti."
+        },
+        "duplicate_cannibalization": {
+          "decision": "PASS",
+          "reason": "Nincs utalás más tartalomra vagy belső versengésre."
+        },
+        "legal_template": {
+          "decision": "PASS",
+          "reason": "Nincs jogi kifogás, nincs megtévesztő állítás vagy garancia."
+        },
+        "natural_hungarian": {
+          "decision": "PASS",
+          "reason": "A magyar nyelv természetes, a magázás következetes."
+        },
+        "security_privacy": {
+          "decision": "PASS",
+          "reason": "Nincs személyes adat vagy biztonsági kockázat."
+        },
+        "seo": {
+          "decision": "PASS",
+          "reason": "A cím és a tartalom releváns kulcsszavakat tartalmaz, de nem túlzó."
+        },
+        "technical_render": {
+          "decision": "PASS",
+          "reason": "A szöveg technikailag megjeleníthető, nincs formázási hiba."
+        },
+        "visual_quality": {
+          "decision": "PASS",
+          "reason": "A kép minőségét külön kapu ellenőrzi, itt nincs akadály."
+        },
+        "visual_rights_privacy": {
+          "decision": "PASS",
+          "reason": "Nincs vizuális jogi vagy adatvédelmi probléma."
+        }
+      },
+      "scores": {
+        "natural_hungarian": 95,
+        "brand_distinctiveness": 90,
+        "conversion_strength": 85,
+        "claim_safety": 95
+      },
+      "findings": []
+    }
+  },
+  {
+    "brand_id": "BauFreund",
+    "recorded_commit": "c80224b7ab7fc68fd4a1cfd79685bcf009330da4",
+    "source_mode": "anonymized_original_source_replay",
+    "package": {
+      "title": "Munkadíj laminált padlóhoz és festéshez: így ne tévedj el az árajánlatok között",
+      "body": "Fórumkérdés, szerkesztett részlet: „Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.” A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez. Ha te is hasonló helyzetben vagy, akkor nem az a kérdés, hogy mennyi a munkadíj, hanem hogy mit tartalmaz pontosan az ajánlat. A laminált padló lerakása és a festés két különböző szakmunka, ezért a munkadíjat is külön érdemes vizsgálni. A padlónál az aljzat előkészítése, a szegélyezés és az anyagmozgatás is befolyásolja az árat, a festésnél pedig a felület javítása, az alapozás és a rétegszám. Ha az ajánlatokban csak egy végösszeget látsz, nehéz eldönteni, hogy miért térnek el ennyire. Kérj tételes bontást, és nézd meg, hogy a mester milyen anyagokat és munkafolyamatokat számol. Így kiderül, hogy az olcsóbb ajánlatból mi hiányzik, vagy a drágább miben ad többet. A BauFreund segít abban, hogy a számokat a saját projektedre értelmezd, és ne csak egy árat láss, hanem azt is, hogy mi áll mögötte. Írd össze, milyen munkákat szeretnél elvégeztetni, és milyen állapotban van most a szoba. Minél pontosabban tudod leírni, annál jobb becslést kapsz. Ne azonnal költségkímélőat válaszd, hanem azt, amelyik a leginkább átlátható. A munkadíj csak egy része a döntésnek, a megbízhatóság és a részletes tájékoztatás legalább annyira fontos.",
+      "facebook_post": "Kaptál már olyan árajánlatot, ahol a laminált padló lerakása és a festés munkadíja között ég és föld volt a különbség? Nem vagy egyedül. A végletes árak gyakran abból fakadnak, hogy az ajánlatok nem ugyanazt tartalmazzák. Az egyikben benne van az aljzatkiegyenlítés és a kétszeri festés, a másikban csak a legalapabb munka. Mielőtt döntesz, kérd el a tételes bontást, és hasonlítsd össze, mi van a számok mögött. Így nem csak az árat látod, hanem azt is, hogy mire fizetsz pontosan. Ha bizonytalan vagy, írd le, milyen munkához keresel segítséget, és hol tart a projekt. #építkezés #felújítás #munkadíj #lamináltpadló #festés #árajánlat #BauFreund",
+      "cta": {
+        "intent": "lead",
+        "label": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt."
+      }
+    },
+    "trusted_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "BauFreund",
+          "content_hash": "b092525ffc89c5a95a2ef405274ab84c0d05723fba24392814bb09ab6b55cc58",
+          "payload": {
+            "buyer_problem_basis": "A forrásban dokumentált vevői döntési feladatból megfogalmazott probléma; nem fórumról idézett vagy megfigyelt ügyfélpanasz.",
+            "buyer_problems": [
+              "Az építtető az induló költségbecslést szeretné megkülönböztetni a tételes vállalási ajánlattól."
+            ],
+            "claim_limits": [
+              "Független ellenőrt és szerződéses garanciát nem állítunk; ezek külön bizonyítékot igényelnek.",
+              "A költségbecslés kérése nem jelent szerződéses árígéretet vagy működő online kalkulátor igazolását."
+            ],
+            "evidence_scope": "Operatív arculati és konverziós kézikönyv; a forrás feltételes függetlenségi állítása nem lett márkatény.",
+            "next_steps": [
+              "Kérek egy őszinte költségbecslést."
+            ],
+            "record_id": "BAUFREUND-BUILDING-DECISIONS-V1",
+            "sales_goal": "A tervezett építkezés tartalmát tisztázó költségbecslési megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "8a8994149831e9f566191aaf5670a341b7851e14e64f6149728ebbb1c5216847",
+                "drive_file_id": "1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc",
+                "exact_excerpts": [
+                  "Pozicionálás: Közérthető, barátságos és független segítség az építési döntésekhez.",
+                  "Másodlagos CTA: Kérek egy őszinte költségbecslést.",
+                  "A kalkulátor nem keltheti tételes vállalási ajánlat látszatát.",
+                  "A „független” jelző csak tényleges szerződéses függetlenség esetén használható."
+                ],
+                "readback_at": "2026-09-07T08:26:41.073Z",
+                "source_modified_time": "2026-08-04T21:08:22.421Z",
+                "title": "BauFreund – Online és offline arculati és konverziós kézikönyv v2.0 (egyesített)",
+                "url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit"
+            ],
+            "statement": "A BauFreund közérthető és barátságos segítséget ad az építési döntésekhez."
+          },
+          "source_key": "baufreund-brand-fact-building-decisions",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1RfnLmEhSLmHRtDofstAy7ailzCKuxwtHcNB348iuNSc/edit",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "BauFreund",
+      "buyer_problem": "Munkadíjak? Egy megadott méretű szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.",
+      "next_step": "Írd meg, milyen munkához keresel segítséget és hol tart a projekt.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": "QRT-TRIAL-ORIGINAL-MUNKADIJAK",
+      "revalidation": {
+        "demand_decision": {
+          "age_hours_max": 25.137793433611108,
+          "contact_allowed": false,
+          "features": {
+            "size_defined": "20 m2"
+          },
+          "funding_status": "unknown",
+          "identity": "59984af22318bfcbfd9e989d6543929f5cdfb56fa8100e6ee1540f26d5f18fb3",
+          "intent_score": 10,
+          "lead_eligible": false,
+          "policy": "content-intent-revenue/2026-09-06.v1",
+          "published_at_earliest": "2026-09-06T09:45:34+00:00",
+          "published_at_latest": "2026-09-06T09:45:34+00:00",
+          "queue": "CONTENT_SIGNAL",
+          "reasons": [
+            "no_explicit_buying_trigger"
+          ]
+        },
+        "eligible": true,
+        "policy": "content-intent-revenue-v1",
+        "purpose": "content",
+        "reasons": [],
+        "revalidated_at": "2026-09-07T10:53:50.056361+00:00",
+        "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/"
+      },
+      "sales_goal": "BauFreund: minősített érdeklődőből ajánlatkérés",
+      "send_allowed": false,
+      "source_problem_evidence": {
+        "editorial_instruction": "A pontos méretek, összegek és időadatok a vevő saját helyzetének adatai. A nyilvános szövegben a buyer_problem számadatok nélkül megfogalmazott változatát használd; az eredeti számadatokat ne másold át. A cikk a munka tartalmáról és a döntési szempontokról szóljon; ezekből ne képezzen márkaárat, vállalási határidőt vagy teljesítményígéretet.",
+        "native_id": "post:1w8rs4c",
+        "observed_at": "2026-09-07T10:53:50.056361+00:00",
+        "original_problem": "Munkadíjak? Egy 20 m2-es szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.",
+        "original_text_sha256": "f6b9e02473b0fcf7bf6a6c3b717a8b9c4ee453285ee4f62e53d865821004f681",
+        "public_problem_derivation": "quantity_and_contact_generalization",
+        "published_at": "2026-09-06T09:45:34+00:00",
+        "published_at_raw": "2026-09-06T09:45:34+00:00",
+        "radar_identity_hash": "ffd1821576b79d31c93e9641fb8be126e1234b7f950965c5a9aeeb558cd19479",
+        "revalidated_at": "2026-09-07T10:53:50.056361+00:00",
+        "source_identity": "a44ac1f847ea9eaddd1761c5c0433c7488c5cef660a6cf7f18a65a3628540df3",
+        "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/",
+        "verification_mode": "source_refresh"
+      },
+      "source_refs": [
+        "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak/"
+      ]
+    },
+    "review": {
+      "artifact_sha256": "dcf18b666fa6911e883be86811f7a455478d4a8915cfbba87d5927a5dd84899a",
+      "overall_decision": "BLOCK",
+      "gate_results": {
+        "brand_anchor": {
+          "decision": "PASS",
+          "reason": "A BauFreund pozíciója és mechanizmusa (tételes bontás kérése) megjelenik, a márka nem cserélhető fel."
+        },
+        "brand_voice": {
+          "decision": "PASS",
+          "reason": "Közvetlen, tegező, természetes magyar hang, megfelel a briefnek."
+        },
+        "channel_policy": {
+          "decision": "PASS",
+          "reason": "A Facebook-poszt önállóan érthető, nem igényel linket vagy külső cikket."
+        },
+        "claim_coverage": {
+          "decision": "PASS",
+          "reason": "Nincs alátámasztatlan állítás; a tanácsok általánosak és a forrásban igazolt pozícióból következnek."
+        },
+        "claim_freshness": {
+          "decision": "PASS",
+          "reason": "Nincs időhöz kötött állítás, így frissesség nem értelmezhető."
+        },
+        "conversion": {
+          "decision": "PASS",
+          "reason": "A CTA világos, a következő lépés (projekt leírása) egyértelmű és vállalható."
+        },
+        "duplicate_cannibalization": {
+          "decision": "PASS",
+          "reason": "Nincs jel más tartalommal való átfedésre vagy kannibalizációra."
+        },
+        "legal_template": {
+          "decision": "PASS",
+          "reason": "Nincs jogi kockázat, nem ígér konkrét árat vagy garanciát."
+        },
+        "natural_hungarian": {
+          "decision": "BLOCK",
+          "reason": "A cikkben elírás: „költségkímélőat” a „költségkímélőt” helyett, ami természetellenes."
+        },
+        "security_privacy": {
+          "decision": "PASS",
+          "reason": "Nincs személyes adat vagy biztonsági kockázat."
+        },
+        "seo": {
+          "decision": "PASS",
+          "reason": "A cím és a tartalom releváns kulcsszavakat tartalmaz, SEO szempontból megfelelő."
+        },
+        "technical_render": {
+          "decision": "PASS",
+          "reason": "Nincs technikai renderelési probléma a szövegben."
+        },
+        "visual_quality": {
+          "decision": "PASS",
+          "reason": "A vizuális minőség nem értelmezhető szöveges tartalomnál, nincs kifogás."
+        },
+        "visual_rights_privacy": {
+          "decision": "PASS",
+          "reason": "Nincs kép vagy vizuális elem, így jogi probléma sem merül fel."
+        }
+      },
+      "scores": {
+        "natural_hungarian": 75,
+        "brand_distinctiveness": 85,
+        "conversion_strength": 80,
+        "claim_safety": 90
+      },
+      "findings": [
+        "A cikkben elírás: „költségkímélőat” helyett „költségkímélőt” szükséges.",
+        "A Facebook-posztban a hashtagek száma kissé magas, de nem blokkoló."
+      ]
+    }
+  }
+]

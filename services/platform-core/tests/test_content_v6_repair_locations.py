@@ -44,13 +44,12 @@ def test_every_actual_red_attempt_locates_the_unchanged_late_claim(db):
         )
         finding = next(item for item in corrections
                        if item["field"] == "body" and item["error"] == "unsupported_absolute_claim")
-        assert len(finding["spans"]) == 1
-        span = finding["spans"][0]
+        span = next(span for span in finding["spans"] if "legszebb" in span["text"])
         assert span["start"] > 1200
         assert body[span["start"]:span["end"]] == span["text"]
         assert "házválasztás nem arról szól" in span["text"]
         assert "legszebb" in span["text"]
-        assert finding["excerpts"] == [span["text"]]
+        assert span["text"] in finding["excerpts"]
         assert "unsupported_absolute_claim" in processing._deterministic_publication_errors(
             {"brand_id": brand, "body": span["text"]}, contract,
         )
@@ -166,7 +165,7 @@ def test_actual_red_copy_repair_and_original_generation_use_high_stakes_with_sam
         assert "spans start/end" in system
         finding = next(item for item in request["field_corrections"]
                        if item["error"] == "unsupported_absolute_claim")
-        span = finding["spans"][0]
+        span = next(span for span in finding["spans"] if "legszebb" in span["text"])
         assert span["start"] > 1200
         assert request["blocked_package"]["body"][span["start"]:span["end"]] == span["text"]
         assert "legszebb" in span["text"]
@@ -174,7 +173,7 @@ def test_actual_red_copy_repair_and_original_generation_use_high_stakes_with_sam
         if repair_succeeds:
             response["package"]["body"] = response["package"]["body"].replace(
                 "legszebb", "neked tetsző",
-            )
+            ).replace("nem érhet meglepetés", "tisztázhatod a félreértéseket")
         return response
 
     result, row, calls = run_brand(db, monkeypatch, "RED Property", generate)

@@ -105,12 +105,16 @@ def _sha(value: Any) -> str:
 PUBLICATION_DIGEST_MESSAGE_TYPE = "daily_publication_digest"
 PUBLICATION_DIGEST_RECIPIENT_INTERVAL = timedelta(hours=24)
 PUBLICATION_DIGEST_STALE_CLAIM_AFTER = timedelta(minutes=5)
-CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v7"
+CONTENT_FACTORY_REPAIR_VERSION = "20260907-model-contract-v8"
 CONTENT_SOURCE_SCOPE_INSTRUCTION = (
     " A forrásban igazolt részfeladat nem jelent teljes felelősségátvállalást. "
     "Tervellenőrzésből, felmérésből vagy mérnöki figyelemből ne következtess arra, "
     "hogy az ügyfélnek már semmilyen koordinációs feladata nincs. Teljes projektkoordinációt "
     "csak ezt kifejezetten igazoló márkaforrás alapján állíts. "
+    "A kockázat csökkentése nem jelenti minden váratlan helyzet kizárását. "
+    "A 'nem érhet meglepetés' és 'nem lehet váratlan költség' helyett a tisztázott "
+    "tartalomról és a félreértések kockázatának csökkentéséről írj, ne hibamentességet ígérj. "
+    "Egy részlet tisztázásából se állítsd, hogy a teljes kivitelezés nem hagy nyitott kérdéseket. "
     "A megszólítás névmása és igeragozása egyezzen: a 'maga dönts' és 'maga tudod' "
     "hibás; tegezésnél 'te dönts' és 'te tudod', magázásnál 'Ön döntsön' és 'Ön tudja'. "
 )
@@ -225,6 +229,31 @@ def _review_decision_contradiction(review: Any, request: dict[str, Any]) -> bool
         return False
     findings = review.get("findings")
     return isinstance(findings, list) and all(isinstance(item, str) for item in findings)
+
+
+def _actionable_content_review_block(review: Any, artifact_hash: str) -> bool:
+    """Only a valid, hash-bound content judgment may request a fresh copy repair."""
+    if not isinstance(review, dict) or set(review) != {
+        "artifact_sha256", "overall_decision", "gate_results", "scores", "findings",
+    } or review.get("overall_decision") != "BLOCK" or (
+        review.get("artifact_sha256") != artifact_hash
+    ):
+        return False
+    gates, scores, findings = (review.get(key) for key in ("gate_results", "scores", "findings"))
+    if not isinstance(gates, dict) or set(gates) != set(MANDATORY_GATES) or any(
+        not isinstance(item, dict) or set(item) != {"decision", "reason"}
+        or item.get("decision") not in {"PASS", "BLOCK"} or not isinstance(item.get("reason"), str)
+        for item in gates.values()
+    ):
+        return False
+    if not isinstance(scores, dict) or set(scores) != {
+        "natural_hungarian", "brand_distinctiveness", "conversion_strength", "claim_safety",
+    } or any(type(value) is not int or not 0 <= value <= 100 for value in scores.values()):
+        return False
+    return isinstance(findings, list) and all(isinstance(item, str) for item in findings) and bool(
+        any(item.strip() for item in findings)
+        or any(item["decision"] == "BLOCK" and item["reason"].strip() for item in gates.values())
+    )
 
 
 def _complete_content_review(db: Session, **kwargs: Any) -> Any:
@@ -971,6 +1000,15 @@ def _locked_slogan_modified(raw: str, slogan: str, brand_id: str) -> bool:
     ))
 
 
+def _claim_is_denied(text: str, start: int) -> bool:
+    return bool(re.search(
+        r"\b(?:nem (?:jelenti|következik|állítjuk|ígérjük|garantáljuk)(?: azt| az)?|"
+        r"nem (?:tudjuk|lehet) garantálni|ne (?:gondolja|feltételezze|gondold|feltételezd))"
+        r"\s*,?\s*hogy\s*(?:(?:önnek|önt|téged|neked)\s+)?[„\"']?\s*$",
+        text[max(0, start - 120):start],
+    ))
+
+
 def _deterministic_publication_errors(
     package: dict[str, Any], contract: dict[str, Any]
 ) -> list[str]:
@@ -984,15 +1022,21 @@ def _deterministic_publication_errors(
     errors: list[str] = []
     if re.search(r"\bmaga\s+(?:dönts|tudod)\b", normalized):
         errors.append("mixed_formal_informal_address")
+    no_risk_claims = re.finditer(
+        r"\bnem\s+(?:érhet(?:i)?\s+(?:(?:önt|téged)\s+)?"
+        r"(?:(?:semmilyen|kellemetlen|váratlan)\s+)?meglepetés\w*|"
+        r"lehet\s+(?:semmilyen\s+)?váratlan\s+(?:helyzet|költség|kiadás|"
+        r"esemény|fordulat|változás|probléma)\w*)\b|"
+        r"\b(?:a(?:z)?\s+(?:kivitelezés|folyamat)\s+)?nem\s+hagy(?:hat)?\s+"
+        r"(?:semmilyen\s+)?nyitott\s+kérdés\w*\b", normalized,
+    )
+    if any(not _claim_is_denied(normalized, match.start()) for match in no_risk_claims):
+        errors.append("unsupported_absolute_claim")
     takeover_claims = re.finditer(
         r"\b(?:önnek|neked)\b[^.!?]{0,100}\bnem kell\b[^.!?]{0,100}"
         r"\b(?:koordinál|összehangol)\w*\b", normalized,
     )
-    if any(not re.search(
-        r"\b(?:nem (?:jelenti|következik|állítjuk|ígérjük)(?: azt| az)?|"
-        r"ne (?:gondolja|feltételezze))\s*,?\s*hogy\s*$",
-        normalized[max(0, match.start() - 100):match.start()],
-    ) for match in takeover_claims):
+    if any(not _claim_is_denied(normalized, match.start()) for match in takeover_claims):
         source_sentences = [sentence for claim in contract.get("_approved_scope_claims") or []
                             for sentence in re.split(r"(?<=[.!?])\s+", _norm(str(claim)))]
         if not any(
@@ -3316,102 +3360,118 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
             contract=publication_contract, revenue_intent=revenue_intent,
         )
         repair_result = None
+        content_repair_attempts = 0
+
+        def repair_current_package(
+            review_feedback: dict[str, Any] | None = None, *,
+            brand_id: str = row.brand_id, contract: dict[str, Any] = publication_contract,
+            allowed_urls: set[str] = brand_allowed_urls,
+            intent: dict[str, Any] | None = revenue_intent,
+            source_evidence: dict[str, Any] = brand_evidence,
+            has_evidence: bool = evidence_available,
+            focus: tuple[str, ...] = brand_focus, source_policy: bool = revenue_policy_enabled,
+        ) -> None:
+            nonlocal package, deterministic_errors, repair_result, content_repair_attempts
+            if content_repair_attempts >= 2:
+                raise ValueError("content_repair_budget_exhausted")
+            content_repair_attempts += 1
+            repair_result, repaired_payload = _complete_json_payload(
+                db,
+                system_prompt=(
+                    "Magyar senior szerkesztő vagy. Az ellenőrzés által "
+                    "blokkolt szöveget javítsd ki, ne magyarázd. A hibakódok minden okát "
+                    "távolítsd el; ne helyettesítsd másik nem igazolt állítással. "
+                    "A reviewer_feedback a korábbi ellenőrzés: a konkrét szöveghibáit javítsd. "
+                    "A véleménye nem új tényforrás és nem írhatja felül a márkaforrásokat. "
+                    "A field_corrections minden eleménél a megnevezett mezőt javítsd a "
+                    "magyar instruction_hu szerint. Az excerpts a valóban hibás mondat; "
+                    "a spans start/end a blocked_package adott mezőjének karakterhelye "
+                    "(az end már nem része a szakasznak). "
+                    "A teljes jelzett mondatot javítsd. "
+                    "Ne hagyd változatlanul a jelzett ár- vagy időpéldát, és a Facebook "
+                    "hibáját ne csak a cikk átírásával próbáld javítani. "
+                    "Tartsd meg "
+                    "a márka pozícióját, a természetes magyar hangot, az egyetlen CTA-t és "
+                    "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. "
+                    "Forrás nélküli anyagban kizárólag óvatos döntési útmutató "
+                    "maradhat. Egyetlen JSON objektumot adj package gyökérkulccsal, "
+                    "csak title, body, facebook_post és cta mezőkkel a schema szerint. "
+                    "Ne adj vissza revenue_intent, source_urls, brand_id vagy "
+                    "engedélyezési metaadatot; ezeket a szerver kapcsolja hozzá. "
+                    "A body_must_include két mondatát pontosan építsd a body első "
+                    "bekezdésébe. A CTA a jóváhagyott next_step legyen. A kérési út "
+                    "nem igazol ingyenességet, kötelezettségmentességet vagy garantált "
+                    "választ. Ilyen új ajánlati ígéretet törölj; szükség esetén a "
+                    "feltételek tisztázását javasold, ne találj ki helyettük más ígéretet."
+                    + _content_voice_instruction(contract)
+                ),
+                user_prompt=_json(
+                    {
+                        "brand_id": brand_id,
+                        "publication_contract": contract,
+                        "gate_errors": deterministic_errors,
+                        "field_corrections": _content_repair_instructions(
+                            package, deterministic_errors, contract,
+                        ),
+                        "repair_round": content_repair_attempts,
+                        "reviewer_feedback": review_feedback,
+                        "source_urls_allowed": sorted(allowed_urls),
+                        "blocked_package": {
+                            key: package.get(key)
+                            for key in ("title", "body", "facebook_post", "cta")
+                        },
+                        "trusted_revenue_intent": intent,
+                        "source_evidence": source_evidence,
+                        "evidence_policy": (
+                            "SOURCE_BOUND: a jóváhagyott márkatényeket őrizd meg; "
+                            "csak a mellékelt források állításai használhatók."
+                            if has_evidence
+                            else "NO_EVIDENCE: márkatényt ne találj ki."
+                        ),
+                        "requirements": {
+                            "body_chars": "900-1600",
+                            "body_must_include": _required_copy_spans(intent),
+                        },
+                        "schema": _content_output_schema(intent),
+                    }
+                ),
+                purpose=(f"canonical_daily_content_review_repair:{brand_id}"
+                         if review_feedback is not None else
+                         f"canonical_daily_content_deterministic_repair:{brand_id}"),
+                run_id=None,
+                high_stakes=True,
+                max_tokens=3500,
+            )
+            repaired, repair_issues = _normalize_generated_content_package(
+                repaired_payload, brand_id=brand_id, revenue_intent=intent,
+            )
+            repaired_urls = repaired.get("source_urls")
+            if source_policy:
+                repaired["source_urls"] = (
+                    [url for url in repaired_urls
+                     if isinstance(url, str) and url in allowed_urls]
+                    if isinstance(repaired_urls, list) else []
+                )
+            else:
+                repaired["source_urls"] = sorted(allowed_urls)
+            repaired = _normalize_content_lengths(_sanitize_unbound_claims(repaired))
+            repair_errors = repair_issues + _content_candidate_errors(
+                repaired, brand_id=brand_id, focus=focus,
+                contract=contract, revenue_intent=intent,
+            )
+            structural_errors = {
+                "title_missing", "body_too_short", "facebook_too_short",
+                "facebook_hashtag_count_invalid", "cta_missing",
+            }
+            if not repair_errors or not structural_errors.intersection(repair_errors):
+                package = repaired
+            deterministic_errors = repair_errors
+
         if deterministic_errors:
             try:
-                for repair_number in range(2):
-                    repair_result, repaired_payload = _complete_json_payload(
-                        db,
-                        system_prompt=(
-                            "Magyar senior szerkesztő vagy. A determinisztikus kiadási kapu által "
-                            "blokkolt szöveget javítsd ki, ne magyarázd. A hibakódok minden okát "
-                            "távolítsd el; ne helyettesítsd másik nem igazolt állítással. "
-                            "A field_corrections minden eleménél a megnevezett mezőt javítsd a "
-                            "magyar instruction_hu szerint. Az excerpts a valóban hibás mondat; "
-                            "a spans start/end a blocked_package adott mezőjének karakterhelye "
-                            "(az end már nem része a szakasznak). "
-                            "A teljes jelzett mondatot javítsd. "
-                            "Ne hagyd változatlanul a jelzett ár- vagy időpéldát, és a Facebook "
-                            "hibáját ne csak a cikk átírásával próbáld javítani. "
-                            "Tartsd meg "
-                            "a márka pozícióját, a természetes magyar hangot, az egyetlen CTA-t és "
-                            "a 3-8 hashtaget. A cikk törzse 900-1600 karakter legyen. "
-                            "Forrás nélküli anyagban kizárólag óvatos döntési útmutató "
-                            "maradhat. Egyetlen JSON objektumot adj package gyökérkulccsal, "
-                            "csak title, body, facebook_post és cta mezőkkel a schema szerint. "
-                            "Ne adj vissza revenue_intent, source_urls, brand_id vagy "
-                            "engedélyezési metaadatot; ezeket a szerver kapcsolja hozzá. "
-                            "A body_must_include két mondatát pontosan építsd a body első "
-                            "bekezdésébe. A CTA a jóváhagyott next_step legyen. A kérési út "
-                            "nem igazol ingyenességet, kötelezettségmentességet vagy garantált "
-                            "választ. Ilyen új ajánlati ígéretet törölj; szükség esetén a "
-                            "feltételek tisztázását javasold, ne találj ki helyettük más ígéretet."
-                            + _content_voice_instruction(publication_contract)
-                        ),
-                        user_prompt=_json(
-                            {
-                                "brand_id": row.brand_id,
-                                "publication_contract": publication_contract,
-                                "gate_errors": deterministic_errors,
-                                "field_corrections": _content_repair_instructions(
-                                    package, deterministic_errors, publication_contract,
-                                ),
-                                "repair_round": repair_number + 1,
-                                "source_urls_allowed": sorted(brand_allowed_urls),
-                                "blocked_package": {
-                                    key: package.get(key)
-                                    for key in ("title", "body", "facebook_post", "cta")
-                                },
-                                "trusted_revenue_intent": revenue_intent,
-                                "source_evidence": brand_evidence,
-                                "evidence_policy": (
-                                    "SOURCE_BOUND: a jóváhagyott márkatényeket őrizd meg; "
-                                    "csak a mellékelt források állításai használhatók."
-                                    if evidence_available
-                                    else "NO_EVIDENCE: márkatényt ne találj ki."
-                                ),
-                                "requirements": {
-                                    "body_chars": "900-1600",
-                                    "body_must_include": _required_copy_spans(revenue_intent),
-                                },
-                                "schema": _content_output_schema(revenue_intent),
-                            }
-                        ),
-                        purpose=(f"canonical_daily_content_deterministic_repair:{row.brand_id}"),
-                        run_id=None,
-                        high_stakes=True,
-                        max_tokens=3500,
-                    )
-                    repaired, repair_issues = _normalize_generated_content_package(
-                        repaired_payload, brand_id=row.brand_id, revenue_intent=revenue_intent,
-                    )
-                    repaired_urls = repaired.get("source_urls")
-                    if revenue_policy_enabled:
-                        repaired["source_urls"] = (
-                            [url for url in repaired_urls
-                             if isinstance(url, str) and url in brand_allowed_urls]
-                            if isinstance(repaired_urls, list) else []
-                        )
-                    else:
-                        repaired["source_urls"] = sorted(brand_allowed_urls)
-                    repaired = _normalize_content_lengths(_sanitize_unbound_claims(repaired))
-                    repair_errors = repair_issues + _content_candidate_errors(
-                        repaired, brand_id=row.brand_id, focus=brand_focus,
-                        contract=publication_contract, revenue_intent=revenue_intent,
-                    )
-                    if not repair_errors:
-                        package = repaired
-                        break
-                    structural_errors = {
-                        "title_missing",
-                        "body_too_short",
-                        "facebook_too_short",
-                        "facebook_hashtag_count_invalid",
-                        "cta_missing",
-                    }
-                    if not structural_errors.intersection(repair_errors):
-                        package = repaired
-                    deterministic_errors = repair_errors
-                else:
+                while deterministic_errors and content_repair_attempts < 2:
+                    repair_current_package()
+                if deterministic_errors:
                     if revenue_policy_enabled:
                         raise ValueError(
                             "source_bound_content_repair_failed:" + ",".join(deterministic_errors)
@@ -3448,6 +3508,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         "error_detail": str(exc)[:300],
                         "attempts": prior_attempts + 1,
                         "repair_version": CONTENT_FACTORY_REPAIR_VERSION,
+                        "content_repair_attempts": content_repair_attempts,
+                        "review_pending_draft": _quality_artifact(package),
+                        "draft_requires_review": True,
+                        "deterministic_errors": deterministic_errors,
                     }
                 )
                 failed += 1
@@ -3455,109 +3519,150 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                 continue
         package["generator_output_issues"] = generation_issues
         artifact_hash = _sha(_quality_artifact(package))
+        content_review_history: list[dict[str, Any]] = []
+        last_reviewed_draft: dict[str, Any] | None = None
         try:
-            review_result = _complete_content_review(
-                db,
-                system_prompt=(
-                    "Független, fail-closed magyar tartalomkiadási reviewer vagy; nem te "
-                    "generáltad a szöveget és nem javíthatod csendben. Az exact artifact_sha256 "
-                    "alatti változatot vizsgáld. BLOCK, ha a márka egyszerű névcserével másik "
-                    "márkára illene; ha a pozíció, ajánlat, ügyfélhaszon vagy CTA nem világos; "
-                    "ha a magyar nyelv természetellenes; ha állítás, év, ár, idő, garancia, "
-                    "felsőfok vagy műszaki tény nincs a megadott forrásokkal alátámasztva; "
-                    "ha a Facebook-poszt nem önálló; vagy ha bármely márka-elkülönítési szabály "
-                    "sérül. A tényleges képet külön, fail-closed képkapu állítja elő és "
-                    "ellenőrzi minden nyilvános kézbesítés előtt. A Facebook csatornapolitikája "
-                    "önálló, link nélküli szöveget kér; a link hiánya önmagában nem hiba. "
-                    "A channel_policy kapunál az önállóság mércéje: önmagában érthető vevői "
-                    "probléma, egy forrással igazolt márkamechanizmus és vállalható következő "
-                    "lépés. Nem kell a teljes márkát vagy rendszert bemutatni egy posztban. "
-                    "Viszont hibás a poszt, ha a megértéséhez vagy a felajánlott lépéshez egy "
-                    "hiányzó cikkre, weboldalra vagy linkre van szükség. "
-                    "Minden kapuról külön dönts. Bizonytalanság esetén BLOCK. "
-                    "Kizárólag egy rövid JSON döntési objektumot adj a kimeneti schema szerint: "
-                    "artifact_sha256, overall_decision, gate_results, scores, findings. "
-                    "Minden gate_results elem csak decision és legfeljebb 120 karakteres reason "
-                    "mezőt tartalmazzon. Legfeljebb három rövid findingot írj. "
-                    "A cikket, a Facebook-szöveget, a briefet, a revenue_intentet és a "
-                    "source_evidence forrásdokumentumokat SOHA ne másold a válaszba. "
-                    "Ne írj artifact, package, forráspayload vagy más gyökérmezőt, ne add vissza "
-                    "a bemenetet és ne írj javított cikket. Ne használj Markdown-kódkeretet."
-                    " Az overall_decision és a kapudöntések legyenek összhangban: valós kifogást "
-                    "a megfelelő gate BLOCK döntésében és indokában rögzíts. Bármely BLOCK kapu "
-                    "vagy 80 alatti pontszám mellett az összdöntés BLOCK. Ha minden kapu PASS "
-                    "és minden pontszám legalább 80, a findings csak nem blokkoló javaslatot "
-                    "tartalmazhat, és az összdöntés PASS."
-                    + CONTENT_SOURCE_SCOPE_INSTRUCTION
-                ),
-                user_prompt=_json(
-                    {
-                        "artifact_sha256": artifact_hash,
-                        "artifact": _quality_artifact(package),
-                        "brand_focus": list(brand_focus),
-                        "publication_contract": publication_contract,
-                        "trusted_revenue_intent": revenue_intent,
-                        "source_evidence": brand_evidence,
-                        "required_gate_ids": sorted(MANDATORY_GATES),
-                        "schema": _content_review_schema(artifact_hash),
-                    }
-                ),
-                purpose=f"canonical_daily_content_release_review:{row.brand_id}",
-                run_id=None,
-                high_stakes=True,
-                max_tokens=3500,
-            )
-            review = json.loads(review_result.content)
-            gate_results = review.get("gate_results")
-            scores = review.get("scores")
-            if review.get("artifact_sha256") != artifact_hash:
-                raise ValueError("release_review_artifact_mismatch")
-            if review.get("overall_decision") != "PASS":
-                blocked_reasons = [
-                    str(value.get("reason") or gate)
-                    for gate, value in (review.get("gate_results") or {}).items()
-                    if isinstance(value, dict) and value.get("decision") != "PASS"
-                ]
-                blocked_reasons.extend(str(value) for value in review.get("findings") or [])
-                raise ValueError("release_review_blocked:" + " | ".join(blocked_reasons)[:220])
-            if not isinstance(gate_results, dict) or set(gate_results) != set(MANDATORY_GATES):
-                raise ValueError("release_review_gate_set_incomplete")
-            decisions = {
-                gate: str((value or {}).get("decision") or "BLOCK")
-                for gate, value in gate_results.items()
-            }
-            if any(value != "PASS" for value in decisions.values()):
-                raise ValueError("release_review_gate_blocked")
-            if not isinstance(scores, dict) or any(
-                int(scores.get(name) or 0) < 80
-                for name in (
-                    "natural_hungarian",
-                    "brand_distinctiveness",
-                    "conversion_strength",
-                    "claim_safety",
+            for _review_round in range(3):
+                review_result = _complete_content_review(
+                    db,
+                    system_prompt=(
+                        "Független, fail-closed magyar tartalomkiadási reviewer vagy; nem te "
+                        "generáltad a szöveget és nem javíthatod csendben. Az "
+                        "exact artifact_sha256 "
+                        "alatti változatot vizsgáld. BLOCK, ha a márka egyszerű névcserével másik "
+                        "márkára illene; ha a pozíció, ajánlat, ügyfélhaszon vagy CTA nem világos; "
+                        "ha a magyar nyelv természetellenes; ha állítás, év, ár, idő, garancia, "
+                        "felsőfok vagy műszaki tény nincs a megadott forrásokkal alátámasztva; "
+                        "ha a Facebook-poszt nem önálló; vagy ha bármely "
+                        "márka-elkülönítési szabály "
+                        "sérül. A tényleges képet külön, fail-closed képkapu állítja elő és "
+                        "ellenőrzi minden nyilvános kézbesítés előtt. A Facebook "
+                        "csatornapolitikája "
+                        "önálló, link nélküli szöveget kér; a link hiánya önmagában nem hiba. "
+                        "A channel_policy kapunál az önállóság mércéje: önmagában érthető vevői "
+                        "probléma, egy forrással igazolt márkamechanizmus és vállalható következő "
+                        "lépés. Nem kell a teljes márkát vagy rendszert bemutatni egy posztban. "
+                        "Viszont hibás a poszt, ha a megértéséhez vagy a felajánlott lépéshez egy "
+                        "hiányzó cikkre, weboldalra vagy linkre van szükség. "
+                        "Minden kapuról külön dönts. Bizonytalanság esetén BLOCK. "
+                        "Kizárólag egy rövid JSON döntési objektumot adj a "
+                        "kimeneti schema szerint: "
+                        "artifact_sha256, overall_decision, gate_results, scores, findings. "
+                        "Minden gate_results elem csak decision és legfeljebb "
+                        "120 karakteres reason "
+                        "mezőt tartalmazzon. Legfeljebb három rövid findingot írj. "
+                        "A cikket, a Facebook-szöveget, a briefet, a revenue_intentet és a "
+                        "source_evidence forrásdokumentumokat SOHA ne másold a válaszba. "
+                        "Ne írj artifact, package, forráspayload vagy más "
+                        "gyökérmezőt, ne add vissza "
+                        "a bemenetet és ne írj javított cikket. Ne használj Markdown-kódkeretet."
+                        " Az overall_decision és a kapudöntések legyenek "
+                        "összhangban: valós kifogást "
+                        "a megfelelő gate BLOCK döntésében és indokában rögzíts. "
+                        "Bármely BLOCK kapu "
+                        "vagy 80 alatti pontszám mellett az összdöntés BLOCK. Ha minden kapu PASS "
+                        "és minden pontszám legalább 80, a findings csak nem blokkoló javaslatot "
+                        "tartalmazhat, és az összdöntés PASS."
+                        + CONTENT_SOURCE_SCOPE_INSTRUCTION
+                    ),
+                    user_prompt=_json(
+                        {
+                            "artifact_sha256": artifact_hash,
+                            "artifact": _quality_artifact(package),
+                            "brand_focus": list(brand_focus),
+                            "publication_contract": publication_contract,
+                            "trusted_revenue_intent": revenue_intent,
+                            "source_evidence": brand_evidence,
+                            "required_gate_ids": sorted(MANDATORY_GATES),
+                            "schema": _content_review_schema(artifact_hash),
+                        }
+                    ),
+                    purpose=f"canonical_daily_content_release_review:{row.brand_id}",
+                    run_id=None,
+                    high_stakes=True,
+                    max_tokens=3500,
                 )
-            ):
-                raise ValueError("release_review_score_below_80")
-            reviewed_at = current
-            unsigned_manifest = {
-                "gate_version": QUALITY_GATE_VERSION,
-                "brand_id": row.brand_id,
-                "artifact_sha256": artifact_hash,
-                "generator_request_id": result.request_id,
-                "generator_model": result.model,
-                "repair_request_id": repair_result.request_id if repair_result else None,
-                "repair_model": repair_result.model if repair_result else None,
-                "review_request_id": review_result.request_id,
-                "review_model": review_result.model,
-                "reviewer_identity": "deepseek-high-stakes-independent-release-reviewer",
-                "gate_decisions": decisions,
-                "scores": {name: int(value) for name, value in scores.items()},
-                "reviewed_at": reviewed_at.isoformat(),
-                "valid_until": (reviewed_at + timedelta(hours=30)).isoformat(),
-            }
-            package["quality_gate_manifest"] = unsigned_manifest | {
-                "hmac_sha256": _sign_quality_manifest(unsigned_manifest)
-            }
+                review = json.loads(review_result.content)
+                if not isinstance(review, dict):
+                    raise ValueError("release_review_invalid_shape")
+                content_review_history.append({
+                    "artifact_sha256": artifact_hash,
+                    "request_id": review_result.request_id,
+                    "review": review,
+                })
+                last_reviewed_draft = _quality_artifact(package)
+                gate_results = review.get("gate_results")
+                scores = review.get("scores")
+                if review.get("artifact_sha256") != artifact_hash:
+                    raise ValueError("release_review_artifact_mismatch")
+                if review.get("overall_decision") != "PASS":
+                    if (
+                        _actionable_content_review_block(review, artifact_hash)
+                        and content_repair_attempts < 2
+                    ):
+                        prior_hash = artifact_hash
+                        while content_repair_attempts < 2:
+                            repair_current_package(review_feedback=review)
+                            package["generator_output_issues"] = generation_issues
+                            artifact_hash = _sha(_quality_artifact(package))
+                            if not deterministic_errors and artifact_hash != prior_hash:
+                                break
+                        if deterministic_errors:
+                            raise ValueError(
+                                "review_content_repair_failed:" + ",".join(deterministic_errors)
+                            )
+                        if artifact_hash == prior_hash:
+                            raise ValueError("review_content_repair_unchanged")
+                        continue
+                if review.get("overall_decision") != "PASS":
+                    blocked_reasons = [
+                        str(value.get("reason") or gate)
+                        for gate, value in (
+                            gate_results.items() if isinstance(gate_results, dict) else []
+                        )
+                        if isinstance(value, dict) and value.get("decision") != "PASS"
+                    ]
+                    blocked_reasons.extend(str(value) for value in review.get("findings") or [])
+                    raise ValueError("release_review_blocked:" + " | ".join(blocked_reasons)[:220])
+                if not isinstance(gate_results, dict) or set(gate_results) != set(MANDATORY_GATES):
+                    raise ValueError("release_review_gate_set_incomplete")
+                if any(not isinstance(value, dict) for value in gate_results.values()):
+                    raise ValueError("release_review_gate_invalid_shape")
+                decisions = {
+                    gate: str((value or {}).get("decision") or "BLOCK")
+                    for gate, value in gate_results.items()
+                }
+                if any(value != "PASS" for value in decisions.values()):
+                    raise ValueError("release_review_gate_blocked")
+                if not isinstance(scores, dict) or set(scores) != {
+                    "natural_hungarian", "brand_distinctiveness",
+                    "conversion_strength", "claim_safety",
+                } or any(type(value) is not int or not 80 <= value <= 100
+                         for value in scores.values()):
+                    raise ValueError("release_review_score_below_80")
+                reviewed_at = current
+                unsigned_manifest = {
+                    "gate_version": QUALITY_GATE_VERSION,
+                    "brand_id": row.brand_id,
+                    "artifact_sha256": artifact_hash,
+                    "generator_request_id": result.request_id,
+                    "generator_model": result.model,
+                    "repair_request_id": repair_result.request_id if repair_result else None,
+                    "repair_model": repair_result.model if repair_result else None,
+                    "review_request_id": review_result.request_id,
+                    "review_model": review_result.model,
+                    "reviewer_identity": "deepseek-high-stakes-independent-release-reviewer",
+                    "gate_decisions": decisions,
+                    "scores": {name: int(value) for name, value in scores.items()},
+                    "reviewed_at": reviewed_at.isoformat(),
+                    "valid_until": (reviewed_at + timedelta(hours=30)).isoformat(),
+                }
+                package["quality_gate_manifest"] = unsigned_manifest | {
+                    "hmac_sha256": _sign_quality_manifest(unsigned_manifest)
+                }
+                break
+            else:
+                raise ValueError("content_review_budget_exhausted")
         except (GrowthRegistryError, json.JSONDecodeError, TypeError, ValueError) as exc:
             row.status = "failed"
             row.evidence_json = _json(
@@ -3569,6 +3674,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "error_detail": str(exc)[:300],
                     "attempts": prior_attempts + 1,
                     "repair_version": CONTENT_FACTORY_REPAIR_VERSION,
+                    "content_repair_attempts": content_repair_attempts,
+                    "content_review_history": content_review_history,
+                    "last_reviewed_draft": last_reviewed_draft,
+                    "deterministic_errors": deterministic_errors,
                     "review_pending_draft": _quality_artifact(package) | {
                         "revenue_intent": revenue_intent,
                         "generator_output_issues": generation_issues,
@@ -3579,6 +3688,8 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
             failed += 1
             db.commit()
             continue
+        package["content_repair_attempts"] = content_repair_attempts
+        package["content_review_history"] = content_review_history
         package["publication_state"] = "RELEASE_APPROVED"
         package["delivery_plan"] = delivery_plan_for_brand(row.brand_id)
         package["deepseek_request_id"] = result.request_id

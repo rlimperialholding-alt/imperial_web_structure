@@ -227,11 +227,12 @@ def test_provider_diagnostic_handles_empty_final_content(data):
     assert result["message_content_truncated"] is False
 
 
-@pytest.mark.parametrize("brand", ["Property360", "RED Property", "Venture Studio", "Bautica"])
+@pytest.mark.parametrize("brand", ["Property360", "RED Property", "Venture Studio", "Bautica", "Casa Moderna", "Everyday Homes"])
 def test_model_purposes_are_scoped_to_exact_selected_brand(brand):
     module = runpy.run_path(str(SCRIPT))
     purposes = module["_allowed_model_purposes"](brand)
-    assert len(purposes) == 3
+    assert len(purposes) == 4
+    assert f"canonical_daily_content_review_repair:{brand}" in purposes
     assert all(purpose.endswith(":" + brand) for purpose in purposes)
     assert all(purpose.startswith("canonical_daily_content_") for purpose in purposes)
 

@@ -388,12 +388,15 @@ def test_reviewer_content_block_is_not_a_technical_retry(db, monkeypatch):
     result, row, calls = _run(
         db,
         monkeypatch,
-        lambda request: {"package": _copy_only(request["revenue_intent"])},
+        lambda request: {"package": _copy_only(
+            request.get("revenue_intent") or request["trusted_revenue_intent"],
+        )},
         reviewer=review,
     )
     assert result["generated"] == 0
-    assert len(calls) == 2
-    assert "release_review_blocked" in row.evidence_json
+    assert len(calls) == 4  # One review BLOCK and two bounded copy repairs, not review retries.
+    assert sum("release_review" in purpose for purpose, _ in calls) == 1
+    assert "review_content_repair_unchanged" in row.evidence_json
     assert json.loads(row.evidence_json)["review_pending_draft"]["body"]
 
 
@@ -451,7 +454,7 @@ def test_new_contract_version_gets_three_bounded_attempts_after_old_version_exha
             brand_id="Property360",
             status="failed",
             evidence_json=json.dumps(
-                {"attempts": 3, "repair_version": "20260907-model-contract-v6"}
+                {"attempts": 3, "repair_version": "20260907-model-contract-v7"}
             ),
             updated_at=NOW,
         )
@@ -469,7 +472,7 @@ def test_new_contract_version_gets_three_bounded_attempts_after_old_version_exha
     )
     assert result["failed"] == 1
     assert json.loads(row.evidence_json)["attempts"] == 1
-    assert processing.CONTENT_FACTORY_REPAIR_VERSION == "20260907-model-contract-v7"
+    assert processing.CONTENT_FACTORY_REPAIR_VERSION == "20260907-model-contract-v8"
     for attempt in (2, 3):
         row.updated_at = NOW + timedelta(minutes=(attempt - 2) * 6)
         db.commit()

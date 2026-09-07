@@ -269,7 +269,10 @@ def test_contradictory_review_rechecks_same_artifact_once_and_only_pass_can_be_s
         "BauFreund",
         lambda request, system: deepcopy(sample["calls"][0]["output"]),
     )
-    assert len(calls) == 3  # One generator, exactly two review calls; no third review.
+    # A real second BLOCK may now request two bounded copy repairs; returning the same
+    # draft does not rerun its review. Technical consistency still has only two calls.
+    assert len(calls) == (5 if second == "block" else 3)
+    assert sum("release_review" in call["purpose"] for call in calls) == 2
     output = json.loads(row.evidence_json)
     assert result["generated"] == (1 if second == "pass" else 0), row.evidence_json
     if second == "pass":
