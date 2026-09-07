@@ -2936,6 +2936,9 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
     first_three = [f"https://ingatlan.com/{35500996 + index}" for index in range(3)]
     calls: list[tuple[str, list[str], set[str]]] = []
     target_calls = 0
+    # Source fetch completion timestamps use the real clock. Anchor scan
+    # dates to it too, so the retry is due regardless of when this test runs.
+    start = datetime.now(UTC).replace(hour=8, minute=0, second=0, microsecond=0)
 
     monkeypatch.setattr(
         catalog,
@@ -3047,15 +3050,15 @@ def test_managed_lane_persists_cursor_and_reaches_fourth_candidate_next_batch(
     monkeypatch.setattr(catalog, "_fetch", fake_fetch)
     first_run = catalog.scan_due_routes(
         db,
-        now=datetime(2026, 8, 30, 6, 0, tzinfo=UTC),
+        now=start,
     )
     second_run = catalog.scan_due_routes(
         db,
-        now=datetime(2026, 8, 30, 6, 5, tzinfo=UTC),
+        now=start + timedelta(minutes=5),
     )
     third_run = catalog.scan_due_routes(
         db,
-        now=datetime(2026, 9, 2, 6, 5, tzinfo=UTC),
+        now=start + timedelta(days=3, minutes=5),
     )
 
     cursors = list(

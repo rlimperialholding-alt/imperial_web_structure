@@ -506,23 +506,39 @@ def seed_content_factory_source_inventory(db: Session) -> None:
                     raise RuntimeError(
                         f"Content Factory source changed without a new version: {source_key}@{version}"
                     )
-                continue
-            db.add(
-                CopySourceRecord(
-                    source_key=source_key,
-                    source_type=source_type,
-                    brand_id=brand_id,
-                    version=version,
-                    priority=20,
-                    status="approved",
-                    approved=True,
-                    valid_from=valid_from,
-                    valid_until=valid_until,
-                    source_url=source_url,
-                    content_hash=content_hash,
-                    payload_json=payload_json,
+            else:
+                db.add(
+                    CopySourceRecord(
+                        source_key=source_key,
+                        source_type=source_type,
+                        brand_id=brand_id,
+                        version=version,
+                        priority=20,
+                        status="approved",
+                        approved=True,
+                        valid_from=valid_from,
+                        valid_until=valid_until,
+                        source_url=source_url,
+                        content_hash=content_hash,
+                        payload_json=payload_json,
+                    )
                 )
-            )
+            # Supersession is explicit per source key/version. Preserve the old
+            # row for audit and leave unrelated or operator-added versions alone.
+            supersedes = item.get("supersedes_versions") or []
+            if not isinstance(supersedes, list) or any(
+                not isinstance(value, str) or value == version for value in supersedes
+            ):
+                raise RuntimeError(f"Invalid Content Factory source supersession: {source_key}")
+            for previous in db.scalars(
+                select(CopySourceRecord).where(
+                    CopySourceRecord.source_key == source_key,
+                    CopySourceRecord.brand_id == brand_id,
+                    CopySourceRecord.version.in_(supersedes),
+                )
+            ).all():
+                previous.status = "superseded"
+                previous.approved = False
 
 
 def retire_seeded_content_quality_sources(db: Session) -> None:

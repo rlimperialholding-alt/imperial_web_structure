@@ -1,0 +1,159 @@
+{
+  "source_inputs": "Existing brand documents read back from Google Drive on 2026-09-07",
+  "generator": "deterministic test double",
+  "reviewer": "deterministic test double",
+  "external_sends": 0,
+  "publications": 0,
+  "package": {
+    "body": "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket. A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút. A telek kiválasztásakor a háztervet és a finanszírozást együtt érdemes vizsgálni. A megvásárolható telek még nem bizonyítja, hogy a kiválasztott ház a tervezett feltételekkel megépíthető. A beépíthetőség, a közművek és a megközelítés tisztázása ezért az ajánlatok összehasonlításának része. Készíts listát a ház kivitelezéséről, a helyszíni munkákról és a költözésig felmerülő feladatokról. Minden tételnél jelöld, hogy szerepel-e az ajánlatban, külön becslésre vár, vagy még hiányzik hozzá egy terv. A finanszírozásnál azt is tisztázd, melyik munkát mikor kell kifizetni. A Property360 nézőpontjában a telek, a ház és a finanszírozás összehangolása adja az ingatlanos ügyfélút alapját. A következő egyeztetésre ezért a telek adatait, a házzal kapcsolatos elképzeléseidet és a még nyitott kérdéseidet vidd magaddal. Így az elővizsgálat a tényleges döntési pontokkal kezdődhet.",
+    "brand_id": "Property360",
+    "cta": {
+      "intent": "lead",
+      "label": "Kérek telek–ház elővizsgálatot."
+    },
+    "deepseek_request_id": "TEST-GENERATOR",
+    "delivery_plan": {
+      "cms": {
+        "image_owner": null,
+        "mode": "DISABLED",
+        "site_brand_id": null
+      },
+      "facebook": {
+        "image_owner": "Imperial Content Image Factory",
+        "mode": "LIVE_IMAGE_REQUIRED",
+        "page_brand_ids": [
+          "property-360"
+        ]
+      }
+    },
+    "facebook_post": "A telek ára csak a projekt egyik tétele. A házterv, a közművek, a helyszíni munkák és a finanszírozás együtt határozzák meg, milyen döntések várnak rád a költözésig. Írd össze, mi szerepel már az ajánlatban, mi vár külön becslésre, és mihez hiányzik terv. A Property360 ingatlanos ügyfélútja a telek és a ház összehangolására épül. Indulj telek–ház elővizsgálattal! #telek #házterv #finanszírozás",
+    "format": "professional_article",
+    "publication_state": "RELEASE_APPROVED",
+    "quality_gate_manifest": {
+      "artifact_sha256": "bbd04fb6cb1a968f6201e504d4c804ee159c9c78af361417b1b17a99723a6535",
+      "brand_id": "Property360",
+      "gate_decisions": {
+        "brand_anchor": "PASS",
+        "brand_voice": "PASS",
+        "channel_policy": "PASS",
+        "claim_coverage": "PASS",
+        "claim_freshness": "PASS",
+        "conversion": "PASS",
+        "duplicate_cannibalization": "PASS",
+        "legal_template": "PASS",
+        "natural_hungarian": "PASS",
+        "security_privacy": "PASS",
+        "seo": "PASS",
+        "technical_render": "PASS",
+        "visual_quality": "PASS",
+        "visual_rights_privacy": "PASS"
+      },
+      "gate_version": "canonical-auto-quality-v2",
+      "generator_model": "test-double",
+      "generator_request_id": "TEST-GENERATOR",
+      "hmac_sha256": "9b8b7435fe6d634239d760a1714507eae89906939c10b5800edf69a4e611741c",
+      "repair_model": null,
+      "repair_request_id": null,
+      "review_model": "test-double",
+      "review_request_id": "TEST-GENERATOR",
+      "reviewed_at": "2026-09-07T08:00:00+00:00",
+      "reviewer_identity": "deepseek-high-stakes-independent-release-reviewer",
+      "scores": {
+        "brand_distinctiveness": 90,
+        "claim_safety": 90,
+        "conversion_strength": 90,
+        "natural_hungarian": 90
+      },
+      "valid_until": "2026-09-08T14:00:00+00:00"
+    },
+    "release_blockers": [],
+    "release_review_request_id": "TEST-GENERATOR",
+    "repair_request_id": null,
+    "revenue_intent": {
+      "approved_brand_facts": [
+        {
+          "brand_id": "Property360",
+          "content_hash": "059f933372cab71f8a83272a109b615240df788f7a7ae9598da3695ad00d10be",
+          "payload": {
+            "buyer_problems": [
+              "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+              "A költözésig tartó teljes projektköltség nem azonos a ház kivitelezési árával."
+            ],
+            "next_steps": [
+              "Kérek telek–ház elővizsgálatot."
+            ],
+            "record_id": "P360-BRAND-COORDINATION-V1",
+            "sales_goal": "A telek és a ház elővizsgálatára irányuló, konkrét projektadatokat tartalmazó megkeresés.",
+            "source_evidence": [
+              {
+                "content_sha256": "f62b1272dfabf9c3a8ca620e373e76d9544bbb28fd6b8b977fd58a0086815aca",
+                "drive_file_id": "1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs",
+                "exact_excerpts": [
+                  "A Property360 nem egymás mellé teszi a telket, a tervezést, a finanszírozást és a kivitelezést. Egyetlen projektben hangolja össze őket a költözésig.",
+                  "Kérek telek–ház elővizsgálatot."
+                ],
+                "source_modified_time": "2026-07-28T06:55:44.104Z",
+                "title": "2026-07-28 – Property360 – Telek, terv, finanszírozás – publikációs csomag",
+                "url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+            ],
+            "statement": "A Property360 a telek, a házterv, a finanszírozás és a kivitelezési program korai összehangolását segítő ingatlanos ügyfélút."
+          },
+          "source_key": "property360-brand-fact-project-coordination",
+          "source_type": "brand_fact",
+          "source_url": "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        },
+        {
+          "brand_id": "Property360",
+          "content_hash": "90cd92849bd4fb0abf91d0c1bc2106f1875b7546c8fb9b63d06d22bc1b78408b",
+          "payload": {
+            "record_id": "P360-OFFER-INTERIOR-360-V1",
+            "source_evidence": [
+              {
+                "content_sha256": "58155677eeec7216792ee29dc330bba87d68d89e24d2eed1b5aea94fe1f9286c",
+                "drive_file_id": "13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD",
+                "exact_excerpts": [
+                  "2 óra belsőépítészeti tanácsadás · látványterv · burkolatkiosztási terv · választás a moodboardok közül",
+                  "A pontos helyiségkört, nézetszámot, módosítási kört és a megrendelhető termékeket a szerződéses műszaki tartalom rögzíti."
+                ],
+                "source_modified_time": "2026-08-08T23:05:01.525Z",
+                "title": "Property360-Interior-360-standalone.html",
+                "url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+                "verified_at": "2026-09-07"
+              }
+            ],
+            "source_refs": [
+              "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk"
+            ],
+            "statement": "A Property360 Interior 360 csomag belsőépítészeti tanácsadást, látványtervet, burkolatkiosztási tervet és moodboard-választást kapcsol össze."
+          },
+          "source_key": "property360-offer-interior-360",
+          "source_type": "offer",
+          "source_url": "https://drive.google.com/file/d/13DTH2kNrKixizWiyC1_qL9YaU3WEpaSD/view?usp=drivesdk",
+          "version": "2026-09-07.v1"
+        }
+      ],
+      "brand_id": "Property360",
+      "buyer_problem": "A telek, a terv és a finanszírozás egymásra hat, ezért az ügyfél nem tudja biztonságosan egymás után kezelni őket.",
+      "input_type": "approved_brand_customer_problem",
+      "next_step": "Kérek telek–ház elővizsgálatot.",
+      "policy": "content-intent-revenue-v1",
+      "publication_allowed": false,
+      "radar_topic_id": null,
+      "sales_goal": "A telek és a ház elővizsgálatára irányuló, konkrét projektadatokat tartalmazó megkeresés.",
+      "send_allowed": false,
+      "source_refs": [
+        "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+      ]
+    },
+    "source_urls": [
+      "https://docs.google.com/document/d/1V5OLL5EaD9qogm2UDT2nZVZF8re05mKHVAz0n26x9Cs/edit?usp=drivesdk"
+    ],
+    "title": "Telek, házterv és finanszírozás: együtt tervezd"
+  }
+}

@@ -431,7 +431,9 @@ def test_question_permalink_is_preserved_only_for_exact_forum_candidate(db, monk
     topic = db.scalar(select(QuestionRadarTopic))
     assert topic.use_case == "exact_source_reply_candidate"
     assert topic.source_url == permalink
-    assert processing._reply_eligibility(topic)["eligible"] is True
+    # A model's claimed date does not replace adapter-scoped original-post proof.
+    assert topic.freshness_decision == "UNVERIFIED"
+    assert processing._reply_eligibility(topic)["eligible"] is False
 
 
 def test_joszaki_profession_category_is_not_treated_as_a_question_permalink() -> None:
@@ -714,7 +716,7 @@ def test_question_answer_generator_quarantines_exact_artifact(db, monkeypatch):
     topic = QuestionRadarTopic(
         topic_id="QRT-ELIGIBLE",
         local_date=date(2026, 8, 21),
-        question="Milyen falazatot érdemes választani egy családi házhoz?",
+        question="Kivitelezőt keresek a családi ház falazatához, megvannak a tervek.",
         brand_id="Bautica",
         use_case="exact_source_reply_candidate",
         source_url="https://forum.source.test/kerdesek/12345-milyen-falazat",
@@ -724,12 +726,25 @@ def test_question_answer_generator_quarantines_exact_artifact(db, monkeypatch):
         age_days=0,
         active_status="active",
         existing_answer_count=0,
-        freshness_decision="preferred_0_30_days",
+        freshness_decision="HOT",
         eligibility_status="eligible",
     )
     db.add(topic)
     db.commit()
     monkeypatch.setattr(processing, "settings", lambda: _settings())
+    source_checks = []
+
+    def refresh_source(value, *, now):
+        source_checks.append(value.topic_id)
+        return {
+            "source_url": value.source_url,
+            "published_at": datetime(2026, 8, 21, tzinfo=UTC),
+            "source_text": value.question,
+            "active_status": "active",
+            "existing_answer_count": 2,
+        }
+
+    monkeypatch.setattr(processing, "_refresh_topic_source", refresh_source)
     disclosure = "A Bautica csapatának nevében válaszolok."
     answer = disclosure + " " + (
         "A falazatot a statikai terv, a hőtechnikai cél, a kivitelezési rendszer "
@@ -750,6 +765,7 @@ def test_question_answer_generator_quarantines_exact_artifact(db, monkeypatch):
     )
 
     row = db.scalar(select(QuestionRadarAnswer))
+    assert source_checks == [topic.topic_id]
     assert result["quarantined"] == 1
     assert row.status == "quarantined"
     assert row.answer_sha256 == processing.hashlib.sha256(answer.strip().encode()).hexdigest()
@@ -774,7 +790,7 @@ def test_construction_marketplace_rejects_accounting_question() -> None:
     assert "brand_topic_mismatch" in eligibility["reasons"]
 
 
-def test_construction_marketplace_accepts_specific_building_question() -> None:
+def test_construction_marketplace_retains_general_building_question_for_content() -> None:
     topic = QuestionRadarTopic(
         topic_id="QRT-ONTOPIC",
         local_date=date(2026, 8, 21),
@@ -788,11 +804,16 @@ def test_construction_marketplace_accepts_specific_building_question() -> None:
         age_days=0,
         active_status="active",
         existing_answer_count=0,
-        freshness_decision="preferred_0_30_days",
+        freshness_decision="CONTENT_SIGNAL",
         eligibility_status="eligible",
     )
 
-    assert processing._reply_eligibility(topic)["eligible"] is True
+    decision = processing._reply_eligibility(topic, now=datetime(2026, 8, 21, 8, tzinfo=UTC))
+    assert decision["eligible"] is False
+    assert "not_current_sales_signal" in decision["reasons"]
+    assert processing.revalidate_topic_for_use(
+        topic, now=datetime(2026, 8, 21, 8, tzinfo=UTC), purpose="content"
+    )["eligible"] is True
 
 
 def test_ineligible_question_is_committed_and_not_reprocessed(db, monkeypatch):

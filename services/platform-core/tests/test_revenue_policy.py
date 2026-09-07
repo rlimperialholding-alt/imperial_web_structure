@@ -59,9 +59,10 @@ def test_gyakori_kerdesek_permalink_and_relative_date_are_source_page_safe():
 def test_gyakori_kerdesek_page_metadata_proves_zero_answers():
     body = """
     <html><head><title>Építészmérnököt keresek</title></head><body>
-    Építészmérnököt keresek Miskolcon. Kit ajánlanátok?
-    Családi ház bővítéséhez keresek tervezőt. júl. 23. 09:43
-    Sajnos még nem érkezett válasz a kérdésre.
+    <div class="kerdes"><h1>Építészmérnököt keresek Miskolcon. Kit ajánlanátok?</h1>
+    Családi ház bővítéséhez keresek tervezőt.
+    <div title="A kérdés kiírásának időpontja">júl. 23. 09:43</div></div>
+    <div class="sajnosmeg">Sajnos még nem érkezett válasz a kérdésre.</div>
     </body></html>
     """
     metadata = catalog._reply_page_metadata(
@@ -88,12 +89,17 @@ def test_direct_question_routes_are_registered_with_current_catalog_revision(db)
     assert {row.route_url for row in rows} == {
         "https://www.gyakorikerdesek.hu/otthon__epitkezes__valasz-nelkul",
         "https://www.gyakorikerdesek.hu/otthon__felujitas__valasz-nelkul",
-        "https://forum.index.hu/Topic/showTopicList",
-        "https://www.reddit.com/r/hungary/.rss",
-        "https://www.reddit.com/r/askhungary/.rss",
-        "https://www.reddit.com/r/kiszamolo/.rss",
-        "https://www.bing.com/search?q=epitkezes+kivitelezo+hazepites+tetoter+forum",
-        "https://www.bing.com/search?q=felujitas+szakember+kivitelezo+koltseg+forum",
+        "https://forum.index.hu/Topic/showTopicList?t=52",
+        "https://www.reddit.com/r/hungary/new/.rss?limit=25",
+        "https://www.reddit.com/r/askhungary/new/.rss?limit=25",
+        "https://www.reddit.com/r/kiszamolo/new/.rss?limit=25",
+        "https://www.reddit.com/r/lakokozosseg/new/.rss?limit=25",
+        (
+            "https://prohardver.hu/tema/lakasfelujito_szerelo_szakemberkereso_nagy_topic_"
+            "viz_gaz_villany_futes_festes_burkolas_stb/friss.html"
+        ),
+        "https://lite.duckduckgo.com/lite/?q=epitkezes+forum",
+        "https://lite.duckduckgo.com/lite/?q=felujitas+forum",
         "https://www.bing.com/search?q=megbizhato+kivitelezo+ajanlas+arajanlat+epitkezes",
     }
     assert all(row.enabled is True and row.catalog_sha256 == "a" * 64 for row in rows)

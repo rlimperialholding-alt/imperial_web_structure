@@ -1,0 +1,14 @@
+{
+  "checked_on": "2026-09-07",
+  "syntax_check": "PASS",
+  "ruff_new_issues": 0,
+  "ruff_clean_changed_modules_and_new_tests": true,
+  "legacy_file_exception": {
+    "path": "services/platform-core/app/seed.py",
+    "baseline_commit": "264ba6e6577cb25efdfd72ce0e2a3b8ab1456bfa",
+    "baseline_issues": 77,
+    "current_issues": 77,
+    "additional_issues": 0,
+    "comparison": "diagnostic code, message and stripped source line"
+  }
+}

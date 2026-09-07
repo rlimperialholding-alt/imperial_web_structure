@@ -101,9 +101,7 @@ def test_concrete_reply_page_metadata_uses_original_post_date_and_state() -> Non
        "publishedAt":"2026-09-02T09:24:48.109+02:00"}
     </script>
     """
-    metadata = catalog._reply_page_metadata(
-        body, source_url="https://qjob.hu/tasks/215605"
-    )
+    metadata = catalog._reply_page_metadata(body, source_url="https://qjob.hu/tasks/215605")
     assert metadata == {
         "published_at_raw": "2026-09-02T09:24:48.109+02:00",
         "active_status_raw": "published",
@@ -130,7 +128,7 @@ def test_reply_page_candidate_rejects_category_and_cross_host_links() -> None:
         base_url=base,
     )
     assert catalog._reply_page_candidate(
-        "https://forum.index.hu/Article/showArticle?t=9250012",
+        "https://forum.index.hu/Article/viewArticle?a=172270043&t=9250012",
         base_url="https://forum.index.hu/Topic/showTopicList",
     )
     assert catalog._reply_page_candidate(
@@ -165,7 +163,7 @@ def test_public_atom_feed_preserves_entry_date_and_permalink() -> None:
             "label": (
                 "Mennyiből lehet felújítani ezt a házat? Kivitelezőt és költségbecslést keresek.\n"
                 "[SOURCE_PAGE_EVIDENCE] published_at_raw=2026-09-05T10:15:00+00:00; "
-                "published_at_source=source_page; active_status_raw=active; active_status=active"
+                "published_at_source=source_page"
             ),
         }
     ]
@@ -180,7 +178,7 @@ def test_rss_feed_items_are_discovered_and_search_results_cross_host() -> None:
     </channel></rss>"""
     _text, rss_links = catalog._page_evidence(
         rss,
-        base_url="https://www.reddit.com/r/askhungary/.rss",
+        base_url="https://forum.example.hu/feed.rss",
         limit=6000,
     )
     assert rss_links[0]["url"].endswith("kivitelezo-ajanlas.12345/")
@@ -212,13 +210,14 @@ def test_fetch_search_discovery_rechecks_each_forum_post(monkeypatch) -> None:
     route.search_signal = "építkezés; kivitelező; fórum"
     route.source_record_json = '{"category":"forum"}'
     search_body = (
-        "<html><body><h2><a href=\"https://forum.example.hu/threads/"
-        "kivitelezo-ajanlas.12345/\">Tudtok megbízható kivitelezőt? "
+        '<html><body><h2><a href="https://forum.example.hu/threads/'
+        'kivitelezo-ajanlas.12345/">Tudtok megbízható kivitelezőt? '
         "Építkezés fórum</a></h2></body></html>"
     ).encode()
     post_body = (
-        '<html><time datetime="2026-09-05T10:15:00+00:00"></time>'
-        '<script>{"status":"published","taskResponsesCount":0}</script>'
+        '<html><script type="application/ld+json">{"@type":"Question",'
+        '"url":"https://forum.example.hu/threads/kivitelezo-ajanlas.12345/",'
+        '"datePublished":"2026-09-05T10:15:00+00:00","answerCount":0}</script>'
         "<body>Tudtok megbízható kivitelezőt?</body></html>"
     ).encode()
 
@@ -233,6 +232,15 @@ def test_fetch_search_discovery_rechecks_each_forum_post(monkeypatch) -> None:
         return real_client(*args, **kwargs)
 
     monkeypatch.setattr(catalog.httpx, "Client", client_factory)
+    monkeypatch.setattr(
+        catalog,
+        "_forum_page_get",
+        lambda *_args, **_kwargs: {
+            "status_code": 200,
+            "body": post_body,
+            "headers": {"content-type": "text/html"},
+        },
+    )
     monkeypatch.setattr(
         catalog.socket,
         "getaddrinfo",
@@ -251,10 +259,7 @@ def test_fetch_search_discovery_rechecks_each_forum_post(monkeypatch) -> None:
 def test_fetch_analyzes_content_after_old_200k_cutoff(monkeypatch) -> None:
     tail = '<a href="/szakivalaszol/tetofelujitas">Hogyan újítsam fel a tetőt?</a>'
     body = (
-        "<html><title>Kérdések</title><body>"
-        + ("x" * 210_000)
-        + tail
-        + "</body></html>"
+        "<html><title>Kérdések</title><body>" + ("x" * 210_000) + tail + "</body></html>"
     ).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -274,6 +279,15 @@ def test_fetch_analyzes_content_after_old_200k_cutoff(monkeypatch) -> None:
         ],
     )
     monkeypatch.setattr(catalog.httpx, "Client", client_factory)
+    monkeypatch.setattr(
+        catalog,
+        "_forum_page_get",
+        lambda *_args, **_kwargs: {
+            "status_code": 200,
+            "body": body,
+            "headers": {"content-type": "text/html"},
+        },
+    )
     result = catalog._fetch(_route("https://joszaki.hu/szakivalaszol"))
 
     assert result["status"] == "succeeded"

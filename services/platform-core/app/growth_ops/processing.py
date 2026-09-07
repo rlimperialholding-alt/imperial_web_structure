@@ -8,12 +8,12 @@ import re
 import stat
 import unicodedata
 from collections import Counter
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from email.utils import parsedate_to_datetime
 from html import escape
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse, urlunparse
+from urllib.parse import parse_qs, parse_qsl, urlparse, urlunparse
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -72,6 +72,8 @@ from .publication_integrity import (
 from .registry import BrandBinding, GrowthRegistryError, settings
 from .revenue_policy import (
     SourceReplenishmentRequired,
+    assess_signal,
+    build_brand_source_intent,
     build_revenue_intent,
     evaluate_revenue_intent,
     is_purchase_signal,
@@ -330,7 +332,8 @@ def _content_factory_fallback_package(
         f"{brand_id}: a {primary} témájában a jó döntés azzal kezdődik, hogy tisztázza "
         f"a problémát, a felelősségi határt és az ellenőrizendő tényeket. A {brand_id} "
         f"nézőpontja a {required_text} kérdését állítja a középpontba. "
-        f"{next_step.capitalize()}! #szakma #tudatosdöntés #{re.sub(r'[^a-záéíóöőúüű0-9]', '', primary.casefold())}"
+        f"{next_step.capitalize()}! #szakma #tudatosdöntés "
+        f"#{re.sub(r'[^a-záéíóöőúüű0-9]', '', primary.casefold())}"
     )
     source_urls = (revenue_intent or {}).get("source_refs")
     if not isinstance(source_urls, list):
@@ -842,9 +845,164 @@ _HUNGARIAN_MONTHS = {
 def _canonical_https_url(value: object) -> str | None:
     raw = str(value or "").strip()
     parsed = urlparse(raw)
-    if parsed.scheme != "https" or not parsed.hostname or len(raw) > 1500:
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or len(raw) > 1500
+    ):
         return None
     return urlunparse(parsed._replace(fragment=""))
+
+
+def _radar_native_identity(source_url: str) -> tuple[str, str | None, str]:
+    parsed = urlparse(source_url)
+    host = (parsed.hostname or "").casefold().removeprefix("www.")
+    native = None
+    fragment = ""
+    if host == "reddit.com":
+        parts = [part for part in parsed.path.split("/") if part]
+        if "comments" in parts:
+            index = parts.index("comments")
+            if len(parts) > index + 1:
+                native = "post:" + parts[index + 1].casefold()
+                fragment = "/comments/" + parts[index + 1] + "/"
+                if len(parts) > index + 3:
+                    native += ":comment:" + parts[index + 3]
+                    fragment = "/" + parts[index + 3]
+    elif host == "forum.index.hu":
+        native = dict(parse_qsl(parsed.query)).get("a")
+        fragment = "a=" + native if native else ""
+    elif host == "prohardver.hu":
+        match = re.search(r"/hsz_(\d+)-\1\.html$", parsed.path)
+        if match:
+            native = parsed.path.rsplit("/", 1)[0] + ":" + match[1]
+            fragment = "/hsz_" + match[1] + "-" + match[1] + ".html"
+    elif host == "gyakorikerdesek.hu":
+        match = re.search(r"__(\d{6,})(?:-|$)", parsed.path)
+        if match:
+            native = match[1]
+            fragment = "__" + native + "-"
+    return host, native, fragment
+
+
+def _radar_identity_hash(source_url: str) -> str:
+    host, native, _fragment = _radar_native_identity(source_url)
+    return (
+        _sha({"platform": host, "native_id": native})
+        if native
+        else _sha({"platform": host, "source_url": source_url.rstrip("/")})
+    )
+
+
+def _existing_radar_identity(
+    db: Session, source_url: str, identity_hash: str
+) -> QuestionRadarIdentity | None:
+    identity = db.get(QuestionRadarIdentity, identity_hash)
+    if identity:
+        return identity
+    host, native, fragment = _radar_native_identity(source_url)
+    query = select(QuestionRadarIdentity).where(
+        QuestionRadarIdentity.platform.in_([host, "www." + host]),
+    )
+    if native:
+        query = query.where(
+            QuestionRadarIdentity.canonical_source_url.contains(fragment, autoescape=True)
+        )
+    else:
+        query = query.where(
+            QuestionRadarIdentity.canonical_source_url.in_([source_url, source_url + "/"])
+        )
+    # Bridge historical hashes while proving the native ID, not a substring collision.
+    return next(
+        (
+            row
+            for row in db.scalars(query)
+            if not native
+            or _radar_native_identity(row.canonical_source_url)[:2] == (host, native)
+        ),
+        None,
+    )
+
+
+def _radar_identity_seen(db: Session, source_url: str, identity_hash: str) -> bool:
+    return _existing_radar_identity(db, source_url, identity_hash) is not None
+
+
+def _refresh_existing_radar_evidence(
+    db: Session,
+    *,
+    source_url: str,
+    identity_hash: str,
+    brand_id: str,
+    freshness: dict[str, Any],
+    observed_at: datetime,
+) -> dict[str, Any] | None:
+    """Fill a missing original date without recreating or releasing an existing topic."""
+
+    identity = _existing_radar_identity(db, source_url, identity_hash)
+    if identity is None:
+        return None
+    decision: dict[str, Any] = {
+        "accepted": False,
+        "retained": False,
+        "evidence_refreshed": False,
+        "topic_id": identity.first_topic_id,
+        "reasons": ["stable_identity_already_seen"],
+    }
+    topic = db.scalar(
+        select(QuestionRadarTopic)
+        .where(QuestionRadarTopic.topic_id == identity.first_topic_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    published_at = freshness.get("published_at")
+    if (
+        topic is None
+        or topic.brand_id != brand_id
+        or topic.published_at is not None
+        or freshness.get("published_at_source") != "source_page"
+        or published_at is None
+        or published_at > observed_at
+        or topic.classification not in {"observed_literal", "observed_purchase_signal"}
+        or not topic.source_url
+        or _radar_identity_hash(topic.source_url) != _radar_identity_hash(source_url)
+    ):
+        return decision
+    # Source history, topic text/brand/day, existing answers and manual decisions
+    # remain intact. Only the previously absent, post-scoped date is filled.
+    topic.published_at = published_at
+    topic.published_at_raw = freshness["published_at_raw"]
+    topic.age_days = freshness["age_days"]
+    try:
+        old_reasons = set(json.loads(topic.rejection_reasons_json))
+    except (TypeError, ValueError):
+        old_reasons = {"unknown_existing_decision"}
+    has_answer = db.scalar(
+        select(QuestionRadarAnswer.id).where(QuestionRadarAnswer.topic_id == topic.topic_id)
+    ) is not None
+    if (
+        not has_answer
+        and topic.eligibility_status == "ineligible"
+        and topic.freshness_decision.upper() == "UNVERIFIED"
+        and old_reasons == {"published_date_source_unverified"}
+        and _norm(topic.active_status) not in _INACTIVE_SOURCE_STATUSES
+    ):
+        topic.freshness_decision = freshness["freshness_decision"]
+        topic.eligibility_status = freshness["eligibility_status"]
+        topic.rejection_reasons_json = _json(freshness["reasons"])
+        if topic.active_status == "unknown":
+            topic.active_status = freshness["active_status"]
+        if topic.existing_answer_count is None:
+            topic.existing_answer_count = freshness["existing_answer_count"]
+    decision.update(
+        accepted=topic.eligibility_status == "eligible",
+        evidence_refreshed=True,
+        reasons=["original_post_date_verified"],
+        revenue_decision=freshness["revenue_decision"],
+    )
+    return decision
 
 
 def _specific_reply_permalink(value: object) -> bool:
@@ -862,23 +1020,21 @@ def _specific_reply_permalink(value: object) -> bool:
         and parts[1] in {"szakma", "uj-kerdes"}
     ):
         return False
-    if (
-        (host == "gyakorikerdesek.hu" or host.endswith(".gyakorikerdesek.hu"))
-        and re.search(r"__\d{6,}(?:-|$)", parsed.path, flags=re.IGNORECASE)
+    if (host == "gyakorikerdesek.hu" or host.endswith(".gyakorikerdesek.hu")) and re.search(
+        r"__\d{6,}(?:-|$)", parsed.path, flags=re.IGNORECASE
     ):
         return True
     if (host == "reddit.com" or host.endswith(".reddit.com")) and re.search(
         r"/comments/[a-z0-9]{3,}(?:/|$)", parsed.path, flags=re.IGNORECASE
     ):
         return True
-    if (host == "forum.index.hu" or host.endswith(".forum.index.hu")):
-        if parsed.path.casefold().rstrip("/").endswith("/article/showarticle"):
-            return any(
-                key.casefold() in {"id", "post", "question", "thread", "topic", "tid", "t"}
-                and value
-                for key, values in query.items()
-                for value in values
-            )
+    if host == "forum.index.hu":
+        return parsed.path.casefold().rstrip("/").endswith(
+            ("/article/showarticle", "/article/viewarticle")
+        ) and any(str(value).isdigit() for value in query.get("a", []))
+    if host == "prohardver.hu":
+        match = re.search(r"/hsz_(\d+)-(\d+)\.html$", parsed.path)
+        return bool(match and match[1] == match[2])
     has_identity_query = any(
         key.casefold() in {"id", "post", "question", "thread", "topic"} for key in query
     )
@@ -930,7 +1086,12 @@ def _reply_surface_route(route: SourceCoverageRoute) -> bool:
     )
 
 
-def _reply_eligibility(topic: QuestionRadarTopic) -> dict[str, Any]:
+def _reply_eligibility(
+    topic: QuestionRadarTopic,
+    *,
+    now: datetime | None = None,
+    source_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     reasons: list[str] = []
     question = _norm(topic.question)
     canonical = _canonical_https_url(topic.source_url)
@@ -951,19 +1112,15 @@ def _reply_eligibility(topic: QuestionRadarTopic) -> dict[str, Any]:
         reasons.append("marketing_or_navigation_prompt")
     if topic.eligibility_status != "eligible":
         reasons.append("freshness_not_eligible")
-    if topic.freshness_decision not in {"preferred_0_30_days", "accepted_31_90_days"}:
-        reasons.append("freshness_unverified_or_expired")
+    if topic.freshness_decision not in {"HOT", "WARM", "QUALIFIED_7D"}:
+        reasons.append("not_current_sales_signal")
     if topic.published_at is None or topic.age_days is None:
         reasons.append("published_date_unverified")
-    elif topic.age_days < 0 or topic.age_days > 90:
+    elif topic.age_days < 0 or topic.age_days > 7:
         reasons.append("published_date_out_of_range")
-    if topic.active_status != "active":
-        reasons.append("source_not_proven_active")
-    if topic.existing_answer_count is None:
-        reasons.append("answer_count_unverified")
-    elif topic.existing_answer_count != 0:
-        reasons.append("already_answered")
-    revalidated = revalidate_topic_for_use(topic)
+    revalidated = revalidate_topic_for_use(
+        topic, purpose="reply", now=now, source_snapshot=source_snapshot
+    )
     if not revalidated["eligible"]:
         reasons.extend(revalidated["reasons"])
     host = (urlparse(canonical).hostname or "").casefold() if canonical else ""
@@ -1006,7 +1163,8 @@ _INACTIVE_SOURCE_STATUSES = {
 def _parse_observed_date(value: object, *, observed_at: datetime) -> datetime | None:
     """Parse only explicit ISO or small Hungarian relative-date forms."""
 
-    raw = _norm(str(value or "")).strip(".,")
+    raw = _norm(str(value or "")).strip(".,").replace(",", " ")
+    raw = " ".join(raw.split())
     local_now = observed_at.astimezone(ZoneInfo(settings().timezone))
     local_date: date | None = None
     try:
@@ -1017,36 +1175,45 @@ def _parse_observed_date(value: object, *, observed_at: datetime) -> datetime | 
         if rfc822.tzinfo is None:
             rfc822 = rfc822.replace(tzinfo=UTC)
         return rfc822.astimezone(UTC)
+    explicit = re.fullmatch(
+        r"(\d{4})[.]\s*(\d{1,2})[.]\s*(\d{1,2})[.]?\s+(\d{1,2}:\d{2}(?::\d{2})?)", raw
+    )
+    if explicit:
+        try:
+            stamp = datetime.fromisoformat(
+                f"{explicit[1]}-{int(explicit[2]):02}-{int(explicit[3]):02}T{explicit[4]}"
+            )
+            return stamp.replace(tzinfo=ZoneInfo(settings().timezone)).astimezone(UTC)
+        except ValueError:
+            return None
+    dated_clock = re.fullmatch(r"(ma|today|tegnap|yesterday)\s+(\d{1,2}:\d{2}(?::\d{2})?)", raw)
+    if dated_clock:
+        try:
+            day = local_now.date() - timedelta(days=int(dated_clock[1] in {"tegnap", "yesterday"}))
+            return datetime.combine(
+                day, time.fromisoformat(dated_clock[2]), ZoneInfo(settings().timezone)
+            ).astimezone(UTC)
+        except ValueError:
+            return None
+    explicit_hu = re.fullmatch(
+        r"(?:(\d{4})[.]?\s+)?([a-záéíóöőúüű]+)[.]?\s+(\d{1,2})[.]?(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?",
+        raw,
+    )
+    if explicit_hu and explicit_hu[2] in _HUNGARIAN_MONTHS:
+        try:
+            year = int(explicit_hu[1]) if explicit_hu[1] else local_now.year
+            day = date(year, _HUNGARIAN_MONTHS[explicit_hu[2]], int(explicit_hu[3]))
+            if not explicit_hu[1] and day > local_now.date():
+                day = day.replace(year=year - 1)
+            clock = time.fromisoformat(explicit_hu[4] or "00:00")
+            return datetime.combine(day, clock, ZoneInfo(settings().timezone)).astimezone(UTC)
+        except ValueError:
+            return None
     if raw in {"ma", "today"}:
         local_date = local_now.date()
     elif raw in {"tegnap", "yesterday"}:
         local_date = local_now.date() - timedelta(days=1)
     else:
-        hungarian = re.fullmatch(
-            r"([a-záéíóöőúüű]+)\.?\s+(\d{1,2})\.?(?:\s+(\d{1,2}:\d{2}))?",
-            raw,
-            flags=re.IGNORECASE,
-        )
-        if hungarian:
-            month = _HUNGARIAN_MONTHS.get(hungarian.group(1).casefold())
-            if month is None:
-                return None
-            day = int(hungarian.group(2))
-            clock = hungarian.group(3) or "00:00"
-            hour, minute = (int(part) for part in clock.split(":", 1))
-            local_date = date(
-                observed_at.astimezone(ZoneInfo(settings().timezone)).year,
-                month,
-                day,
-            )
-            observed_local_date = local_now.date()
-            if local_date > observed_local_date:
-                local_date = date(local_date.year - 1, month, day)
-            return datetime.combine(
-                local_date,
-                datetime.min.time().replace(hour=hour, minute=minute),
-                ZoneInfo(settings().timezone),
-            ).astimezone(UTC)
         relative = re.fullmatch(r"(\d{1,3})\s*(napja|hete|hónapja|honapja|éve|eve)", raw)
         if relative:
             amount = int(relative.group(1))
@@ -1057,7 +1224,7 @@ def _parse_observed_date(value: object, *, observed_at: datetime) -> datetime | 
             local_date = local_now.date() - timedelta(days=amount * multiplier)
         else:
             try:
-                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(raw.replace("z", "+00:00"))
             except ValueError:
                 try:
                     local_date = date.fromisoformat(raw)
@@ -1075,74 +1242,70 @@ def _parse_observed_date(value: object, *, observed_at: datetime) -> datetime | 
 
 
 def _question_freshness(
-    item: dict[str, Any], *, evidence_text: str, observed_at: datetime,
+    item: dict[str, Any],
+    *,
+    evidence_text: str,
+    observed_at: datetime,
     require_source_date_proof: bool = False,
 ) -> dict[str, Any]:
-    reasons: list[str] = []
     raw_date = str(item.get("published_at_raw") or "").strip()[:255]
     raw_status = str(item.get("active_status_raw") or "").strip()[:255]
     raw_answers = str(item.get("answer_count_raw") or "").strip()[:255]
-    published_at = _parse_observed_date(raw_date, observed_at=observed_at)
     published_at_source = str(item.get("published_at_source") or "").strip().casefold()
-    if require_source_date_proof and published_at_source != "source_page":
-        reasons.append("published_date_source_unverified")
-    if not raw_date or not _evidence_present(raw_date, evidence_text, minimum=1):
-        reasons.append("published_date_not_observed")
-        published_at = None
-    elif published_at is None:
-        reasons.append("published_date_unparseable")
-    status_value = _norm(item.get("active_status") or raw_status)
-    if not raw_status or not _evidence_present(raw_status, evidence_text, minimum=2):
-        reasons.append("active_status_not_observed")
-        active_status = "unknown"
-    elif status_value in _ACTIVE_SOURCE_STATUSES:
-        active_status = "active"
-    elif status_value in _INACTIVE_SOURCE_STATUSES:
-        active_status = "inactive"
-        reasons.append("source_inactive")
-    else:
-        active_status = "unknown"
-        reasons.append("active_status_unrecognized")
-    try:
-        answer_count = int(item.get("existing_answer_count"))
-        if answer_count < 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        answer_count = None
-        reasons.append("answer_count_invalid")
-    if not raw_answers or not _evidence_present(raw_answers, evidence_text, minimum=1):
-        answer_count = None
-        reasons.append("answer_count_not_observed")
-    elif answer_count:
-        reasons.append("already_answered")
-    local_day = _local_day(observed_at)
-    age_days = (
-        (local_day - published_at.astimezone(ZoneInfo(settings().timezone)).date()).days
-        if published_at
-        else None
+    proven = (
+        published_at_source == "source_page"
+        and bool(raw_date)
+        and _evidence_present(raw_date, evidence_text, minimum=1)
     )
-    if age_days is None:
-        freshness = "unverified"
-    elif age_days < 0:
-        freshness = "invalid_future"
-        reasons.append("published_date_in_future")
-    elif age_days <= 30:
-        freshness = "preferred_0_30_days"
-    elif age_days <= 90:
-        freshness = "accepted_31_90_days"
-    else:
-        freshness = "expired_over_90_days"
-        reasons.append("older_than_90_days")
+    published_at = _parse_observed_date(raw_date, observed_at=observed_at) if proven else None
+    active_status = "unknown"
+    status_value = _norm(item.get("active_status") or raw_status)
+    if raw_status and _evidence_present(raw_status, evidence_text, minimum=2):
+        if status_value in _ACTIVE_SOURCE_STATUSES:
+            active_status = "active"
+        elif status_value in _INACTIVE_SOURCE_STATUSES or status_value == "inactive":
+            active_status = "inactive"
+    answer_count = None
+    if raw_answers and _evidence_present(raw_answers, evidence_text, minimum=1):
+        try:
+            count = int(item.get("existing_answer_count"))
+            if count >= 0:
+                answer_count = count
+        except (TypeError, ValueError):
+            pass
+    normalized_date = published_at.isoformat() if published_at else ""
+    # Date-only evidence denotes the whole local day; use its oldest bound.
+    if published_at and not re.search(r"\d{1,2}:\d{2}", raw_date):
+        normalized_date = published_at.astimezone(ZoneInfo(settings().timezone)).date().isoformat()
+    decision = assess_signal(
+        {
+            "source_url": item.get("source_url") or item.get("source_permalink") or "",
+            "text": item.get("question") or item.get("text") or "",
+            "observed_at": observed_at,
+            "source_scoped": proven,
+            "permalink_verified": bool(item.get("source_url") or item.get("source_permalink")),
+            "timestamp_proof": "post_published" if proven else "unknown",
+            "published_at_raw": normalized_date,
+            "closed": active_status == "inactive",
+        },
+        now=observed_at,
+    )
+    queue = decision["queue"]
+    if not proven:
+        decision["reasons"] = ["published_date_source_unverified"]
     return {
         "published_at": published_at,
         "published_at_raw": raw_date or None,
         "published_at_source": published_at_source or None,
-        "age_days": age_days,
+        "age_days": (observed_at - published_at).days if published_at else None,
         "active_status": active_status,
         "existing_answer_count": answer_count,
-        "freshness_decision": freshness,
-        "eligibility_status": "eligible" if not reasons else "ineligible",
-        "reasons": sorted(set(reasons)),
+        "freshness_decision": queue,
+        "eligibility_status": "eligible"
+        if queue in {"HOT", "WARM", "QUALIFIED_7D", "CONTENT_SIGNAL"}
+        else "ineligible",
+        "reasons": decision["reasons"],
+        "revenue_decision": decision,
     }
 
 
@@ -1243,11 +1406,13 @@ def process_source_attempt(
         " A source_permalink kizárólag a megadott same_site_link_candidates egyik "
         "pontos URL-je lehet;"
         " ne találj ki URL-t. Konkrét piactéri vagy fórumos projektnél a leadhez és a kérdéshez is"
-        " add meg a hozzá tartozó pontos hivatkozást. Kérdés csak akkor lehet jelölt, ha a "
-        "publikálás ideje, aktív állapota és a már meglévő válaszok száma is szó szerint "
-        "látható a forrásoldalon, nem keresőkivonatban. Ezekhez mindig add vissza a raw "
-        "bizonyítékot és published_at_source=source_page értéket; hiány esetén ne találj ki "
-        "értéket. Kérdőjel nélküli vásárlási jelzést is adj vissza purchase_signal jelöléssel, "
+        " add meg a hozzá tartozó pontos hivatkozást. A szó szerinti, releváns kérdést akkor is "
+        "add vissza kutatási jelöltként, ha a publikálás ideje, aktív állapota vagy a válaszok "
+        "száma nem látható. Az ismeretlen dátum legyen published_at_source=unknown, "
+        "az ismeretlen állapot unknown, az ismeretlen válaszszám null. Csak az eredeti "
+        "bejegyzésnél látható dátumhoz adj raw bizonyítékot és published_at_source=source_page "
+        "értéket; keresőkivonatból vagy a megfigyelés idejéből ne következtess dátumra. "
+        "Kérdőjel nélküli vásárlási jelzést is adj vissza purchase_signal jelöléssel, "
         "ha a szöveg konkrét ajánlatkérésre, vásárlási vagy rendelési szándékra utal."
     )
     result = None
@@ -1287,7 +1452,7 @@ def process_source_attempt(
         return {
             "status": "completed" if deterministic_decisions else "failed",
             "leads": 0,
-            "questions": sum(item["accepted"] for item in deterministic_decisions),
+            "questions": sum(item.get("retained") is True for item in deterministic_decisions),
         }
 
     lead_count = 0
@@ -1493,22 +1658,21 @@ def process_source_attempt(
                 }
             )
             continue
+        bound_label = next(
+            (
+                candidate["label"]
+                for candidate in safe_link_candidates
+                if candidate["url"].rstrip("/") == exact_permalink.rstrip("/")
+            ),
+            "",
+        )
+        bound_metadata = _source_page_metadata_from_label(bound_label)
         freshness = _question_freshness(
-            item,
-            evidence_text=evidence_text,
+            {**bound_metadata, "source_url": exact_permalink, "question": question + " " + excerpt},
+            evidence_text=bound_label,
             observed_at=attempt.started_at,
             require_source_date_proof=require_source_date_proof,
         )
-        if freshness["eligibility_status"] != "eligible":
-            question_decisions.append(
-                {
-                    "question": question,
-                    "source_permalink": exact_permalink,
-                    "accepted": False,
-                    "reasons": freshness["reasons"],
-                }
-            )
-            continue
         available_brands = _brands(route)
         reply_brand = next(
             (
@@ -1519,20 +1683,21 @@ def process_source_attempt(
             available_brands[0],
         )
         platform = (urlparse(exact_permalink).hostname or "unknown").casefold()
-        identity_hash = _sha(
-            {
-                "platform": platform,
-                "source_url": exact_permalink,
-                "question": _norm(question),
-            }
+        identity_hash = _radar_identity_hash(exact_permalink)
+        existing_decision = _refresh_existing_radar_evidence(
+            db,
+            source_url=exact_permalink,
+            identity_hash=identity_hash,
+            brand_id=reply_brand,
+            freshness=freshness,
+            observed_at=attempt.started_at,
         )
-        if db.get(QuestionRadarIdentity, identity_hash):
+        if existing_decision is not None:
             question_decisions.append(
                 {
                     "question": question,
                     "source_permalink": exact_permalink,
-                    "accepted": False,
-                    "reasons": ["stable_identity_already_seen"],
+                    **existing_decision,
                 }
             )
             continue
@@ -1608,18 +1773,23 @@ def process_source_attempt(
                 "evidence_excerpt": excerpt,
                 "brand_id": reply_brand,
                 "source_permalink": exact_permalink,
-                "published_at": freshness["published_at"].isoformat(),
+                "published_at": freshness["published_at"].isoformat()
+                if freshness["published_at"]
+                else None,
                 "age_days": freshness["age_days"],
                 "freshness_decision": freshness["freshness_decision"],
+                "revenue_decision": freshness["revenue_decision"],
             }
         )
         question_decisions.append(
             {
                 "question": question,
                 "source_permalink": exact_permalink,
-                "accepted": True,
-                "reasons": [],
+                "accepted": freshness["eligibility_status"] == "eligible",
+                "retained": True,
+                "reasons": freshness["reasons"],
                 "identity_hash": identity_hash,
+                "revenue_decision": freshness["revenue_decision"],
             }
         )
         question_count += 1
@@ -1631,7 +1801,7 @@ def process_source_attempt(
         local_day=local_day,
     )
     question_decisions.extend(deterministic_decisions)
-    question_count += sum(item["accepted"] for item in deterministic_decisions)
+    question_count += sum(item.get("retained") is True for item in deterministic_decisions)
     attempt.analysis_status = "completed"
     attempt.analysis_json = _json(
         {
@@ -1643,6 +1813,26 @@ def process_source_attempt(
     )
     attempt.analysis_at = datetime.now(UTC)
     return {"status": "completed", "leads": lead_count, "questions": question_count}
+
+
+def _refresh_topic_source(topic: QuestionRadarTopic, *, now: datetime) -> dict[str, Any]:
+    """Fetch the original post again immediately before using its demand."""
+    from .catalog import refresh_question_source
+
+    snapshot = refresh_question_source(str(topic.source_url or ""))
+    if snapshot.get("error"):
+        return snapshot
+    snapshot["published_at"] = _parse_observed_date(
+        snapshot.get("published_at_raw"), observed_at=now
+    )
+    if snapshot.get("published_at_source") != "source_page":
+        snapshot["error"] = "original_publication_date_unverified"
+    source_text = _norm(str(snapshot.get("source_text") or ""))
+    # Source adapters remove author/navigation text. An edited/deleted/replaced
+    # post cannot silently inherit an earlier question's demand identity.
+    if not source_text or _norm(topic.question) not in source_text:
+        snapshot["error"] = "source_question_changed"
+    return snapshot
 
 
 def generate_question_radar_answers(db: Session, *, now: datetime | None = None) -> dict[str, Any]:
@@ -1669,8 +1859,17 @@ def generate_question_radar_answers(db: Session, *, now: datetime | None = None)
     quarantined = 0
     failed = 0
     reserved_elsewhere = 0
+    source_retry_pending = 0
     for topic in topics:
-        eligibility = _reply_eligibility(topic)
+        source_snapshot = None
+        if topic.freshness_decision in {"HOT", "WARM", "QUALIFIED_7D"}:
+            source_snapshot = _refresh_topic_source(topic, now=current)
+            if source_snapshot.get("error"):
+                # Transient access failures must not reserve a permanent
+                # ineligible answer and prevent a later successful retry.
+                source_retry_pending += 1
+                continue
+        eligibility = _reply_eligibility(topic, now=current, source_snapshot=source_snapshot)
         parsed = urlparse(str(eligibility.get("source_url") or ""))
         row = QuestionRadarAnswer(
             answer_id=f"QRA-{uuid4().hex[:20].upper()}",
@@ -1766,12 +1965,13 @@ def generate_question_radar_answers(db: Session, *, now: datetime | None = None)
             failed += 1
         db.commit()
     return {
-        "status": "complete",
-        "processed": len(topics),
+        "status": "partial" if source_retry_pending else "complete",
+        "processed": len(topics) - source_retry_pending,
         "ineligible": ineligible,
         "quarantined": quarantined,
         "failed": failed,
         "reserved_elsewhere": reserved_elsewhere,
+        "source_retry_pending": source_retry_pending,
     }
 
 
@@ -1782,7 +1982,7 @@ def _source_page_metadata_from_label(label: str) -> dict[str, str]:
     if marker not in label:
         return {}
     values: dict[str, str] = {}
-    for item in label.split(marker, 1)[1].split(";"):
+    for item in label.rsplit(marker, 1)[1].split(";"):
         key, separator, value = item.strip().partition("=")
         if separator and key in {
             "published_at_raw",
@@ -1808,24 +2008,39 @@ def _persist_purchase_signal_topic(
 ) -> dict[str, Any] | None:
     """Keep a source-proven purchase request even when the model stores it as a lead."""
 
-    metadata = next(
+    # Normalize only radar identities; leave the separate lead collection untouched.
+    source_url = source_url.rstrip("/")
+    bound_label = next(
         (
-            _source_page_metadata_from_label(str(item.get("label") or ""))
+            str(item.get("label") or "")
             for item in link_candidates
-            if str(item.get("url") or "") == source_url
+            if str(item.get("url") or "").rstrip("/") == source_url
         ),
-        {},
+        "",
     )
-    if metadata.get("published_at_source") != "source_page":
+    metadata = _source_page_metadata_from_label(bound_label)
+    if (
+        not metadata
+        and bound_label
+        and _reply_surface_route(route)
+        and _specific_reply_permalink(source_url)
+        and (urlparse(source_url).hostname or "").removeprefix("www.")
+        == (urlparse(route.route_url).hostname or "").removeprefix("www.")
+    ):
+        # A literal same-forum link can be retained for research while its
+        # original-post date is still unknown. The listing date is never used.
+        metadata = {"published_at_source": "unknown"}
+    if metadata.get("published_at_source") not in {"source_page", "unknown"}:
         return None
     text_value = " ".join(str(signal_text or "").split())[:500]
-    if not 20 <= len(text_value) <= 500 or not is_purchase_signal(text_value):
+    purchase_signal = is_purchase_signal(text_value)
+    if not 20 <= len(text_value) <= 500 or not (
+        purchase_signal or _useful_forum_question(text_value)
+    ):
         return None
     freshness = _question_freshness(
-        metadata,
-        evidence_text=" ".join(
-            [text_value, *[str(item.get("label") or "") for item in link_candidates]]
-        ),
+        {**metadata, "source_url": source_url, "question": text_value},
+        evidence_text=bound_label,
         observed_at=attempt.started_at,
         require_source_date_proof=bool(
             getattr(settings(), "canonical_question_require_source_date_proof", False)
@@ -1840,11 +2055,17 @@ def _persist_purchase_signal_topic(
         _brands(route)[0],
     )
     platform = (urlparse(source_url).hostname or "unknown").casefold()
-    identity_hash = _sha(
-        {"platform": platform, "source_url": source_url, "question": _norm(text_value)}
+    identity_hash = _radar_identity_hash(source_url)
+    existing_decision = _refresh_existing_radar_evidence(
+        db,
+        source_url=source_url,
+        identity_hash=identity_hash,
+        brand_id=brand,
+        freshness=freshness,
+        observed_at=attempt.started_at,
     )
-    if db.get(QuestionRadarIdentity, identity_hash):
-        return {"accepted": False, "reasons": ["stable_identity_already_seen"]}
+    if existing_decision is not None:
+        return existing_decision
     dedupe = _sha(
         {
             "day": local_day.isoformat(),
@@ -1881,9 +2102,11 @@ def _persist_purchase_signal_topic(
             local_date=local_day,
             question=text_value,
             brand_id=brand,
-            use_case="exact_source_purchase_signal_candidate",
+            use_case="exact_source_purchase_signal_candidate"
+            if purchase_signal
+            else "exact_source_reply_candidate",
             source_url=source_url,
-            classification="observed_purchase_signal",
+            classification="observed_purchase_signal" if purchase_signal else "observed_literal",
             dedupe_hash=dedupe,
             identity_hash=identity_hash,
             platform=platform,
@@ -1899,10 +2122,73 @@ def _persist_purchase_signal_topic(
     )
     return {
         "accepted": freshness["eligibility_status"] == "eligible",
+        "retained": True,
         "topic_id": topic_id,
         "source_url": source_url,
         "reasons": freshness["reasons"],
+        "revenue_decision": freshness["revenue_decision"],
     }
+
+
+def _useful_forum_question(text: str) -> bool:
+    clean = _norm(text)
+    subject = any(
+        term in clean
+        for term in (
+            "épít",
+            "epit",
+            "felúj",
+            "feluj",
+            "kivitelez",
+            "szakember",
+            "tető",
+            "teto",
+            "hősziget",
+            "hosziget",
+            "burkol",
+            "munkadíj",
+            "munkadij",
+            "garázs",
+            "garazs",
+            "glett",
+            "festés",
+            "festes",
+            "konyha",
+            "vakolt",
+            "családi ház",
+            "csaladi haz",
+            "lakás",
+            "lakas",
+            "ingatlan",
+        )
+    )
+    question = "?" in text or any(
+        term in clean
+        for term in (
+            "mennyib",
+            "hogyan",
+            "hogy lehet",
+            "ajánl",
+            "ajanl",
+            "segíts",
+            "segits",
+            "félbemarad",
+            "felbemarad",
+            "munkadíjak",
+            "munkadijak",
+            "kérdés",
+            "kerdes",
+            "szeretnék",
+            "szeretnek",
+            "felújítom",
+            "felujitom",
+            "építek",
+            "epitek",
+        )
+    )
+    return (
+        subject and question and not any(marker in clean for marker in _MARKETING_QUESTION_MARKERS)
+    )
 
 
 def _deterministic_purchase_signal_topics(
@@ -1919,10 +2205,10 @@ def _deterministic_purchase_signal_topics(
     for candidate in link_candidates:
         url = _canonical_https_url(candidate.get("url"))
         label = str(candidate.get("label") or "")
-        if not url or not _specific_reply_permalink(url) or "[SOURCE_PAGE_EVIDENCE]" not in label:
+        if not url or not _specific_reply_permalink(url):
             continue
         source_text = label.split("[SOURCE_PAGE_EVIDENCE]", 1)[0].strip()
-        if not is_purchase_signal(source_text):
+        if not (is_purchase_signal(source_text) or _useful_forum_question(source_text)):
             continue
         decision = _persist_purchase_signal_topic(
             db,
@@ -1939,8 +2225,10 @@ def _deterministic_purchase_signal_topics(
                     "question": source_text[:500],
                     "source_permalink": url,
                     "accepted": decision.get("accepted") is True,
+                    "retained": decision.get("retained") is True,
                     "reasons": decision.get("reasons") or [],
-                    "purchase_signal_deterministic": True,
+                    "purchase_signal_deterministic": is_purchase_signal(source_text),
+                    "revenue_decision": decision.get("revenue_decision"),
                     "topic_id": decision.get("topic_id"),
                 }
             )
@@ -1955,12 +2243,15 @@ def _approved_brand_facts(db: Session, brand_id: str, *, current: datetime) -> l
             func.lower(CopySourceRecord.brand_id) == str(brand_id).casefold(),
             CopySourceRecord.approved.is_(True),
             CopySourceRecord.status == "approved",
+            CopySourceRecord.source_type.in_(
+                ("brand_fact", "claim", "proof", "offer", "product", "terms", "house_plan", "brand")
+            ),
             (CopySourceRecord.valid_from.is_(None) | (CopySourceRecord.valid_from <= current)),
             (CopySourceRecord.valid_until.is_(None) | (CopySourceRecord.valid_until >= current)),
         )
         .order_by(CopySourceRecord.priority, CopySourceRecord.id)
-        .limit(40)
-    ).all()
+        .execution_options(yield_per=100)
+    )
     facts: list[dict[str, Any]] = []
     for source in rows:
         if source.source_type not in {
@@ -1978,8 +2269,21 @@ def _approved_brand_facts(db: Session, brand_id: str, *, current: datetime) -> l
             payload = json.loads(source.payload_json or "{}")
         except json.JSONDecodeError:
             payload = {}
+        if (
+            not isinstance(payload, dict)
+            or not str(payload.get("statement") or "").strip()
+            or not source.source_url
+        ):
+            continue
+        if not re.fullmatch(r"[0-9a-f]{64}", source.content_hash or ""):
+            continue
+        # Both the manifest seeder and the existing source-registration API
+        # hash the exact stored JSON. Their whitespace serialization differs.
+        if hashlib.sha256(source.payload_json.encode("utf-8")).hexdigest() != source.content_hash:
+            continue
         facts.append(
             {
+                "brand_id": source.brand_id,
                 "source_key": source.source_key,
                 "source_type": source.source_type,
                 "version": source.version,
@@ -1988,7 +2292,57 @@ def _approved_brand_facts(db: Session, brand_id: str, *, current: datetime) -> l
                 "payload": payload if isinstance(payload, dict) else {},
             }
         )
+        if len(facts) >= 40:
+            break
     return facts
+
+
+def _revenue_package_errors(package: dict[str, Any], intent: dict[str, Any]) -> list[str]:
+    """Check the final repaired artifact against the trusted input, not model flags."""
+    errors: list[str] = []
+    if package.get("revenue_intent") != intent:
+        errors.append("revenue_brief_changed")
+    public_text = _norm(" ".join(str(package.get(k) or "") for k in ("body", "facebook_post")))
+    problem = _norm(str(intent.get("buyer_problem") or "")).rstrip(" .?!")
+    if not problem or problem not in public_text:
+        errors.append("buyer_problem_missing_from_copy")
+    statements = [
+        _norm(str((fact.get("payload") or {}).get("statement") or "")).rstrip(" .?!")
+        for fact in intent.get("approved_brand_facts") or []
+    ]
+    if not any(statement and statement in public_text for statement in statements):
+        errors.append("approved_brand_fact_missing_from_copy")
+    return errors
+
+
+def _prepare_content_revenue_intent(
+    topics: list[QuestionRadarTopic],
+    facts: list[dict[str, Any]],
+    *,
+    brand_id: str,
+    now: datetime,
+) -> dict[str, Any]:
+    if not facts:
+        raise SourceReplenishmentRequired(["approved_brand_fact_missing"])
+    reasons: list[str] = []
+    for topic in topics[:3]:
+        try:
+            return build_revenue_intent(
+                topic,
+                approved_brand_facts=facts,
+                sales_goal=f"{brand_id}: minősített érdeklődőből ajánlatkérés",
+                next_step=(
+                    "Írd meg, milyen munkához keresel segítséget és hol tart a projekt."
+                ),
+                now=now,
+                source_snapshot=_refresh_topic_source(topic, now=now),
+            )
+        except SourceReplenishmentRequired as exc:
+            reasons.extend(exc.reasons)
+    try:
+        return build_brand_source_intent(brand_id, facts)
+    except SourceReplenishmentRequired as exc:
+        raise SourceReplenishmentRequired(reasons + list(exc.reasons)) from exc
 
 
 def _ensure_replenishment_task(
@@ -2098,6 +2452,19 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         if row.status == "pending":
             pending.append(row)
             continue
+        if row.status == "quarantined" and not row.content_asset_id:
+            try:
+                source_wait = json.loads(row.evidence_json or "{}")
+            except json.JSONDecodeError:
+                source_wait = {}
+            checked_at = row.updated_at
+            if checked_at and checked_at.tzinfo is None:
+                checked_at = checked_at.replace(tzinfo=UTC)
+            if source_wait.get("source_replenishment_task_id") and (
+                not checked_at or (current - checked_at).total_seconds() >= 300
+            ):
+                pending.append(row)
+            continue
         if row.status != "failed":
             continue
         try:
@@ -2110,7 +2477,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         repair_version_changed = failure.get("repair_version") != CONTENT_FACTORY_REPAIR_VERSION
         if (
             (int(failure.get("attempts") or 0) < 3 or repair_version_changed)
-            and (repair_version_changed or not updated_at or (current - updated_at).total_seconds() >= 300)
+            and (
+                repair_version_changed or not updated_at
+                or (current - updated_at).total_seconds() >= 300
+            )
         ):
             pending.append(row)
     if not pending:
@@ -2118,12 +2488,12 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
     evidence_questions = db.scalars(
         select(QuestionRadarTopic)
         .where(
-            QuestionRadarTopic.local_date == local_day,
+            QuestionRadarTopic.local_date >= local_day - timedelta(days=30),
             QuestionRadarTopic.classification.in_(
                 ("observed_literal", "observed_purchase_signal")
             ),
             QuestionRadarTopic.source_url.is_not(None),
-            QuestionRadarTopic.eligibility_status == "eligible",
+            QuestionRadarTopic.published_at >= current - timedelta(days=30),
         )
         .order_by(QuestionRadarTopic.id.desc())
         .limit(80)
@@ -2181,35 +2551,9 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
             ]
             candidate_topic = candidate_topics[0] if candidate_topics else None
             approved_facts = _approved_brand_facts(db, row.brand_id, current=current)
-            if candidate_topic is None:
-                task = _ensure_replenishment_task(
-                    db,
-                    row=row,
-                    topic=None,
-                    reasons=["buyer_problem_source_missing"],
-                    local_day=local_day,
-                )
-                row.status = "quarantined"
-                row.evidence_json = _json(
-                    {
-                        "brand_id": row.brand_id,
-                        "publication_state": "BLOCKED",
-                        "policy": "content-intent-revenue-v1",
-                        "source_replenishment_task_id": task.task_id,
-                        "reasons": ["buyer_problem_source_missing"],
-                    }
-                )
-                continue
             try:
-                revenue_intent = build_revenue_intent(
-                    candidate_topic,
-                    approved_brand_facts=approved_facts,
-                    sales_goal=f"{row.brand_id}: minősített érdeklődőből ajánlatkérés",
-                    next_step=(
-                        "A következő lépés: kérjünk be rövid helyzetleírást és egyeztessünk "
-                        "szakmai előminősítést."
-                    ),
-                    now=current,
+                revenue_intent = _prepare_content_revenue_intent(
+                    candidate_topics, approved_facts, brand_id=row.brand_id, now=current
                 )
             except SourceReplenishmentRequired as exc:
                 task = _ensure_replenishment_task(
@@ -2226,11 +2570,16 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         "publication_state": "BLOCKED",
                         "policy": "content-intent-revenue-v1",
                         "source_replenishment_task_id": task.task_id,
-                        "radar_topic_id": candidate_topic.topic_id,
+                        "radar_topic_id": candidate_topic.topic_id if candidate_topic else None,
                         "reasons": list(exc.reasons),
                     }
                 )
+                row.updated_at = current
                 continue
+            # The approved brief is usable evidence even when it comes from a
+            # documented customer problem rather than today's forum posts.
+            evidence_available = True
+            brand_evidence["approved_brand_facts"] = approved_facts
         try:
             result, payload = _complete_json_payload(
                 db,
@@ -2240,9 +2589,9 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "és a hozzá tartozó önálló Facebook-szöveget. A márkaszerződés minden "
                     "required elemét teljesítsd, minden forbidden elemet kerülj el. A szöveg "
                     "ne működjön egyszerű márkanévcserével másik Imperial-márka alatt. "
-                    "A mellékelt forrásbizonyítékot csak "
-                    "akkor használd, ha illik ehhez a fókuszhoz; különben készíts örökzöld, "
-                    "állításkockázat nélküli szakmai útmutatót. Ne találj ki árat, "
+                    "A megadott vevői problémát oldd meg a márkához illő, mellékelt "
+                    "források alapján. Forráshiányt jelezz, általános pótcikket ne készíts. "
+                    "Ne találj ki árat, "
                     "időt, garanciát, "
                     "referenciát, évszámot, elsőséget vagy műszaki tényt. Forrás nélküli számos "
                     "állítást egyáltalán ne írj. Nyiss felismerhető vevői helyzettel, foglalj "
@@ -2254,25 +2603,23 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     "A locked_slogan használata opcionális; ha használod, karakterre pontosan "
                     "írd le, de a szabályt vagy annak magyarázatát soha ne írd bele a tartalomba. "
                     "Ne találj ki ügyfélesetet, korábbi projektet, saját mérnöki vizsgálatot vagy "
-                    "márkaképességet. Ha nincs mellékelt bizonyíték, kizárólag általános "
-                    "döntési útmutatót írj: ne legyen benne megrendelő, ügyfélpélda, saját "
-                    "mérnök vagy csapat, kiderült eredmény, megtakarítás, projektfelmérés, "
-                    "referencia, szám, időtartam vagy olyan mondat, hogy a márka mit végez el. "
-                    "Ilyenkor a márka csak nézőpontként és a kapcsolatfelvételi CTA-ban jelenhet "
-                    "meg. Ne írj olyat sem, hogy 'vegyünk egy konkrét helyzetet', ne használj "
+                    "márkaképességet. Az approved_brand_facts a jóváhagyott márkatényeket "
+                    "tartalmazza: csak ezekre támaszkodva írj a márka vállalásairól. "
+                    "Ne írj olyat, hogy 'vegyünk egy konkrét helyzetet', ne használj "
                     "megrendelőre vagy ügyfélre utaló mintát, felsőfokot, garantált eredményt, "
                     "megtakarítást vagy összehasonlító teljesítményígéretet. A szöveget óvatos "
                     "döntési nyelven fogalmazd: mit érdemes tisztázni, megvizsgálni vagy "
-                    "szakemberrel ellenőriztetni. A márkának ne tulajdoníts konkrét felmérést, "
-                    "konzultációs folyamatot, saját csapatot vagy vállalást; a CTA csak általános "
-                    "kapcsolatfelvételre hívhat. Használj 3-8 releváns hashtaget. "
+                    "szakemberrel ellenőriztetni. A CTA a brief vállalható next_step értékét "
+                    "kövesse. Használj 3-8 releváns hashtaget. "
                     "A kimenet még nem "
                     "publikációs engedély."
                     + (
                         " A revenue brief kötelező mezői: konkrét buyer_problem, értékesítési "
                         "sales_goal, approved_brand_facts és vállalható next_step. A brief "
-                        "source_refs mezője csak a radar újraellenőrzött, konkrét forrása lehet. "
-                        "A mezők hiánya esetén BLOCK; ne írj általános pótló tartalmat."
+                        "source_refs mezőjét változtatás nélkül őrizd meg. A buyer_problem "
+                        "szövegét a cikkben is mondd ki, majd adj rá konkrét döntési segítséget. "
+                        "Legalább egy jóváhagyott statement szövegét pontosan építsd be a cikkbe. "
+                        "A mezők hiánya esetén jelezd a hiányt; ne írj általános pótló tartalmat."
                         if revenue_policy_enabled
                         else ""
                     )
@@ -2465,6 +2812,15 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
             for item in values
             if item.get(key)
         }
+        if revenue_policy_enabled:
+            brand_allowed_urls.update(
+                str(url) for url in (revenue_intent or {}).get("source_refs") or []
+            )
+            brand_allowed_urls.update(
+                str(fact["source_url"])
+                for fact in (revenue_intent or {}).get("approved_brand_facts") or []
+                if fact.get("source_url")
+            )
         package["source_urls"] = (
             [url for url in source_urls if isinstance(url, str) and url in brand_allowed_urls]
             if isinstance(source_urls, list)
@@ -2472,7 +2828,7 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
         )
         package = _normalize_content_lengths(_sanitize_unbound_claims(package))
         anchors = BRAND_POSITION_ANCHORS.get(row.brand_id, ())
-        if revenue_policy_enabled and anchors:
+        if not revenue_policy_enabled and anchors:
             package_text = _norm(
                 " ".join(
                     str(package.get(field) or "")
@@ -2494,6 +2850,8 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                 ]
                 package = _normalize_content_lengths(_sanitize_unbound_claims(package))
         deterministic_errors = _deterministic_publication_errors(package, publication_contract)
+        if revenue_policy_enabled:
+            deterministic_errors.extend(_revenue_package_errors(package, revenue_intent or {}))
         repair_result = None
         if deterministic_errors:
             try:
@@ -2519,7 +2877,13 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                                 "repair_round": repair_number + 1,
                                 "source_urls_allowed": sorted(brand_allowed_urls),
                                 "blocked_package": package,
-                                "schema": {"package": _quality_artifact(package)},
+                                "trusted_revenue_intent": revenue_intent,
+                                "schema": {
+                                    "package": _quality_artifact(package) | (
+                                        {"revenue_intent": revenue_intent}
+                                        if revenue_policy_enabled else {}
+                                    )
+                                },
                             }
                         ),
                         purpose=(f"canonical_daily_content_deterministic_repair:{row.brand_id}"),
@@ -2541,6 +2905,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                     )
                     repaired = _normalize_content_lengths(_sanitize_unbound_claims(repaired))
                     repair_errors = _content_repair_errors(repaired, publication_contract)
+                    if revenue_policy_enabled:
+                        repair_errors.extend(
+                            _revenue_package_errors(repaired, revenue_intent or {})
+                        )
                     if not repair_errors:
                         package = repaired
                         break
@@ -2555,6 +2923,10 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         package = repaired
                     deterministic_errors = repair_errors
                 else:
+                    if revenue_policy_enabled:
+                        raise ValueError(
+                            "source_bound_content_repair_failed:" + ",".join(deterministic_errors)
+                        )
                     fallback = _content_factory_fallback_package(
                         brand_id=row.brand_id,
                         focus=brand_focus,
@@ -2614,6 +2986,8 @@ def generate_daily_content(db: Session, *, now: datetime | None = None) -> dict[
                         "artifact": _quality_artifact(package),
                         "brand_focus": list(brand_focus),
                         "publication_contract": publication_contract,
+                        "trusted_revenue_intent": revenue_intent,
+                        "source_evidence": brand_evidence,
                         "required_gate_ids": sorted(MANDATORY_GATES),
                         "schema": {
                             "artifact_sha256": artifact_hash,

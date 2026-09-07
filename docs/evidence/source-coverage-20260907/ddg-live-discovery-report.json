@@ -1,0 +1,95 @@
+{
+  "verified_at": "2026-09-07T06:18:53.309490+00:00",
+  "mode": "live_public_search_to_local_route_database",
+  "search_url": "https://lite.duckduckgo.com/lite/?q=felujitas+forum",
+  "search_status": 200,
+  "search_response_sha256": "c5d0af8bdbb8824c11892d54d6ace95fb6678435e2454c93d7614b1e22d4f08a",
+  "search_candidates": [
+    {
+      "url": "https://www.facebook.com/groups/epitkezesfelujitasforum/media/",
+      "label": "Építkezés, felújítás - fórum, kérdések, válaszok, csevegő"
+    },
+    {
+      "url": "https://www.facebook.com/groups/epitkezesfelujitasforum/",
+      "label": "Építkezés, felújítás - fórum, kérdések, válaszok, csevegő"
+    },
+    {
+      "url": "https://www.facebook.com/groups/824255455045067/posts/2137024937101439/",
+      "label": "Vályogházak felújítása fórum | sziasztok! nemrég vásároltuk meg a házat ..."
+    },
+    {
+      "url": "https://kuszobonafelujitas.energiaklub.hu/forum",
+      "label": "Fórum | Küszöbön a felújítás"
+    },
+    {
+      "url": "https://www.hoxa.hu/felujitas-forum",
+      "label": "Felújítás - Hoxa"
+    },
+    {
+      "url": "https://veteran.forum.hu/forum/szerel%C3%A9s-fel%C3%BAj%C3%ADt%C3%A1s",
+      "label": "Szerelés, felújítás - Veterán fórum - veteran.forum.hu"
+    }
+  ],
+  "original_source_dates_from_search": false,
+  "external_send_or_publication": false,
+  "persisted_routes": [
+    {
+      "url": "https://www.facebook.com/groups/epitkezesfelujitasforum/media/",
+      "mode": "direct_post",
+      "brand_fit": "BauFreund,Bautica,Prefab"
+    },
+    {
+      "url": "https://www.facebook.com/groups/epitkezesfelujitasforum/",
+      "mode": "direct_post",
+      "brand_fit": "BauFreund,Bautica,Prefab"
+    },
+    {
+      "url": "https://www.facebook.com/groups/824255455045067/posts/2137024937101439/",
+      "mode": "direct_post",
+      "brand_fit": "BauFreund,Bautica,Prefab"
+    },
+    {
+      "url": "https://kuszobonafelujitas.energiaklub.hu/forum",
+      "mode": "direct_post",
+      "brand_fit": "BauFreund,Bautica,Prefab"
+    },
+    {
+      "url": "https://www.hoxa.hu/felujitas-forum",
+      "mode": "direct_post",
+      "brand_fit": "BauFreund,Bautica,Prefab"
+    },
+    {
+      "url": "https://veteran.forum.hu/forum/szerel%C3%A9s-fel%C3%BAj%C3%ADt%C3%A1s",
+      "mode": "direct_post",
+      "brand_fit": "BauFreund,Bautica,Prefab"
+    }
+  ],
+  "same_search_replayed_twice_unique_rows": 6,
+  "new_forum_readback": {
+    "url": "https://www.hoxa.hu/felujitas-forum",
+    "status": 200,
+    "bytes": 31526,
+    "metadata": null,
+    "visible_old_year_2013": true,
+    "has_renovation_request": true,
+    "note": "Discovery confirmed; generic Hoxa adapter has not verified an exact original post date. The visible example is from2013, not a fresh lead."
+  },
+  "runtime_fetch_readback": {
+    "verified_at": "2026-09-07T06:20:24.373257+00:00",
+    "runtime_function": "catalog._fetch",
+    "seconds": 4.42,
+    "status": "succeeded",
+    "http_status": 200,
+    "error_type": null,
+    "analysis_link_count": 6,
+    "source_urls": [
+      "https://www.facebook.com/groups/epitkezesfelujitasforum/media/",
+      "https://www.facebook.com/groups/epitkezesfelujitasforum/",
+      "https://www.facebook.com/groups/824255455045067/posts/2137024937101439/",
+      "https://kuszobonafelujitas.energiaklub.hu/forum",
+      "https://www.hoxa.hu/felujitas-forum",
+      "https://veteran.forum.hu/forum/szerel%C3%A9s-fel%C3%BAj%C3%ADt%C3%A1s"
+    ],
+    "outbound_actions": false
+  }
+}

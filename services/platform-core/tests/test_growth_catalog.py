@@ -208,11 +208,15 @@ def test_scanner_uses_db_catalog_and_records_real_attempt(db, tmp_path, monkeypa
 
     assert second["attempted"] == 1
     assert second["coverage_complete"] is False
-    while not complete["coverage_complete"]:
+    for _ in range(2 + len(catalog.QUESTION_RADAR_DIRECT_ROUTES)):
+        if complete["coverage_complete"]:
+            break
+        previous_remaining = complete["remaining_routes"]
         complete = catalog.scan_due_routes(
             db,
             now=datetime(2026, 8, 21, 8, 0, tzinfo=UTC),
         )
+        assert complete["remaining_routes"] < previous_remaining
     assert complete["status"] == "attempted"
     assert complete["coverage_complete"] is True
     assert complete["attempted_today"] == complete["active_route_target"] == (

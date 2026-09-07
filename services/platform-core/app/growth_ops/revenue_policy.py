@@ -15,7 +15,7 @@ import unicodedata
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 REVENUE_POLICY_VERSION = "content-intent-revenue-v1"
@@ -24,6 +24,8 @@ CONTENT_TYPES = {"demand_capture", "sales_objection", "proof", "opportunity", "p
 _FRESHNESS_DECISIONS = {"preferred_0_30_days", "accepted_31_90_days"}
 _PURCHASE_MARKERS = (
     "keresek",
+    "keresünk",
+    "keresunk",
     "vennék",
     "vennek",
     "vásárolnék",
@@ -52,13 +54,17 @@ class SourceReplenishmentRequired(ValueError):
 def is_purchase_signal(text: str) -> bool:
     normalized = " ".join(str(text or "").casefold().split())
     plain = _plain(text)
-    return any(marker in normalized for marker in _PURCHASE_MARKERS) or bool(
-        re.search(
-            r"(?:kivitelező|kivitelezo|generálkivitelező|generalkivitelezo)\w*\s+"
-            r"(?:keres(?:ek|ünk|unk)|visszamondta|eltűnt|eltunt|nem vállalja|nem vallalja)"
-            r"|ajánlatkérés|ajanlatkeres|rendelési? szándék|rendelesi? szandek"
-            r"|ajanlatot\s+kerek|kerek\s+arajanlatot|arajanlatot\s+kerek",
-            plain,
+    return (
+        score_intent(text)[0] >= 45
+        or any(marker in normalized for marker in _PURCHASE_MARKERS)
+        or bool(
+            re.search(
+                r"(?:kivitelező|kivitelezo|generálkivitelező|generalkivitelezo)\w*\s+"
+                r"(?:keres(?:ek|ünk|unk)|visszamondta|eltűnt|eltunt|nem vállalja|nem vallalja)"
+                r"|ajánlatkérés|ajanlatkeres|rendelési? szándék|rendelesi? szandek"
+                r"|ajanlatot\s+kerek|kerek\s+arajanlatot|arajanlatot\s+kerek",
+                plain,
+            )
         )
     )
 
@@ -161,11 +167,16 @@ def observed_window(
 _FEATURES = {
     "explicit_request": (
         45,
-        r"(?:kivitelezo\w*|generalkivitelezo\w*|epitoceg\w*)\s+keres(?:ek|unk)|ajanlatot\s+ker(?:ek|unk)|ajanlatkeres",
+        r"(?:kivitelezo\w*|generalkivitelezo\w*|epitoceg\w*|burkolo\w*|acsmester\w*|"
+        r"acsot|komuves\w*|festot|szakember\w*|epitesz\w*|villanyszerelo\w*|vizszerelo\w*)"
+        r"\s+keres(?:ek|unk)|ajanlatot\s+ker(?:ek|unk)|ajanlatkeres|"
+        r"(?:tudtok|ajanlanatok|ajanljatok)[^.!?]{0,55}"
+        r"(?:kivitelezo|generalkivitelezo|burkolo|szakember|komuves|epitesz)",
     ),
     "contractor_cancelled": (
         45,
-        r"kivitelezo\w*\s+(?:visszamondta|eltunt|nem vallalja)|(?:befejezo|masik)\s+kivitelezo",
+        r"kivitelezo\w*\s+(?:visszamondta|eltunt|nem vallalja)|(?:befejezo|masik)\s+kivitelezo|"
+        r"felbemaradt\s+(?:az?\s+)?(?:epitkezesem|epitkezesunk|hazunk\s+epitese)",
     ),
     "land_owned": (20, r"(?:megvan|megvettem|megvettuk)\s+(?:a\s+)?telk\w*|van\s+telk(?:em|unk)"),
     "plans_ready": (
@@ -286,11 +297,10 @@ def unique_signals(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _clean_url(value: object) -> str:
-    value = str(value or "").strip()
-    parsed = urlparse(value)
-    if parsed.scheme != "https" or not parsed.netloc or parsed.fragment:
+    try:
+        return canonical_url(str(value or "").strip())
+    except ValueError:
         return ""
-    return value.rstrip("/")
 
 
 def _topic_value(topic: object, key: str, default: object = None) -> object:
@@ -304,7 +314,8 @@ def revalidate_topic_for_use(
     *,
     source_snapshot: Mapping[str, Any] | None = None,
     now: datetime | None = None,
-    max_age_days: int = 90,
+    max_age_days: int = 30,
+    purpose: str = "content",
 ) -> dict[str, Any]:
     """Re-read the stored identity and freshness fields immediately before use.
 
@@ -313,15 +324,19 @@ def revalidate_topic_for_use(
     upgrades an unknown or legacy record to eligible.
     """
 
-    current = now or datetime.now(UTC)
+    current = _utc(now or datetime.now(UTC))
     source = source_snapshot or {}
     url = _clean_url(source.get("source_url", _topic_value(topic, "source_url")))
     reasons: list[str] = []
     if not url:
         reasons.append("source_url_missing")
-    if _topic_value(topic, "eligibility_status") != "eligible":
+    if source.get("error"):
+        reasons.append("source_refresh_unavailable")
+    if source_snapshot is None and _topic_value(topic, "eligibility_status") != "eligible":
         reasons.append("freshness_not_eligible")
-    if _topic_value(topic, "freshness_decision") not in _FRESHNESS_DECISIONS:
+    if source_snapshot is None and _topic_value(topic, "freshness_decision") not in (
+        _FRESHNESS_DECISIONS | {"HOT", "WARM", "QUALIFIED_7D", "CONTENT_SIGNAL"}
+    ):
         reasons.append("freshness_unverified_or_expired")
     published_at = source.get("published_at", _topic_value(topic, "published_at"))
     if not published_at:
@@ -333,8 +348,10 @@ def revalidate_topic_for_use(
             reasons.append("published_date_unparseable")
     if isinstance(published_at, datetime):
         if published_at.tzinfo is None:
+            if "published_at" in source:
+                reasons.append("published_date_timezone_missing")
             published_at = published_at.replace(tzinfo=UTC)
-        age_days = (current.astimezone(UTC).date() - published_at.astimezone(UTC).date()).days
+        age_days = (current - published_at.astimezone(UTC)).total_seconds() / 86400
         if age_days < 0 or age_days > max_age_days:
             reasons.append("published_date_out_of_range")
     else:
@@ -342,13 +359,32 @@ def revalidate_topic_for_use(
         if not isinstance(age_days, int) or age_days < 0 or age_days > max_age_days:
             reasons.append("age_unverified")
     active = str(source.get("active_status", _topic_value(topic, "active_status")) or "").casefold()
-    if active != "active":
+    if purpose == "reply" and active != "active":
         reasons.append("source_not_proven_active")
-    answers = source.get("existing_answer_count", _topic_value(topic, "existing_answer_count"))
-    if not isinstance(answers, int):
-        reasons.append("answer_count_unverified")
-    elif answers != 0:
-        reasons.append("already_answered")
+    elif active in {"closed", "deleted", "resolved", "expired", "inactive"}:
+        reasons.append("source_closed_or_unavailable")
+    # Replies on a thread do not prove the buyer's need was fulfilled.
+    # Recompute demand age/intent instead of treating any reply as a closed sale.
+    decision = None
+    if isinstance(published_at, datetime):
+        decision = assess_signal(
+            {
+                "text": source.get("source_text") or _topic_value(topic, "question", ""),
+                "source_url": url,
+                "observed_at": current,
+                "source_scoped": True,
+                "permalink_verified": True,
+                "timestamp_proof": "post_published",
+                "published_at_raw": published_at.isoformat(),
+                "closed": active in {"closed", "deleted", "resolved", "expired", "inactive"},
+            },
+            now=current,
+        )
+        allowed_queues = {"HOT", "WARM", "QUALIFIED_7D", "CONTENT_SIGNAL"}
+        if purpose == "reply":
+            allowed_queues.discard("CONTENT_SIGNAL")
+        if decision["queue"] not in allowed_queues:
+            reasons.extend(decision["reasons"] or ["not_current_buyer_demand"])
     if source.get("source_url") and _clean_url(source.get("source_url")) != _clean_url(
         _topic_value(topic, "source_url")
     ):
@@ -358,6 +394,8 @@ def revalidate_topic_for_use(
         "reasons": sorted(set(reasons)),
         "source_url": url,
         "policy": REVENUE_POLICY_VERSION,
+        "purpose": purpose,
+        "demand_decision": decision,
         "revalidated_at": current.isoformat(),
     }
 
@@ -443,6 +481,50 @@ def is_replenishment_needed(topic: object, approved_brand_facts: list[Mapping[st
     except SourceReplenishmentRequired:
         return True
     return False
+
+
+def build_brand_source_intent(
+    brand_id: str, approved_brand_facts: list[Mapping[str, Any]]
+) -> dict[str, Any]:
+    """Use an approved, documented buyer problem when no current radar input exists.
+
+    This is an editorial input, never a fabricated forum question or sales lead.
+    Both the problem and the offered next step must exist in the same brand's
+    approved source payload; a source URL alone is not enough.
+    """
+    for fact in approved_brand_facts:
+        payload = fact.get("payload")
+        if not isinstance(payload, Mapping):
+            continue
+        problems = payload.get("buyer_problems") or [payload.get("buyer_problem")]
+        steps = payload.get("next_steps") or [payload.get("next_step")]
+        if not isinstance(problems, list) or not isinstance(steps, list):
+            continue
+        problem = next(
+            (x.strip() for x in problems if isinstance(x, str) and len(x.strip()) >= 12), ""
+        )
+        step = next((x.strip() for x in steps if isinstance(x, str) and len(x.strip()) >= 8), "")
+        source_url = _clean_url(fact.get("source_url"))
+        if not problem or not step or not source_url or not payload.get("statement"):
+            continue
+        intent = {
+            "policy": REVENUE_POLICY_VERSION,
+            "brand_id": brand_id,
+            "input_type": "approved_brand_customer_problem",
+            "radar_topic_id": None,
+            "buyer_problem": problem,
+            "sales_goal": str(
+                payload.get("sales_goal") or f"{brand_id}: minősített kapcsolatfelvétel"
+            ),
+            "approved_brand_facts": [dict(item) for item in approved_brand_facts],
+            "next_step": step,
+            "source_refs": [source_url],
+            "publication_allowed": False,
+            "send_allowed": False,
+        }
+        if evaluate_revenue_intent(intent, brand_id=brand_id)["eligible"]:
+            return intent
+    raise SourceReplenishmentRequired(["buyer_problem_source_missing"])
 
 
 def verify_fact_registry(

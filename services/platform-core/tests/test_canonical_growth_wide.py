@@ -232,8 +232,16 @@ def test_daily_wide_route_attempts_exclude_managed_land_route_set(
     )
     db.commit()
     row = wide_service.refresh_daily_run(db, now=now)
+    db.add(SourceCoverageRoute(
+        route_key="DISABLED-1", route_id="DISABLED-1", catalog_sha256=catalog_sha,
+        motor="construction",
+        route_url="https://source.test/disabled", source_row_sha256="b" * 64,
+        source_record_json="{}", enabled=False,
+    ))
     for attempt_id, attempt_catalog_sha, route_key in (
         ("SCA-CANONICAL", catalog_sha, "CANONICAL-1"),
+        ("SCA-CANONICAL-REFRESH", catalog_sha, "CANONICAL-1"),
+        ("SCA-DISABLED", catalog_sha, "DISABLED-1"),
         ("SCA-MANAGED-LAND", "f" * 64, "LAND-PUBLIC-HTML:dh"),
     ):
         db.add(
@@ -251,6 +259,7 @@ def test_daily_wide_route_attempts_exclude_managed_land_route_set(
 
     refreshed = wide_service.refresh_daily_run(db, now=now)
 
+    # Refresh attempts and inactive routes do not increase daily coverage.
     assert refreshed.route_attempts == 1
 
 

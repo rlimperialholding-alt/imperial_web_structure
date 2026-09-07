@@ -121,13 +121,19 @@ def refresh_daily_run(db: Session, *, now: datetime | None = None) -> CanonicalG
     )
     row.route_attempts = int(
         db.scalar(
-            select(func.count())
-            .select_from(SourceCoverageAttempt)
+            select(func.count(func.distinct(SourceCoverageAttempt.route_key)))
             .where(
                 SourceCoverageAttempt.started_at >= start_utc,
                 SourceCoverageAttempt.run_id == row.run_id,
                 SourceCoverageAttempt.catalog_sha256
                 == (catalog.catalog_sha256 if catalog else ""),
+                SourceCoverageAttempt.route_key.in_(
+                    select(SourceCoverageRoute.route_key).where(
+                        SourceCoverageRoute.enabled.is_(True),
+                        SourceCoverageRoute.catalog_sha256
+                        == (catalog.catalog_sha256 if catalog else ""),
+                    )
+                ),
             )
         )
         or 0

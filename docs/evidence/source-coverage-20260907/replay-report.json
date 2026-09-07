@@ -1,0 +1,128 @@
+{
+  "verified_at": "2026-09-07T06:33:17.011659+00:00",
+  "mode": "local_original_source_replay",
+  "model": "stub; no live provider generation",
+  "network_during_replay": false,
+  "external_send_or_publication": false,
+  "replay_clock": "2026-09-07T06:00:00+00:00",
+  "source_capture_date": "2026-09-07",
+  "clock_note": "Fixed test clock; original source publication dates are unchanged.",
+  "source_fixture_candidates": 8,
+  "useful_expected": 7,
+  "irrelevant_control_count": 1,
+  "scans_per_scenario": 2,
+  "scenarios": [
+    {
+      "scenario": "empty",
+      "passed": true,
+      "retained": 7,
+      "unique_sources": 7,
+      "queues": {
+        "CONTENT_SIGNAL": 7
+      },
+      "direct_replies_eligible": 0,
+      "decisions": [
+        {
+          "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w8rs4c/munkadíjak",
+          "question": "Munkadíjak? Egy 20 m2-es szobában laminált padló lerakása és a falak kifestése vidéken kb mennyi munkadíjjal számolható vajon? Nagyon érdekes és végletes árajánlatokat kaptunk, és elbizonytalanodtunk. Valakinek tapasztalat mostanában? Köszi.",
+          "published_at_utc": "2026-09-06T09:45:34",
+          "source_date_raw": "2026-09-06T09:45:34+00:00",
+          "queue": "CONTENT_SIGNAL",
+          "answer_count": null,
+          "source_status": "unknown",
+          "brand": "BauFreund"
+        },
+        {
+          "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w80vox/milyen_garázst_építenétek",
+          "question": "Milyen garázst építenétek? Hamarosan költözünk, 1000+ m2 telken lévő családi házba. Szeretnénk egy 2 autós garázst építeni, amiben van még hely tárolónak, esetleg kisebb \"műhelynek\", ha valamit szerelni kell (kb 6x8 m). A tégla épület valószínűleg a leginkább időigényes és drága, így első körben lemez, szendvicspanel vagy fa könnyű szerkezetben gondolkodunk. Kinek mi a tapasztalata ezekkel? Kivitelezési költség, karbantartás stb. szempontból.",
+          "published_at_utc": "2026-09-05T13:32:22",
+          "source_date_raw": "2026-09-05T13:32:22+00:00",
+          "queue": "CONTENT_SIGNAL",
+          "answer_count": null,
+          "source_status": "unknown",
+          "brand": "BauFreund"
+        },
+        {
+          "source_url": "https://www.reddit.com/r/lakokozosseg/comments/1w700z1/lakásfelújítási_kérdések",
+          "question": "Lakásfelújítási kérdések Sziasztok! Társasházi lakás felújításba kezdtem és két kérdésem máris felmerült. - a képen látható kaputelefont milyen készülékre tudom lecserélni? - a lakásban a plafonon egy helyen van egy kiálló acél lemez ami valamit eltakar, de nem tudom mit. Olyan mintha egy kötődoboz szerű üreg lenne mögötte de azt sem tudom mi tartja oda a lemezt, mert nem csavarozva van. Nem bontanám le amíg nem tudom mi van mögötte, de ilyen típusú lakást még nem újítottam. Egyébként szerintem ",
+          "published_at_utc": "2026-09-04T09:59:50",
+          "source_date_raw": "2026-09-04T09:59:50+00:00",
+          "queue": "CONTENT_SIGNAL",
+          "answer_count": null,
+          "source_status": "unknown",
+          "brand": "BauFreund"
+        },
+        {
+          "source_url": "https://forum.index.hu/Article/viewArticle?a=172270043&t=9004917",
+          "question": "10 és 15 cm homlokzati hőszigetelés között van érdemi különbség ami megéri, megtéríti az árkülönbözetet?",
+          "published_at_utc": "2026-09-06T09:18:01",
+          "source_date_raw": "2026.09.06 11:18:01",
+          "queue": "CONTENT_SIGNAL",
+          "answer_count": null,
+          "source_status": "unknown",
+          "brand": "BauFreund"
+        },
+        {
+          "source_url": "https://forum.index.hu/Article/viewArticle?a=172260264&t=9004917",
+          "question": "Sziasztok! Létezik, hogy Pest megyében egy normális állapotban levő vakolt/festett fal kétszeri glettelésére+festésére anyaggal együtt az 5000Ft/m2 jó árnak számít?",
+          "published_at_utc": "2026-09-03T10:34:58",
+          "source_date_raw": "2026.09.03 12:34:58",
+          "queue": "CONTENT_SIGNAL",
+          "answer_count": null,
+          "source_status": "unknown",
+          "brand": "BauFreund"
+        },
+        {
+          "source_url": "https://forum.index.hu/Article/viewArticle?a=172254254&t=9004917",
+          "question": "Sziasztok! A képen egy csőtörés utáni eredmény látható. Keresek majd egy burkolót, aki megcsinálja, és felrakja a hiányzó csempét, csak kíváncsi vagyok, hogy ti hogyan javítanátok ki a faláttörést?",
+          "published_at_utc": "2026-09-01T16:34:17",
+          "source_date_raw": "2026.09.01 18:34:17",
+          "queue": "CONTENT_SIGNAL",
+          "answer_count": null,
+          "source_status": "unknown",
+          "brand": "BauFreund"
+        },
+        {
+          "source_url": "https://prohardver.hu/tema/lakasfelujito_szerelo_szakemberkereso_nagy_topic_viz_gaz_villany_futes_festes_burkolas_stb/hsz_171759-171759.html",
+          "question": "A felső és alsó konyhaszekrény közt a falon van jelenleg egy konnektor. Ettől balra 1-2 méterre szeretnék felrakni a falra egy másik aljatot is, kábelcsatorna nélkül. A falon csempe van az alsó-felső szekrény között. Ahogy lenni szokott. Mivel most az egész konyhát felújítom, ezért erre a meglévő csempére fogok újat rakni. Arra gondoltam, hogy a jelenlegi konnektortól leverem a csempét lefelé irányba, és itt beragasztom csemperagasztóval az MMCu-t (tehát megindulok lefelé a kábellel a konyhapult",
+          "published_at_utc": "2026-09-04T13:56:47",
+          "source_date_raw": "szept. 4., 15:56:47",
+          "queue": "CONTENT_SIGNAL",
+          "answer_count": null,
+          "source_status": "unknown",
+          "brand": "BauFreund"
+        }
+      ]
+    },
+    {
+      "scenario": "short_title",
+      "passed": true,
+      "retained": 7,
+      "unique_sources": 7,
+      "queues": {
+        "CONTENT_SIGNAL": 7
+      },
+      "direct_replies_eligible": 0
+    },
+    {
+      "scenario": "literal_question",
+      "passed": true,
+      "retained": 7,
+      "unique_sources": 7,
+      "queues": {
+        "CONTENT_SIGNAL": 7
+      },
+      "direct_replies_eligible": 0
+    },
+    {
+      "scenario": "old_sources",
+      "passed": true,
+      "retained": 7,
+      "unique_sources": 7,
+      "queues": {
+        "RESEARCH_ONLY": 7
+      },
+      "direct_replies_eligible": 0
+    }
+  ]
+}

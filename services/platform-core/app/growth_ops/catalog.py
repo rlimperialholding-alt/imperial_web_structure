@@ -17,7 +17,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from threading import Lock
 from typing import Any
-from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.robotparser import RobotFileParser
 from uuid import uuid4
 from xml.etree import ElementTree
@@ -108,15 +108,26 @@ QUESTION_RADAR_DIRECT_ROUTES = (
         "route_key": "QUESTION-RADAR:INDEX-FORUM-TOPICLIST",
         "route_id": "QR-INDEX-FORUM-TOPICLIST",
         "source_name": "Index Fórum – témalisták",
-        "route_url": "https://forum.index.hu/Topic/showTopicList",
+        "route_url": "https://forum.index.hu/Topic/showTopicList?t=52",
         "search_signal": "építkezés; felújítás; kivitelező; tetőtér; költség",
         "brand_fit": "BauFreund,Bautica,Prefab",
+    },
+    {
+        "route_key": "QUESTION-RADAR:PROHARDVER-FELUJITAS",
+        "route_id": "QR-PROHARDVER-FELUJITAS",
+        "source_name": "Prohardver – Lakásfelújító és szakemberkereső fórum",
+        "route_url": (
+            "https://prohardver.hu/tema/lakasfelujito_szerelo_szakemberkereso_nagy_topic_"
+            "viz_gaz_villany_futes_festes_burkolas_stb/friss.html"
+        ),
+        "search_signal": "felújítás; szakember; víz; gáz; villany; festés; burkolás",
+        "brand_fit": "BauFreund,Bautica",
     },
     {
         "route_key": "QUESTION-RADAR:REDDIT-HUNGARY-RSS",
         "route_id": "QR-REDDIT-HUNGARY-RSS",
         "source_name": "Reddit r/hungary – új bejegyzések",
-        "route_url": "https://www.reddit.com/r/hungary/.rss",
+        "route_url": "https://www.reddit.com/r/hungary/new/.rss?limit=25",
         "search_signal": "építkezés; felújítás; ingatlan; kivitelező",
         "brand_fit": "BauFreund,Bautica,Prefab",
     },
@@ -124,7 +135,7 @@ QUESTION_RADAR_DIRECT_ROUTES = (
         "route_key": "QUESTION-RADAR:REDDIT-ASKHUNGARY-RSS",
         "route_id": "QR-REDDIT-ASKHUNGARY-RSS",
         "source_name": "Reddit r/askhungary – új bejegyzések",
-        "route_url": "https://www.reddit.com/r/askhungary/.rss",
+        "route_url": "https://www.reddit.com/r/askhungary/new/.rss?limit=25",
         "search_signal": "építkezés; felújítás; szakember; ár; ingatlan",
         "brand_fit": "BauFreund,Bautica,Prefab",
     },
@@ -132,17 +143,24 @@ QUESTION_RADAR_DIRECT_ROUTES = (
         "route_key": "QUESTION-RADAR:REDDIT-KISZAMOLO-RSS",
         "route_id": "QR-REDDIT-KISZAMOLO-RSS",
         "source_name": "Reddit r/kiszamolo – új bejegyzések",
-        "route_url": "https://www.reddit.com/r/kiszamolo/.rss",
+        "route_url": "https://www.reddit.com/r/kiszamolo/new/.rss?limit=25",
         "search_signal": "felújítás; építkezés; költség; hitel; ingatlan",
         "brand_fit": "BauFreund,Bautica",
+    },
+    {
+        "route_key": "QUESTION-RADAR:REDDIT-LAKOKOZOSSEG-RSS",
+        "route_id": "QR-REDDIT-LAKOKOZOSSEG-RSS",
+        "source_name": "Reddit r/lakokozosseg – új bejegyzések",
+        "route_url": "https://www.reddit.com/r/lakokozosseg/new/.rss?limit=25",
+        "search_signal": "építkezés; felújítás; munkadíj; kivitelező; garázs",
+        "brand_fit": "BauFreund,Bautica,Prefab",
     },
     {
         "route_key": "QUESTION-RADAR:FORUM-DISCOVERY-CONSTRUCTION",
         "route_id": "QR-FORUM-DISCOVERY-CONSTRUCTION",
         "source_name": "Automatikus fórumfelfedezés – építkezés",
         "route_url": (
-            "https://www.bing.com/search?"
-            "q=epitkezes+kivitelezo+hazepites+tetoter+forum"
+            "https://lite.duckduckgo.com/lite/?q=epitkezes+forum"
         ),
         "search_signal": "építkezés; kivitelező; házépítés; tetőtér; fórum",
         "brand_fit": "BauFreund,Bautica,Prefab",
@@ -152,8 +170,7 @@ QUESTION_RADAR_DIRECT_ROUTES = (
         "route_id": "QR-FORUM-DISCOVERY-RENOVATION",
         "source_name": "Automatikus fórumfelfedezés – felújítás",
         "route_url": (
-            "https://www.bing.com/search?"
-            "q=felujitas+szakember+kivitelezo+koltseg+forum"
+            "https://lite.duckduckgo.com/lite/?q=felujitas+forum"
         ),
         "search_signal": "felújítás; szakember; kivitelező; költség; fórum",
         "brand_fit": "BauFreund,Bautica,Prefab",
@@ -181,6 +198,7 @@ _SEARCH_ENGINE_HOSTS = {
     "search.yahoo.com",
     "duckduckgo.com",
     "html.duckduckgo.com",
+    "lite.duckduckgo.com",
 }
 _FORUM_RELEVANCE_MARKERS = (
     "épít",
@@ -385,6 +403,7 @@ def _pinned_https_get(
     *,
     max_response_bytes: int,
     deadline_monotonic: float,
+    request_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
@@ -453,9 +472,7 @@ def _pinned_https_get(
         connection = http.client.HTTPSConnection(
             host,
             port=port,
-            timeout=max(
-                0.001, deadline_monotonic - monotonic_time.monotonic()
-            ),
+            timeout=max(0.001, deadline_monotonic - monotonic_time.monotonic()),
             context=context,
         )
         connection.sock = tls_socket
@@ -468,12 +485,15 @@ def _pinned_https_get(
                 "Accept": "text/html,text/plain;q=0.9",
                 "Accept-Encoding": "identity",
                 "Connection": "close",
+                **(
+                    {"Cookie": request_headers["Cookie"]}
+                    if request_headers and "Cookie" in request_headers
+                    else {}
+                ),
             },
         )
         response = connection.getresponse()
-        headers = {
-            key.casefold(): value.strip() for key, value in response.getheaders()
-        }
+        headers = {key.casefold(): value.strip() for key, value in response.getheaders()}
         if headers.get("content-encoding", "identity").casefold() not in {
             "",
             "identity",
@@ -505,6 +525,9 @@ def _pinned_https_get(
             "headers": headers,
             "body": body,
             "source_ip": str(source_ip),
+            "set_cookie_headers": [
+                value for key, value in response.getheaders() if key.casefold() == "set-cookie"
+            ],
         }
     except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
         raise UnsafeRouteError("pinned_fetch_failed") from exc
@@ -587,6 +610,7 @@ class _VisibleText(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if not self.hidden:
+            data = data.replace("[SOURCE_PAGE_EVIDENCE]", "[idézett jelölés]")
             self.parts.append(data)
             if self._href:
                 self._anchor_parts.append(data)
@@ -672,6 +696,7 @@ class _QjobTaskCards(HTMLParser):
             parsed = urlparse(absolute)
             base_host = (urlparse(self.base_url).hostname or "").casefold()
             label = re.sub(r"\s+", " ", " ".join(self.active_parts)).strip()[:500]
+            label = label.replace("[SOURCE_PAGE_EVIDENCE]", "[idézett jelölés]")
             if (
                 label
                 and parsed.scheme == "https"
@@ -727,13 +752,18 @@ class _SearchResultLinks(HTMLParser):
 
 
 def _decode_search_result_url(value: str, *, base_url: str) -> str:
-    """Decode Bing's opaque ``/ck/a?...&u=a1<base64>`` result wrapper."""
+    """Resolve search wrappers to source URLs, never their publication dates."""
 
     absolute = urljoin(base_url, value.strip())
     parsed = urlparse(absolute)
     if (parsed.hostname or "").casefold() not in _SEARCH_ENGINE_HOSTS:
         return absolute
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    # Google and DuckDuckGo also return links through their own redirect URLs.
+    for key in ("uddg", "url", "q"):
+        target = query.get(key, "")
+        if target.startswith("https://"):
+            return target
     opaque = query.get("u", "")
     if opaque.startswith("a1") and len(opaque) > 2:
         try:
@@ -747,13 +777,59 @@ def _decode_search_result_url(value: str, *, base_url: str) -> str:
     return absolute
 
 
+def _canonical_forum_result_url(value: str, *, base_url: str) -> str:
+    """Use the source URL, with tracking removed but post identity retained."""
+
+    parsed = urlparse(_decode_search_result_url(value, base_url=base_url))
+    host = (parsed.hostname or "").casefold()
+    if host in {"reddit.com", "old.reddit.com", "m.reddit.com"}:
+        host = "www.reddit.com"
+    if host == "gyakorikerdesek.hu":
+        host = "www.gyakorikerdesek.hu"
+    try:
+        port = parsed.port
+    except ValueError:
+        return ""
+    # Credentials, internal addresses and nonstandard ports are not public
+    # forum identities. The actual fetch additionally validates DNS addresses.
+    if parsed.username or parsed.password or port not in {None, 443}:
+        return ""
+    if host in {"localhost", "localhost.localdomain"} or "." not in host:
+        return ""
+    try:
+        if not ipaddress.ip_address(host).is_global:
+            return ""
+    except ValueError:
+        pass
+    query = sorted(
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.casefold().startswith("utm_")
+        and key.casefold() not in {"fbclid", "gclid", "msclkid", "ref", "ref_src"}
+    )
+    path = parsed.path
+    if host == "www.reddit.com":
+        match = re.fullmatch(
+            r"/r/([^/]+)/comments/([a-z0-9]+)(?:/[^/]*)?(?:/([a-z0-9]+))?/?", path, re.I
+        )
+        if match:
+            # Titles can be edited without changing the post's identity.
+            path = f"/r/{match.group(1).casefold()}/comments/{match.group(2).casefold()}/"
+            if match.group(3):
+                path += f"_/{match.group(3).casefold()}/"
+    return urlunparse(parsed._replace(netloc=host, path=path, query=urlencode(query), fragment=""))
+
+
 def _is_search_route(route_url: str) -> bool:
     parsed = urlparse(route_url)
     host = (parsed.hostname or "").casefold()
     if host not in _SEARCH_ENGINE_HOSTS:
         return False
     path = parsed.path.casefold().rstrip("/")
-    return path in {"", "/search", "/web"} and bool(
+    allowed_paths = {"", "/search", "/web"}
+    if host in {"duckduckgo.com", "html.duckduckgo.com", "lite.duckduckgo.com"}:
+        allowed_paths.update({"/lite", "/html"})
+    return path in allowed_paths and bool(
         dict(parse_qsl(parsed.query, keep_blank_values=True)).get("q")
     )
 
@@ -778,11 +854,7 @@ def _is_forum_discovery_route(route: SourceCoverageRoute) -> bool:
 def _forum_search_result_candidate(url: str, *, base_url: str) -> bool:
     """Accept only concrete, relevant HTTPS result pages from a search surface."""
 
-    canonical = urlunparse(
-        urlparse(_decode_search_result_url(url, base_url=base_url))._replace(
-            fragment=""
-        )
-    )
+    canonical = _canonical_forum_result_url(url, base_url=base_url)
     parsed = urlparse(canonical)
     base_host = (urlparse(base_url).hostname or "").casefold()
     host = (parsed.hostname or "").casefold()
@@ -809,10 +881,14 @@ def _forum_search_result_candidate(url: str, *, base_url: str) -> bool:
     )
     path_text = " ".join(parts)
     has_forum_path = any(marker in path_text for marker in _FORUM_PATH_MARKERS)
-    has_stable_id = any(part.isdigit() or re.fullmatch(r"[a-z0-9]{5,}", part) for part in parts)
-    if not (has_identity_query or has_forum_path or (len(parts) >= 2 and has_stable_id)):
-        return False
-    return True
+    has_forum_host = any(part in {"forum", "forums", "community"} for part in host.split("."))
+    has_known_question_path = (
+        host == "www.gyakorikerdesek.hu" and bool(re.search(r"__\d+-", path))
+    ) or (
+        host == "joszaki.hu" and path.startswith("/szakivalaszol/")
+    ) or (host == "qjob.hu" and bool(re.fullmatch(r"/tasks/\d+", path)))
+    # An article/product's numeric ID is not evidence that it is a forum post.
+    return has_known_question_path or has_forum_path or (has_forum_host and has_identity_query)
 
 
 def _forum_search_page_evidence(
@@ -826,14 +902,15 @@ def _forum_search_page_evidence(
     links: list[dict[str, str]] = []
     visible_parts: list[str] = []
     for item in parser.links:
-        url = _decode_search_result_url(str(item.get("url") or ""), base_url=base_url)
+        url = _canonical_forum_result_url(str(item.get("url") or ""), base_url=base_url)
         label = re.sub(r"\s+", " ", str(item.get("label") or "")).strip()
+        label = label.replace("[SOURCE_PAGE_EVIDENCE]", "[idézett jelölés]")
         relevance_text = f"{label} {url}".casefold()
         if not _forum_search_result_candidate(url, base_url=base_url):
             continue
         if not any(marker.casefold() in relevance_text for marker in _FORUM_CONTENT_MARKERS):
             continue
-        canonical = urlunparse(urlparse(url)._replace(fragment=""))
+        canonical = url
         if any(existing["url"] == canonical for existing in links):
             continue
         links.append({"url": canonical, "label": label[:1200]})
@@ -866,6 +943,9 @@ def _reply_page_candidate(url: str, *, base_url: str) -> bool:
         return False
     host = candidate.hostname.casefold()
     path = candidate.path.rstrip("/")
+    if is_named_portal_host(host):
+        # Property listing fetches have their own bounded adapter and robots policy.
+        return False
     if host == "qjob.hu" and re.fullmatch(r"/tasks/\d+", path, flags=re.IGNORECASE):
         return True
     if host == "joszaki.hu" and path.casefold().startswith("/szakivalaszol/"):
@@ -881,17 +961,18 @@ def _reply_page_candidate(url: str, *, base_url: str) -> bool:
         return bool(re.search(r"__\d{6,}(?:-|$)", path, flags=re.IGNORECASE))
     if host == "forum.index.hu" or host.endswith(".forum.index.hu"):
         query = parse_qsl(candidate.query, keep_blank_values=True)
-        return (
-            path.casefold().endswith("/article/showarticle")
-            and any(key.casefold() in {"t", "id", "article"} and value for key, value in query)
+        return path.casefold().endswith(("/article/showarticle", "/article/viewarticle")) and any(
+            key.casefold() == "a" and value.isdigit() for key, value in query
         )
+    if host == "prohardver.hu":
+        match = re.search(r"/hsz_(\d+)-(\d+)\.html$", path)
+        return bool(match and match[1] == match[2])
     if host == "reddit.com" or host.endswith(".reddit.com"):
         return bool(re.search(r"/comments/[a-z0-9]+(?:/|$)", path, flags=re.IGNORECASE))
     query_keys = {
-        key.casefold()
-        for key, _value in parse_qsl(candidate.query, keep_blank_values=True)
+        key.casefold() for key, _value in parse_qsl(candidate.query, keep_blank_values=True)
     }
-    if query_keys & {"id", "post", "question", "thread", "topic", "tid", "t"}:
+    if query_keys & {"post", "question", "thread", "topic", "tid"}:
         return True
     parts = [part for part in path.split("/") if part]
     if not parts or path in {
@@ -907,111 +988,445 @@ def _reply_page_candidate(url: str, *, base_url: str) -> bool:
         return False
     path_text = " ".join(parts).casefold()
     if not any(marker in path_text for marker in _FORUM_PATH_MARKERS):
-        return any(part.isdigit() and len(part) >= 3 for part in parts)
+        return False
     return any(part.isdigit() or len(part) >= 6 for part in parts[1:])
 
 
-def _reply_page_metadata(body_text: str, *, source_url: str) -> dict[str, str] | None:
-    """Extract source-page metadata from one concrete public item page.
+class _PostEvidenceHTML(HTMLParser):
+    """Minimal tree for binding evidence to one post, excluding adjacent posts."""
 
-    These values are evidence for the downstream extractor.  They are not
-    accepted from model output and are not inferred from the discovery page.
-    """
+    def __init__(self, body: str):
+        super().__init__(convert_charrefs=True)
+        self.root = {"tag": "root", "attrs": {}, "parts": [], "children": []}
+        self.stack = [self.root]
+        self.feed(body)
 
-    metadata: dict[str, str] = {}
-    host = (urlparse(source_url).hostname or "").casefold()
-    visible = _visible_text(body_text, 60_000)
-    date_patterns = (
-        r'"datePublished"\s*:\s*"([^"]+)"',
-        r'"publishedAt"\s*:\s*"([^"]+)"',
-        r'"createdAt"\s*:\s*"([^"]+)"',
-    )
-    for pattern in date_patterns:
-        match = re.search(pattern, body_text, flags=re.IGNORECASE)
-        if match:
-            metadata["published_at_raw"] = match.group(1).strip()[:255]
-            break
-    if not metadata.get("published_at_raw"):
-        date_patterns = (
-            r"<time[^>]+datetime=[\"']([^\"']+)",
-            r"<meta[^>]+(?:property|name)=[\"'](?:article:published_time|datepublished|date)[\"'][^>]+content=[\"']([^\"']+)",
-            r"<(?:published|pubDate)>\s*([^<]+)",
-        )
-        for pattern in date_patterns:
-            match = re.search(pattern, body_text, flags=re.IGNORECASE)
-            if match:
-                metadata["published_at_raw"] = re.sub(r"\s+", " ", match.group(1)).strip()[:255]
+    def handle_starttag(self, tag, attrs):
+        node = {"tag": tag, "attrs": dict(attrs), "parts": [], "children": []}
+        self.stack[-1]["children"].append(node)
+        if tag not in {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "source",
+            "wbr",
+        }:
+            self.stack.append(node)
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.stack) - 1, 0, -1):
+            if self.stack[index]["tag"] == tag:
+                del self.stack[index:]
                 break
-    status_match = re.search(r'"status"\s*:\s*"([^"]+)"', body_text, flags=re.IGNORECASE)
-    deleted_match = re.search(r'"deleted"\s*:\s*(null|true|false)', body_text, flags=re.IGNORECASE)
-    if status_match:
-        raw_status = status_match.group(1).strip()
-        metadata["active_status_raw"] = raw_status[:255]
-        metadata["active_status"] = (
-            "active" if raw_status.casefold() in {"published", "active", "open"} else "inactive"
-        )
-    elif deleted_match:
-        raw_deleted = deleted_match.group(1).strip()
-        metadata["active_status_raw"] = "deleted=" + raw_deleted
-        metadata["active_status"] = "active" if raw_deleted.casefold() == "null" else "inactive"
 
-    answer_match = re.search(r'"taskResponsesCount"\s*:\s*(\d+)', body_text, flags=re.IGNORECASE)
-    if not answer_match:
-        answer_match = re.search(r"(?<!\d)(\d{1,5})\s+v[aá]lasz", visible, flags=re.IGNORECASE)
-    if not answer_match:
-        answer_match = re.search(
-            r"(?<!\d)(\d{1,5})\s+(?:comments?|hozz[aá]sz[oó]l[aá]s)",
-            visible,
-            flags=re.IGNORECASE,
-        )
-    if not answer_match and host.endswith(".reddit.com"):
-        answer_match = re.search(r'"num_comments"\s*:\s*(\d+)', body_text, flags=re.IGNORECASE)
-    if answer_match:
-        count = answer_match.group(1)
-        metadata["answer_count_raw"] = count + " válasz"
-        metadata["existing_answer_count"] = count
+    def handle_data(self, data):
+        self.stack[-1]["parts"].append(data)
 
+    @staticmethod
+    def walk(node):
+        yield node
+        for child in node["children"]:
+            yield from _PostEvidenceHTML.walk(child)
+
+    @staticmethod
+    def text(node):
+        return " ".join(" ".join(part["parts"]) for part in _PostEvidenceHTML.walk(node)).strip()
+
+
+def _reply_page_metadata(body_text: str, *, source_url: str) -> dict[str, str] | None:
+    """Extract publication evidence only from the identified question or post."""
+    if not _reply_page_candidate(source_url, base_url=source_url):
+        return None
+    document = _PostEvidenceHTML(body_text)
+    nodes = list(document.walk(document.root))
+    host = (urlparse(source_url).hostname or "").casefold()
+    metadata: dict[str, str] = {}
     if host == "gyakorikerdesek.hu" or host.endswith(".gyakorikerdesek.hu"):
-        # Gyakori Kérdések renders Hungarian relative dates and does not expose
-        # JSON-LD timestamps.  Read the date and answer state from the concrete
-        # question page, never from the category/search page.
-        date_match = re.search(
-            r"\b(?:jan(?:uár)?|febr?(?:uár)?|márc(?:ius)?|ápr(?:ilis)?|"
-            r"máj(?:us)?|jún(?:ius)?|júl(?:ius)?|aug(?:usztus)?|"
-            r"szept(?:ember)?|okt(?:óber)?|nov(?:ember)?|dec(?:ember)?)\.?"
-            r"\s+\d{1,2}\.?(?:\s+\d{1,2}:\d{2})?",
-            visible,
-            flags=re.IGNORECASE,
-        )
-        if date_match:
-            metadata["published_at_raw"] = date_match.group(0).strip()[:255]
-        if re.search(
-            r"még\s+nem\s+érkezett\s+v[aá]lasz|nincs\s+v[aá]lasz",
-            visible,
-            flags=re.IGNORECASE,
-        ):
-            metadata["active_status_raw"] = "active"
-            metadata["active_status"] = "active"
-            metadata["answer_count_raw"] = "0 válasz"
-            metadata["existing_answer_count"] = "0"
-        elif not metadata.get("active_status"):
-            metadata["active_status_raw"] = "active"
-            metadata["active_status"] = "active"
-        if "existing_answer_count" not in metadata:
-            answer_total = re.search(
-                r"\d+\s*/\s*(\d+)\s+anonim\s+v[aá]lasza",
-                visible,
-                flags=re.IGNORECASE,
+        questions = [n for n in nodes if "kerdes" in (n["attrs"].get("class") or "").split()]
+        if len(questions) != 1:
+            return None
+        dates = [
+            document.text(n)
+            for n in document.walk(questions[0])
+            if n["attrs"].get("title") == "A kérdés kiírásának időpontja"
+        ]
+        if len(dates) != 1 or not dates[0]:
+            return None
+        metadata["published_at_raw"] = dates[0][:255]
+        empty = [n for n in nodes if "sajnosmeg" in (n["attrs"].get("class") or "").split()]
+        if any("még nem érkezett válasz a kérdésre" in document.text(n).casefold() for n in empty):
+            metadata.update(
+                active_status="active",
+                active_status_raw="active",
+                answer_count_raw="0 válasz",
+                existing_answer_count="0",
             )
-            if answer_total:
-                metadata["answer_count_raw"] = answer_total.group(1) + " válasz"
-                metadata["existing_answer_count"] = answer_total.group(1)
+        else:
+            headers = [
+                n for n in nodes if "valasz_fejlec" in (n["attrs"].get("class") or "").split()
+            ]
+            totals = {
+                m.group(1)
+                for n in headers
+                if (m := re.search(r"\d+\s*/\s*(\d+)", document.text(n)))
+            }
+            if len(totals) == 1:
+                count = totals.pop()
+                metadata.update(existing_answer_count=count, answer_count_raw=count + " válasz")
+            # An actual reply form proves the post remains open, regardless of answer count.
+            if any(n["tag"] == "textarea" for n in nodes):
+                metadata.update(active_status="active", active_status_raw="active")
+    elif host == "forum.index.hu":
+        post_id = dict(parse_qsl(urlparse(source_url).query)).get("a")
+        exact_groups = [
+            n
+            for n in nodes
+            if n["tag"] == "table"
+            and "art" in (n["attrs"].get("class") or "").split()
+            and any(child["attrs"].get("name") == post_id for child in document.walk(n))
+        ]
+        allowed_nodes = list(document.walk(exact_groups[0])) if len(exact_groups) == 1 else nodes
+        bookmarks = [
+            n
+            for n in allowed_nodes
+            if n["tag"] == "a"
+            and "bookmark" in (n["attrs"].get("rel") or "").split()
+            and (
+                dict(parse_qsl(urlparse(n["attrs"].get("href") or "").query)).get("a") == post_id
+                or (len(exact_groups) == 1 and not n["attrs"].get("href"))
+            )
+        ]
+        dates = {n["attrs"].get("title") for n in bookmarks if n["attrs"].get("title")}
+        if len(dates) != 1:
+            return None
+        stamp = dates.pop()
+        if not re.fullmatch(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}", stamp):
+            return None
+        metadata["published_at_raw"] = stamp
+    elif host == "prohardver.hu":
+        links = _forum_post_links(body_text, base_url=source_url)
+        exact = next((item for item in links if _same_forum_post(item["url"], source_url)), None)
+        if exact and "[SOURCE_PAGE_EVIDENCE]" in exact["label"]:
+            marker = exact["label"].split("[SOURCE_PAGE_EVIDENCE]", 1)[1]
+            metadata.update(
+                dict(part.strip().split("=", 1) for part in marker.split(";") if "=" in part)
+            )
+    else:
+        # JSON-LD must identify this item, not an unrelated sidebar/article/comment.
+        records = []
 
+        def visit(value):
+            if isinstance(value, dict):
+                records.append(value)
+                for child in value.values():
+                    visit(child)
+            elif isinstance(value, list):
+                for child in value:
+                    visit(child)
+
+        for node in nodes:
+            if node["tag"] != "script" or node["attrs"].get("type") != "application/ld+json":
+                continue
+            try:
+                visit(json.loads(document.text(node)))
+            except (ValueError, TypeError):
+                continue
+        target = source_url.rstrip("/")
+        matched = []
+        for record in records:
+            kind = record.get("@type")
+            kinds = kind if isinstance(kind, list) else [kind]
+            url = record.get("url") or record.get("@id")
+            if not isinstance(url, str):
+                continue
+            if target == urljoin(source_url, url).rstrip("/") and any(
+                value in {"Question", "DiscussionForumPosting", "SocialMediaPosting"}
+                for value in kinds
+            ):
+                matched.append(record)
+        if len(matched) == 1 and matched[0].get("datePublished"):
+            record = matched[0]
+            metadata["published_at_raw"] = str(record["datePublished"])[:255]
+            count = record.get("answerCount", record.get("commentCount"))
+            if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+                metadata.update(
+                    existing_answer_count=str(count), answer_count_raw=str(count) + " válasz"
+                )
+        elif host in {"qjob.hu", "joszaki.hu", "www.joszaki.hu"}:
+            # The existing task adapter has a single task-state object on concrete pages.
+            dates = set(re.findall(r'"(?:publishedAt|datePublished)"\s*:\s*"([^"\n]+)"', body_text))
+            if len(dates) == 1:
+                metadata["published_at_raw"] = dates.pop()[:255]
+            statuses = set(re.findall(r'"status"\s*:\s*"([^"\n]+)"', body_text))
+            if len(statuses) == 1:
+                value = statuses.pop()
+                if value.casefold() in {
+                    "published",
+                    "active",
+                    "open",
+                    "closed",
+                    "deleted",
+                    "expired",
+                }:
+                    metadata.update(
+                        active_status_raw=value,
+                        active_status="active"
+                        if value.casefold() in {"published", "active", "open"}
+                        else "inactive",
+                    )
+            counts = set(re.findall(r'"taskResponsesCount"\s*:\s*(\d+)', body_text))
+            if len(counts) == 1:
+                count = counts.pop()
+                metadata.update(existing_answer_count=count, answer_count_raw=count + " válasz")
     if not metadata.get("published_at_raw"):
         return None
-    metadata["published_at_source"] = "source_page"
-    metadata["source_url"] = source_url
+    metadata.update(published_at_source="source_page", source_url=source_url)
     return metadata
+
+
+def _forum_post_links(body_text: str, *, base_url: str) -> list[dict[str, str]]:
+    """Extract original message bodies and dates from public Index/Prohardver threads."""
+    host = (urlparse(base_url).hostname or "").casefold()
+    if host not in {"forum.index.hu", "prohardver.hu"}:
+        return []
+    doc = _PostEvidenceHTML(body_text)
+    nodes = list(doc.walk(doc.root))
+    groups = [
+        n
+        for n in nodes
+        if (
+            host == "forum.index.hu"
+            and n["tag"] == "table"
+            and "art" in (n["attrs"].get("class") or "").split()
+        )
+        or (host == "prohardver.hu" and n["tag"] == "li" and n["attrs"].get("data-id"))
+    ]
+    links = []
+    for group in groups:
+        children = list(doc.walk(group))
+        if host == "forum.index.hu":
+            anchors = [
+                n
+                for n in children
+                if n["tag"] == "a" and "bookmark" in (n["attrs"].get("rel") or "").split()
+            ]
+            bodies = [n for n in children if "art_b" in (n["attrs"].get("class") or "").split()]
+            raw_date = anchors[0]["attrs"].get("title", "") if anchors else ""
+        else:
+            identifier = group["attrs"]["data-id"]
+            anchors = [
+                n
+                for n in children
+                if n["tag"] == "a"
+                and (n["attrs"].get("href") or "").endswith(f"/hsz_{identifier}-{identifier}.html")
+            ]
+            bodies = [
+                child
+                for node in children
+                if "message-body-main" in (node["attrs"].get("class") or "").split()
+                for child in node["children"]
+                if "message-content" in (child["attrs"].get("class") or "").split()
+            ]
+            dates = [
+                n
+                for n in children
+                if n["tag"] == "time" and "message-time" in (n["attrs"].get("class") or "").split()
+            ]
+            raw_date = doc.text(dates[0]) if len(dates) == 1 else ""
+        if not anchors or not bodies:
+            continue
+        href = anchors[0]["attrs"].get("href") or ""
+        if not href and host == "forum.index.hu":
+            identifiers = [
+                n["attrs"]["name"] for n in children if str(n["attrs"].get("name") or "").isdigit()
+            ]
+            if len(identifiers) != 1:
+                continue
+            thread = dict(parse_qsl(urlparse(base_url).query)).get("t", "")
+            href = "/Article/viewArticle?a=" + identifiers[0] + ("&t=" + thread if thread else "")
+        url = urljoin(base_url, href)
+        if not _reply_page_candidate(url, base_url=base_url):
+            continue
+        label = re.sub(r"\s+", " ", doc.text(bodies[0])).strip()[:850]
+        label = label.replace("[SOURCE_PAGE_EVIDENCE]", "[idézett jelölés]")
+        if raw_date and ";" not in raw_date:
+            label += (
+                "\n[SOURCE_PAGE_EVIDENCE] published_at_raw="
+                + raw_date[:255]
+                + "; published_at_source=source_page"
+            )
+        if "[SOURCE_PAGE_EVIDENCE]" not in label:
+            label += "\n[SOURCE_PAGE_EVIDENCE] published_at_source=unknown"
+        if label:
+            links.append({"url": url, "label": label})
+    return links[:100]
+
+
+def refresh_question_source(source_url: str) -> dict[str, Any]:
+    """Read one original post immediately before use; perform no external writes."""
+    observed_at = datetime.now(UTC)
+    if not _reply_page_candidate(source_url, base_url=source_url):
+        return {"source_url": source_url, "error": "exact_post_permalink_missing"}
+    host = (urlparse(source_url).hostname or "").casefold()
+    fetch_url = source_url
+    if host == "reddit.com" or host.endswith(".reddit.com"):
+        match = re.search(
+            r"(/r/[^/]+/comments/[a-z0-9]+)", urlparse(source_url).path, flags=re.IGNORECASE
+        )
+        if match:
+            fetch_url = "https://www.reddit.com" + match.group(1) + "/.rss"
+    try:
+        response = _forum_page_get(fetch_url, timeout_seconds=20, max_response_bytes=2_000_000)
+        if not 200 <= response["status_code"] < 300:
+            raise ValueError("source_http_" + str(response["status_code"]))
+        body = _forum_decode_body(response)
+        metadata = _reply_page_metadata(body, source_url=source_url)
+        links = _forum_post_links(body, base_url=source_url)
+        atom = _atom_feed_evidence(body, base_url=source_url, limit=60_000)
+        if atom is not None:
+            links = atom[1]
+        exact = next((item for item in links if _same_forum_post(item["url"], source_url)), None)
+        if exact:
+            source_text, _, marker = exact["label"].partition("[SOURCE_PAGE_EVIDENCE]")
+            if marker:
+                metadata = dict(
+                    part.strip().split("=", 1) for part in marker.split(";") if "=" in part
+                )
+        else:
+            source_text = _original_question_text(body, source_url=source_url)
+        if not metadata or not source_text.strip():
+            raise ValueError("source_post_evidence_unavailable")
+        return {
+            **metadata,
+            "source_url": source_url,
+            "source_text": source_text.strip(),
+            "observed_at": observed_at.isoformat(),
+            "active_status": metadata.get("active_status", "unknown"),
+            "existing_answer_count": metadata.get("existing_answer_count"),
+        }
+    except (ValueError, OSError, UnsafeRouteError, httpx.HTTPError) as exc:
+        return {
+            "source_url": source_url,
+            "observed_at": observed_at.isoformat(),
+            "error": str(exc)[:120],
+        }
+
+
+def _same_forum_post(left: str, right: str) -> bool:
+    a, b = urlparse(left), urlparse(right)
+    if (a.hostname or "").removeprefix("www.") != (b.hostname or "").removeprefix("www."):
+        return False
+    if (a.hostname or "").endswith("reddit.com"):
+        def reddit_identity(path):
+            parts = [part for part in path.split("/") if part]
+            if "comments" not in parts:
+                return None
+            index = parts.index("comments")
+            if len(parts) <= index + 1:
+                return None
+            return parts[index + 1], parts[index + 3] if len(parts) > index + 3 else None
+        first, second = reddit_identity(a.path), reddit_identity(b.path)
+        return bool(first and first == second)
+    if a.hostname == "forum.index.hu":
+        return dict(parse_qsl(a.query)).get("a") == dict(parse_qsl(b.query)).get("a")
+    return left.rstrip("/") == right.rstrip("/")
+
+
+def _original_question_text(body: str, *, source_url: str) -> str:
+    doc = _PostEvidenceHTML(body)
+    nodes = list(doc.walk(doc.root))
+    host = (urlparse(source_url).hostname or "").casefold()
+    if host.endswith("gyakorikerdesek.hu"):
+        parts = [
+            doc.text(n)
+            for n in nodes
+            if n["tag"] == "h1" or "kerdes_kerdes" in (n["attrs"].get("class") or "").split()
+        ]
+        return " ".join(parts)[:3000]
+    # A bound JSON-LD question can provide its own original text. Do not use whole-page sidebars.
+    for node in nodes:
+        if node["tag"] == "script" and node["attrs"].get("type") == "application/ld+json":
+            try:
+                value = json.loads(doc.text(node))
+            except ValueError:
+                continue
+            if isinstance(value, dict) and _same_forum_post(
+                str(value.get("url") or ""), source_url
+            ):
+                return " ".join(
+                    str(value.get(key) or "") for key in ("headline", "name", "text", "articleBody")
+                )[:3000]
+    return ""
+
+
+def _forum_page_get(url: str, *, timeout_seconds: float, max_response_bytes: int) -> dict[str, Any]:
+    from .forum_http import forum_public_get
+
+    return forum_public_get(
+        url,
+        max_response_bytes=max_response_bytes,
+        deadline_monotonic=monotonic_time.monotonic() + min(float(timeout_seconds), 20.0),
+        pinned_get=_pinned_https_get,
+    )
+
+
+def _forum_decode_body(response: dict[str, Any]) -> str:
+    header = str(response.get("headers", {}).get("content-type", ""))
+    charset = re.search(r"charset=([^; ]+)", header, flags=re.IGNORECASE)
+    encoding = charset.group(1).strip("\"'") if charset else "utf-8"
+    try:
+        return response["body"].decode(encoding, errors="replace")
+    except LookupError:
+        return response["body"].decode("utf-8", errors="replace")
+
+
+def _expand_index_forum_threads(
+    links: list[dict[str, str]],
+    *,
+    base_url: str,
+    timeout_seconds: float,
+    max_response_bytes: int,
+) -> list[dict[str, str]]:
+    """Read recent Index category threads to get individual post evidence."""
+    if (urlparse(base_url).hostname or "").casefold() != "forum.index.hu" or urlparse(
+        base_url
+    ).path.casefold() != "/topic/showtopiclist":
+        return links
+    posts: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in links:
+        parsed = urlparse(urljoin(base_url, str(item.get("url") or "")))
+        query = dict(parse_qsl(parsed.query))
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "forum.index.hu"
+            or parsed.path.casefold() != "/article/showarticle"
+            or not str(query.get("t") or "").isdigit()
+            or "a" in query
+        ):
+            continue
+        url = f"https://forum.index.hu/Article/showArticle?t={query['t']}"
+        if url in seen:
+            continue
+        seen.add(url)
+        try:
+            response = _forum_page_get(
+                url, timeout_seconds=timeout_seconds, max_response_bytes=max_response_bytes
+            )
+            if 200 <= int(response["status_code"]) < 300:
+                posts.extend(_forum_post_links(_forum_decode_body(response), base_url=url))
+        except (ValueError, OSError, UnsafeRouteError, httpx.HTTPError):
+            pass
+        if len(seen) >= 3:
+            break
+    return list({item["url"]: item for item in posts}.values())
 
 
 def _enrich_reply_page_links(
@@ -1021,61 +1436,42 @@ def _enrich_reply_page_links(
     timeout_seconds: float,
     max_response_bytes: int,
 ) -> list[dict[str, str]]:
-    """Attach concrete-page date/state evidence to bounded reply links."""
-
-    base_host = (urlparse(base_url).hostname or "").casefold()
-    candidate_limit = (
-        QUESTION_RADAR_GYAKORI_REPLY_PAGE_MAXIMUM
-        if base_host == "gyakorikerdesek.hu" or base_host.endswith(".gyakorikerdesek.hu")
-        else 12
+    """Read exact post evidence with public-IP pinning and bounded response size."""
+    host = (urlparse(base_url).hostname or "").casefold()
+    maximum = (
+        QUESTION_RADAR_GYAKORI_REPLY_PAGE_MAXIMUM if host.endswith("gyakorikerdesek.hu") else 12
     )
-    candidates = [
-        item for item in links
-        if isinstance(item, dict)
-        and _reply_page_candidate(str(item.get("url") or ""), base_url=base_url)
-    ][:candidate_limit]
-    if not candidates:
-        return links
-    enriched: dict[str, dict[str, str]] = {}
-    try:
-        with httpx.Client(
-            timeout=min(float(timeout_seconds), 8.0),
-            follow_redirects=False,
-            headers={"User-Agent": "Imperial-Source-Coverage/1.0"},
-        ) as client:
-            for item in candidates:
-                url = str(item["url"])
-                try:
-                    response = client.get(url)
-                    if not 200 <= response.status_code < 300:
-                        continue
-                    if len(response.content) > max_response_bytes:
-                        continue
-                    metadata = _reply_page_metadata(
-                        response.content.decode("utf-8", errors="ignore"),
-                        source_url=url,
-                    )
-                except (httpx.HTTPError, UnicodeError):
-                    continue
-                if not metadata:
-                    continue
-                evidence = "; ".join(
-                    f"{key}={value}"
-                    for key, value in metadata.items()
-                    if key not in {"source_url"}
-                )
-                enriched[url] = {
-                    "url": url,
-                    "label": (
-                        str(item.get("label") or "").strip()
-                        + "\n[SOURCE_PAGE_EVIDENCE] "
-                        + evidence
-                    )[:1200],
-                }
-    except (httpx.HTTPError, OSError):
-        return links
-    if not enriched:
-        return links
+    deadline = monotonic_time.monotonic() + min(max(float(timeout_seconds) * 3, 1), 45.0)
+    enriched = {}
+    count = 0
+    for item in links:
+        url = str(item.get("url") or "")
+        if count >= maximum or not _reply_page_candidate(url, base_url=base_url):
+            continue
+        remaining = deadline - monotonic_time.monotonic()
+        if remaining <= 0:
+            break
+        count += 1
+        try:
+            response = _forum_page_get(
+                url, timeout_seconds=min(8.0, remaining), max_response_bytes=max_response_bytes
+            )
+            if not 200 <= response["status_code"] < 300:
+                continue
+            metadata = _reply_page_metadata(_forum_decode_body(response), source_url=url)
+        except (ValueError, UnsafeRouteError, OSError, httpx.HTTPError):
+            continue
+        if not metadata:
+            continue
+        # Replace prior feed/discovery markers; never concatenate conflicting timestamps.
+        label = str(item.get("label") or "").split("[SOURCE_PAGE_EVIDENCE]", 1)[0].strip()[:850]
+        evidence = "; ".join(
+            f"{key}={value}" for key, value in metadata.items() if key != "source_url"
+        )
+        enriched[url] = {
+            "url": url,
+            "label": (label + "\n[SOURCE_PAGE_EVIDENCE] " + evidence)[:1200],
+        }
     return [enriched.get(str(item.get("url") or ""), item) for item in links]
 
 
@@ -1089,18 +1485,30 @@ def _enrich_discovered_forum_links(
     """Re-read each search result on its own host for source-page evidence."""
 
     enriched: list[dict[str, str]] = []
-    for item in links[:12]:
-        url = str(item.get("url") or "")
+    seen: set[str] = set()
+    deadline = monotonic_time.monotonic() + 45.0
+    for item in links[:40]:
+        url = _canonical_forum_result_url(str(item.get("url") or ""), base_url=discovery_url)
         if not _forum_search_result_candidate(url, base_url=discovery_url):
             continue
-        enriched.extend(
-            _enrich_reply_page_links(
-                [item],
-                base_url=url,
-                timeout_seconds=timeout_seconds,
-                max_response_bytes=max_response_bytes,
+        if url in seen:
+            continue
+        seen.add(url)
+        canonical_item = {**item, "url": url}
+        remaining = deadline - monotonic_time.monotonic()
+        if len(enriched) < 12 and remaining > 0:
+            enriched.extend(
+                _enrich_reply_page_links(
+                    [canonical_item],
+                    base_url=url,
+                    timeout_seconds=min(float(timeout_seconds), 8.0, remaining),
+                    max_response_bytes=max_response_bytes,
+                )
             )
-        )
+        else:
+            # Preserve unverified candidates for their own scheduled source
+            # fetch; a per-request network budget must not discard discoveries.
+            enriched.append(canonical_item)
     return enriched
 
 
@@ -1150,11 +1558,13 @@ def _page_evidence(
             base_url=base_url,
             limit=limit,
         )
-        if search_links:
-            return search_text, search_links
+        return search_text, search_links
     atom_evidence = _atom_feed_evidence(body_text, base_url=base_url, limit=limit)
     if atom_evidence is not None:
         return atom_evidence
+    forum_links = _forum_post_links(body_text, base_url=base_url)
+    if forum_links:
+        return "\n".join(item["label"] for item in forum_links)[:limit], forum_links
     parser = _VisibleText(base_url)
     try:
         parser.feed(body_text)
@@ -1181,85 +1591,53 @@ def _page_evidence(
 def _atom_feed_evidence(
     body_text: str, *, base_url: str, limit: int
 ) -> tuple[str, list[dict[str, str]]] | None:
-    """Read public Atom/RSS forum feeds without treating the feed refresh as a post date.
-
-    Reddit's public ``.rss`` endpoint exposes each post's own ``published`` value and
-    permalink even when the HTML/JSON endpoints require a login or return a challenge.
-    Comment counts are intentionally left unclaimed; the normal question policy keeps
-    such records as research data until a concrete page proves the answer count.
-    """
-
-    if "<feed" not in body_text[:1200].casefold() and "<rss" not in body_text[:1200].casefold():
+    """Bind each feed publication date to its post; a feed update proves no date."""
+    if not re.search(r"<(?:[a-zA-Z0-9_]+:)?(?:feed|rss)\b", body_text[:1200], re.IGNORECASE):
         return None
     try:
         root = ElementTree.fromstring(body_text)
     except ElementTree.ParseError:
         return None
-    namespace = ""
-    if root.tag.startswith("{"):
-        namespace = root.tag.split("}", 1)[0][1:]
-    entry_tag = f"{{{namespace}}}entry" if namespace else "entry"
-    item_tag = f"{{{namespace}}}item" if namespace else "item"
-    title_tag = f"{{{namespace}}}title" if namespace else "title"
-    content_tags = {
-        f"{{{namespace}}}content" if namespace else "content",
-        f"{{{namespace}}}summary" if namespace else "summary",
-        f"{{{namespace}}}description" if namespace else "description",
-    }
-    date_tags = {
-        f"{{{namespace}}}published" if namespace else "published",
-        f"{{{namespace}}}updated" if namespace else "updated",
-        f"{{{namespace}}}pubDate" if namespace else "pubDate",
-    }
-    links: list[dict[str, str]] = []
-    visible_parts: list[str] = []
-    entries = list(root.iter(entry_tag)) or list(root.iter(item_tag))
-    for entry in entries[:100]:
-        title = next(
-            (str(child.text or "").strip() for child in entry if child.tag == title_tag),
-            "",
-        )
-        raw_date = next(
-            (str(child.text or "").strip() for child in entry if child.tag in date_tags),
-            "",
-        )
-        raw_content = next(
-            (str(child.text or "").strip() for child in entry if child.tag in content_tags),
-            "",
+
+    def local(tag):
+        return tag.rsplit("}", 1)[-1]
+
+    links = []
+    for entry in [node for node in root.iter() if local(node.tag) in {"entry", "item"}][:100]:
+        values = {local(child.tag): str(child.text or "").strip() for child in entry}
+        # Never fall back to updated, even when it occurs before published in the XML.
+        raw_date = values.get("published") or values.get("pubDate") or ""
+        title = values.get("title") or ""
+        raw_content = (
+            values.get("content") or values.get("description") or values.get("summary") or ""
         )
         permalink = ""
         for child in entry:
-            if child.tag.casefold().endswith("link"):
-                href = str(child.attrib.get("href") or child.text or "").strip()
-                rel = str(child.attrib.get("rel") or "").casefold()
-                if href and (rel in {"", "alternate"} or not permalink):
-                    permalink = href
+            if local(child.tag) == "link" and child.attrib.get("rel", "alternate") == "alternate":
+                permalink = str(child.attrib.get("href") or child.text or "").strip()
+                if permalink:
+                    break
         canonical = urlunparse(urlparse(urljoin(base_url, permalink))._replace(fragment=""))
-        parsed = urlparse(canonical)
-        if parsed.scheme != "https" or not parsed.hostname:
+        if not permalink or not _reply_page_candidate(canonical, base_url=base_url):
             continue
-        excerpt = re.sub(r"<[^>]+>", " ", raw_content)
-        excerpt = re.sub(r"\s+", " ", excerpt).strip()
-        evidence = "; ".join(
-            part
-            for part in (
-                f"published_at_raw={raw_date}" if raw_date else "",
-                "published_at_source=source_page" if raw_date else "",
-                "active_status_raw=active",
-                "active_status=active",
+        # Reddit appends submitter/profile links outside the original post body.
+        raw_content = re.split(r"submitted\s+by", raw_content, maxsplit=1, flags=re.IGNORECASE)[0]
+        excerpt = _visible_text(raw_content, 900)
+        excerpt = re.sub(r"(?<!\w)/?u/[A-Za-z0-9_-]+", "[felhasználó]", excerpt)
+        label = " ".join(part for part in (title, excerpt) if part).strip()[:850]
+        label = label.replace("[SOURCE_PAGE_EVIDENCE]", "[idézett jelölés]")
+        if raw_date and ";" not in raw_date and "\n" not in raw_date:
+            label += (
+                "\n[SOURCE_PAGE_EVIDENCE] published_at_raw="
+                + raw_date[:255]
+                + "; published_at_source=source_page"
             )
-            if part
-        )
-        label = " ".join(part for part in (title, excerpt) if part).strip()[:900]
-        if evidence:
-            label = f"{label}\n[SOURCE_PAGE_EVIDENCE] {evidence}"[:1200]
-        if canonical and label and not any(item["url"] == canonical for item in links):
-            links.append({"url": canonical, "label": label})
-        visible_parts.extend(part for part in (title, excerpt, raw_date) if part)
-    if not links:
-        return None
-    text = re.sub(r"\s+", " ", " ".join(visible_parts)).strip()[:limit]
-    return text, links
+        if "[SOURCE_PAGE_EVIDENCE]" not in label:
+            label += "\n[SOURCE_PAGE_EVIDENCE] published_at_source=unknown"
+        if label and not any(item["url"] == canonical for item in links):
+            links.append({"url": canonical, "label": label[:1200]})
+    # An empty feed remains an empty feed, never a navigation-link fallback.
+    return "\n".join(item["label"] for item in links)[:limit], links
 
 
 def _public_land_pagination_entry(
@@ -1581,7 +1959,12 @@ def _row(record: dict[str, Any], catalog_sha256: str, now: datetime) -> dict[str
     }
 
 
-def _upsert_routes(db: Session, rows: list[dict[str, Any]]) -> None:
+def _upsert_routes(
+    db: Session,
+    rows: list[dict[str, Any]],
+    *,
+    preserve_existing: frozenset[str] = frozenset(),
+) -> None:
     dialect = db.get_bind().dialect.name
     insert_factory = {"postgresql": pg_insert, "sqlite": sqlite_insert}.get(dialect)
     if not insert_factory:
@@ -1595,7 +1978,7 @@ def _upsert_routes(db: Session, rows: list[dict[str, Any]]) -> None:
                 db.add(SourceCoverageRoute(**values))
                 continue
             for key, value in values.items():
-                if key not in {"created_at"}:
+                if key not in {"created_at"} | preserve_existing:
                     setattr(existing, key, value)
         return
     immutable_runtime = {
@@ -1613,7 +1996,7 @@ def _upsert_routes(db: Session, rows: list[dict[str, Any]]) -> None:
         updates = {
             column.name: getattr(statement.excluded, column.name)
             for column in SourceCoverageRoute.__table__.columns
-            if column.name not in immutable_runtime
+            if column.name not in immutable_runtime | preserve_existing
         }
         db.execute(
             statement.on_conflict_do_update(
@@ -1760,7 +2143,31 @@ def ensure_question_radar_direct_routes(
                 "updated_at": timestamp,
             }
         )
-    _upsert_routes(db, rows)
+    _upsert_routes(db, rows, preserve_existing=frozenset({"enabled"}))
+    for route in db.scalars(
+        select(SourceCoverageRoute).where(
+            SourceCoverageRoute.route_key.in_(
+                [spec["route_key"] for spec in QUESTION_RADAR_DIRECT_ROUTES]
+            ),
+            SourceCoverageRoute.last_attempt_at.is_not(None),
+            SourceCoverageRoute.next_due_at.is_not(None),
+        )
+    ).all():
+        # Only migrate the exact previous automatic one-day interval. Custom
+        # retry times and operator-disabled sources keep their existing state.
+        if route.next_due_at - route.last_attempt_at == timedelta(days=1):
+            minutes = 30 if route.last_result == "succeeded" else 60
+            route.next_due_at = route.last_attempt_at + timedelta(minutes=minutes)
+    # Discovered posts are runtime additions beside the immutable ledger.
+    # Carry them into its current revision without resetting operator choices.
+    db.execute(
+        update(SourceCoverageRoute)
+        .where(
+            SourceCoverageRoute.route_key.like(f"{QUESTION_RADAR_DISCOVERED_ROUTE_PREFIX}%"),
+            SourceCoverageRoute.catalog_sha256 != catalog_sha256,
+        )
+        .values(catalog_sha256=catalog_sha256, updated_at=timestamp)
+    )
     db.flush()
 
 
@@ -1775,11 +2182,15 @@ def _upsert_discovered_forum_routes(
     """Persist exact forum permalinks found by a search route, idempotently."""
 
     rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for item in links[:40]:
         raw_url = str(item.get("url") or "").strip()
-        canonical = urlunparse(urlparse(raw_url)._replace(fragment=""))
+        canonical = _canonical_forum_result_url(raw_url, base_url=parent_route.route_url)
         if not _forum_search_result_candidate(canonical, base_url=parent_route.route_url):
             continue
+        if canonical in seen:
+            continue
+        seen.add(canonical)
         parsed = urlparse(canonical)
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         route_key = f"{QUESTION_RADAR_DISCOVERED_ROUTE_PREFIX}{digest[:40].upper()}"
@@ -1845,7 +2256,7 @@ def _upsert_discovered_forum_routes(
         )
     if not rows:
         return 0
-    _upsert_routes(db, rows)
+    _upsert_routes(db, rows, preserve_existing=frozenset({"enabled", "brand_fit"}))
     db.flush()
     return len(rows)
 
@@ -2005,6 +2416,7 @@ def _fetch(
         return {"status": "rejected", "error_type": "no_monitoring_hard_gate"}
     content = bytearray()
     source_ip: str | None = None
+    forum_response: dict[str, Any] | None = None
     try:
         if named_portal:
             deadline = (
@@ -2034,6 +2446,19 @@ def _fetch(
             )[:240]
             content.extend(bytes(response_data["body"]))
             source_ip = str(response_data["source_ip"])
+        elif (
+            (parsed.hostname or "").casefold() in {"forum.index.hu", "prohardver.hu"}
+            or getattr(route, "route_mode", None) == "direct_post"
+        ):
+            forum_response = _forum_page_get(
+                fetch_url,
+                timeout_seconds=cfg.canonical_route_timeout_seconds,
+                max_response_bytes=cfg.canonical_route_max_response_bytes,
+            )
+            status_code = int(forum_response["status_code"])
+            content_type = str(forum_response.get("headers", {}).get("content-type", ""))[:240]
+            content.extend(bytes(forum_response["body"]))
+            source_ip = str(forum_response.get("source_ip") or "") or None
         else:
             with httpx.Client(
                 timeout=cfg.canonical_route_timeout_seconds,
@@ -2072,10 +2497,13 @@ def _fetch(
             ),
             "error_type": error_type,
         }
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, OSError, ValueError) as exc:
         return {"status": "failed", "error_type": type(exc).__name__}
     body = bytes(content)
-    body_text = body.decode("utf-8", errors="ignore")
+    body_text = (
+        _forum_decode_body(forum_response)
+        if forum_response else body.decode("utf-8", errors="ignore")
+    )
     title_match = re.search(r"<title[^>]*>(.*?)</title>", body_text, re.I | re.S)
     title = re.sub(r"\s+", " ", title_match.group(1)).strip()[:500] if title_match else None
     forum_discovery = _is_forum_discovery_route(route)
@@ -2090,6 +2518,15 @@ def _fetch(
         # surfaces, verify each bounded concrete permalink on its own page so
         # the extractor receives the original publication date and lifecycle
         # evidence rather than a search/list refresh time.
+        if parsed.hostname == "forum.index.hu" and parsed.path.casefold() == "/topic/showtopiclist":
+            analysis_links = _expand_index_forum_threads(
+                analysis_links, base_url=fetch_url,
+                timeout_seconds=cfg.canonical_route_timeout_seconds,
+                max_response_bytes=cfg.canonical_route_max_response_bytes,
+            )
+            analysis_text = "\n".join(item["label"] for item in analysis_links)[
+                :getattr(cfg, "canonical_analysis_text_chars", 6000)
+            ]
         if forum_discovery:
             analysis_links = _enrich_discovered_forum_links(
                 analysis_links,
@@ -2103,7 +2540,12 @@ def _fetch(
                 base_url=fetch_url,
             ):
                 analysis_links = [
-                    {"url": fetch_url, "label": analysis_text[:900]},
+                    {
+                        "url": fetch_url,
+                        "label": analysis_text[:900].replace(
+                            "[SOURCE_PAGE_EVIDENCE]", "[idézett jelölés]"
+                        ),
+                    },
                     *analysis_links,
                 ]
             analysis_links = _enrich_reply_page_links(
@@ -2457,6 +2899,10 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         if daily_run
         else f"BUILDING-{local_now.strftime('%Y%m%d')}-V216"
     )
+    active_route_keys = select(SourceCoverageRoute.route_key).where(
+        SourceCoverageRoute.enabled.is_(True),
+        SourceCoverageRoute.catalog_sha256 == revision.catalog_sha256,
+    )
     active_route_target = int(
         db.scalar(
             select(func.count())
@@ -2470,12 +2916,12 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
     )
     attempted_today = int(
         db.scalar(
-            select(func.count())
-            .select_from(SourceCoverageAttempt)
+            select(func.count(func.distinct(SourceCoverageAttempt.route_key)))
             .where(
                 SourceCoverageAttempt.started_at >= start_utc,
                 SourceCoverageAttempt.catalog_sha256 == revision.catalog_sha256,
                 SourceCoverageAttempt.run_id == run_id,
+                SourceCoverageAttempt.route_key.in_(active_route_keys),
             )
         )
         or 0
@@ -2488,24 +2934,48 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         )
         or 0
     )
-    allowance = max(0, min(
-        cfg.canonical_route_batch_size,
-        active_route_target - attempted_today,
-    ))
     attempted_route_keys = select(SourceCoverageAttempt.route_key).where(
         SourceCoverageAttempt.started_at >= start_utc,
         SourceCoverageAttempt.catalog_sha256 == revision.catalog_sha256,
         SourceCoverageAttempt.run_id == run_id,
+        SourceCoverageAttempt.route_key.in_(active_route_keys),
     )
+    radar_keys = [spec["route_key"] for spec in QUESTION_RADAR_DIRECT_ROUTES]
+    radar_due = (
+        SourceCoverageRoute.route_key.in_(radar_keys)
+        & (SourceCoverageRoute.route_mode == "direct")
+        & (SourceCoverageRoute.next_due_at <= current)
+        & SourceCoverageRoute.route_key.in_(attempted_route_keys)
+    )
+    refresh_due_count = int(db.scalar(
+        select(func.count()).select_from(SourceCoverageRoute).where(
+            SourceCoverageRoute.enabled.is_(True),
+            SourceCoverageRoute.catalog_sha256 == revision.catalog_sha256,
+            radar_due,
+        )
+    ) or 0)
+    allowance = max(0, min(
+        cfg.canonical_route_batch_size,
+        active_route_target - attempted_today + refresh_due_count,
+    ))
     candidates = db.scalars(
         select(SourceCoverageRoute)
         .where(
             SourceCoverageRoute.enabled.is_(True),
             SourceCoverageRoute.catalog_sha256 == revision.catalog_sha256,
-            SourceCoverageRoute.route_key.not_in(attempted_route_keys),
+            or_(SourceCoverageRoute.route_key.not_in(attempted_route_keys), radar_due),
         )
         .order_by(
-            case((SourceCoverageRoute.route_mode == "direct", 0), else_=1),
+            case(
+                (
+                    SourceCoverageRoute.route_key.in_(radar_keys)
+                    & SourceCoverageRoute.route_key.not_in(attempted_route_keys), 0,
+                ),
+                (radar_due, 1),
+                (SourceCoverageRoute.route_mode == "direct_post", 2),
+                (SourceCoverageRoute.route_mode == "direct", 3),
+                else_=4,
+            ),
             SourceCoverageRoute.last_attempt_at.asc().nulls_first(),
             SourceCoverageRoute.priority.asc(),
             SourceCoverageRoute.id.asc(),
@@ -2513,6 +2983,7 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         .limit(max(allowance * 5, allowance) if allowance else 0)
     ).all() if allowance else []
     selected: list[SourceCoverageRoute] = []
+    already_attempted = set(db.scalars(attempted_route_keys).all())
     hosts: set[str] = set()
     for route in candidates:
         host = (urlparse(route.route_url).hostname or "").casefold()
@@ -2792,7 +3263,14 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
                     )
                     cursor.updated_at = completed
         if status == "succeeded" and getattr(cfg, "canonical_processing_enabled", False):
-            if managed_land:
+            if _is_forum_discovery_route(route):
+                # A search page can discover a source, but is never the source
+                # of a buyer's post. Its persisted direct route is fetched and
+                # processed on the next batch with the actual source binding.
+                attempt.analysis_status = "discovered"
+                attempt.analysis_json = _canonical_json({"status": "source_fetch_scheduled"})
+                attempt.analysis_at = datetime.now(UTC)
+            elif managed_land:
                 land_result = process_public_land_listings(
                     db,
                     route=route,
@@ -2819,17 +3297,33 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
         route.attempt_count += 1
         route.last_attempt_at = completed
         route.last_result = status
-        route.next_due_at = (
-            completed + timedelta(days=1)
-            if not managed_land or result.get("land_listing_exhausted") is True
-            else completed
-        )
+        if route.route_key in radar_keys and route.route_mode == "direct":
+            route.next_due_at = completed + timedelta(minutes=30 if status == "succeeded" else 60)
+        else:
+            route.next_due_at = (
+                completed + timedelta(days=1)
+                if not managed_land or result.get("land_listing_exhausted") is True
+                else completed
+            )
         route.updated_at = completed
         if status == "succeeded":
             route.success_count += 1
             route.last_success_at = completed
         outcomes[status] = outcomes.get(status, 0) + 1
+    if discovered_forum_routes:
+        active_route_target = int(
+            db.scalar(
+                select(func.count())
+                .select_from(SourceCoverageRoute)
+                .where(
+                    SourceCoverageRoute.enabled.is_(True),
+                    SourceCoverageRoute.catalog_sha256 == revision.catalog_sha256,
+                )
+            )
+            or 0
+        )
     db.commit()
+    newly_attempted = sum(route.route_key not in already_attempted for route in selected)
     return {
         "status": (
             "attempted"
@@ -2839,12 +3333,13 @@ def scan_due_routes(db: Session, *, now: datetime | None = None) -> dict[str, An
             else "no_due_routes"
         ),
         "attempted": len(selected_runs),
-        "attempted_today": attempted_today + len(selected),
+        "attempted_today": attempted_today + newly_attempted,
+        "radar_refreshed": len(selected) - newly_attempted,
         "unique_leads_today": unique_leads_today,
         "daily_lead_target_met": unique_leads_today >= DAILY_UNIQUE_LEAD_MINIMUM,
         "active_route_target": active_route_target,
-        "coverage_complete": attempted_today + len(selected) >= active_route_target,
-        "remaining_routes": max(0, active_route_target - attempted_today - len(selected)),
+        "coverage_complete": attempted_today + newly_attempted >= active_route_target,
+        "remaining_routes": max(0, active_route_target - attempted_today - newly_attempted),
         "run_id": run_id,
         "outcomes": outcomes,
         "discovered_forum_routes": discovered_forum_routes,

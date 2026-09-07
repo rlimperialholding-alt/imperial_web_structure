@@ -1,0 +1,17 @@
+{
+  "checked_on": "2026-09-07",
+  "deployment_status": "NOT_DEPLOYED",
+  "ssh_alias": "imperial-hetzner",
+  "configured_host": "91.99.93.80",
+  "ssh_port": 22,
+  "ssh_connect_timeout_seconds": 10,
+  "ssh_result": "Connection timed out during banner exchange",
+  "server_command_executed": false,
+  "runtime_version_verified": false,
+  "database_or_schedule_verified": false,
+  "browser_check": "console.hetzner.cloud redirected to accounts.hetzner.com/login; empty login form",
+  "server_changes_in_this_verification": 0,
+  "external_test_sends": 0,
+  "external_test_publications": 0,
+  "new_global_publication_block": false
+}
