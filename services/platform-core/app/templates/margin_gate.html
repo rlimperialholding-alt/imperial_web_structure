@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}TENDER-kapu döntésnapló | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">TENDER-KAPU · 35% DIRECT FEDEZET · CSAK OLVASÁS</span>
+    <h1>TENDER-kapu döntésnapló</h1>
+    <p>A kanonikus 35% direct-margin kapu immutable PASS/BLOCK döntései; a kapu nem felülbírálható — nincs kivétel- vagy feloldás-művelet.</p>
+  </div>
+  <div class="head-actions"><a class="button" href="/financial">Pénzügy</a></div>
+</div>
+<section class="metric-grid three">
+  <article class="metric-card"><span>Átengedett</span><strong>{{ decisions | selectattr('decision', 'equalto', 'PASS') | list | length }}</strong><small>az utolsó 200 döntésből</small></article>
+  <article class="metric-card danger"><span>Blokkolt</span><strong>{{ decisions | selectattr('decision', 'equalto', 'BLOCK') | list | length }}</strong><small>fail-closed, mutáció nélkül</small></article>
+  <article class="metric-card"><span>Minimum fedezet</span><strong>35,00%</strong><small>nem felülbírálható</small></article>
+</section>
+{% if project_id %}
+<div class="alert"><b>Szűrő:</b> {{ project_id }} <a class="button" href="/margin-gate">Szűrő törlése</a></div>
+{% endif %}
+<section class="panel">
+  <table>
+    <thead>
+      <tr><th>Időpont</th><th>Projekt</th><th>Művelet</th><th>Számított fedezet</th><th>Döntés</th><th>Blokk ok (HU)</th></tr>
+    </thead>
+    <tbody>
+      {% for d in decisions %}
+      <tr>
+        <td class="mono">{{ d.created_at }}</td>
+        <td>{{ d.project_id }} <small>v{{ d.plan_version }}</small></td>
+        <td>{{ d.action_type }} · {{ d.subject_id }}</td>
+        <td>{{ d.margin_percent }}% <small>(min. {{ d.required }}%)</small></td>
+        <td>{% if d.decision == 'PASS' %}<span class="badge ok">PASS</span>{% else %}<span class="badge danger">BLOCK</span>{% endif %}</td>
+        <td>{% if d.block_reason_hu %}{{ d.block_reason_hu }}{% else %}—{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Még nincs kapu-döntés.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

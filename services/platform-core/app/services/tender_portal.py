@@ -47,6 +47,11 @@ from .tender_evidence_security import (
     tender_av_configuration,
     validate_tender_evidence_content,
 )
+from .tender_margin_gate import (
+    blocked_with_evidence,
+    evaluate_commitment_gate,
+    verify_plan_unchanged,
+)
 
 INTERNAL_ROLES = frozenset(
     {"owner", "managing-director", "platform-admin", "project-manager", "finance", "technical-prep"}
@@ -209,6 +214,7 @@ def create_tender(
     prequalification_required: bool = True,
     certificate_gate_enabled: bool = False,
     required_certificate_types: list[str] | None = None,
+    cost_code: str | None = None,
 ) -> TenderPackage:
     if _role(user) not in INTERNAL_ROLES:
         raise PermissionError("Nincs tender-létrehozási jogosultság.")
@@ -241,6 +247,7 @@ def create_tender(
         title=title.strip(),
         scope=scope.strip(),
         currency=currency,
+        cost_code=(cost_code or "").strip() or None,
         question_deadline_at=question_deadline_at,
         submission_deadline_at=submission_deadline_at,
         evaluation_criteria_json=json.dumps(_criteria(criteria), sort_keys=True),
@@ -1334,6 +1341,42 @@ def evaluate_bid(
     return row
 
 
+def _evaluate_bid_commitment_gate(
+    db: Session,
+    *,
+    project_id: str,
+    action_type: str,
+    bid: TenderBid,
+    cost_code: str,
+    actor: str,
+):
+    """Ajánlat-alapú elköteleződés kapuzása: HUF-ellenőrzés bizonyítékkal,
+    majd a kanonikus 35% direct-margin kapu a mutáció előtt."""
+    if (bid.currency or "HUF") != "HUF":
+        raise blocked_with_evidence(
+            db,
+            reason_code="currency_mismatch",
+            message_hu="Csak HUF-ajánlat odaítélése lehetséges; a TENDER-kapu zárol.",
+            project_id=project_id,
+            action_type=action_type,
+            subject_type="tender_bid",
+            subject_id=bid.bid_id,
+            cost_code=cost_code,
+            proposed_net_huf=bid.net_total,
+            actor=actor,
+        )
+    return evaluate_commitment_gate(
+        db,
+        project_id=project_id,
+        action_type=action_type,
+        subject_type="tender_bid",
+        subject_id=bid.bid_id,
+        cost_code=cost_code,
+        proposed_net_huf=bid.net_total,
+        actor=actor,
+    )
+
+
 def award_bid(
     db: Session, tender_id: str, bid_id: str, user: object, *, summary: str
 ) -> TenderPackage:
@@ -1366,6 +1409,16 @@ def award_bid(
     eligibility = eligibility_report(db, invitation.partner_id, tender=tender, contract_value=bid.net_total)
     if tender.prequalification_required and not eligibility["eligible"]:
         raise ValueError("A partner nem felel meg az odaítélési kapunak: " + ", ".join(eligibility["blockers"]))
+    # TENDER-kapu: az odaítélés elköteleződést keletkeztet, ezért a kanonikus
+    # 35% direct-margin kapu ugyanabban a tranzakcióban, a mutációk előtt fut.
+    decision = _evaluate_bid_commitment_gate(
+        db,
+        project_id=tender.project_id,
+        action_type="tender_award",
+        bid=bid,
+        cost_code=(tender.cost_code or "").strip(),
+        actor=_email(user),
+    )
     tender.status = "awarded"
     tender.awarded_bid_id = bid.bid_id
     tender.award_summary = summary.strip()
@@ -1424,5 +1477,62 @@ def award_bid(
             "purchase_order_preparation_id": preparation.preparation_id,
         },
     )
+    # TOCTOU-őr: a terv a kapuellenőrzés óta nem változhatott meg.
+    verify_plan_unchanged(db, decision)
     db.commit()
     return get_tender(db, tender_id)
+
+
+def approve_purchase_order_preparation(
+    db: Session, preparation_id: str, user: object
+) -> TenderPurchaseOrderPreparation:
+    """Tenderi megrendelés-előkészítés jóváhagyása a kanonikus TENDER-kapuval:
+    a jóváhagyás elköteleződést keletkeztet, ezért a kapu a mutáció előtt fut."""
+    if _role(user) not in DECISION_ROLES:
+        raise PermissionError(
+            "A megrendelés-előkészítés jóváhagyása vezetői döntési jogosultságot igényel."
+        )
+    preparation = db.scalar(
+        select(TenderPurchaseOrderPreparation)
+        .where(TenderPurchaseOrderPreparation.preparation_id == preparation_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if preparation is None:
+        raise KeyError(preparation_id)
+    if preparation.status != "draft":
+        raise ValueError("Csak draft állapotú megrendelés-előkészítés hagyható jóvá.")
+    tender = get_tender(db, preparation.tender_id, for_update=True)
+    bid = db.scalar(
+        select(TenderBid).where(
+            TenderBid.tender_id_fk == tender.id, TenderBid.bid_id == preparation.bid_id
+        )
+    )
+    if bid is None:
+        raise ValueError("Az előkészítéshez tartozó ajánlat nem található.")
+    # A PO-előkészítés ugyanazt az odaítélt ajánlati összeget köti le, ezért
+    # az odaítéléssel AZONOS subject-kulccsal kerül értékelésre: az ismételt
+    # kiértékelés idempotens csere, kettős számolás kizárt (Review A M3).
+    decision = _evaluate_bid_commitment_gate(
+        db,
+        project_id=preparation.project_id,
+        action_type="purchase_order_preparation_approval",
+        bid=bid,
+        cost_code=(tender.cost_code or "").strip(),
+        actor=_email(user),
+    )
+    preparation.status = "approved"
+    preparation.approved_by = _email(user)
+    preparation.approved_at = utcnow()
+    audit(
+        db,
+        actor=_email(user),
+        action="tender.purchase_order_preparation.approved",
+        entity_type="tender_purchase_order_preparation",
+        entity_id=preparation.preparation_id,
+        after={"tender_id": preparation.tender_id, "bid_id": preparation.bid_id},
+    )
+    verify_plan_unchanged(db, decision)
+    db.commit()
+    db.refresh(preparation)
+    return preparation

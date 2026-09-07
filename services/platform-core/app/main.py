@@ -116,6 +116,8 @@ from .routes.market_intelligence import build_market_intelligence_router
 from .routes.regulatory_admin import build_regulatory_admin_router
 from .routes.typehouse_factory import build_typehouse_factory_router
 from .schemas import (
+    AllocationFromLinesIn,
+    AllocationSnapshotIn,
     AnswerCitationIn,
     AnswerDraftIn,
     AnswerKnowledgeExcerptIn,
@@ -136,6 +138,7 @@ from .schemas import (
     BookingOutcomeIn,
     BookingRescheduleIn,
     BookingSlotIn,
+    BudgetImportApproveIn,
     CalculationRequest,
     CalendarChangeDecisionIn,
     CalendarChangeRequestIn,
@@ -251,6 +254,7 @@ from .security import (
     current_user,
     hash_password,
     require_api_token,
+    require_api_token_finance_actor,
     require_internal_job_token,
     require_role,
     require_session_user,
@@ -349,6 +353,17 @@ from .services.booking_reservation import (
     update_booking_outcome,
     update_intent_declaration,
     withdraw_intent_declaration,
+)
+from .services.budget_allocation import (
+    build_allocation_from_detailed_lines,
+    create_allocation_snapshot,
+    list_allocations,
+)
+from .services.budget_import import (
+    approve_budget_import as approve_budget_import_record,
+)
+from .services.budget_import import (
+    preview_budget_import,
 )
 from .services.buildconfig import (
     FINANCE_REVIEW_ROLES as BUILDCONFIG_FINANCE_REVIEW_ROLES,
@@ -583,19 +598,15 @@ from .services.housevision import (
     add_source_asset as add_housevision_source,
 )
 from .services.housevision import (
-    auto_ingest_source_assets as auto_ingest_housevision_sources,
-)
-from .services.housevision import auto_lock_geometry as auto_lock_housevision_geometry
-from .services.housevision_render_bridge import (
-    create_source_preserved_baseline as create_housevision_source_baseline,
-)
-from .services.housevision_render_bridge import generate_typehouse_renders
-from .services.housevision import (
     approve_rights_policy as approve_housevision_rights,
 )
 from .services.housevision import (
     assign_name as assign_housevision_name,
 )
+from .services.housevision import (
+    auto_ingest_source_assets as auto_ingest_housevision_sources,
+)
+from .services.housevision import auto_lock_geometry as auto_lock_housevision_geometry
 from .services.housevision import (
     bind_houseplan as bind_housevision_houseplan,
 )
@@ -627,6 +638,10 @@ from .services.housevision import (
 from .services.housevision import (
     workspace as housevision_workspace,
 )
+from .services.housevision_render_bridge import (
+    create_source_preserved_baseline as create_housevision_source_baseline,
+)
+from .services.housevision_render_bridge import generate_typehouse_renders
 from .services.imperial_care import (
     CareEvidenceUnavailable,
     add_care_message,
@@ -1062,11 +1077,18 @@ from .services.tender_mail import (
     upsert_domain,
     verify_domain,
 )
+from .services.tender_evidence_security import (
+    TenderEvidenceUnavailable,
+    TenderMalwareDetected,
+    TenderScannerUnavailable,
+)
+from .services.tender_margin_gate import MarginGateBlocked, list_decisions
 from .services.tender_portal import (
     accept_clarification_request,
     add_clarification,
     add_invitation,
     add_tender_line_item,
+    approve_purchase_order_preparation,
     award_bid,
     close_tender,
     create_clarification_request,
@@ -1086,11 +1108,6 @@ from .services.tender_portal import (
     tender_workspace,
     verified_evidence_path,
     withdraw_bid,
-)
-from .services.tender_evidence_security import (
-    TenderEvidenceUnavailable,
-    TenderMalwareDetected,
-    TenderScannerUnavailable,
 )
 from .services.tender_portal import (
     bid_comparison as tender_bid_comparison,
@@ -12656,6 +12673,7 @@ async def procurement_requirement_create_ui(
                 required_at=_required_form_datetime(form["required_at"]),
                 budget_huf=Decimal(str(form["budget_huf"])),
                 target_huf=Decimal(str(form["target_huf"])),
+                cost_code=_optional_form_text(form.get("cost_code")),
             ),
             actor=user.email,
         )
@@ -15069,6 +15087,233 @@ def api_usage_control(payload: MaterialUsageIn, db: Session = Depends(get_db)):
     }
 
 
+# --- TENDER-kapu: költségvetés-import, allokáció, kapu-döntések (Task75) ---
+
+
+@app.post("/api/budget-imports/preview", dependencies=[Depends(require_api_token)])
+async def api_budget_import_preview(
+    file: UploadFile = File(...),
+    project_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        data = await file.read()
+    except Exception as exc:  # noqa: BLE001 - fail-closed az olvasási hibára
+        raise HTTPException(400, "Az importfájl nem olvasható.") from exc
+    try:
+        row = preview_budget_import(
+            db, project_id=project_id, file_name=file.filename or "upload",
+            data=data, actor="api",
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {
+        "import_id": row.import_id,
+        "status": row.status,
+        "row_count": row.row_count,
+        "content_sha256": row.content_sha256,
+        "errors": json.loads(row.error_json) if row.status == "rejected" else [],
+    }
+
+
+@app.post("/api/budget-imports/{import_id}/approve")
+def api_budget_import_approve(
+    import_id: str,
+    payload: BudgetImportApproveIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_api_token_finance_actor),
+):
+    # A generikus API token nem ad platform-admin szerepkört: a jóváhagyó a
+    # bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó (az ő e-mailje
+    # az auditált actor), a token csak a szállítási réteg azonosítása.
+    try:
+        row = approve_budget_import_record(
+            db,
+            import_id=import_id,
+            plan_id=payload.plan_id,
+            actor=user.email,
+            actor_role=user.role,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"import_id": row.import_id, "status": row.status}
+
+
+@app.post("/api/allocation-snapshots")
+def api_allocation_snapshot(
+    payload: AllocationSnapshotIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_api_token_finance_actor),
+):
+    try:
+        row = create_allocation_snapshot(
+            db,
+            plan_id=payload.plan_id,
+            summary_line_id=payload.summary_line_id,
+            source_type=payload.source_type,
+            source_version=payload.source_version,
+            source_hash=payload.source_hash,
+            effective_from=payload.effective_from,
+            effective_to=payload.effective_to,
+            confidence_percent=payload.confidence_percent,
+            coverage_percent=payload.coverage_percent,
+            rows=[item.model_dump() for item in payload.rows],
+            approver=user.email,
+            rationale=payload.rationale,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {
+        "allocation_id": row.allocation_id,
+        "version": row.version,
+        "snapshot_sha256": row.snapshot_sha256,
+        "unallocated_amount": str(row.unallocated_amount),
+    }
+
+
+@app.post("/api/allocation-snapshots/from-detailed-lines")
+def api_allocation_from_detailed_lines(
+    payload: AllocationFromLinesIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_api_token_finance_actor),
+):
+    try:
+        row = build_allocation_from_detailed_lines(
+            db,
+            plan_id=payload.plan_id,
+            summary_line_id=payload.summary_line_id,
+            approver=user.email,
+            rationale=payload.rationale,
+        )
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {
+        "allocation_id": row.allocation_id,
+        "version": row.version,
+        "snapshot_sha256": row.snapshot_sha256,
+    }
+
+
+@app.get("/api/allocation-snapshots")
+def api_allocation_snapshots(
+    plan_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_api_token_finance_actor),
+):
+    del user  # a lista csak bejelentkezett finance/vezetői szerepkörrel
+    try:
+        rows = list_allocations(db, plan_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {
+        "plan_id": plan_id,
+        "snapshots": [
+            {
+                "allocation_id": row.allocation_id,
+                "summary_line_id": row.parent_summary_line_id,
+                "version": row.version,
+                "source_type": row.source_type,
+                "snapshot_sha256": row.snapshot_sha256,
+                "unallocated_amount": str(row.unallocated_amount),
+            }
+            for row in rows
+        ],
+    }
+
+
+@app.post("/tenders/purchase-order-preparations/{preparation_id}/approve")
+async def tender_purchase_order_preparation_approve_ui(
+    request: Request, preparation_id: str, db: Session = Depends(get_db)
+):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    try:
+        approve_purchase_order_preparation(db, preparation_id, user)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except (ValueError, MarginGateBlocked) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return RedirectResponse("/tenders", status_code=303)
+
+
+@app.get("/margin-gate/decisions", dependencies=[Depends(require_api_token)])
+def api_margin_gate_decisions(
+    project_id: str | None = None, db: Session = Depends(get_db)
+):
+    rows = list_decisions(db, project_id=project_id)
+    return {
+        "decisions": [
+            {
+                "decision_id": row.decision_id,
+                "project_id": row.project_id,
+                "plan_id": row.plan_id,
+                "plan_version": row.plan_version,
+                "action_type": row.action_type,
+                "subject_type": row.subject_type,
+                "subject_id": row.subject_id,
+                "decision": row.decision,
+                "margin_percent": str(row.margin_percent) if row.margin_percent is not None else None,
+                "required_margin_percent": str(row.required_margin_percent),
+                "block_reason_code": row.block_reason_code,
+                "block_reason_hu": row.block_reason_hu,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
+    }
+
+
+@app.get("/margin-gate", response_class=HTMLResponse)
+def margin_gate_dashboard(
+    request: Request,
+    project_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    user, redirect = auth_or_redirect(request, db)
+    if redirect:
+        return redirect
+    if user.role not in {"owner", "platform-admin", "finance", "managing-director"}:
+        raise HTTPException(
+            403, "A TENDER-kapu döntésnaplója csak pénzügyi/vezetői jogosultsággal érhető el."
+        )
+    rows = list_decisions(db, project_id=project_id, limit=200)
+    decisions = [
+        {
+            "decision_id": row.decision_id,
+            "project_id": row.project_id,
+            "plan_version": row.plan_version,
+            "action_type": row.action_type,
+            "subject_id": row.subject_id,
+            "decision": row.decision,
+            "margin_percent": str(row.margin_percent) if row.margin_percent is not None else "–",
+            "required": str(row.required_margin_percent),
+            "block_reason_code": row.block_reason_code or "",
+            "block_reason_hu": row.block_reason_hu or "",
+            "created_at": row.created_at.strftime("%Y-%m-%d %H:%M") if row.created_at else "",
+        }
+        for row in rows
+    ]
+    return templates.TemplateResponse(
+        request=request,
+        name="margin_gate.html",
+        context={
+            "user": user,
+            "decisions": decisions,
+            "project_id": project_id or "",
+            "asset_version": __version__,
+        },
+    )
+
+
 def _partner_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
@@ -15518,6 +15763,7 @@ async def tender_create_ui(request: Request, db: Session = Depends(get_db)):
             required_certificate_types=[
                 _form_text(value) for value in form.getlist("required_certificate_types")
             ],
+            cost_code=_optional_form_text(form.get("cost_code")),
         )
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc

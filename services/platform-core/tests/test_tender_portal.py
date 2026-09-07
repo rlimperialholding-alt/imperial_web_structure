@@ -11,6 +11,7 @@ from sqlalchemy.dialects import postgresql
 from app.models import (
     AuditLog,
     EventRecord,
+    ProjectFinancePlan,
     ProjectRegistry,
     TaskRecord,
     TenderBid,
@@ -23,6 +24,8 @@ from app.models import (
 )
 from app.seed import DEMO_PASSWORD
 from app.services.tender_portal import _package_query, bid_comparison
+
+from margin_gate_fixtures import ensure_gate_plan
 
 PASSWORD = DEMO_PASSWORD
 TENDER_ID = "TND-UAT-2026-001"
@@ -48,6 +51,13 @@ def _create_project(db) -> None:
             )
         )
         db.commit()
+    # TENDER-kapu: jóváhagyott, hash-elt terv az odaítélési úthoz.
+    ensure_gate_plan(
+        db,
+        project_id=PROJECT_ID,
+        revenue="30000000",
+        direct_lines=[("STR-SZERKEZET", "15000000", "labour")],
+    )
 
 
 def _create_tender(client, db) -> TenderPackage:
@@ -71,6 +81,7 @@ def _create_tender(client, db) -> TenderPackage:
             "technical_weight": "30",
             "timeline_weight": "20",
             "references_weight": "10",
+            "cost_code": "STR-SZERKEZET",
         },
         follow_redirects=False,
     )

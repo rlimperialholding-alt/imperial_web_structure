@@ -12,7 +12,7 @@
     },
     {
       "id": "single-migration-head",
-      "description": "Az Alembic migrációs gráfnak pontosan egy, 20260816_0072 fejjel kell rendelkeznie.",
+      "description": "Az Alembic migrációs gráfnak pontosan egy, 20260907_0073 fejjel kell rendelkeznie.",
       "enabled": true,
       "command": "cd services/platform-core && python scripts/check_single_alembic_head.py",
       "requiredAtRisk": ["R2", "R3"],

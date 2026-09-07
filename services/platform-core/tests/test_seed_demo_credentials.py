@@ -433,6 +433,20 @@ class TestDemoCredentialsConcurrentCreation:
         assert seed._try_create_demo_state_lock(lock_path) is True
         seed._release_demo_state_lock(lock_path)
 
+    def test_lock_create_treats_permission_error_as_held(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Windows pending-delete ablak: a CREATE_NEW PermissionError-ja is
+        azt jelenti, hogy más holder birtokolja a lockot — fail-safe False,
+        a hívó korlátos retry-ablaka ugyanúgy kezeli (Task76 AC-07)."""
+        lock_path = tmp_path / "demo-credentials-state.json.lock"
+
+        def _denied(path, flags, mode=0o777):
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(seed.os, "open", _denied)
+        assert seed._try_create_demo_state_lock(lock_path) is False
+
     def test_held_lock_fails_closed_within_the_bounded_window(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

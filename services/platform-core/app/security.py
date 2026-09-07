@@ -61,6 +61,33 @@ def require_role(*roles: str):
     return dependency
 
 
+API_FINANCE_GATE_ROLES = ("finance", "managing-director", "owner", "platform-admin")
+
+
+def require_api_token_finance_actor(
+    request: Request,
+    db: Session = Depends(get_db),
+    x_api_token: Annotated[str | None, Header()] = None,
+) -> User:
+    """API token + bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó.
+
+    A TENDER-kapu adminisztratív API-útvonalainak (költségvetés-import
+    jóváhagyás, allokációs pillanatképek) identitás-kötése: a generikus API
+    token ÖNMAGÁBAN nem ad platform-admin szerepkört — a tényleges actor a
+    session-felhasználó, az ő szerepköre az auditált döntéshozó.
+    """
+    if settings.api_token and not hmac.compare_digest(x_api_token or "", settings.api_token):
+        raise HTTPException(status_code=401, detail="Érvénytelen API token.")
+    user = current_user(request, db)
+    if not user or not user.active:
+        raise HTTPException(status_code=401, detail="Bejelentkezés szükséges.")
+    if user.must_change_password:
+        raise HTTPException(status_code=403, detail="A folytatáshoz előbb jelszót kell módosítani.")
+    if user.role not in API_FINANCE_GATE_ROLES:
+        raise HTTPException(status_code=403, detail="Nincs jogosultság.")
+    return user
+
+
 def require_session_user(
     request: Request,
     db: Session = Depends(get_db),

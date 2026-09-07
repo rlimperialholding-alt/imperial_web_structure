@@ -166,7 +166,10 @@ def _try_create_demo_state_lock(lock_path: Path) -> bool:
     """
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    except FileExistsError:
+    except (FileExistsError, PermissionError):
+        # Windows pending-delete ablak: a CREATE_NEW ERROR_ACCESS_DENIED-t
+        # (PermissionError) ad FileExistsError helyett; ez is „másik holder
+        # birtokolja" — fail-safe False, a hívó korlátos retry-ablaka kezeli.
         return False
     try:
         os.write(fd, (str(os.getpid()) + "\n").encode("utf-8"))

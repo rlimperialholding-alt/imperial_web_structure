@@ -858,6 +858,9 @@ class ProcurementRequirementIn(BaseModel):
     required_at: datetime
     budget_huf: Decimal = Field(gt=0)
     target_huf: Decimal = Field(gt=0)
+    # A TENDER-kapu kötelező finance-költségkód-hozzárendelése; hiánya a
+    # döntés véglegesítését és a megrendelést fail-closed blokkolja.
+    cost_code: str | None = Field(default=None, max_length=100)
 
 
 class ProcurementOfferIn(BaseModel):
@@ -1323,3 +1326,45 @@ class ChangeControlEventIn(BaseModel):
     deadline_impact_days: int = 0
     customer_decision: str | None = None
     source_url: str | None = None
+
+
+class AllocationSnapshotRowIn(BaseModel):
+    """Egy szakágsor az arányforrású allokációs pillanatképhez (Task75)."""
+    model_config = ConfigDict(extra="forbid")
+
+    trade_code: str = Field(min_length=1, max_length=100)
+    direct_cost_component: Literal["material", "labour", "machinery", "other"]
+    normalized_ratio: Decimal = Field(gt=0)
+
+
+class AllocationSnapshotIn(BaseModel):
+    """Arányforrású (normatábla/historikus/szállítói) allokáció létrehozása."""
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str = Field(min_length=1, max_length=120)
+    summary_line_id: str = Field(min_length=1, max_length=120)
+    source_type: Literal["NORM_TABLE", "HISTORICAL_ACTUAL", "SUPPLIER_EVIDENCE"]
+    source_version: str | None = Field(default=None, max_length=80)
+    source_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    confidence_percent: Decimal = Field(default=Decimal("100"), ge=Decimal("0"), le=Decimal("100"))
+    coverage_percent: Decimal = Field(default=Decimal("100"), ge=Decimal("0"), le=Decimal("100"))
+    effective_from: datetime | None = None
+    effective_to: datetime | None = None
+    rows: list[AllocationSnapshotRowIn] = Field(min_length=1, max_length=100)
+    rationale: str = Field(min_length=10)
+
+
+class AllocationFromLinesIn(BaseModel):
+    """Részletes jóváhagyott sorokból épülő allokáció (precedencia 1)."""
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str = Field(min_length=1, max_length=120)
+    summary_line_id: str = Field(min_length=1, max_length=120)
+    rationale: str = Field(min_length=10)
+
+
+class BudgetImportApproveIn(BaseModel):
+    """Költségvetés-import jóváhagyása céltervre (Task75)."""
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str = Field(min_length=1, max_length=120)

@@ -222,7 +222,7 @@ def test_reconciliation_command_passes_on_the_canonical_secret_baseline() -> Non
     assert "reconciliation PASS: tracked-secret baseline:" in result.stdout
     assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
-    assert "alembic_head 20260816_0072" in result.stdout
+    assert "alembic_head 20260907_0073" in result.stdout
     assert "reconciliation PASS: modulregiszter" in result.stdout
     assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
     # Minden probe PASS: az összegzés is a teljes lokális egyezést jelenti.
@@ -260,7 +260,7 @@ def test_secret_probe_failure_cannot_mask_the_other_probe_assertions(
     assert "repository baseline is not valid JSON" in result.stderr
     assert "reconciliation PASS: vedett acceptance corpusz" in result.stdout
     assert "reconciliation PASS: SOURCE_LOCK verziok rogzitve" in result.stdout
-    assert "alembic_head 20260816_0072" in result.stdout
+    assert "alembic_head 20260907_0073" in result.stdout
     assert "reconciliation PASS: modulregiszter" in result.stdout
     assert "reconciliation PASS: pontosan egy alembic head" in result.stdout
     assert "reconciliation FAIL: 1 probe(s) sikertelen" in result.stderr
@@ -795,7 +795,7 @@ def test_source_lock_probe_ignores_conflicting_ambient_expected_env(
         monkeypatch.setenv(f"II_RECON_EXPECTED_{field.upper()}", "9.9.9")
     module = _load_module(monkeypatch)
     assert module.EXPECTED_LOCK_VERSIONS == CANONICAL_PINNED_LOCK_VERSIONS
-    assert module.EXPECTED_HEAD == "20260816_0072"
+    assert module.EXPECTED_HEAD == "20260907_0073"
     monkeypatch.setattr(module, "SOURCE_LOCK", SOURCE_LOCK_PATH)
     module._source_lock_probe()  # nem dobhat a konfliktusos ambient ellenere.
 

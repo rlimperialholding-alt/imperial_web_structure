@@ -6,12 +6,13 @@ from decimal import Decimal, InvalidOperation
 from typing import TypedDict
 from uuid import uuid4
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from ..audit import audit
 from ..models import (
+    FinanceCommitment,
     ProjectFinanceBudgetLine,
     ProjectFinanceCashflowLine,
     ProjectFinancePlan,
@@ -20,6 +21,7 @@ from ..models import (
     TaskRecord,
 )
 from .smart_calendar import calendar_project_ids_for_user
+from .tender_margin_gate import DIRECT_COMPONENTS, plan_content_sha256
 
 EDIT_ROLES = {"owner", "platform-admin", "finance", "project-manager"}
 FINANCE_APPROVAL_ROLES = {"owner", "platform-admin", "finance"}
@@ -541,6 +543,7 @@ def leadership_approve_plan(
         )
     if len(note.strip()) < 10:
         raise ValueError("A vezetői döntés indoklása kötelező.")
+    superseded_ids: list[int] = []
     for previous in db.scalars(
         select(ProjectFinancePlan).where(
             ProjectFinancePlan.project_id == plan.project_id,
@@ -549,10 +552,52 @@ def leadership_approve_plan(
         )
     ).all():
         previous.status = "superseded"
+        superseded_ids.append(previous.id)
+    # TENDER-kapu (Review A H1 / Review B HIGH-2): a kapu által kezelt
+    # lekötések az ÚJ jóváhagyott tervverzióra kötődnek át, különben a
+    # felülírt verzióhoz tartozó elköteleződések kikerülnének a kapu
+    # vetületéből (fail-open).
+    if superseded_ids:
+        # Review A CRITICAL (Task76): az átkötött lekötések költségkódjának
+        # szerepelnie kell az ÚJ terv érvényes direct sorai között; árva kód
+        # esetén a tranzakció a terv aktiválása ELŐTT fail-closed elutasít
+        # (a kódlistában sosem szerepel soronkénti összeg).
+        rebound = list(
+            db.scalars(
+                select(FinanceCommitment).where(
+                    FinanceCommitment.plan_id_fk.in_(superseded_ids),
+                    FinanceCommitment.status == "committed",
+                )
+            ).all()
+        )
+        valid_codes = {
+            line.cost_code
+            for line in plan.budget_lines
+            if line.cost_class == "direct"
+            and line.direct_cost_component in DIRECT_COMPONENTS
+            and not line.is_summary_package
+        }
+        orphan_codes = sorted(
+            {row.cost_code for row in rebound if row.cost_code not in valid_codes}
+        )
+        if orphan_codes:
+            raise ValueError(
+                "A vezetői jóváhagyás nem aktiválható: a korábbi tervhez kötött "
+                "elköteleződés(ek) költségkódja nem szerepel az új terv érvényes "
+                "direct sorai között: " + ", ".join(orphan_codes)
+            )
+        db.execute(
+            update(FinanceCommitment)
+            .where(FinanceCommitment.plan_id_fk.in_(superseded_ids))
+            .values(plan_id_fk=plan.id)
+        )
     plan.status = "approved"
     plan.leadership_approved_by = email
     plan.leadership_approved_at = datetime.now(UTC)
     plan.margin_exception_reason = exception or None
+    # TENDER-kapu provenance: a jóváhagyás pillanatában rögzített kanonikus
+    # tartalomlenyomat a kapu stale-detekciójának alapja.
+    plan.content_sha256 = plan_content_sha256(plan)
     for task in db.scalars(
         select(TaskRecord).where(
             TaskRecord.source_event_id == plan.plan_id,
@@ -666,14 +711,20 @@ def clone_finance_plan(db: Session, plan_id: str, user: object) -> ProjectFinanc
         contingency_net=source.contingency_net,
         target_margin_percent=source.target_margin_percent,
         forecast_note=source.forecast_note,
+        provenance_json=source.provenance_json,
         created_by=email,
     )
     db.add(clone)
     db.flush()
+    # A TENDER-kapu osztályozási oszlopai a klónozott sorokra is átkerülnek;
+    # a gyereksorok szülő-mutatóját az új sorazonosítókra térképezzük át.
+    line_id_map: dict[str, str] = {}
     for budget_row in source.budget_lines:
+        new_line_id = f"FIN-LINE-{uuid4().hex[:12].upper()}"
+        line_id_map[budget_row.line_id] = new_line_id
         db.add(
             ProjectFinanceBudgetLine(
-                line_id=f"FIN-LINE-{uuid4().hex[:12].upper()}",
+                line_id=new_line_id,
                 plan_id_fk=clone.id,
                 cost_code=budget_row.cost_code,
                 category=budget_row.category,
@@ -682,6 +733,16 @@ def clone_finance_plan(db: Session, plan_id: str, user: object) -> ProjectFinanc
                 committed_net=budget_row.committed_net,
                 actual_net=budget_row.actual_net,
                 estimate_to_complete_net=budget_row.estimate_to_complete_net,
+                cost_class=budget_row.cost_class,
+                direct_cost_component=budget_row.direct_cost_component,
+                amount_basis=budget_row.amount_basis,
+                is_summary_package=budget_row.is_summary_package,
+                parent_summary_line_id=(
+                    line_id_map.get(budget_row.parent_summary_line_id)
+                    if budget_row.parent_summary_line_id
+                    else None
+                ),
+                currency=budget_row.currency,
                 source_type=budget_row.source_type,
                 source_id=budget_row.source_id,
             )

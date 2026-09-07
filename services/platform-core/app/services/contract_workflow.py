@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import uuid4
 
@@ -13,6 +14,12 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..models import ContractWorkflowRecord
 from .smart_calendar import assert_calendar_project_access
+from .tender_margin_gate import (
+    MarginGateBlocked,
+    blocked_with_evidence,
+    evaluate_commitment_gate,
+    verify_plan_unchanged,
+)
 
 COMMERCIAL_ROLES = {"owner", "managing-director", "finance", "sales"}
 TECHNICAL_ROLES = {"owner", "managing-director", "project-manager", "technical-prep"}
@@ -80,6 +87,104 @@ def _row(
     return row
 
 
+# A szerződéstípusok zárt szótára (Review A L1): az ismeretlen típus
+# fail-closed blokkol — új típus nem kerülheti meg némán a kaput.
+CUSTOMER_CONTRACT_TYPES = frozenset(
+    {"customer_construction", "customer_design_execution_plans", "customer_type_house_design_build"}
+)
+COMMITMENT_CONTRACT_TYPES = frozenset(
+    {
+        "subcontractor_design", "subcontractor_execution", "subcontract_design",
+        "subcontract_execution", "supplier_design", "supplier_execution",
+        "invoice_design", "invoice_execution", "invoice",
+    }
+)
+
+
+def _commitment_bearing(row: ContractWorkflowRecord) -> bool:
+    """Alvállalkozói/beszállítói szerződés commitment-hordozó-e; a
+    customer-típusok nem érintettek (a bevételi oldalt a change_control/
+    sales kapui zárják), a szótáron kívüli típus fail-closed."""
+    contract_type = (row.contract_type or "").strip().lower()
+    if contract_type in COMMITMENT_CONTRACT_TYPES:
+        return True
+    if contract_type in CUSTOMER_CONTRACT_TYPES:
+        return False
+    raise MarginGateBlocked(
+        "unclassified_contract_type",
+        "A szerződéstípus nem szerepel a zárt típus-szótárban; a TENDER-kapu "
+        "fail-closed zárol. Elhárítás: a típus szótári rögzítése jóváhagyott "
+        "folyamatban.",
+    )
+
+
+def _contract_commitment(
+    db: Session, row: ContractWorkflowRecord, actor: str, action_type: str
+):
+    """A szerződés commitment-leírójának kapuzott kiértékelése:
+    elköteleződést hordozó szerződésnél a construction_commitment leíró
+    kötelező (hiánya/érvénytelen tartalma fail-closed blokk immutable
+    bizonyítékkal); nem commitment-hordozónál nincs kapu."""
+    if not _commitment_bearing(row):
+        return None
+    payload = json.loads(row.payload_json)
+    descriptor = payload.get("construction_commitment")
+    if not isinstance(descriptor, dict):
+        raise blocked_with_evidence(
+            db,
+            reason_code="missing_commitment_descriptor",
+            message_hu=(
+                "Az alvállalkozói szerződéscsomaghoz kötelező a "
+                "construction_commitment leíró (cost_code, net_huf); a "
+                "TENDER-kapu zárol."
+            ),
+            project_id=row.project_id,
+            action_type=action_type,
+            subject_type="contract_workflow",
+            subject_id=row.contract_id,
+            cost_code="",
+            proposed_net_huf=Decimal("0"),
+            actor=actor,
+        )
+    cost_code = str(descriptor.get("cost_code") or "").strip()
+    proposed_net_huf = _decimal(str(descriptor.get("net_huf") or "0"))
+    commercial = payload.get("commercial") or {}
+    currency = str(commercial.get("currency") or "HUF").upper()
+    if currency != "HUF":
+        raise blocked_with_evidence(
+            db,
+            reason_code="currency_mismatch",
+            message_hu="Az alvállalkozói szerződés devizaneme nem HUF; a TENDER-kapu zárol.",
+            project_id=row.project_id,
+            action_type=action_type,
+            subject_type="contract_workflow",
+            subject_id=row.contract_id,
+            cost_code=cost_code,
+            proposed_net_huf=proposed_net_huf,
+            actor=actor,
+        )
+    return evaluate_commitment_gate(
+        db,
+        project_id=row.project_id,
+        action_type=action_type,
+        subject_type="contract_workflow",
+        subject_id=row.contract_id,
+        cost_code=cost_code,
+        proposed_net_huf=proposed_net_huf,
+        actor=actor,
+    )
+
+
+def _decimal(value: str) -> Decimal:
+    try:
+        return Decimal(value).quantize(Decimal("0.01"))
+    except InvalidOperation as exc:
+        raise MarginGateBlocked(
+            "invalid_commitment_amount",
+            "A szerződés commitment-leírója érvénytelen nettó összeget tartalmaz.",
+        ) from exc
+
+
 def _canonical_payload(payload: dict[str, Any]) -> tuple[str, str]:
     value = json.dumps(
         payload,
@@ -145,6 +250,11 @@ def create_contract_workflow(
         generated_by=actor.strip().lower(),
         legal_required=relationship == "customer" or contract_type.startswith("customer_"),
     )
+    # TENDER-kapu a generálási kapunál: a kanonikus kapu a rekord
+    # hozzáadása ELŐTT fut (BLOCK-bizonyíték nem láthat pending sort).
+    generation_decision = _contract_commitment(
+        db, row, actor.strip().lower(), "contract_generation"
+    )
     db.add(row)
     audit(
         db,
@@ -159,6 +269,8 @@ def create_contract_workflow(
             "legal_required": row.legal_required,
         },
     )
+    if generation_decision is not None:
+        verify_plan_unchanged(db, generation_decision)
     return row
 
 
@@ -197,6 +309,9 @@ def submit_contract_review(
     _require_project_scope(db, user, row.project_id)
     if row.status != "generated":
         raise ValueError("Csak elkészült szerződéscsomag küldhető jóváhagyásra.")
+    # TENDER-kapu: a szerződés-előkészítés elköteleződést hordoz; a kapu a
+    # mutáció előtt fut.
+    decision = _contract_commitment(db, row, email, "contract_preparation")
     row.status = "review"
     row.submitted_by = email
     row.submitted_at = utcnow()
@@ -208,6 +323,8 @@ def submit_contract_review(
         entity_id=contract_id,
         after={"status": row.status},
     )
+    if decision is not None:
+        verify_plan_unchanged(db, decision)
     db.commit()
     db.refresh(row)
     return row
@@ -240,6 +357,7 @@ def review_contract(
         raise ValueError("Ez a jóváhagyási kapu már lezárult.")
     if decision not in {"approve", "reject"}:
         raise ValueError("A döntés approve vagy reject lehet.")
+    margin_decision = None
     if decision == "reject":
         row.status = "rejected"
         row.rejected_by = email
@@ -249,6 +367,20 @@ def review_contract(
     else:
         if email in _approved_actors(row):
             raise ValueError("A jóváhagyási kapukhoz külön személyek szükségesek.")
+        # TENDER-kapu: az utolsó jóváhagyási kapu lezárása a szerződés
+        # jóváhagyását jelenti; elköteleződést hordozó szerződésnél a
+        # kanonikus 35% direct-margin kapu MINDEN mutáció ELŐTT fut
+        # (Review A L2: a sorrend a gate-before-mutation invariáns).
+        will_complete = all(
+            getattr(row, GATE_FIELDS[required][0])
+            for required in _required_gates(row)
+            if required != gate
+        )
+        margin_decision = (
+            _contract_commitment(db, row, email, "contract_approval")
+            if will_complete
+            else None
+        )
         setattr(row, approved_by, email)
         setattr(row, approved_at, utcnow())
         setattr(row, note_field, note.strip())
@@ -262,6 +394,8 @@ def review_contract(
         entity_id=contract_id,
         after={"gate": gate, "decision": decision, "status": row.status, "note": note.strip()},
     )
+    if margin_decision is not None:
+        verify_plan_unchanged(db, margin_decision)
     db.commit()
     db.refresh(row)
     return row
@@ -342,6 +476,9 @@ def record_contract_dispatch(
         raise ValueError("Kézbesítési időpont nem előzheti meg az aláírást.")
     if max(postal_sent_at, electronic_sent_at) > utcnow() + timedelta(minutes=5):
         raise ValueError("Jövőbeli kézbesítési időpont nem rögzíthető.")
+    # TENDER-kapu: az alvállalkozói szerződés kézbesítése elköteleződést
+    # igazol; a kapu a mutáció előtt fut.
+    dispatch_decision = _contract_commitment(db, row, email, "contract_dispatch")
     row.postal_sent_at = postal_sent_at
     row.postal_tracking_number = postal_tracking_number.strip()
     row.postal_proof_file_id = postal_proof_file_id.strip()
@@ -365,6 +502,8 @@ def record_contract_dispatch(
             "sha256": digest,
         },
     )
+    if dispatch_decision is not None:
+        verify_plan_unchanged(db, dispatch_decision)
     db.commit()
     db.refresh(row)
     return row

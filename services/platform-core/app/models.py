@@ -790,6 +790,10 @@ class ProjectFinancePlan(Base):
     leadership_approved_by: Mapped[str | None] = mapped_column(String(255))
     leadership_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     margin_exception_reason: Mapped[str | None] = mapped_column(Text)
+    # Tender-margin-gate: a jóváhagyott terv kanonikus tartalomlenyomata és
+    # az import/provenance-nyomvonal (a kapu csak lenyomatos tervet fogad el).
+    content_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    provenance_json: Mapped[str] = mapped_column(Text, default="{}")
     created_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -820,6 +824,15 @@ class ProjectFinanceBudgetLine(Base):
     committed_net: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     actual_net: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
     estimate_to_complete_net: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    # Tender-margin-gate osztályozás: a kapu csak explicit besorolású sorokat
+    # fogad el; az összegző csomagsorok amount_basis-szel rendelkeznek, a
+    # gyereksorok a parent_summary_line_id mutatóval csatlakoznak.
+    cost_class: Mapped[str | None] = mapped_column(String(20), index=True)
+    direct_cost_component: Mapped[str | None] = mapped_column(String(20))
+    amount_basis: Mapped[str | None] = mapped_column(String(40))
+    is_summary_package: Mapped[bool] = mapped_column(Boolean, default=False)
+    parent_summary_line_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    currency: Mapped[str] = mapped_column(String(3), default="HUF")
     source_type: Mapped[str | None] = mapped_column(String(80))
     source_id: Mapped[str | None] = mapped_column(String(160), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -852,6 +865,214 @@ class ProjectFinanceCashflowLine(Base):
     source_id: Mapped[str | None] = mapped_column(String(160), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     plan: Mapped[ProjectFinancePlan] = relationship(back_populates="cashflow_lines")
+
+
+class ProjectBudgetImport(Base):
+    """Szigorú, szintetikus CSV/XLSX költségvetés-import bizonyítékrekordja:
+    a preview nem módosít tervet, az approve a tárolt, hash-elt preview-ból ír."""
+
+    __tablename__ = "finance_budget_imports"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('preview','approved','rejected')",
+            name="ck_budget_import_status",
+        ),
+        CheckConstraint(
+            "amount_basis IN ('NET_REVENUE_ENVELOPE','DIRECT_COST_BASELINE')",
+            name="ck_budget_import_amount_basis",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    import_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    project_id: Mapped[str] = mapped_column(String(100), index=True)
+    file_name: Mapped[str] = mapped_column(String(500))
+    source_format: Mapped[str] = mapped_column(String(20))
+    content_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    preview_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    amount_basis: Mapped[str] = mapped_column(String(40))
+    currency: Mapped[str] = mapped_column(String(3), default="HUF")
+    status: Mapped[str] = mapped_column(String(30), default="preview", index=True)
+    preview_json: Mapped[str] = mapped_column(Text)
+    error_json: Mapped[str] = mapped_column(Text, default="[]")
+    imported_by: Mapped[str] = mapped_column(String(255))
+    approved_by: Mapped[str | None] = mapped_column(String(255))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FinanceCommitment(Base):
+    """Kapu által kezelt nettó HUF elköteleződés; az egyedi (subject_type,
+    subject_id, cost_code) kulcs idempotens csere/felülírást ad."""
+
+    __tablename__ = "finance_commitments"
+    __table_args__ = (
+        UniqueConstraint(
+            "subject_type", "subject_id", "cost_code",
+            name="uq_finance_commitment_subject_cost",
+        ),
+        CheckConstraint(
+            "status IN ('committed','cancelled')", name="ck_finance_commitment_status"
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    commitment_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    plan_id_fk: Mapped[int] = mapped_column(
+        ForeignKey("finance_project_plans.id", ondelete="CASCADE"), index=True
+    )
+    cost_code: Mapped[str] = mapped_column(String(100), index=True)
+    subject_type: Mapped[str] = mapped_column(String(40), index=True)
+    subject_id: Mapped[str] = mapped_column(String(120), index=True)
+    net_huf: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    currency: Mapped[str] = mapped_column(String(3), default="HUF")
+    status: Mapped[str] = mapped_column(String(30), default="committed", index=True)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class FinanceAllocationSnapshot(Base):
+    """Immutable, verziózott összegző-csomag allokációs pillanatkép: a
+    normalizált arányok pontosan 100% összeget adnak, az unallocated_amount
+    kizárólag nulla lehet a kapu átengedéséhez."""
+
+    __tablename__ = "finance_allocation_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_id_fk", "parent_summary_line_id", "version",
+            name="uq_finance_allocation_snapshot_version",
+        ),
+        CheckConstraint(
+            "source_type IN ('DETAILED_LINES','NORM_TABLE','HISTORICAL_ACTUAL','SUPPLIER_EVIDENCE','ALLOCATION_UNRESOLVED')",
+            name="ck_finance_allocation_source_type",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    allocation_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    plan_id_fk: Mapped[int] = mapped_column(
+        ForeignKey("finance_project_plans.id", ondelete="CASCADE"), index=True
+    )
+    parent_summary_line_id: Mapped[str] = mapped_column(String(120), index=True)
+    summary_work_type: Mapped[str] = mapped_column(String(160))
+    package_net_revenue_huf: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    package_max_direct_cost_huf: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), default=Decimal("0")
+    )
+    unallocated_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(40), default="approved", index=True)
+    source_type: Mapped[str] = mapped_column(String(40))
+    source_version: Mapped[str | None] = mapped_column(String(80))
+    source_hash: Mapped[str | None] = mapped_column(String(64))
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confidence_percent: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=Decimal("100"))
+    coverage_percent: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=Decimal("100"))
+    approved_by: Mapped[str] = mapped_column(String(255))
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    rationale: Mapped[str] = mapped_column(Text)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    rows: Mapped[list[FinanceAllocationSnapshotRow]] = relationship(
+        back_populates="snapshot", cascade="all, delete-orphan"
+    )
+
+
+class FinanceAllocationSnapshotRow(Base):
+    """Egy gyerek szakág sor az allokációs pillanatképen belül."""
+
+    __tablename__ = "finance_allocation_snapshot_rows"
+    __table_args__ = (
+        UniqueConstraint(
+            "allocation_id_fk", "trade_code",
+            name="uq_finance_allocation_row_trade",
+        ),
+        CheckConstraint(
+            "direct_cost_component IN ('material','labour','machinery','other')",
+            name="ck_finance_allocation_row_component",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    row_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    allocation_id_fk: Mapped[int] = mapped_column(
+        ForeignKey("finance_allocation_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    trade_code: Mapped[str] = mapped_column(String(100), index=True)
+    direct_cost_component: Mapped[str] = mapped_column(String(20))
+    normalized_ratio: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=Decimal("0"))
+    allocated_net_huf: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    snapshot: Mapped[FinanceAllocationSnapshot] = relationship(back_populates="rows")
+
+
+class MarginGateDecision(Base):
+    """Immutable bemenet/számítás/döntés pillanatkép a TENDER 35% kapuról;
+    PASS és BLOCK egyaránt rögzül, nincs updated_at (írásvédett bizonyíték)."""
+
+    __tablename__ = "margin_gate_decisions"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('PASS','BLOCK')", name="ck_margin_gate_decision"
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    decision_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    project_id: Mapped[str] = mapped_column(String(100), index=True)
+    plan_id_fk: Mapped[int | None] = mapped_column(
+        ForeignKey("finance_project_plans.id", ondelete="SET NULL"), index=True
+    )
+    plan_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    plan_version: Mapped[int | None] = mapped_column(Integer)
+    plan_status: Mapped[str | None] = mapped_column(String(30))
+    plan_content_sha256: Mapped[str | None] = mapped_column(String(64))
+    action_type: Mapped[str] = mapped_column(String(60), index=True)
+    subject_type: Mapped[str] = mapped_column(String(40), index=True)
+    subject_id: Mapped[str] = mapped_column(String(120), index=True)
+    cost_code: Mapped[str | None] = mapped_column(String(100), index=True)
+    proposed_net_huf: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    revenue_net_huf: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    projected_direct_cost_huf: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    margin_percent: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    required_margin_percent: Mapped[Decimal] = mapped_column(
+        Numeric(6, 2), default=Decimal("35.00")
+    )
+    decision: Mapped[str] = mapped_column(String(10), index=True)
+    block_reason_code: Mapped[str | None] = mapped_column(String(60), index=True)
+    block_reason_hu: Mapped[str | None] = mapped_column(Text)
+    input_snapshot_json: Mapped[str] = mapped_column(Text)
+    calculation_json: Mapped[str] = mapped_column(Text, default="{}")
+    input_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MarginGateVatRule(Base):
+    """ÁFA-konfiguráció (csak konfiguráció, soha nem számítási bemenet): a
+    kapu nettó alapon számol, a kapu aritmetikáját ÁFA-szabály nem módosítja,
+    jóvá nem hagyott szabály nem alkalmazható."""
+
+    __tablename__ = "margin_gate_vat_rules"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending_approval','approved','rejected')",
+            name="ck_margin_gate_vat_rule_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    rule_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    scope: Mapped[str] = mapped_column(String(120), index=True)
+    vat_rate_percent: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=Decimal("0"))
+    input_vat_differential_percent: Mapped[Decimal] = mapped_column(
+        Numeric(8, 4), default=Decimal("0")
+    )
+    status: Mapped[str] = mapped_column(String(30), default="pending_approval", index=True)
+    rationale: Mapped[str] = mapped_column(Text)
+    approved_by: Mapped[str | None] = mapped_column(String(255))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ChangeControlCase(Base):
@@ -3500,6 +3721,9 @@ class TenderPackage(Base):
     title: Mapped[str] = mapped_column(String(255))
     scope: Mapped[str] = mapped_column(Text)
     currency: Mapped[str] = mapped_column(String(3), default="HUF")
+    # A TENDER-kapu kötelező finance-költségkód-hozzárendelése az odaítéléshez;
+    # hiányzó kód az eredményhirdetést fail-closed blokkolja.
+    cost_code: Mapped[str | None] = mapped_column(String(100), index=True)
     question_deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     submission_deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     status: Mapped[str] = mapped_column(String(30), default="draft", index=True)
@@ -4164,6 +4388,9 @@ class ProcurementRequirement(Base):
     project_id: Mapped[str] = mapped_column(String(100), index=True)
     work_package_id: Mapped[str | None] = mapped_column(String(120), index=True)
     category: Mapped[str] = mapped_column(String(120), index=True)
+    # A TENDER-kapu kötelező finance-költségkód-hozzárendelése; a döntés
+    # véglegesítése és a megrendelés e nélkül fail-closed blokkolt.
+    cost_code: Mapped[str | None] = mapped_column(String(100), index=True)
     scope_description: Mapped[str] = mapped_column(Text)
     specification: Mapped[str] = mapped_column(Text)
     net_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))

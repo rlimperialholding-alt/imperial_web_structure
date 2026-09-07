@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.43.0 – TENDER-kapu: 35% direct-margin hard gate és summary-budget allokáció (Task75/Task76)
+
+- Egyetlen kanonikus, tranzakcióba ágyazott, fail-closed 35% direct-margin kapu a tender-odaítélés, PO-előkészítés-jóváhagyás, beszerzési döntés véglegesítés, megrendelés létrehozás/visszaigazolás, finance-commitment outbox és alvállalkozói szerződés-átmenetek elé; nincs admin/owner override, a kapu nettó alapon, determinisztikus Decimal aritmetikával dönt; immutable PASS/BLOCK döntéspillanatképek, TOCTOU-őr.
+- Jóváhagyott, hash-elt költségvetési terv, explicit direct/indirect besorolás és költségkód-hozzárendelés; verziózott, immutable allokációs pillanatképek pontosan 100% arányokkal, boríték- és stale-védelemmel; szigorú CSV/XLSX import (képlet/makró/limit-elutasítás, nettó HUF, content/preview hash, kizárólag draft tervre írható); ÁFA kizárólag külön auditált konfigurációban.
+
 ## 1.42.2 – Imperial Care jogosultság- és integritáskapuk
 
 - Az ügyféltől elrejtett belső megjegyzéseket az ügyhöz rendelt alvállalkozó sem láthatja; csak a kijelölt belső Imperial Care szerepkörök férnek hozzájuk.

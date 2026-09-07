@@ -31,7 +31,7 @@ from ..schemas import (
     ProcurementSelectionIn,
     ProcurementSubstitutionIn,
 )
-
+from .tender_margin_gate import evaluate_commitment_gate, verify_plan_unchanged
 
 DUAL_APPROVAL_LIMIT_HUF = Decimal("20000000")
 MINIMUM_SAVINGS_PCT = Decimal("8")
@@ -90,6 +90,7 @@ def create_requirement(db: Session, data: ProcurementRequirementIn, actor: str) 
         net_quantity=data.net_quantity, waste_pct=data.waste_pct,
         max_orderable_quantity=maximum, unit=data.unit.strip(), required_at=data.required_at,
         budget_huf=data.budget_huf, target_huf=data.target_huf,
+        cost_code=(data.cost_code or "").strip() or None,
         status="approval_pending", created_by=actor,
     )
     db.add(row)
@@ -206,6 +207,11 @@ def approve_selection(db: Session, selection_id: str, stage: str, actor: str, ac
     if requirement is None:
         raise KeyError(row.requirement_id)
     if not approve:
+        if row.status == "approved":
+            raise ValueError(
+                "A már jóváhagyott döntés a döntési folyamatban nem utasítható "
+                "el; módosítás kizárólag auditált revízióval."
+            )
         if actor_role not in {"finance", "managing-director", "owner", "platform-admin"}:
             raise PermissionError("Elutasításra nincs jogosultság.")
         row.status = "rejected"; row.rejection_reason = note or "Elutasítva"
@@ -215,11 +221,17 @@ def approve_selection(db: Session, selection_id: str, stage: str, actor: str, ac
         if stage == "finance":
             if actor_role not in {"finance", "owner", "platform-admin"}:
                 raise PermissionError("Pénzügyi jóváhagyásra nincs jogosultság.")
-            row.finance_approved_by, row.finance_approved_at = actor, now
+            will_complete = bool(
+                row.md_approved_at
+                and (not row.dual_approval_required or row.owner_approved_at)
+            )
         elif stage == "managing_director":
             if actor_role not in {"managing-director", "owner", "platform-admin"}:
                 raise PermissionError("Ügyvezetői jóváhagyásra nincs jogosultság.")
-            row.md_approved_by, row.md_approved_at = actor, now
+            will_complete = bool(
+                row.finance_approved_at
+                and (not row.dual_approval_required or row.owner_approved_at)
+            )
         elif stage == "owner":
             if actor_role not in {"owner", "platform-admin"}:
                 raise PermissionError("Tulajdonosi jóváhagyásra nincs jogosultság.")
@@ -229,13 +241,36 @@ def approve_selection(db: Session, selection_id: str, stage: str, actor: str, ac
                 raise ValueError("A tulajdonosi jóváhagyás előtt ügyvezetői jóváhagyás szükséges.")
             if row.md_approved_by == actor:
                 raise ValueError("A kettős jóváhagyást két külön személynek kell megadnia.")
-            row.owner_approved_by, row.owner_approved_at = actor, now
+            will_complete = bool(row.finance_approved_at and row.md_approved_at)
         else:
             raise ValueError("Ismeretlen jóváhagyási lépés.")
+        # TENDER-kapu: a döntés véglegesítése elköteleződést keletkeztet;
+        # a kanonikus 35% direct-margin kapu MINDEN mutáció ELŐTT fut
+        # (Review A L2: gate-before-mutation invariáns).
+        decision = None
+        if will_complete:
+            decision = evaluate_commitment_gate(
+                db,
+                project_id=requirement.project_id,
+                action_type="procurement_selection_final_approval",
+                subject_type="procurement_selection",
+                subject_id=row.selection_id,
+                cost_code=(requirement.cost_code or "").strip(),
+                proposed_net_huf=row.total_landed_cost_huf,
+                actor=actor,
+            )
+        if stage == "finance":
+            row.finance_approved_by, row.finance_approved_at = actor, now
+        elif stage == "managing_director":
+            row.md_approved_by, row.md_approved_at = actor, now
+        else:
+            row.owner_approved_by, row.owner_approved_at = actor, now
         complete = bool(row.finance_approved_at and row.md_approved_at and (not row.dual_approval_required or row.owner_approved_at))
         if complete:
             row.status = "approved"; row.approved_at = now; requirement.status = "selected"
             _event(db, project_id=requirement.project_id, event_type="PROCUREMENT_SELECTION_APPROVED", object_type="ProcurementSelection", object_id=row.selection_id, title="Beszerzési döntés jóváhagyva", financial_impact_huf=row.total_landed_cost_huf, executive=row.dual_approval_required)
+            if decision is not None:
+                verify_plan_unchanged(db, decision)
     audit(db, actor=actor, action=f"procurement.selection.{stage}.{'approve' if approve else 'reject'}", entity_type="procurement_selection", entity_id=row.selection_id, after={"status": row.status})
     db.commit(); db.refresh(row)
     return row
@@ -255,6 +290,30 @@ def create_order(db: Session, data: ProcurementOrderIn, actor: str) -> Procureme
         raise KeyError(selection.offer_id)
     if data.ordered_quantity > requirement.max_orderable_quantity:
         raise ValueError("A rendelt mennyiség meghaladja a jóváhagyott nettó mennyiség + káló maximumot; igényrevízió szükséges.")
+    # Egy döntéshez legfeljebb egy megrendelés (Review A M3): a
+    # szétbontott szállítás külön igényrevízióval indítható.
+    if db.scalar(
+        select(ProcurementOrderProjection.id).where(
+            ProcurementOrderProjection.selection_id == selection.selection_id
+        )
+    ):
+        raise ValueError(
+            "Ehhez a beszerzési döntéshez már készült megrendelés; a "
+            "szétbontott szállítás külön igényrevízióval indítható."
+        )
+    # TENDER-kapu: a megrendelés és az outbox egy tranzakcióban történik;
+    # a kapu a sor létrehozása ELŐTT fut, a subject-kulcs azonos a döntés-
+    # jóváhagyás kulcsával (idempotens csere, nem kettős számolás).
+    decision = evaluate_commitment_gate(
+        db,
+        project_id=requirement.project_id,
+        action_type="procurement_order_create",
+        subject_type="procurement_selection",
+        subject_id=selection.selection_id,
+        cost_code=(requirement.cost_code or "").strip(),
+        proposed_net_huf=selection.total_landed_cost_huf,
+        actor=actor,
+    )
     content = f"{selection.selection_id}|{requirement.requirement_id}|{offer.offer_id}|{data.ordered_quantity}|{selection.total_landed_cost_huf}|{data.delivery_due.isoformat()}"
     row = ProcurementOrderProjection(
         order_id=_id("PO"), project_id=requirement.project_id,
@@ -281,6 +340,7 @@ def create_order(db: Session, data: ProcurementOrderIn, actor: str) -> Procureme
     })
     _event(db, project_id=requirement.project_id, event_type="PROCUREMENT_ORDERED", object_type="ProcurementOrder", object_id=row.order_id, title="Jóváhagyott megrendelés létrejött", financial_impact_huf=row.total_huf)
     audit(db, actor=actor, action="procurement.order.create", entity_type="procurement_order", entity_id=row.order_id, after={"selection_id": selection.selection_id, "sha256": row.content_sha256, "ordered_quantity": str(row.ordered_quantity)})
+    verify_plan_unchanged(db, decision)
     db.commit(); db.refresh(row)
     return row
 
@@ -291,8 +351,27 @@ def confirm_order(db: Session, order_id: str, actor: str) -> ProcurementOrderPro
         raise KeyError(order_id)
     if row.approval_status != "approved":
         raise ValueError("Jóváhagyás nélküli rendelés nem igazolható vissza.")
+    # TENDER-kapu újraellenőrzés minden kritikus átmenetnél; a subject-kulcs
+    # azonos a döntés/megrendelés kulcsával (idempotens csere).
+    requirement = db.scalar(
+        select(ProcurementRequirement).where(
+            ProcurementRequirement.requirement_id == row.requirement_id
+        )
+    )
+    cost_code = (requirement.cost_code or "").strip() if requirement is not None else ""
+    decision = evaluate_commitment_gate(
+        db,
+        project_id=row.project_id,
+        action_type="procurement_order_confirm",
+        subject_type="procurement_selection",
+        subject_id=row.selection_id or row.order_id,
+        cost_code=cost_code,
+        proposed_net_huf=row.total_huf,
+        actor=actor,
+    )
     row.confirmation_status = "confirmed"; row.confirmed_by = actor; row.confirmed_at = utcnow(); row.status = "confirmed"
     audit(db, actor=actor, action="procurement.order.confirm", entity_type="procurement_order", entity_id=row.order_id, after={"confirmation_status": row.confirmation_status})
+    verify_plan_unchanged(db, decision)
     db.commit(); db.refresh(row)
     return row
 

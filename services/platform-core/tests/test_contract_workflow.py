@@ -23,6 +23,8 @@ from app.services.contract_workflow import (
 )
 from app.seed import DEMO_PASSWORD
 
+from margin_gate_fixtures import seed_gate_plan
+
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "integrations" / "contract_generator_v0_4" / "examples"
 
@@ -31,7 +33,9 @@ def _user(role: str, email: str | None = None):
     return SimpleNamespace(role=role, email=email or f"{role}@imperial.local")
 
 
-def _payload(example: str = "customer_construction_valid.json") -> dict:
+def _payload(
+    example: str = "customer_construction_valid.json", commitment: dict | None = None
+) -> dict:
     payload = json.loads((EXAMPLES / example).read_text(encoding="utf-8"))
     token = uuid.uuid4().hex[:10].upper()
     payload["contract_number"] = f"UAT-CON-{token}"
@@ -46,11 +50,28 @@ def _payload(example: str = "customer_construction_valid.json") -> dict:
     )
     for attachment in payload["attachments"]:
         attachment["file_id"] = f"EVIDENCE-{token}-{attachment['type']}"
+    if commitment:
+        payload["construction_commitment"] = commitment
     return payload
 
 
-def _generated(db, example: str = "customer_construction_valid.json", actor: str = "api"):
-    result = generate_contract_package(db, _payload(example), actor=actor)
+def _generated(
+    db,
+    example: str = "customer_construction_valid.json",
+    actor: str = "api",
+    commitment: dict | None = None,
+):
+    payload = _payload(example, commitment=commitment)
+    if commitment:
+        # TENDER-kapu: jóváhagyott, hash-elt terv az alvállalkozói
+        # szerződés commitment-leírójához.
+        seed_gate_plan(
+            db,
+            project_id=payload["ids"]["ProjectID"],
+            revenue="30000000",
+            direct_lines=[(commitment["cost_code"], commitment["net_huf"], "labour")],
+        )
+    result = generate_contract_package(db, payload, actor=actor)
     row = db.scalar(
         select(ContractWorkflowRecord).where(
             ContractWorkflowRecord.contract_id == result["contract_id"]
@@ -261,7 +282,11 @@ def test_customer_contract_full_flow_emits_event_only_after_dual_dispatch(db):
 
 
 def test_subcontractor_contract_does_not_require_legal_gate(db):
-    row = _generated(db, "subcontractor_execution_valid.json")
+    row = _generated(
+        db,
+        "subcontractor_execution_valid.json",
+        commitment={"cost_code": "SUB-EXEC", "net_huf": "12500000"},
+    )
     assert row.legal_required is False
     submit_contract_review(db, row.contract_id, _user("sales"))
     review_contract(

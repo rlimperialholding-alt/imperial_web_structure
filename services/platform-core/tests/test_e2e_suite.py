@@ -16,6 +16,7 @@ from app.models import (
     CareCase,
     CustomerPortalAccess,
     EventRecord,
+    ProjectFinancePlan,
     ProjectRegistry,
     TenderBid,
     TenderInvitation,
@@ -23,6 +24,7 @@ from app.models import (
 )
 from app.seed import DEMO_PASSWORD
 from app.services.house_designer import ActorScope
+from margin_gate_fixtures import ensure_gate_plan
 
 CUSTOMER = "customer@imperial.local"
 
@@ -173,6 +175,13 @@ class TestHouseDesignerE2EJourney:
 class TestTenderInvitationE2EJourney:
     def test_full_tender_journey_from_invite_to_award(self, client, db) -> None:
         _ensure_project(db, "PRJ-IMPERIAL-01")
+        # TENDER-kapu: jóváhagyott, hash-elt terv az odaítélési kapuhoz.
+        ensure_gate_plan(
+            db,
+            project_id="PRJ-IMPERIAL-01",
+            revenue="1000000",
+            direct_lines=[("T-E2E", "300000", "labour")],
+        )
         _login(client, "project-manager@imperial.local")
 
         created = client.post(
@@ -183,6 +192,7 @@ class TestTenderInvitationE2EJourney:
                 "title": "E2E meghívásos tender",
                 "scope": "Szintetikus, teljes végpont-végpont tenderterjedelem a szerződéses utazáshoz.",
                 "currency": "HUF",
+                "cost_code": "T-E2E",
                 "question_deadline_at": (
                     datetime.now(UTC) + timedelta(days=7)
                 ).strftime("%Y-%m-%dT%H:%M"),

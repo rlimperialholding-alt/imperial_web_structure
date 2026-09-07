@@ -1,29 +1,37 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 
 from sqlalchemy import select
 
 from app.models import (
     ProcurementDeviation,
     ProcurementInvoiceMatch,
-    ProcurementOrderProjection,
-    ProcurementRequirement,
     ProcurementSelection,
     OutboxMessage,
+    ProjectFinancePlan,
     ProjectRegistry,
 )
 from app.services.procurement import approve_selection
 
+from margin_gate_fixtures import ensure_gate_plan
+
 
 def seed_project(db, project_id: str = "IMP-PROC-001") -> None:
-    db.add(ProjectRegistry(
-        project_id=project_id, name="Procurement tesztprojekt", customer_name="Teszt Ügyfél",
-        project_type="Aktív kivitelezés", status="active", risk_level="green", blocked=False,
-        responsible="Teszt PM", next_action="Beszerzési igény",
-    ))
-    db.commit()
+    if not db.scalar(select(ProjectRegistry).where(ProjectRegistry.project_id == project_id)):
+        db.add(ProjectRegistry(
+            project_id=project_id, name="Procurement tesztprojekt", customer_name="Teszt Ügyfél",
+            project_type="Aktív kivitelezés", status="active", risk_level="green", blocked=False,
+            responsible="Teszt PM", next_action="Beszerzési igény",
+        ))
+        db.commit()
+    # TENDER-kapu: jóváhagyott, hash-elt terv a kapuzott beszerzési utakhoz.
+    ensure_gate_plan(
+        db,
+        project_id=project_id,
+        revenue="50000000",
+        direct_lines=[("MAT-FALAZAT", "30000000", "material")],
+    )
 
 
 def create_approved_requirement(client, db, *, target: str = "10000000", budget: str = "11000000") -> str:
@@ -33,7 +41,7 @@ def create_approved_requirement(client, db, *, target: str = "10000000", budget:
         "scope_description": "Falazóanyag teljes mennyiség", "specification": "Tégla 30 N+F",
         "net_quantity": "100", "waste_pct": "5", "unit": "raklap",
         "required_at": (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
-        "budget_huf": budget, "target_huf": target,
+        "budget_huf": budget, "target_huf": target, "cost_code": "MAT-FALAZAT",
     })
     assert response.status_code == 200, response.text
     requirement_id = response.json()["requirement_id"]
