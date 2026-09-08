@@ -1838,6 +1838,8 @@ def ingest_signal(
         if (
             outreach is None
             and existing.status == "blocked"
+            and existing.source_id == data.source_id
+            and existing.external_key == data.external_key
             and existing.external_key.startswith("PC-")
             and existing_reasons
             and existing_reasons.issubset(recoverable_partnerpoint_reasons)
@@ -1852,6 +1854,19 @@ def ingest_signal(
                         raise GrowthRegistryError(";".join(retry_reasons))
                     if not writes_unlocked() or not _control_enabled(db, data.motor_key):
                         raise GrowthRegistryError("growth_writes_locked")
+                    previous_source_payload_hash = existing.source_payload_hash
+                    existing.source_payload_hash = data.source_payload_hash
+                    existing.detected_at = _aware(data.detected_at)
+                    if previous_source_payload_hash != data.source_payload_hash:
+                        audit(
+                            db,
+                            actor="growth-ops",
+                            action="growth_partnerpoint_source_binding_refreshed",
+                            entity_type="growth_signal",
+                            entity_id=existing.signal_id,
+                            before={"source_payload_hash": previous_source_payload_hash},
+                            after={"source_payload_hash": data.source_payload_hash},
+                        )
                     outreach = _queue_message(
                         db,
                         existing,
@@ -1896,6 +1911,8 @@ def ingest_signal(
             and outreach.status == "queued"
             and existing.status == "blocked"
             and existing_reasons == {"official_source_binding_proof_write_failed"}
+            and existing.source_id == data.source_id
+            and existing.external_key == data.external_key
             and existing.external_key.startswith("PC-")
             and getattr(settings(), "partnerpoint_enabled", False)
         ):
@@ -1910,6 +1927,19 @@ def ingest_signal(
                     source = registry.sources.get(existing.source_id)
                     if not isinstance(source, dict):
                         raise GrowthRegistryError("official_source_binding_source_missing")
+                    previous_source_payload_hash = existing.source_payload_hash
+                    existing.source_payload_hash = data.source_payload_hash
+                    existing.detected_at = _aware(data.detected_at)
+                    if previous_source_payload_hash != data.source_payload_hash:
+                        audit(
+                            db,
+                            actor="growth-ops",
+                            action="growth_partnerpoint_source_binding_refreshed",
+                            entity_type="growth_signal",
+                            entity_id=existing.signal_id,
+                            before={"source_payload_hash": previous_source_payload_hash},
+                            after={"source_payload_hash": data.source_payload_hash},
+                        )
                     _record_official_source_binding_proof(
                         db,
                         outreach,
