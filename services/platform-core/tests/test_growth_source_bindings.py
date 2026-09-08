@@ -251,7 +251,7 @@ def test_official_company_signal_binding_is_exact_and_fresh(
         (
             ("sources", "DYNAMIC_HU_ARCHIKON_HU", "bucket"),
             "referral_partner",
-            "restricted",
+            "recipient lane",
         ),
         (
             ("sources", "DYNAMIC_HU_ARCHIKON_HU", "url"),
@@ -271,7 +271,7 @@ def test_official_company_signal_binding_is_exact_and_fresh(
                 "recipient_type",
             ),
             "referral_partner",
-            "recipient binding",
+            "recipient lane",
         ),
         (
             (
