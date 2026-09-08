@@ -26,7 +26,7 @@ from app.growth_ops.models import (
     GrowthOutreachReconciliation,
     OutreachMessage,
 )
-from app.growth_ops.partnerpoint import _access_token, fetch_snapshot
+from app.growth_ops.partnerpoint import _access_token, _google_json, fetch_snapshot
 from app.growth_ops.registry import GrowthRegistry
 
 EXPECTED_CONTROL_SET_SIZE = 85
@@ -40,11 +40,9 @@ def _padded(row: list[str], size: int) -> list[str]:
 
 
 def _gmail_json(token: str, url: str) -> dict[str, Any]:
-    with urllib.request.urlopen(
-        urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"}),
-        timeout=45,
-    ) as response:
-        payload = json.load(response)
+    payload = _google_json(
+        urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    )
     if not isinstance(payload, dict):
         raise RuntimeError("gmail_response_invalid")
     return payload
