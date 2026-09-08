@@ -30,26 +30,38 @@ PARTNER_OUTREACH_ANCHOR = (
     "ha szükség van ránk."
 )
 PARTNER_OUTREACH_ANCHOR_SHA256 = "7004cccbda5c2e45109edf92474791a4b2fd268d8ffe2de08d093c32f1b1e24f"
+ARCHITECT_OUTREACH_ANCHOR = (
+    "Szeretnénk bővíteni a tervezői kapcsolatainkat, mert jelenleg "
+    "kapacitáshiánnyal küzdünk ezen a területen – és az Ön által tervezett "
+    "házakhoz is szívesen kapcsolódnánk kivitelezőként."
+)
+ARCHITECT_OUTREACH_ANCHOR_SHA256 = (
+    "9dac5991c825bf91b4fd66f779e4ba78385ab34048f5c54758759f8fe6d8399a"
+)
+REFERRAL_COMMISSION_ANCHOR = (
+    "és ezért 2,5% jutalékot fizetünk. Egy átlagos 50 milliós családi ház "
+    "esetében 1 250 000 forintot."
+)
+REFERRAL_COMMISSION_ANCHOR_SHA256 = (
+    "3e6625778fcdd700aedf1d95a646b4f440d14a177b8bb4d647cce0d1c128f804"
+)
+REFERRAL_PAYMENT_ANCHOR = (
+    "Ha az ajánlásból szerződés lesz, 2,5% jutalékot fizetünk egy összegben Önöknek."
+)
+REFERRAL_PAYMENT_ANCHOR_SHA256 = "12f83170044dabe216c6383d68921f5260ea55bf5e6647f2dc24f941b8208a26"
 
 # Owner-approved land-listing copy, revised 2026-08-25. These subjects and
 # anchors prevent a runtime template or later refactor from changing the
 # product, commission, or property-owner offer without an explicit policy
 # update.
 LAND_OWNER_SUBJECT = (
-    "Ingyen elkészítjük a {listing_location}, {listing_size}-es telek + típusház "
-    "hirdetését"
+    "Ingyen elkészítjük a {listing_location}, {listing_size}-es telek + típusház hirdetését"
 )
-LAND_OWNER_SUBJECT_SHA256 = (
-    "56f96d8def49c6b2c819ab8f1186056b2199b44bc2e40d1d0b0de8ef55af64a6"
-)
+LAND_OWNER_SUBJECT_SHA256 = "56f96d8def49c6b2c819ab8f1186056b2199b44bc2e40d1d0b0de8ef55af64a6"
 LAND_AGENT_SUBJECT = "ház eladásában kérnék segítséget"
-LAND_AGENT_SUBJECT_SHA256 = (
-    "4f5460a60567e226c1fb4c4e4a28b59315738a2eda21ce37eebdbf6d28b43334"
-)
+LAND_AGENT_SUBJECT_SHA256 = "4f5460a60567e226c1fb4c4e4a28b59315738a2eda21ce37eebdbf6d28b43334"
 LAND_CATALOG_URL = "https://imperialholding.hu/termek/telek-kereso"
-LAND_OUTREACH_SERVICE_ANCHOR = (
-    "előregyártott készházak és típusházak építésével foglalkozik"
-)
+LAND_OUTREACH_SERVICE_ANCHOR = "előregyártott készházak és típusházak építésével foglalkozik"
 LAND_OUTREACH_SERVICE_ANCHOR_SHA256 = (
     "49b13d78545af86f7cce867c44567cf7575085228b7cc81415e16208683d39f3"
 )
@@ -61,15 +73,12 @@ LAND_AGENT_COMMISSION_ANCHOR_SHA256 = (
     "ae48724a42c7de14cb30a6715ce488f314320c12b566ac4255ba8bf6ac1bb393"
 )
 LAND_OWNER_FREE_AD_ANCHOR = (
-    "Ingyen, jutalék nélkül meghirdetjük az ingatlanát a telekhez illő "
-    "típusházunkkal."
+    "Ingyen, jutalék nélkül meghirdetjük az ingatlanát a telekhez illő típusházunkkal."
 )
 LAND_OWNER_FREE_AD_ANCHOR_SHA256 = (
     "09bff47f226817749a551e2cb8d7d44a9481e02d57829a6e47f09b191b1f380c"
 )
-LAND_OWNER_SERVICE_ANCHOR = (
-    "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik."
-)
+LAND_OWNER_SERVICE_ANCHOR = "Az Imperial Holding típustervek kulcsrakész építésével foglalkozik."
 LAND_OWNER_SERVICE_ANCHOR_SHA256 = (
     "0220cfa5398c899f068acdf1530b7002ca00fcc422a2f6895c52883bbe02ee26"
 )
@@ -81,12 +90,9 @@ LAND_OWNER_PERMISSION_ANCHOR_SHA256 = (
     "ac08b4c0b92375caecef5ff1d60ccbab18f6a1cadde9ec52a70d578e54147e2f"
 )
 LAND_OWNER_REPLY_ANCHOR = (
-    "A hirdetés engedélyezéséhez válaszoljon emailben: „Engedélyezem a telek "
-    "hirdetését.”"
+    "A hirdetés engedélyezéséhez válaszoljon emailben: „Engedélyezem a telek hirdetését.”"
 )
-LAND_OWNER_REPLY_ANCHOR_SHA256 = (
-    "f7094b5d09403e660687a7d7d9abbb771966affde32ca696d4b2f7ca265e452c"
-)
+LAND_OWNER_REPLY_ANCHOR_SHA256 = "f7094b5d09403e660687a7d7d9abbb771966affde32ca696d4b2f7ca265e452c"
 
 ACTIVE_CONTENT_BRANDS = (
     "Imperial",
@@ -145,18 +151,39 @@ BRAND_CONTENT_FOCUS = {
     "Danish Fabrik": ("készház", "faváz", "könnyűszerkezet", "szigetelés", "ház"),
     "TimberHaus": ("faház", "faváz", "könnyűszerkezet", "faépítés", "otthon"),
     "RED Property": (
-        "ingatlanfejlesztés", "ingatlan", "beruházás", "értékesítés", "projekt",
-        "típusterv", "típusház", "házválasztás",
+        "ingatlanfejlesztés",
+        "ingatlan",
+        "beruházás",
+        "értékesítés",
+        "projekt",
+        "típusterv",
+        "típusház",
+        "házválasztás",
     ),
     "Property360": (
-        "telek", "házterv", "finanszírozás", "kivitelezés", "beköltözés", "belsőépítészet",
+        "telek",
+        "házterv",
+        "finanszírozás",
+        "kivitelezés",
+        "beköltözés",
+        "belsőépítészet",
     ),
     "Everyday Homes": ("megfizethető otthon", "családi ház", "praktikus", "építkezés", "otthon"),
     "Venture Studio": (
-        "ingatlanbefektetés", "ingatlanprojekt", "ingatlanhelyzet", "befektető", "projektvalidálás",
+        "ingatlanbefektetés",
+        "ingatlanprojekt",
+        "ingatlanhelyzet",
+        "befektető",
+        "projektvalidálás",
     ),
     "Family Homes": ("családi ház", "otthon", "alaprajz", "építkezés", "család"),
-    "Imperial Construction": ("generálkivitelezés", "építkezés", "kivitelezés", "műszaki", "projekt"),
+    "Imperial Construction": (
+        "generálkivitelezés",
+        "építkezés",
+        "kivitelezés",
+        "műszaki",
+        "projekt",
+    ),
     "Imperial Technologies": ("technológia", "integráció", "automatizálás", "szoftver", "rendszer"),
     "ExitFlow": ("cégeladás", "utódlás", "kiszállás", "felvásárlás", "exit"),
     "Veritas Construct": ("műszaki ellenőrzés", "építési vita", "szakértő", "hiba", "kivitelezés"),
@@ -170,22 +197,42 @@ BRAND_PUBLICATION_CONTRACTS = {
     "Imperial": {
         "position": "A cégcsoport átfogó építési és ingatlanos szakmai tekintélye; összetett döntések közérthető, vezetői szintű tisztázása.",
         "voice": "Határozott, természetes, magázó magyar; konkrét helyzet, szakmai álláspont és egyetlen következő lépés.",
-        "required": ["építési vagy ingatlanos döntési helyzet", "egyértelmű szakmai álláspont", "konkrét ügyfélhaszon"],
-        "forbidden": ["általános motiváció", "másik márka szlogene", "bizonyíték nélküli ár-, idő- vagy garanciaígéret"],
+        "required": [
+            "építési vagy ingatlanos döntési helyzet",
+            "egyértelmű szakmai álláspont",
+            "konkrét ügyfélhaszon",
+        ],
+        "forbidden": [
+            "általános motiváció",
+            "másik márka szlogene",
+            "bizonyíték nélküli ár-, idő- vagy garanciaígéret",
+        ],
     },
     "Bautica": {
         "position": "Mérnöki fegyelemre épülő felújítás és kivitelezés; a szakmai előkészítés látható előnye.",
         "voice": "Szakértő, világos, tárgyszerű, de értékesítési energiájú magázó magyar.",
         "required": ["valós kivitelezési döntés", "mérnöki ok-okozat", "konkrét ügyfélhaszon"],
         "locked_slogan": "Az építés tudománya.",
-        "forbidden": ["általános otthonszépítés", "BauFreund baráti hangja", "bizonyíték nélküli műszaki tény"],
+        "forbidden": [
+            "általános otthonszépítés",
+            "BauFreund baráti hangja",
+            "bizonyíték nélküli műszaki tény",
+        ],
     },
     "Prefab": {
         "position": "Iparosított, előregyártott építési rendszer: tervezhetőség, ismételhetőség és tiszta döntési pontok.",
         "voice": "Modern, tömör, technológiai, közérthető magázó magyar.",
-        "required": ["előregyártási vagy szerkezeti mechanizmus", "ügyféloldali döntési előny", "konkrét következő lépés"],
+        "required": [
+            "előregyártási vagy szerkezeti mechanizmus",
+            "ügyféloldali döntési előny",
+            "konkrét következő lépés",
+        ],
         "locked_slogans": ["Építőipar 2.0", "Nincsenek kérdőjelek."],
-        "forbidden": ["általános családiház-szöveg", "favázas életmódhangulat", "nem igazolt gyorsasági állítás"],
+        "forbidden": [
+            "általános családiház-szöveg",
+            "favázas életmódhangulat",
+            "nem igazolt gyorsasági állítás",
+        ],
     },
     "Casa Moderna": {
         "position": (
@@ -198,41 +245,89 @@ BRAND_PUBLICATION_CONTRACTS = {
             "egyedi ház építészeti vagy enteriőrdöntése",
             "a brief igazolt következő lépése; márkaforrásnál: Építészkonzultációt kérek.",
         ],
-        "forbidden": ["olcsóság vagy finanszírozás mint főígéret", "generikus luxusjelzők", "nem igazolt okosotthon-funkció"],
+        "forbidden": [
+            "olcsóság vagy finanszírozás mint főígéret",
+            "generikus luxusjelzők",
+            "nem igazolt okosotthon-funkció",
+        ],
     },
     "BauFreund": {
         "position": "Az építtető barátságos szakmai segítője felújításnál, építkezésnél, számításnál és ellenőrzésnél.",
         "voice": "Közvetlen, tegező, természetes, kávé mellett is kimondható magyar.",
-        "required": ["felismerhető vevői félelem vagy kérdés", "egy konkrét BauFreund-mechanizmus", "egy megfigyelhető ügyfélhaszon"],
+        "required": [
+            "felismerhető vevői félelem vagy kérdés",
+            "egy konkrét BauFreund-mechanizmus",
+            "egy megfigyelhető ügyfélhaszon",
+        ],
         "locked_slogan": "BauFreund - az építő barát.",
-        "forbidden": ["száraz vállalati hang", "Bautica mérnöki-tudomány pozíciója", "általános tanács konkrét ajánlat nélkül"],
+        "forbidden": [
+            "száraz vállalati hang",
+            "Bautica mérnöki-tudomány pozíciója",
+            "általános tanács konkrét ajánlat nélkül",
+        ],
     },
     "Danish Fabrik": {
         "position": "Dán szemléletű, iparosított favázas építési rendszer; az anyag- és rendszerválasztás következményei.",
         "voice": "Letisztult, nyugodt, természetes, magázó magyar.",
-        "required": ["favázas vagy anyagválasztási döntés", "rendszerszintű ügyfélhaszon", "konkrét következő lépés"],
+        "required": [
+            "favázas vagy anyagválasztási döntés",
+            "rendszerszintű ügyfélhaszon",
+            "konkrét következő lépés",
+        ],
         "locked_slogan": "Nem érdemes másból építeni.",
-        "forbidden": ["TimberHaus választható készültségi mechanizmusa", "romantikus faházleírás", "nem igazolt felsőbbrendűségi tényállítás"],
+        "forbidden": [
+            "TimberHaus választható készültségi mechanizmusa",
+            "romantikus faházleírás",
+            "nem igazolt felsőbbrendűségi tényállítás",
+        ],
     },
     "TimberHaus": {
         "position": "Nyíltan összehasonlítható, műszakilag átlátható faépítés és választható kivitelezési készültségi szint.",
         "voice": "Nyugodt, természetes, elemző és következetesen magázó magyar.",
-        "required": ["valódi otthon vagy faépítési döntés", "átlátható felelősség vagy készültségi választás", "konkrét következő lépés"],
+        "required": [
+            "valódi otthon vagy faépítési döntés",
+            "átlátható felelősség vagy készültségi választás",
+            "konkrét következő lépés",
+        ],
         "locked_slogan": "Fából mindent lehet.",
-        "forbidden": ["Danish életmódhang", "RED agresszív ár-idő hang", "a falszerkezet mint önmagában eladott termék"],
+        "forbidden": [
+            "Danish életmódhang",
+            "RED agresszív ár-idő hang",
+            "a falszerkezet mint önmagában eladott termék",
+        ],
     },
     "RED Property": {
         "position": "Ingatlanfejlesztő márka családi házak és típusházak számára; az ár, az idő és az összehasonlítható fejlesztési döntés tisztázása.",
         "voice": "Direkt, energikus, magabiztos, tegező, rövid és félreérthetetlen magyar.",
-        "required": ["ingatlanfejlesztőként, nem közvetítőként jelenik meg", "típusház vagy egyértelmű házválasztási helyzet", "egyetlen direkt CTA"],
-        "forbidden": ["ingatlan-közvetítés", "ingatlanhirdetés", "listing", "staging", "bizonyíték nélküli ár-, idő- vagy legjobb/leggyorsabb állítás", "Ház. Ár. Határidő."],
+        "required": [
+            "ingatlanfejlesztőként, nem közvetítőként jelenik meg",
+            "típusház vagy egyértelmű házválasztási helyzet",
+            "egyetlen direkt CTA",
+        ],
+        "forbidden": [
+            "ingatlan-közvetítés",
+            "ingatlanhirdetés",
+            "listing",
+            "staging",
+            "bizonyíték nélküli ár-, idő- vagy legjobb/leggyorsabb állítás",
+            "Ház. Ár. Határidő.",
+        ],
     },
     "Property360": {
         "position": "Property360: az ingatlanvásárlástól a beköltözésig összehangolt ügyfélút; nem befektetési tanácsadás és nem üzemeltetés.",
         "voice": "Segítőkész, lendületes, tegező, döntést könnyítő magyar.",
-        "required": ["konkrét lakás- vagy házkeresési helyzet", "összehangolt következő lépés", "kézzelfogható ügyfélhaszon"],
+        "required": [
+            "konkrét lakás- vagy házkeresési helyzet",
+            "összehangolt következő lépés",
+            "kézzelfogható ügyfélhaszon",
+        ],
         "locked_slogan": "Kattints és költözz!",
-        "forbidden": ["ingatlanbefektetési hozam", "értékbecslés mint főajánlat", "ingatlanüzemeltetés", "általános projektmenedzsment"],
+        "forbidden": [
+            "ingatlanbefektetési hozam",
+            "értékbecslés mint főajánlat",
+            "ingatlanüzemeltetés",
+            "általános projektmenedzsment",
+        ],
     },
     "Everyday Homes": {
         "position": (
@@ -245,19 +340,41 @@ BRAND_PUBLICATION_CONTRACTS = {
             "kézzelfogható alaprajzi, tárolási vagy térhasználati előny",
             "a brief igazolt következő lépése; alaprajzi forrásnál: Kérek alaprajzi konzultációt.",
         ],
-        "forbidden": ["bizonyíték nélküli finanszírozási összeg", "Family Homes karakter- és napirend-mechanizmusa", "száraz mérnöki konzultáció mint főtéma"],
+        "forbidden": [
+            "bizonyíték nélküli finanszírozási összeg",
+            "Family Homes karakter- és napirend-mechanizmusa",
+            "száraz mérnöki konzultáció mint főtéma",
+        ],
     },
     "Family Homes": {
         "position": "A házaknak karakterük van: ház- és alaprajzközpontú történetek arról, milyen benne egy család valódi napja.",
         "voice": "Meleg, megfigyelő, konkrét élethelyzetekből építkező magyar.",
-        "required": ["egy házkarakter vagy alaprajzi döntés", "reggel–napközben–este vagy hétvége konkrét használati helyzete", "termékközpontú következő lépés"],
-        "forbidden": ["Family Match", "kvíz", "három választásra szűkítés", "finanszírozás vagy megfizethetőség mint főígéret", "Everyday Homes oldal- vagy kérdéslogikája"],
+        "required": [
+            "egy házkarakter vagy alaprajzi döntés",
+            "reggel–napközben–este vagy hétvége konkrét használati helyzete",
+            "termékközpontú következő lépés",
+        ],
+        "forbidden": [
+            "Family Match",
+            "kvíz",
+            "három választásra szűkítés",
+            "finanszírozás vagy megfizethetőség mint főígéret",
+            "Everyday Homes oldal- vagy kérdéslogikája",
+        ],
     },
     "Imperial Construction": {
         "position": "Budapesti Magasépítő Vállalat: B2B generálkivitelezés, fővállalkozás és magasépítés szervezett mérnöki színvonalon.",
         "voice": "Tapasztalt cégvezető természetes, magabiztos, magázó hangja.",
-        "required": ["generálkivitelezés, fővállalkozás vagy magasépítés kifejezett megnevezése", "konkrét B2B épülettípus vagy növekedési helyzet", "konkrét ajánlatkérési CTA"],
-        "forbidden": ["lakossági típusház", "általános projektkontroll mint főígéret", "bizonyíték nélküli 1989-, ár- vagy időgarancia"],
+        "required": [
+            "generálkivitelezés, fővállalkozás vagy magasépítés kifejezett megnevezése",
+            "konkrét B2B épülettípus vagy növekedési helyzet",
+            "konkrét ajánlatkérési CTA",
+        ],
+        "forbidden": [
+            "lakossági típusház",
+            "általános projektkontroll mint főígéret",
+            "bizonyíték nélküli 1989-, ár- vagy időgarancia",
+        ],
     },
     "Venture Studio": {
         "position": (
@@ -281,8 +398,16 @@ BRAND_PUBLICATION_CONTRACTS = {
     "BauShield": {
         "position": "BauShield: építési kockázatok, szerződéses pontok és műszaki ellenőrzés közérthető tisztázása.",
         "voice": "Határozott, védelmet és előrelátást hangsúlyozó, tárgyilagos magyar.",
-        "required": ["építési kockázat vagy szerződéses döntés", "ellenőrizhető műszaki szempont", "konkrét következő lépés"],
-        "forbidden": ["garantált eredmény", "bizonyíték nélküli jogi vagy műszaki ígéret", "riogatás"],
+        "required": [
+            "építési kockázat vagy szerződéses döntés",
+            "ellenőrizhető műszaki szempont",
+            "konkrét következő lépés",
+        ],
+        "forbidden": [
+            "garantált eredmény",
+            "bizonyíték nélküli jogi vagy műszaki ígéret",
+            "riogatás",
+        ],
     },
 }
 
@@ -294,7 +419,10 @@ for _brand in set(ACTIVE_CONTENT_BRANDS) - set(BRAND_PUBLICATION_CONTRACTS):
         "position": ", ".join(BRAND_CONTENT_FOCUS[_brand]),
         "voice": "Természetes, konkrét, szakmai magyar; egy álláspont és egy következő lépés.",
         "required": ["márkaspecifikus probléma", "konkrét ügyfélhaszon", "egyetlen CTA"],
-        "forbidden": ["másik Imperial-márka ajánlata", "bizonyíték nélküli szám, ár, idő, garancia vagy felsőfok"],
+        "forbidden": [
+            "másik Imperial-márka ajánlata",
+            "bizonyíték nélküli szám, ár, idő, garancia vagy felsőfok",
+        ],
     }
 
 
@@ -321,6 +449,7 @@ def content_focus_for_brand(brand_id: str) -> tuple[str, ...]:
 
 def publication_contract_for_brand(brand_id: str) -> dict[str, object]:
     return BRAND_PUBLICATION_CONTRACTS[brand_id]
+
 
 # The canonical hard gate remains ACTIVE / FAIL_CLOSED. Matching content must not be
 # queried, fetched, stored, enriched, prompted, handed off, published, or contacted.
@@ -391,6 +520,9 @@ class DailyGateResult:
 def assert_policy_integrity() -> None:
     anchors = (
         (PARTNER_OUTREACH_ANCHOR, PARTNER_OUTREACH_ANCHOR_SHA256),
+        (ARCHITECT_OUTREACH_ANCHOR, ARCHITECT_OUTREACH_ANCHOR_SHA256),
+        (REFERRAL_COMMISSION_ANCHOR, REFERRAL_COMMISSION_ANCHOR_SHA256),
+        (REFERRAL_PAYMENT_ANCHOR, REFERRAL_PAYMENT_ANCHOR_SHA256),
         (LAND_OWNER_SUBJECT, LAND_OWNER_SUBJECT_SHA256),
         (LAND_AGENT_SUBJECT, LAND_AGENT_SUBJECT_SHA256),
         (LAND_OUTREACH_SERVICE_ANCHOR, LAND_OUTREACH_SERVICE_ANCHOR_SHA256),
@@ -401,8 +533,7 @@ def assert_policy_integrity() -> None:
         (LAND_OWNER_REPLY_ANCHOR, LAND_OWNER_REPLY_ANCHOR_SHA256),
     )
     if any(
-        hashlib.sha256(value.encode("utf-8")).hexdigest() != expected
-        for value, expected in anchors
+        hashlib.sha256(value.encode("utf-8")).hexdigest() != expected for value, expected in anchors
     ):
         raise RuntimeError("Owner-approved outreach anchor integrity check failed")
     if len(ACTIVE_CONTENT_BRANDS) != DAILY_CONTENT_BRAND_MINIMUM:
@@ -414,9 +545,7 @@ def assert_policy_integrity() -> None:
     if not set(CMS_LIVE_TARGETS).issubset(ACTIVE_CONTENT_BRANDS):
         raise RuntimeError("CMS delivery scope references an inactive content brand")
     page_targets = [
-        page_id
-        for page_ids in FACEBOOK_TEXT_ONLY_TARGETS.values()
-        for page_id in page_ids
+        page_id for page_ids in FACEBOOK_TEXT_ONLY_TARGETS.values() for page_id in page_ids
     ]
     if len(page_targets) != 12 or len(set(page_targets)) != 12:
         raise RuntimeError("Facebook delivery scope must contain exactly 12 unique pages")
@@ -441,14 +570,25 @@ def assert_outreach_copy(body: str) -> None:
             LAND_OWNER_PERMISSION_ANCHOR,
             LAND_OWNER_REPLY_ANCHOR,
         )
-        if (
-            not all(anchor in body for anchor in required)
-            or LAND_AGENT_COMMISSION_ANCHOR in body
-        ):
+        if not all(anchor in body for anchor in required) or LAND_AGENT_COMMISSION_ANCHOR in body:
             raise ValueError("owner_locked_land_outreach_offer_missing_or_mixed")
         return
     if PARTNER_OUTREACH_ANCHOR not in body:
         raise ValueError("owner_locked_partner_outreach_anchor_missing")
+
+
+def assert_partnerpoint_outreach_copy(body: str, *, recipient_type: str) -> None:
+    assert_policy_integrity()
+    if recipient_type == "architect_office":
+        if ARCHITECT_OUTREACH_ANCHOR not in body or "2,5%" in body:
+            raise ValueError("owner_locked_architect_outreach_copy_invalid")
+        return
+    if recipient_type == "referral_partner":
+        if REFERRAL_COMMISSION_ANCHOR not in body or REFERRAL_PAYMENT_ANCHOR not in body:
+            raise ValueError("owner_locked_referral_outreach_copy_invalid")
+        return
+    raise ValueError("owner_locked_partnerpoint_recipient_type_invalid")
+
 
 def contains_no_monitoring_entity(value: str) -> bool:
     normalized = " ".join(value.casefold().split())
@@ -508,9 +648,7 @@ def land_agent_hard_gate_reason(
         return LAND_AGENT_HARD_GATE_TURCZER
     if re.search(r"\bg\s*d\s*n\b", identity):
         return LAND_AGENT_HARD_GATE_GDN
-    is_otthon_centrum = bool(
-        re.search(r"\botthon\s+centrum\b|\boc\s+hu\b", identity)
-    )
+    is_otthon_centrum = bool(re.search(r"\botthon\s+centrum\b|\boc\s+hu\b", identity))
     if not is_otthon_centrum or not office_name or not office_name.strip():
         return None
     if _blocked_oc_office(office_name):
