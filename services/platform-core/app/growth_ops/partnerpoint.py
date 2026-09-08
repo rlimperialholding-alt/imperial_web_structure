@@ -5,6 +5,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -90,14 +91,31 @@ def _google_json(
     *,
     timeout: float = 45.0,
 ) -> dict[str, Any]:
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.load(response)
-    except urllib.error.HTTPError as exc:
-        detail = exc.read(2000).decode("utf-8", "replace")
-        raise GrowthRegistryError(f"partnerpoint_google_http_{exc.code}:{detail[:300]}") from exc
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        raise GrowthRegistryError("partnerpoint_google_request_failed") from exc
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.load(response)
+            break
+        except urllib.error.HTTPError as exc:
+            detail = exc.read(2000).decode("utf-8", "replace")
+            try:
+                reasons = {
+                    str(item.get("reason") or "")
+                    for item in json.loads(detail).get("error", {}).get("errors", [])
+                }
+            except (ValueError, json.JSONDecodeError, AttributeError):
+                reasons = set()
+            retryable = exc.code == 429 or bool(
+                reasons.intersection({"rateLimitExceeded", "userRateLimitExceeded"})
+            )
+            if retryable and attempt < 4:
+                time.sleep(2**attempt)
+                continue
+            raise GrowthRegistryError(
+                f"partnerpoint_google_http_{exc.code}:{detail[:300]}"
+            ) from exc
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise GrowthRegistryError("partnerpoint_google_request_failed") from exc
     if not isinstance(payload, dict):
         raise GrowthRegistryError("partnerpoint_google_response_invalid")
     return payload
