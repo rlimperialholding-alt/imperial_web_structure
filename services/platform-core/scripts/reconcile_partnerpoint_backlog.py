@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import urllib.parse
 import urllib.request
 from collections import Counter
@@ -17,6 +18,8 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from app.database import SessionLocal
 from app.growth_ops.models import (
     GrowthAccountStop,
@@ -27,18 +30,8 @@ from app.growth_ops.partnerpoint import _access_token, fetch_snapshot
 from app.growth_ops.registry import GrowthRegistry
 
 EXPECTED_CONTROL_SET_SIZE = 85
-CLASSIFICATIONS = (
-    "ALREADY_SENT",
-    "REPLIED_STOP",
-    "DNC_STOP",
-    "BOUNCE_BLOCK",
-    "OWNER_MANUAL_ONLY",
-    "DUPLICATE_STOP",
-    "STALE_REQUALIFY",
-    "READY_TO_SEND",
-    "SEND_UNVERIFIED_REVIEW",
-    "OTHER",
-)
+LEGACY_HANDOFF_STATUS = "CENTRAL_QUEUE_HANDOFF_BLOCKED_ADAPTER_UNAVAILABLE"
+HISTORICAL_RESCOPED_RECORD_IDS = {"OUT-260825-002", "FU-260829-005"}
 _EMAIL_RE = re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+", re.I)
 
 
@@ -198,16 +191,22 @@ def _classification(
     return "STALE_REQUALIFY", "Legacy package has no current send proof and must be requalified"
 
 
+def _historical_control_rows(
+    pipeline_rows: list[list[str]],
+) -> list[tuple[int, list[str]]]:
+    return [
+        (number, row)
+        for number, row in enumerate(pipeline_rows[1:], start=2)
+        if row[5] == LEGACY_HANDOFF_STATUS or row[0] in HISTORICAL_RESCOPED_RECORD_IDS
+    ]
+
+
 def main() -> None:
     snapshot = fetch_snapshot()
     universe_rows = [_padded(row, 23) for row in snapshot["Partner_Universe"]]
     pipeline_rows = [_padded(row, 15) for row in snapshot["Outreach_Pipeline"]]
     universe_by_candidate = {row[0]: row for row in universe_rows[1:] if row[0]}
-    control_rows = [
-        (number, row)
-        for number, row in enumerate(pipeline_rows[1:], start=2)
-        if "központi" in " ".join(row).casefold()
-    ]
+    control_rows = _historical_control_rows(pipeline_rows)
     if len(control_rows) != EXPECTED_CONTROL_SET_SIZE:
         raise RuntimeError(f"partnerpoint_control_set_size_changed:{len(control_rows)}")
     token = _access_token(
