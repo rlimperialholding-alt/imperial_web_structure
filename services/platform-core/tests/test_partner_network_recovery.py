@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import select, text
 
-from app.growth_ops import partnerpoint, service
+from app.growth_ops import canonical_policy, partnerpoint, service
 from app.growth_ops.models import GrowthAccountStop, GrowthSignal, OutreachMessage
 from scripts.reconcile_partnerpoint_backlog import _historical_control_rows
 
@@ -439,3 +442,28 @@ def test_legacy_reconciliation_set_preserves_two_rescoped_banati_rows():
         "OUT-260825-002",
         "FU-260829-005",
     ]
+
+
+def test_partnerpoint_copy_gate_accepts_only_the_two_owner_approved_template_types():
+    registry_path = (
+        Path(__file__).resolve().parents[3]
+        / "config"
+        / "outbound"
+        / "canonical_first_contact_templates_hu_v1.json"
+    )
+    templates = {
+        item["recipient_type"]: item["owner_approved_body_text"]
+        for item in json.loads(registry_path.read_text(encoding="utf-8"))["templates"]
+    }
+
+    canonical_policy.assert_partnerpoint_outreach_copy(
+        templates["architect_office"], recipient_type="architect_office"
+    )
+    canonical_policy.assert_partnerpoint_outreach_copy(
+        templates["referral_partner"], recipient_type="referral_partner"
+    )
+    assert "2,5%" not in templates["architect_office"]
+    with pytest.raises(ValueError, match="architect_outreach_copy_invalid"):
+        canonical_policy.assert_partnerpoint_outreach_copy(
+            templates["architect_office"] + " 2,5%", recipient_type="architect_office"
+        )

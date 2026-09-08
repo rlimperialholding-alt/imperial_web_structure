@@ -710,7 +710,7 @@ def sync_candidates(db: Session) -> dict[str, Any]:
                 recipient_role="unknown",
                 recipient_type=candidate["recipient_type"],
                 recipient_name=candidate["recipient_name"],
-                sender_company_name="Imperial Holding Kft.",
+                sender_company_name="Imperial Holding",
                 business_context=binding.get("business_context"),
                 business_context_verified=bool(binding.get("business_context_verified")),
                 business_context_evidence_url=binding.get("business_context_evidence_url"),

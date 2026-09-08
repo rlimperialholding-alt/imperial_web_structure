@@ -34,6 +34,7 @@ from ..models import AuditLog, MailSendingDomain, MailSuppression
 from .canonical_policy import (
     LAND_AGENT_HARD_GATE_REASONS,
     assert_outreach_copy,
+    assert_partnerpoint_outreach_copy,
     contains_no_monitoring_entity,
     land_agent_hard_gate_reason,
 )
@@ -1705,7 +1706,10 @@ def _queue_message(
             or source.get("binding_sha256") != data.source_payload_hash
         ):
             raise GrowthRegistryError("partnerpoint_policy_source_binding_invalid")
-        assert_outreach_copy(row.body_text)
+        assert_partnerpoint_outreach_copy(
+            row.body_text,
+            recipient_type=data.recipient_type,
+        )
         row.release_approved_by = "owner-policy:partnerpoint-v1.8:2026-09-08"
         row.release_approved_at = utcnow()
         row.release_token_hash = _release_digest(row, row.release_approved_by)
@@ -1820,13 +1824,72 @@ def ingest_signal(
     )
     if existing:
         existing.last_seen_at = utcnow()
-        db.commit()
         outreach = db.scalar(
             select(OutreachMessage).where(
                 OutreachMessage.signal_id == existing.signal_id,
                 OutreachMessage.sequence_step == 0,
             )
         )
+        existing_reasons = set(json.loads(existing.rejection_reasons_json or "[]"))
+        recoverable_partnerpoint_reasons = {
+            "canonical_sender_company_conflicts_with_sender_brand_no_send",
+            "owner_locked_partner_outreach_anchor_missing",
+        }
+        if (
+            outreach is None
+            and existing.status == "blocked"
+            and existing.external_key.startswith("PC-")
+            and existing_reasons
+            and existing_reasons.issubset(recoverable_partnerpoint_reasons)
+            and getattr(settings(), "partnerpoint_enabled", False)
+        ):
+            retry_reasons = _eligibility(data, _score(data))
+            try:
+                binding = registry.brand_binding(brand_id)
+                _verified_sender(db, binding)
+                if retry_reasons:
+                    raise GrowthRegistryError(";".join(retry_reasons))
+                if not writes_unlocked() or not _control_enabled(db, data.motor_key):
+                    raise GrowthRegistryError("growth_writes_locked")
+                outreach = _queue_message(
+                    db,
+                    existing,
+                    binding,
+                    step=0,
+                    available_at=utcnow(),
+                    enforce_recipient_cooldown=True,
+                    data=data,
+                    source_evidence_manifest_sha256=source_evidence_manifest,
+                )
+                existing.status = "queued"
+                existing.rejection_reasons_json = "[]"
+                source = registry.sources.get(existing.source_id)
+                if (
+                    isinstance(source, dict)
+                    and source.get("kind") == GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
+                ):
+                    _record_official_source_binding_proof(
+                        db,
+                        outreach,
+                        existing,
+                        source,
+                        actor="growth-ops",
+                        proof_origin="partnerpoint_policy_retry",
+                    )
+                audit(
+                    db,
+                    actor="growth-ops",
+                    action="growth_partnerpoint_policy_block_recovered",
+                    entity_type="growth_signal",
+                    entity_id=existing.signal_id,
+                    before={"reasons": sorted(existing_reasons)},
+                    after={"status": "queued", "outreach_id": outreach.outreach_id},
+                )
+            except (GrowthRegistryError, ValueError) as exc:
+                retry_reasons.append(str(exc))
+                existing.status = "blocked"
+                existing.rejection_reasons_json = canonical_json(sorted(set(retry_reasons)))
+        db.commit()
         return GrowthSignalReceipt(
             signal_id=existing.signal_id,
             status=existing.status,
