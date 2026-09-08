@@ -104,8 +104,7 @@ def test_margin_boundaries(db, direct_amount, proposed, expected):
         assert error.plan_version == 1
         message = error.message_hu
         assert "35.00" in message and "34.99" in message and "/financial" in message
-        # Jogosulatlan költségadat-szivárgás tilalma: soronkénti összegek
-        # nem szerepelhetnek a hibaüzenetben.
+        # Költségadat-szivárgás tilalma: soronkénti összeg nem lehet a hibaüzenetben.
         assert direct_amount not in message and revenue not in message
 
 
@@ -207,9 +206,8 @@ def test_contingency_over_budget_blocks(db):
 
 def test_explicit_contingency_line_replaces_conservative_bucket(db):
     plan = seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")], contingency="1000000")
-    # Review A M1 / Review B MEDIUM-1: a tartalék-allokáció csak TELJES lehet —
-    # a részleges (0.5M) sor fail-closed blokk, a fel nem osztott maradék
-    # soha nem eshet ki némán a vetületből.
+    # A tartalék-allokáció csak TELJES lehet — a részleges sor fail-closed
+    # blokk, a fel nem osztott maradék nem eshet ki a vetületből.
     from app.models import ProjectFinanceBudgetLine
     line = ProjectFinanceBudgetLine(
         line_id="FIN-LINE-CONTINGENCY",
@@ -338,9 +336,8 @@ def test_direct_cost_baseline_package_requires_full_revenue(db):
 
 @pytest.mark.parametrize( "revenue,amount", [("9230769.23", "6000000"), ("9000000", "100")], )
 def test_direct_cost_baseline_insufficient_revenue_blocks_fail_closed(db, revenue, amount):
-    # Kerekített elvárt bevétel (6,000,000 / 0.65 → 9,230,769.23) mellett a
-    # pontos hányados 35.00 ALATT marad; a kapu a kerekítetlen értékkel dönt,
-    # ezért blokkol — illetve eleve elégtelen bevételnél is.
+    # Kerekített elvárt bevétel mellett a pontos hányados 35.00 ALATT marad;
+    # a kapu a kerekítetlen értékkel dönt, ezért blokkol.
     plan = seed_gate_plan(db, project_id=PROJECT, revenue=revenue, summary_lines=[{"cost_code": "FOUNDATION-DCB", "amount": "6000000", "amount_basis": "DIRECT_COST_BASELINE", "component": "other"}],)
     _dcb_snapshot(db, plan)
     with pytest.raises(MarginGateBlocked) as excinfo:
@@ -399,9 +396,8 @@ def test_detailed_children_sum_to_envelope_passes(db):
 
 
 def test_detailed_children_over_envelope_block_build_and_gate(db):
-    # A gyerekek boríték fölé nőttek: a részletes sorokból épülő pillanatkép
-    # létrehozása már fail-closed, majd NORM_TABLE pillanatképpel a kapu is
-    # blokkol (a gyerekösszeg-egyeztetés forrástípustól függetlenül kötelező).
+    # A gyerekek boríték fölé nőttek: a részletes pillanatkép létrehozása
+    # fail-closed, NORM_TABLE pillanatképpel a kapu is blokkol.
     plan = _foundation_plan(db)
     parent_id = get_line(db, plan, "FOUNDATION").line_id
     _add_foundation_children(db, plan, parent_id, ("2000000", "1560000", "585000", "390000", "195000"))
@@ -422,7 +418,6 @@ def test_detailed_direct_baseline_children_mismatch_blocks(db):
         summary_lines=[{"cost_code": "FOUNDATION-DCB", "amount": "6000000", "amount_basis": "DIRECT_COST_BASELINE", "component": "other"}],
     )
     add_child_line(db, plan, cost_code="CONCRETE", amount="5000000", component="material", parent_summary_line_id=get_line(db, plan, "FOUNDATION-DCB").line_id)
-    # A gyerekösszeg-egyeztetés forrástípustól függetlenül kötelező.
     _dcb_snapshot(db, plan)
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="CONCRETE", amount="100")
@@ -453,11 +448,9 @@ def _partial_detailed_plan(db, *, children=("2000000", "2000000"), project=PROJE
 
 
 def test_partial_detailed_allocation_unallocated_blocks_before_mutation(db):
-    # A korábbi vetület csak a gyerekeket (4M+2M) számította volna: 40%
-    # fedezet → PASS. A kapu a fel nem osztott 2.5M boríték-maradékot
-    # fail-closed zárolja, MUTÁCIÓ ELŐTT: a teljes 65%-os borítékkal (8.5M)
-    # a fedezet 15% — részleges allokáció nem javíthat fedezetet, nem érhet
-    # át egyetlen award/order/commitment/contract határt sem.
+    # A korábbi vetület 40% fedezet → PASS lett volna; a fel nem osztott
+    # 2.5M boríték-maradékot a kapu MUTÁCIÓ ELŐTT zárolja (15% BLOCK) —
+    # részleges allokáció nem javíthat fedezetet, határt nem léphet át.
     plan = _partial_detailed_plan(db)
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="CHILD-P1", amount="100")
@@ -471,9 +464,8 @@ def test_partial_detailed_allocation_unallocated_blocks_before_mutation(db):
 
 
 def test_partial_detailed_allocation_remainder_counted_once_not_outperforming(db):
-    # Inkonzisztens/kézzel rögzített pillanatkép (unallocated=0, gyerekösszeg
-    # < boríték): a fedetlen maradék konzervatívan EGYSZER kerül a vetületbe
-    # — (10M − 8.5M) / 10M = 15% → BLOCK, a vetület pontosan a teljes boríték.
+    # Inkonzisztens pillanatkép (unallocated=0, gyerekösszeg < boríték): a
+    # fedetlen maradék konzervatívan EGYSZER a vetületbe (15% → BLOCK).
     plan = _partial_detailed_plan(db)
     snapshot = db.scalar(select(FinanceAllocationSnapshot).where(FinanceAllocationSnapshot.plan_id_fk == plan.id))
     snapshot.unallocated_amount = Decimal("0")
@@ -488,14 +480,11 @@ def test_partial_detailed_allocation_remainder_counted_once_not_outperforming(db
     import json
     calc = json.loads(evidence.calculation_json)
     parent_id = get_line(db, plan, "PACK-PART").line_id
-    # A csomag-vetület pontosan a fedetlen maradék (2.5M), a gyereksorok a
-    # per-line ciklusban (4M), a külön direct sor 2M — dupla számolás nélkül.
+    # Vetület pontosan a fedetlen maradék (2.5M); gyereksor 4M, direct 2M — dupla számolás nélkül.
     assert calc["packages"][parent_id]["projected_direct"] == "2500000.00"
     assert calc["projected_total_direct"] == "8500000.00"
-    # Teljes, pontosan egyeztetett gyerekallokáció (6.5M = boríték): a vetület
-    # AZONOS (8.5M, 15% BLOCK) — a részleges pillanatkép ugyanarra a
-    # konzervatív vetületre zárul, soha nem „javíthat" a teljes allokációhoz
-    # képest.
+    # Teljes, pontosan egyeztetett gyerekallokáció: a vetület AZONOS
+    # (8.5M, 15% BLOCK) — a részleges soha nem „javíthat" a teljeshez képest.
     complete = _partial_detailed_plan(db, children=("3250000", "3250000"), project="GATE-TEST-CMPL")
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="CHILD-P1", amount="100", project="GATE-TEST-CMPL")
@@ -532,9 +521,8 @@ def _detailed_norm_plan(db, *, snapshot_code="EXTRA-TRADE"):
 
 def test_snapshot_only_trade_code_commitment_counts_in_projection(db):
     plan = _detailed_norm_plan(db)
-    # A gyereksorok pontosan a borítékot (3.9M) fedik → 35.00%; a
-    # snapshot-only kódra kötött 100k a vetületbe számít:
-    # (6M − 3.9M − 0.1M) / 6M = 33.33 → BLOCK (nem 35.00 PASS).
+    # A gyereksorok pontosan a borítékot (3.9M) fedik; a snapshot-only kódra
+    # kötött 100k a vetületbe számít: 33.33 → BLOCK (nem 35.00 PASS).
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="EXTRA-TRADE", amount="100000")
     assert excinfo.value.reason_code == "margin_below_minimum"
@@ -548,8 +536,7 @@ def test_snapshot_only_trade_code_commitment_counts_in_projection(db):
 
 def test_snapshot_only_trade_code_commitment_respects_envelope(db):
     plan = _detailed_norm_plan(db)
-    # A snapshot-only kód a csomag-elköteleződésbe is beleszámít: 3.95M > 3.9M
-    # boríték → package_envelope_exceeded (nem tűnhet el a boríték-ellenőrzésből).
+    # A snapshot-only kód a csomag-elköteleződésbe is beleszámít: 3.95M > 3.9M boríték → package_envelope_exceeded.
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="EXTRA-TRADE", amount="3950000")
     assert excinfo.value.reason_code == "package_envelope_exceeded"
@@ -599,8 +586,7 @@ def test_allocation_ratios_keep_4_decimal_precision_and_normalize_exactly(db):
         ],
     )
     ratios = [row.normalized_ratio for row in snapshot.rows]
-    # A pénz-kvantáló (0.01) nem férhet az arányokhoz: négy tizedes pontosság
-    # és pontosan 100.0000 összeg, az utolsó sor maradék-elnyelésével.
+    # A pénz-kvantáló nem férhet az arányokhoz: 0.0001 pontosság, 100.0000 összeg.
     assert ratios == [Decimal("33.3333"), Decimal("33.3333"), Decimal("33.3334")]
     assert all(ratio.as_tuple().exponent == -4 for ratio in ratios)
     assert sum(ratios, Decimal("0")) == Decimal("100.0000")
@@ -710,8 +696,7 @@ def test_vat_rules_never_affect_gate_math(db):
     import json
     calc = json.loads(after.calculation_json)
     assert calc["vat_applied_in_math"] is False
-    # A 22 százalékpontos differenciál sehol nem jelenhet meg a számításban
-    # (a kapu aritmetikája ÁFA-mentes, kizárólag nettó alapon számol).
+    # A 22 százalékpontos differenciál nem jelenhet meg a számításban (ÁFA-mentes, nettó).
     assert "22" not in after.calculation_json
 
 
@@ -740,8 +725,7 @@ def test_list_decisions_filters_to_allowed_projects_only(db):
     seed_gate_plan(db, project_id="OTHER-PROJECT", revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
     _evaluate(db, subject_id="SCOPE-2", amount="100", project="OTHER-PROJECT")
     db.commit()
-    # Task77 Gate7: az allowed_project_ids szűrő csak az engedélyezett kör
-    # döntéseit adja vissza; üres kör = üres lista (soha keresztprojekt dump).
+    # Task77 Gate7: az allowed_project_ids szűrő csak a kör döntéseit adja vissza (keresztprojekt dump tilos).
     rows = list_decisions(db, allowed_project_ids={PROJECT})
     assert {row.project_id for row in rows} == {PROJECT}
     assert list_decisions(db, allowed_project_ids=set()) == []

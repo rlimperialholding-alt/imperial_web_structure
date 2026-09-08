@@ -106,10 +106,16 @@ def _drop_index_if_exists(table: str, name: str) -> None:
 
 
 def _drop_column_if_exists(table: str, name: str) -> None:
+    # Task80 (Review MEDIUM): az oszlopdobás batch-módban történik — a
+    # PostgreSQL-ben ez ugyanúgy plain ``ALTER TABLE ... DROP COLUMN``-ra
+    # fordul, az SQLite viszont kizárólag tábla-újraépítéssel (batch) tud
+    # oszlopot dobni; a korábbi közvetlen op.drop_column SQLite alatt
+    # hordozhatatlan volt.
     inspector = sa.inspect(op.get_bind())
     columns = {item["name"] for item in inspector.get_columns(table)}
     if name in columns:
-        op.drop_column(table, name)
+        with op.batch_alter_table(table) as batch_op:
+            batch_op.drop_column(name)
 
 
 def _added_column_has_data(table: str, column: str, nullable: bool, default) -> bool:
@@ -280,7 +286,11 @@ def upgrade() -> None:
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("cost_class", sa.String(20), nullable=True),)
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("direct_cost_component", sa.String(20), nullable=True),)
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("amount_basis", sa.String(40), nullable=True),)
-    _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("is_summary_package", sa.Boolean(), nullable=False, server_default="0"),)
+    # Task80 (Review HIGH): a Boolean oszlop server_default-ja PG-érvényes
+    # boolean-literál (``DEFAULT false``); a korábbi "0" egész-literál, amit
+    # a PostgreSQL boolean oszlopra elutasít. A sa.text konstans, interpoláció
+    # nélküli — a Semgrep avoid-sqlalchemy-text szerződése nem sérül.
+    _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("is_summary_package", sa.Boolean(), nullable=False, server_default=sa.text("false")),)
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("parent_summary_line_id", sa.String(120), nullable=True),)
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("currency", sa.String(3), nullable=False, server_default="HUF"),)
     _add_missing_column(inspector, "tender_packages", sa.Column("cost_code", sa.String(100), nullable=True),)

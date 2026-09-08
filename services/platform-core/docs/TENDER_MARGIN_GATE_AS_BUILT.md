@@ -13,7 +13,7 @@ explicit `cost_class`; besorolatlan sor és indirect csomag-gyereksor blokk. A
 tartalékkeret konzervatívan direct, amíg TELJES explicit tartalék-allokáció
 nem jön. Soronkénti várható direct = `max(sorkeret, actual + ETC,
 committed_baseline + idempotens lekötések)`; az árva lekötések teljes összege
-konzervatívan a vetületben. A kapu a KEREKÍTETLEN hányadost veti össze a
+konzervatívan a vetületben; a kapu a KEREKÍTETLEN hányadost veti össze a
 35.00 minimummal. ÁFA csak a `margin_gate_vat_rules` konfigurációban él, a
 számítást soha nem módosítja (`vat_applied_in_math: false`).
 
@@ -30,10 +30,9 @@ számítást soha nem módosítja (`vat_applied_in_math: false`).
   DETAILED_LINES (terv-lenyomathoz kötött stale-detekció), (2) normatábla, (3)
   historikus tény / szállítói bizonyíték; minden más ALLOCATION_UNRESOLVED.
   Alacsony megbízhatóság, részleges lefedettség, lejárt/inkonzisztens
-  pillanatkép, nem nulla unallocated blokk. Részleges gyerekallokáció nem
-  javíthat fedezetet: gyereksoros csomagnál a nem nulla `unallocated_amount`
-  fail-closed blokk a mutáció ELŐTT, az esetleges fedetlen boríték-maradék
-  konzervatívan egyszer a vetületbe számít.
+  pillanatkép, nem nulla unallocated blokk; részleges gyerekallokáció nem
+  javíthat fedezetet (a nem nulla `unallocated_amount` fail-closed blokk a
+  mutáció ELŐTT, a fedetlen boríték-maradék konzervatívan egyszer a vetületbe).
 
 ## Idempotencia, TOCTOU, döntés-bizonyíték
 
@@ -43,9 +42,9 @@ számítást soha nem módosítja (`vat_applied_in_math: false`).
   közt szerepel (árva kód → fail-closed az aktiválás ELŐTT).
 - A kapu `FOR UPDATE` zárral dolgozik; `verify_plan_unchanged` a commit előtt
   ellenőrzi a verziót/lenyomatot. Az import-jóváhagyás a céltervet sorzárral
-  tölti, a draft-ellenőrzést a zár UTÁN ismétli meg, és az import sor
-  újrazárolt állapotát is újraellenőrzi — konkurens jóváhagyásnál az import
-  sorai legfeljebb egyszer kerülnek a tervre; jóváhagyott terv immutable.
+  tölti, a draft-ellenőrzést a zár UTÁN ismétli, az import sor újrazárolt
+  állapotát is újraellenőrzi — konkurens jóváhagyásnál a sorok legfeljebb
+  egyszer kerülnek a tervre; jóváhagyott terv immutable.
 - PASS: pillanatkép + audit a mutáció tranzakciójában. BLOCK: immutable
   bizonyíték független tranzakcióban (FK-mentes plan-hivatkozás); a hibaüzenet
   csak aggregált adat. Egy döntéshez legfeljebb egy megrendelés: kódbeli
@@ -85,12 +84,11 @@ generikus API token mellett a bejelentkezett felhasználó kötelező, és csak
 finance/managing-director/owner/platform-admin szerepkör fogadható el (a
 token ÖNMAGÁBAN nem ad platform-admin-t); az audit a valódi actor e-mailjét
 rögzíti. A jóváhagyás az import projektjének feloldása UTÁN az actor projekt-
-hozzáférését is ellenőrzi a mutáció ELŐTT. Projekt-scope: az allokációs API-k
-a céltervet ELŐSZÖR oldják fel, majd fail-closed ellenőrzik az actor
-hozzáférését; a döntésnapló és a HTML `/margin-gate` dashboard csak az actor
-számára elérhető projektek döntéseit adja vissza/rendereli, a körön kívüli
-kért projekt 403. Klónozás: a parent_summary_line_id remap két menetben, a
-TELJES forrás→klón térkép után fut.
+hozzáférését is ellenőrzi a mutáció ELŐTT; az allokációs API-k a céltervet
+ELŐSZÖR oldják fel, majd fail-closed ellenőrzik az actor hozzáférését; a
+döntésnapló és a HTML `/margin-gate` dashboard csak az actor számára elérhető
+projektek döntéseit adja vissza/rendereli (körön kívüli kérés 403). Klónozás:
+a parent_summary_line_id remap két menetben, a TELJES forrás→klón térkép után.
 
 ## Bizonyító tesztek
 
@@ -101,6 +99,5 @@ fail-closed utak), `test_tender_margin_enforcement.py` (enforcement határok,
 rollback, outbox-elnyomás, szerepkörök, API-identitás-kötés, dashboard- és
 /api-döntésnapló scope), `test_tender_margin_gate_remediation.py`
 (review-remediációk; 0073 futás idejű upgrade/downgrade/re-upgrade +
-üzleti-sor-elutasítás lánc), `test_tender_margin_gate_task77.py`
-(authorization/concurrency Gate7 remediációk, konkurens import-jóváhagyás).
-Minden fixture szintetikus.
+üzleti-sor-elutasítás lánc, Task77 Gate7 remediációk). Minden fixture
+szintetikus.

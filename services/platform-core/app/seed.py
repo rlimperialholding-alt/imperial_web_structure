@@ -113,11 +113,13 @@ def demo_accounts_allowed() -> bool:
 
 DEMO_CREDENTIALS_STATE_ENV = "DEMO_CREDENTIALS_STATE_PATH"
 # Korlátos lock-várakozási ablak; kimerülése explicit fail-closed hiba.
-_DEMO_STATE_LOCK_RETRY_DELAYS = (0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 0.8, 0.8, 0.8, 0.8)
+# Task80 (Gate4): a coverage-futás CPU/AV-terhelésére kibővített, még mindig
+# KORLÁTOS ablak; a kimerülés továbbra is fail-closed hiba.
+_DEMO_STATE_LOCK_RETRY_DELAYS = (0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8)
 # Az írás utáni visszaolvasás korlátos újrapróbálása (Windows AV/indexer
 # blokkolhatja a frissen cserélt fájlt); kimerülése fail-closed hiba.
 _STATE_READBACK_ATTEMPTS = 5
-_STATE_READBACK_DELAY = 0.05
+_STATE_READBACK_DELAY = 0.1
 
 
 def _demo_credentials_state_path() -> Path:
@@ -195,7 +197,7 @@ def _release_demo_state_lock(lock_path: Path) -> None:
                 raise DemoCredentialsStateError(
                     "demo credential creation lock could not be released."
                 ) from error
-            time.sleep(_STATE_READBACK_DELAY)
+            time.sleep(_STATE_READBACK_DELAY * attempt)
 
 
 def _read_demo_credentials_state(state_path: Path) -> tuple[str, str] | None:

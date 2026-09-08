@@ -301,11 +301,32 @@ def preview_budget_import(db: Session, *, project_id: str, file_name: str, data:
     return row
 
 
-def approve_budget_import(db: Session, *, import_id: str, plan_id: str, actor: str, actor_role: str, user: object | None = None) -> ProjectBudgetImport:
-    """Jóváhagyás kizárólag draft tervre, a tárolt, hash-elt preview-ból; a
-    „preview után megváltozott bemenet" fail-closed elutasítás."""
-    if actor_role not in IMPORT_ROLES:
+def _verified_approver(user: object) -> tuple[str, str]:
+    """Task80: az effective actor (email, szerepkör) KIZÁRÓLAG a hitelesített
+    user-objektumból származik — külön actor/actor_role paraméter nincs, így
+    önkényes ``actor_role='finance'`` vagy idegen audit-actor nem adható át;
+    hiányzó kontextus, azonosítatlan user vagy nem jóváhagyó szerepkör
+    fail-closed PermissionError (mutáció előtt)."""
+    if user is None:
+        raise PermissionError("A költségvetés-import jóváhagyása hitelesített felhasználói kontextus nélkül nem végezhető el.")
+    actor = getattr(user, "email", None)
+    role = getattr(user, "role", None)
+    if not isinstance(actor, str) or not actor:
+        raise PermissionError("A költségvetés-import jóváhagyása azonosítatlan felhasználóval nem végezhető el.")
+    if role not in IMPORT_ROLES:
         raise PermissionError("A költségvetés-import jóváhagyására nincs jogosultság.")
+    return actor, role
+
+
+def approve_budget_import(db: Session, *, import_id: str, plan_id: str, user: object) -> ProjectBudgetImport:
+    """Jóváhagyás kizárólag draft tervre, a tárolt, hash-elt preview-ból; a
+    „preview után megváltozott bemenet" fail-closed elutasítás.
+
+    Task80: a jóváhagyó actor (email, szerepkör) a SZOLGÁLTATÁSBAN a
+    hitelesített user-objektumból származik — PM-felelősség önmagában soha
+    nem elég; a zár utáni újrazárolt soron a status ÉS a preview_sha256 is
+    újraellenőrzött (TOCTOU-védelem a védett tranzakcióban)."""
+    actor, _actor_role = _verified_approver(user)
     row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id))
     if row is None:
         raise KeyError(import_id)
@@ -336,6 +357,11 @@ def approve_budget_import(db: Session, *, import_id: str, plan_id: str, actor: s
         raise KeyError(import_id)
     if row.status != "preview":
         raise MarginGateBlocked("import_not_preview", "Csak hibátlan preview állapotú import hagyható jóvá.",)
+    # Task80 (Review MEDIUM): a zár utáni újrazárolt soron a preview_sha256 is
+    # ÚJRAELLENŐRZÖTT — a zár előtti ellenőrzés óta megváltoztatott preview
+    # determinisztikusan elutasított (TOCTOU-védelem a védett tranzakcióban).
+    if sha256_hex(row.preview_json) != row.preview_sha256:
+        raise MarginGateBlocked("import_changed_after_preview", "Az import tartalma a preview óta megváltozott; a jóváhagyás " "fail-closed elutasítva.",)
     if plan.status != "draft":
         raise MarginGateBlocked("import_target_not_draft", "A költségvetés-import kizárólag draft tervre írható; jóváhagyott " "terv immutable.",)
     payload = json.loads(row.preview_json)

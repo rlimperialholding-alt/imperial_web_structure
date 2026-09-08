@@ -15101,8 +15101,7 @@ async def api_budget_import_preview(
     db: Session = Depends(get_db),
     user: User = Depends(require_api_token_finance_actor),
 ):
-    # Task77 Gate7: bejelentkezett pénzügyi actor + projekt-scope, valós
-    # actor az auditban (az "api" literál helyett).
+    # Task77 Gate7: bejelentkezett pénzügyi actor + projekt-scope, valós actor az auditban.
     try:
         require_project_finance_scope(db, user, project_id)
     except PermissionError as exc:
@@ -15135,11 +15134,10 @@ def api_budget_import_approve(
     user: User = Depends(require_api_token_finance_actor),
 ):
     # A generikus API token nem ad platform-admin szerepkört: a jóváhagyó a
-    # bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó (az ő e-mailje
-    # az auditált actor), a token csak a szállítási réteg azonosítása.
-    # Task78: az import projektjét ELŐBB fel kell oldani, és a bejelentkezett
-    # actor hozzáférése az import PONTOS projektjéhez kötelező — a szolgáltatás
-    # import-terv egyezése nem helyettesíti az actor-jogosultságot.
+    # bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó; Task78: az import
+    # projektjét ELŐBB fel kell oldani, az actor hozzáférése az import PONTOS
+    # projektjéhez kötelező — a szolgáltatás import-terv egyezése nem
+    # helyettesíti az actor-jogosultságot.
     import_row = db.scalar(
         select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id)
     )
@@ -15154,10 +15152,8 @@ def api_budget_import_approve(
             db,
             import_id=import_id,
             plan_id=payload.plan_id,
-            actor=user.email,
-            actor_role=user.role,
-            # Task79: a hitelesített actor-kontextus kötelező — a szolgáltatás
-            # a mutáció előtt belső projekt-scope ellenőrzést végez.
+            # Task80: az actor (email, szerepkör) a szolgáltatásban a hitelesített
+            # user-objektumból származik — külön actor/role paraméter nincs.
             user=user,
         )
     except KeyError as exc:

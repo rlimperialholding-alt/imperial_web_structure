@@ -24,6 +24,7 @@ from app.services.budget_import import (
     parse_budget_file,
     preview_budget_import,
 )
+from app.services.tender_margin_gate import MarginGateBlocked
 
 HEADERS = [
     "cost_code",
@@ -87,13 +88,12 @@ def _draft_plan(db, *, project_id="IMP-IMPORT-001", plan_id="FIN-PLAN-IMPORT-01"
 
 def _user(role: str, email: str | None = None):
     from types import SimpleNamespace
-    return SimpleNamespace(role=role, email=email or f"{role}@imperial.local")
+    return SimpleNamespace(role=role, email=email if email is not None else f"{role}@imperial.local")
 
 
 def _approve(db, row, plan, *, role="finance", user_email=None):
-    # Task79: a jóváhagyó szolgáltatáshívás kötelezően actor-kontextust visz.
+    # Task80: a hívás KIZÁRÓLAG hitelesített user-kontextust visz.
     return approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
-        actor=user_email or f"{role}@imperial.local", actor_role=role,
         user=_user(role, user_email or f"{role}@imperial.local"),)
 
 
@@ -271,50 +271,112 @@ def test_approve_to_approved_plan_blocks(db):
         _approve(db, row, plan)
 
 
-def test_approve_requires_finance_role(db):
+# --- Task80: szolgáltatás-szintű, user-eredetű jogosultság (fail-closed) ---
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        None,  # missing verified user
+        _user("finance", ""),  # azonosítatlan (e-mail nélküli) user
+        _user("project-manager", "pm@imperial.local"),  # PM-szerepkör önmagában
+    ],
+    ids=["missing_user", "unidentified", "pm_role"],
+)
+def test_approve_fails_closed_without_verified_finance_user(db, user):
+    # Task80: hiányzó user-kontextus, azonosítatlan user és PM-szerepkör
+    # egyaránt PermissionError — mutáció nélkül; a szerepkör a hitelesített
+    # user-objektumból származik, az audit actor nem lehet üres/idegen.
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     plan = _draft_plan(db)
     with pytest.raises(PermissionError):
-        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="fixture@imperial.local", actor_role="project-manager",)
+        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, user=user)
+    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
+    assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+
+
+def test_approve_signature_rejects_caller_supplied_actor_or_role(db):
+    # Task80: a szignatúra nem fogad el külön actor/actor_role paramétert —
+    # önkényes actor_role='finance' vagy idegen audit-actor nem adható át.
+    import inspect
+    parameters = set(inspect.signature(approve_budget_import).parameters)
+    assert {"import_id", "plan_id", "user"} <= parameters and not ({"actor", "actor_role"} & parameters)
+    row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
+    plan = _draft_plan(db)
+    with pytest.raises(TypeError):
+        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
+            actor="fixture-finance@imperial.local", actor_role="finance", user=_user("finance", "fixture-finance@imperial.local"),)
 
 
 def test_approve_unknown_import_or_plan_key_errors(db):
     plan = _draft_plan(db)
     with pytest.raises(KeyError):
-        approve_budget_import(db, import_id="NINCS", plan_id=plan.plan_id, actor="fixture-finance@imperial.local", actor_role="finance",)
+        approve_budget_import(db, import_id="NINCS", plan_id=plan.plan_id, user=_user("finance", "fixture-finance@imperial.local"),)
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     with pytest.raises(KeyError):
-        approve_budget_import(db, import_id=row.import_id, plan_id="NINCS-PLAN", actor="fixture-finance@imperial.local", actor_role="finance", user=_user("finance", "fixture-finance@imperial.local"),)
+        approve_budget_import(db, import_id=row.import_id, plan_id="NINCS-PLAN", user=_user("finance", "fixture-finance@imperial.local"),)
 
 
-# --- Task79: szolgáltatás-szintű projekt-jogosultság ---
-
-
-def test_approve_without_actor_context_fails_closed(db):
-    # Közvetlen hívás actor-kontextus nélkül: PermissionError, mutáció nélkül.
-    row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
-    plan = _draft_plan(db)
-    with pytest.raises(PermissionError):
-        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, actor="fixture-finance@imperial.local", actor_role="finance",)
-    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
-    assert len(list(db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all())) == 0
-
-
-def test_approve_enforces_user_context_project_scope(db):
-    # A HITELESÍTETT user-kontextus projektjoga dönt: a kanonikus körön kívül
-    # PermissionError mutáció nélkül, a körön belül a jóváhagyás lefut.
+def test_approve_enforces_user_context_role_and_project_scope(db):
+    # A PM-felelősség a KANONIKUS projekten belül SEM elég; finance szerepkörrel lefut.
     from app.models import ProjectRegistry
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     plan = _draft_plan(db)
     with pytest.raises(PermissionError):
         approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
-            actor="fixture-finance@imperial.local", actor_role="finance",
             user=_user("project-manager", "pm-other@imperial.local"),)
     assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
     assert len(list(db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all())) == 0
     db.add(ProjectRegistry(project_id="IMP-IMPORT-001", name="Szintetikus projekt", responsible="pm-canon@imperial.local",))
     db.commit()
+    with pytest.raises(PermissionError):
+        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
+            user=_user("project-manager", "pm-canon@imperial.local"),)
+    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
+    assert len(list(db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all())) == 0
     approved = approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
-        actor="fixture-finance@imperial.local", actor_role="finance",
-        user=_user("project-manager", "pm-canon@imperial.local"),)
+        user=_user("finance", "fixture-finance@imperial.local"),)
     assert approved.status == "approved"
+    assert approved.approved_by == "fixture-finance@imperial.local"
+
+
+def test_approve_rechecks_preview_sha_after_lock_acquisition(db):
+    """Determinisztikus TOCTOU-negatív (Task80): a zár előtti hash-ellenőrzés
+    és a tervzár KÖZÖTT egy konkurens író megváltoztatja a preview_json-t; a
+    zár utáni újraellenőrzés fail-closed elutasít."""
+    import json as _json
+    from app.database import SessionLocal
+    from app.models import AuditLog
+    from app.services import budget_import as budget_import_service
+    row = preview_budget_import(db, project_id="IMP-TOCTOU", file_name="budget.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
+    plan = _draft_plan(db, project_id="IMP-TOCTOU", plan_id="FIN-PLAN-TOCTOU")
+    tampered = _json.loads(row.preview_json)
+    tampered["rows"][0]["amount"] = "999999999"
+    tampered_json = _json.dumps(tampered, ensure_ascii=False)
+    original_select = budget_import_service.select
+    fired = {"value": False}
+
+    def select_hook(*args, **kwargs):
+        # A konkurens író a célterv-zárnál (a zár előtti ellenőrzés UTÁN)
+        # írja át a preview-t — pontosan a TOCTOU-ablak.
+        if args and args[0] is ProjectFinancePlan and not fired["value"]:
+            fired["value"] = True
+            with SessionLocal() as other:
+                other_row = other.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id))
+                other_row.preview_json = tampered_json
+                other.commit()
+        return original_select(*args, **kwargs)
+
+    budget_import_service.select = select_hook
+    try:
+        with pytest.raises(MarginGateBlocked, match="megváltozott"):
+            approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
+                user=_user("finance", "fixture-finance@imperial.local"),)
+    finally:
+        budget_import_service.select = original_select
+    # Mutáció nélkül: preview maradt, sor és audit-nyom nem keletkezett.
+    db.expire_all()
+    fresh_row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id))
+    assert fresh_row.status == "preview"
+    assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+    assert db.scalars(select(AuditLog).where(AuditLog.action == "budget.import.approved")).all() == []

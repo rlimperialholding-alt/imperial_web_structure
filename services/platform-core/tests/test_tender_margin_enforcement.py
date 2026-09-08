@@ -129,8 +129,7 @@ def test_award_blocks_without_budget_or_over_envelope(client, db):
     assert fresh.status != "awarded" and fresh.awarded_bid_id is None
     decisions = list(db.scalars(select(MarginGateDecision)).all())
     assert decisions and decisions[0].decision == "BLOCK"
-    # Pontosan 35.00% fedezetű tervvel a boríték fölé növő ajánlat → BLOCK,
-    # odaítélés, PO-előkészítés és lekötés nélkül.
+    # Pontosan 35.00% fedezetű tervvel a boríték fölé növő ajánlat → BLOCK.
     seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-ENF", "6500000", "labour")])
     response = _award(client, _bid(db, tender, net_total="6500000.01"))
     assert response.status_code == 400
@@ -285,8 +284,7 @@ def test_order_creation_blocks_without_budget_and_emits_no_outbox(client, db):
     assert orders == []
     outbox_after = len(list(db.scalars(select(OutboxMessage)).all()))
     assert outbox_after == outbox_before
-    # A döntés-jóváhagyáskor rögzült lekötés változatlan; a blokkolt
-    # megrendeléshez új lekötés nem keletkezett.
+    # A döntés-jóváhagyáskori lekötés változatlan; új lekötés nem keletkezett.
     assert len(list(db.scalars(select(FinanceCommitment)).all())) == commitments_before
 
 
@@ -329,8 +327,7 @@ def test_order_create_partial_failure_rolls_back_everything(client, db, monkeypa
     decisions_before = len(list(db.scalars(select(MarginGateDecision)).all()))
     assert db.scalars(select(ProcurementOrderProjection)).all() == []
     assert db.scalars(select(OutboxMessage)).all() == []
-    # A kapu-PASS döntése és az új lekötés a mutációval együtt visszagördült;
-    # csak a döntés-jóváhagyáskori állapot maradt.
+    # A kapu-PASS döntése és az új lekötés a mutációval együtt visszagördült; csak a döntés-jóváhagyáskori állapot maradt.
     assert len(list(db.scalars(select(FinanceCommitment)).all())) == commitments_before
     assert len(list(db.scalars(select(MarginGateDecision)).all())) == decisions_before
 
@@ -437,8 +434,7 @@ def test_budget_import_approve_api_requires_finance_actor(client, db):
     assert row.approved_by == "finance@imperial.local"
     audit_row = db.scalar(select(AuditLog).where(AuditLog.action == "budget.import.approved"))
     assert audit_row is not None and audit_row.actor == "finance@imperial.local"
-    # Task77 AC-03: a preview ugyanahhoz a pénzügyi actorhoz kötött; a valós
-    # actor kerül az import-rekordba és az auditba (nem az "api").
+    # Task77 AC-03: a preview a bejelentkezett pénzügyi actorhoz kötött; a valós actor az import-rekordban és az auditban (nem az "api").
     preview_files = {"file": ("budget.csv", b"cost_code;category;description;amount;currency;cost_class;direct_cost_component;amount_basis;is_summary_package;parent_summary_line_id\r\nMAT-X;szerkezet;Teszt sor;1000;;direct;material;;false;\r\n", "text/csv")}
     client.cookies.clear()
     assert client.post("/api/budget-imports/preview", files=preview_files, data={"project_id": PROJECT}).status_code == 401
@@ -455,8 +451,8 @@ def test_budget_import_approve_api_requires_finance_actor(client, db):
 
 def test_margin_gate_decisions_api_role_and_scope(client, db, monkeypatch):
     # Task77 AC-02 + Task78: a generikus token soha nem fedhet fel
-    # keresztprojekt döntést; a lista az actor projektscope-jára szűrt —
-    # a kötelező /api elérési úton is, azonos jogosultsági/szűrési lánccal.
+    # keresztprojekt döntést; a lista az actor projektscope-jára szűrt a
+    # kötelező /api elérési úton is.
     from app.models import MarginGateDecision
     for project_id, decision_id in ((PROJECT, "MGD-API-1"), ("TASK77-002", "MGD-API-2")):
         db.add(MarginGateDecision(decision_id=decision_id, project_id=project_id,
@@ -480,8 +476,7 @@ def test_margin_gate_decisions_api_role_and_scope(client, db, monkeypatch):
     api_response = client.get("/api/margin-gate/decisions", params={"project_id": PROJECT})
     assert api_response.status_code == 200
     assert [d["decision_id"] for d in api_response.json()["decisions"]] == ["MGD-API-1"]
-    # Task78: szűkített projektkörű actor — a körön kívüli projekt kérése 403,
-    # a lista csak a kör döntéseit adja vissza (keresztprojekt szivárgás tilos).
+    # Task78: szűkített projektkörű actor — körön kívüli kérés 403, a lista csak a kör döntéseit adja vissza.
     monkeypatch.setattr("app.services.project_finance.finance_project_ids_for_user", lambda db, user: {PROJECT})
     monkeypatch.setattr("app.main.finance_project_ids_for_user", lambda db, user: {PROJECT})
     restricted = client.get("/api/margin-gate/decisions")
@@ -499,9 +494,8 @@ def test_budget_import_approve_api_rejects_cross_project_plan(client, db):
 
 
 def test_budget_import_approve_requires_actor_project_access(client, db, monkeypatch):
-    # Task78: a jóváhagyás az import projektjét ELŐSZÖR feloldja, és a
-    # bejelentkezett actor hozzáférése az import PONTOS projektjéhez kötelező —
-    # a szolgáltatás import-terv egyezése nem helyettesíti az actor-jogosultságot.
+    # Task78: a jóváhagyás az import projektjét ELŐSZÖR feloldja; a bejelentkezett
+    # actor hozzáférése az import PONTOS projektjéhez kötelező.
     from app.models import AuditLog, ProjectBudgetImport, ProjectFinanceBudgetLine
     import_id = _previewed_import(client, project_id="TASK77-002")
     _draft_plan_row(db, project_id="TASK77-002", plan_id="FIN-PLAN-API-03")
@@ -523,8 +517,7 @@ def test_budget_import_approve_requires_actor_project_access(client, db, monkeyp
 
 
 def test_margin_gate_dashboard_scopes_to_authorized_projects(client, db, monkeypatch):
-    # Task78: a HTML dashboard az actor engedélyezett projektkörét használja;
-    # körön kívüli projekt kérése 403, keresztprojekt-döntés nem renderelődik.
+    # Task78: a HTML dashboard az actor projektkörét használja; körön kívüli kérés 403.
     from app.models import MarginGateDecision
     for project_id, decision_id in ((PROJECT, "MGD-DASH-1"), ("TASK77-002", "MGD-DASH-2")):
         db.add(MarginGateDecision(decision_id=decision_id, project_id=project_id,
@@ -576,8 +569,7 @@ def test_allocation_snapshot_api_binds_real_actor(client, db):
     assert snapshot.approved_by == "finance@imperial.local"
     audit_row = db.scalar(select(AuditLog).where(AuditLog.action == "budget.allocation.snapshot_created"))
     assert audit_row is not None and audit_row.actor == "finance@imperial.local"
-    # Task77 AC-01: a részletes-soros allokációs API ugyanazt a fail-closed
-    # szerepköri + projekt-scope kötést követeli meg.
+    # Task77 AC-01: a részletes-soros allokációs API ugyanazt a fail-closed kötést követeli meg.
     from margin_gate_fixtures import add_child_line
     add_child_line(db, plan, cost_code="CHILD-API", amount="3000000",
                    component="labour", parent_summary_line_id=get_line(db, plan, "PACK-API").line_id)
