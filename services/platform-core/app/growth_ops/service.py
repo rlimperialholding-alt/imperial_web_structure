@@ -1373,13 +1373,25 @@ def upsert_account_stop(
     details: dict[str, Any] | None = None,
 ) -> tuple[GrowthAccountStop, bool, int]:
     account_key, scope = _account_key_for_email(recipient_email, force_email=force_email_scope)
-    existing = db.scalar(
-        select(GrowthAccountStop).where(
-            GrowthAccountStop.source == source,
-            GrowthAccountStop.source_event_id == source_event_id,
-            GrowthAccountStop.account_key == account_key,
-        )
+    existing = next(
+        (
+            item
+            for item in db.new
+            if isinstance(item, GrowthAccountStop)
+            and item.source == source
+            and item.source_event_id == source_event_id
+            and item.account_key == account_key
+        ),
+        None,
     )
+    if existing is None:
+        existing = db.scalar(
+            select(GrowthAccountStop).where(
+                GrowthAccountStop.source == source,
+                GrowthAccountStop.source_event_id == source_event_id,
+                GrowthAccountStop.account_key == account_key,
+            )
+        )
     created = existing is None
     row = existing or GrowthAccountStop(
         stop_id=f"GST-{uuid4().hex[:20].upper()}",
