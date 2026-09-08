@@ -299,6 +299,43 @@ def test_bounce_blocks_only_the_failed_mailbox_route(db):
     assert stop.stop_kind == "bounce"
 
 
+def test_stop_upsert_is_idempotent_before_a_no_autoflush_session_flush(db):
+    db.autoflush = False
+    when = datetime.now(UTC)
+
+    first, first_created, _ = service.upsert_account_stop(
+        db,
+        recipient_email="info@example.hu",
+        stop_kind="existing_relationship",
+        source="partnerpoint_control",
+        source_event_id="PC-EXISTING-1",
+        reason="fixture",
+        occurred_at=when,
+    )
+    second, second_created, _ = service.upsert_account_stop(
+        db,
+        recipient_email="sales@example.hu",
+        stop_kind="existing_relationship",
+        source="partnerpoint_control",
+        source_event_id="PC-EXISTING-1",
+        reason="fixture",
+        occurred_at=when,
+    )
+    db.commit()
+
+    assert first is second
+    assert first_created is True
+    assert second_created is False
+    assert (
+        db.scalar(
+            select(service.func.count())
+            .select_from(GrowthAccountStop)
+            .where(GrowthAccountStop.source_event_id == "PC-EXISTING-1")
+        )
+        == 1
+    )
+
+
 def test_daily_checkpoint_keeps_sent_and_readback_as_distinct_kpis(db, monkeypatch):
     monkeypatch.setattr(
         partnerpoint,
