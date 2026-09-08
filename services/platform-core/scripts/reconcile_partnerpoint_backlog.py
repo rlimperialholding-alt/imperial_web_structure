@@ -33,6 +33,18 @@ EXPECTED_CONTROL_SET_SIZE = 85
 LEGACY_HANDOFF_STATUS = "CENTRAL_QUEUE_HANDOFF_BLOCKED_ADAPTER_UNAVAILABLE"
 HISTORICAL_RESCOPED_RECORD_IDS = {"OUT-260825-002", "FU-260829-005"}
 _EMAIL_RE = re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+", re.I)
+_FREE_MAIL_DOMAINS = {
+    "gmail.com",
+    "icloud.com",
+    "freemail.hu",
+    "citromail.hu",
+    "outlook.com",
+    "hotmail.com",
+    "yahoo.com",
+    "t-online.hu",
+    "chello.hu",
+    "datanet.hu",
+}
 
 
 def _padded(row: list[str], size: int) -> list[str]:
@@ -68,6 +80,7 @@ def _gmail_raw(token: str, message_id: str) -> dict[str, Any]:
     return {
         "gmail_message_id": message_id,
         "gmail_thread_id": str(payload.get("threadId") or ""),
+        "label_ids": sorted(str(value) for value in payload.get("labelIds") or []),
         "internal_date_ms": int(payload.get("internalDate") or 0),
         "rfc_message_id": str(message.get("Message-ID") or ""),
         "from": str(message.get("From") or ""),
@@ -78,26 +91,42 @@ def _gmail_raw(token: str, message_id: str) -> dict[str, Any]:
 
 
 def _gmail_evidence(token: str, emails: list[str]) -> dict[str, Any]:
-    domains = sorted({email.rsplit("@", 1)[-1] for email in emails if "@" in email})
     addresses = sorted(set(emails))
-    targets = domains or addresses
-    sent_ids: list[str] = []
-    reply_ids: list[str] = []
-    bounce_ids: list[str] = []
-    for target in targets:
-        sent_ids.extend(_gmail_search(token, f"in:sent newer_than:365d to:({target})"))
-        reply_ids.extend(_gmail_search(token, f"newer_than:365d from:({target})"))
-    for email in addresses:
-        bounce_ids.extend(
-            _gmail_search(
-                token,
-                f'newer_than:365d from:(mailer-daemon OR postmaster) "{email}"',
-                maximum=10,
+    targets = sorted(
+        {
+            email if email.rsplit("@", 1)[-1] in _FREE_MAIL_DOMAINS else email.rsplit("@", 1)[-1]
+            for email in addresses
+            if "@" in email
+        }
+    )
+    if not targets:
+        return {"sent": [], "replies_after_sent": [], "bounces": []}
+    route_terms = " OR ".join(f"(to:({target}) OR from:({target}))" for target in targets)
+    exact_terms = " OR ".join(f'"{email}"' for email in addresses)
+    query = f"newer_than:365d ({route_terms} OR {exact_terms})"
+    messages = [
+        _gmail_raw(token, value) for value in dict.fromkeys(_gmail_search(token, query, maximum=20))
+    ]
+    bounces = [
+        item
+        for item in messages
+        if any(marker in item["from"].casefold() for marker in ("mailer-daemon@", "postmaster@"))
+    ]
+    sent = [item for item in messages if "SENT" in item["label_ids"]]
+    replies = []
+    for item in messages:
+        sender = item["from"].casefold()
+        sender_addresses = set(_EMAIL_RE.findall(sender))
+        sender_matches = any(
+            sender_email in addresses
+            or (
+                sender_email.rsplit("@", 1)[-1] not in _FREE_MAIL_DOMAINS
+                and sender_email.rsplit("@", 1)[-1] in targets
             )
+            for sender_email in sender_addresses
         )
-    sent = [_gmail_raw(token, value) for value in dict.fromkeys(sent_ids[:20])]
-    replies = [_gmail_raw(token, value) for value in dict.fromkeys(reply_ids[:20])]
-    bounces = [_gmail_raw(token, value) for value in dict.fromkeys(bounce_ids[:10])]
+        if sender_matches and "SENT" not in item["label_ids"] and item not in bounces:
+            replies.append(item)
     earliest_sent_ms = min(
         (item["internal_date_ms"] for item in sent if item["internal_date_ms"]),
         default=0,
@@ -212,6 +241,7 @@ def main() -> None:
     )
     results: list[dict[str, Any]] = []
     seen_recipient_sets: set[tuple[str, ...]] = set()
+    gmail_cache: dict[tuple[str, ...], dict[str, Any]] = {}
     with SessionLocal() as db:
         for sheet_row, pipeline in control_rows:
             candidate_id = pipeline[1]
@@ -223,7 +253,10 @@ def main() -> None:
             duplicate = bool(recipient_key and recipient_key in seen_recipient_sets)
             if recipient_key:
                 seen_recipient_sets.add(recipient_key)
-            gmail = _gmail_evidence(token, emails)
+            gmail = gmail_cache.get(recipient_key)
+            if gmail is None:
+                gmail = _gmail_evidence(token, emails)
+                gmail_cache[recipient_key] = gmail
             stops = _account_stops(db, emails)
             server = _server_outreach(db, emails)
             classification, reason = _classification(
