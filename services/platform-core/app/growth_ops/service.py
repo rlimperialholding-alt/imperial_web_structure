@@ -1845,50 +1845,93 @@ def ingest_signal(
         ):
             retry_reasons = _eligibility(data, _score(data))
             try:
-                binding = registry.brand_binding(brand_id)
-                _verified_sender(db, binding)
-                if retry_reasons:
-                    raise GrowthRegistryError(";".join(retry_reasons))
-                if not writes_unlocked() or not _control_enabled(db, data.motor_key):
-                    raise GrowthRegistryError("growth_writes_locked")
-                outreach = _queue_message(
-                    db,
-                    existing,
-                    binding,
-                    step=0,
-                    available_at=utcnow(),
-                    enforce_recipient_cooldown=True,
-                    data=data,
-                    source_evidence_manifest_sha256=source_evidence_manifest,
-                )
-                existing.status = "queued"
-                existing.rejection_reasons_json = "[]"
-                source = registry.sources.get(existing.source_id)
-                if (
-                    isinstance(source, dict)
-                    and source.get("kind") == GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
-                ):
+                with db.begin_nested():
+                    binding = registry.brand_binding(brand_id)
+                    _verified_sender(db, binding)
+                    if retry_reasons:
+                        raise GrowthRegistryError(";".join(retry_reasons))
+                    if not writes_unlocked() or not _control_enabled(db, data.motor_key):
+                        raise GrowthRegistryError("growth_writes_locked")
+                    outreach = _queue_message(
+                        db,
+                        existing,
+                        binding,
+                        step=0,
+                        available_at=utcnow(),
+                        enforce_recipient_cooldown=True,
+                        data=data,
+                        source_evidence_manifest_sha256=source_evidence_manifest,
+                    )
+                    existing.status = "queued"
+                    existing.rejection_reasons_json = "[]"
+                    source = registry.sources.get(existing.source_id)
+                    if (
+                        isinstance(source, dict)
+                        and source.get("kind") == GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
+                    ):
+                        _record_official_source_binding_proof(
+                            db,
+                            outreach,
+                            existing,
+                            source,
+                            actor="growth-ops",
+                            proof_origin="signal_ingest",
+                        )
+                    audit(
+                        db,
+                        actor="growth-ops",
+                        action="growth_partnerpoint_policy_block_recovered",
+                        entity_type="growth_signal",
+                        entity_id=existing.signal_id,
+                        before={"reasons": sorted(existing_reasons)},
+                        after={"status": "queued", "outreach_id": outreach.outreach_id},
+                    )
+            except (GrowthRegistryError, ValueError) as exc:
+                retry_reasons.append(str(exc))
+                outreach = None
+                existing.status = "blocked"
+                existing.rejection_reasons_json = canonical_json(sorted(set(retry_reasons)))
+        elif (
+            outreach is not None
+            and outreach.status == "queued"
+            and existing.status == "blocked"
+            and existing_reasons == {"official_source_binding_proof_write_failed"}
+            and existing.external_key.startswith("PC-")
+            and getattr(settings(), "partnerpoint_enabled", False)
+        ):
+            try:
+                with db.begin_nested():
+                    if (
+                        not _payload_matches(outreach)
+                        or outreach.release_approved_by
+                        != "owner-policy:partnerpoint-v1.8:2026-09-08"
+                    ):
+                        raise GrowthRegistryError("partnerpoint_retry_payload_not_canonical")
+                    source = registry.sources.get(existing.source_id)
+                    if not isinstance(source, dict):
+                        raise GrowthRegistryError("official_source_binding_source_missing")
                     _record_official_source_binding_proof(
                         db,
                         outreach,
                         existing,
                         source,
                         actor="growth-ops",
-                        proof_origin="partnerpoint_policy_retry",
+                        proof_origin="signal_ingest",
                     )
-                audit(
-                    db,
-                    actor="growth-ops",
-                    action="growth_partnerpoint_policy_block_recovered",
-                    entity_type="growth_signal",
-                    entity_id=existing.signal_id,
-                    before={"reasons": sorted(existing_reasons)},
-                    after={"status": "queued", "outreach_id": outreach.outreach_id},
-                )
+                    existing.status = "queued"
+                    existing.rejection_reasons_json = "[]"
+                    audit(
+                        db,
+                        actor="growth-ops",
+                        action="growth_partnerpoint_binding_proof_recovered",
+                        entity_type="growth_signal",
+                        entity_id=existing.signal_id,
+                        before={"reasons": sorted(existing_reasons)},
+                        after={"status": "queued", "outreach_id": outreach.outreach_id},
+                    )
             except (GrowthRegistryError, ValueError) as exc:
-                retry_reasons.append(str(exc))
                 existing.status = "blocked"
-                existing.rejection_reasons_json = canonical_json(sorted(set(retry_reasons)))
+                existing.rejection_reasons_json = canonical_json([str(exc)])
         db.commit()
         return GrowthSignalReceipt(
             signal_id=existing.signal_id,
