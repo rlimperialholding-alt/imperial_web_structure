@@ -8,6 +8,7 @@ from sqlalchemy import select, text
 
 from app.growth_ops import partnerpoint, service
 from app.growth_ops.models import GrowthAccountStop, GrowthSignal, OutreachMessage
+from scripts.reconcile_partnerpoint_backlog import _historical_control_rows
 
 
 def _signal(*, signal_id: str, email: str, status: str) -> GrowthSignal:
@@ -414,3 +415,27 @@ def test_daily_checkpoint_keeps_sent_and_readback_as_distinct_kpis(db, monkeypat
     assert saved[12] == 1
     assert saved[13] == 1
     assert saved[14] == "DEGRADED"
+
+
+def test_legacy_reconciliation_set_preserves_two_rescoped_banati_rows():
+    header = [f"h{number}" for number in range(15)]
+    legacy = [""] * 15
+    legacy[0] = "OUT-LEGACY-1"
+    legacy[5] = "CENTRAL_QUEUE_HANDOFF_BLOCKED_ADAPTER_UNAVAILABLE"
+    replied = [""] * 15
+    replied[0] = "OUT-260825-002"
+    replied[5] = "REPLIED"
+    stopped_followup = [""] * 15
+    stopped_followup[0] = "FU-260829-005"
+    stopped_followup[5] = "NO_ACTION"
+    unrelated = [""] * 15
+    unrelated[0] = "OUT-OTHER"
+    unrelated[7] = "Központi megjegyzés, de nem a történeti átadási sor része"
+
+    selected = _historical_control_rows([header, legacy, replied, stopped_followup, unrelated])
+
+    assert [row[0] for _number, row in selected] == [
+        "OUT-LEGACY-1",
+        "OUT-260825-002",
+        "FU-260829-005",
+    ]
