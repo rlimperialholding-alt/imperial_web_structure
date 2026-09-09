@@ -214,6 +214,53 @@ def test_ingest_only_official_company_source_is_not_scheduled(official_registry)
     registry.validate_signal_source(**_binding_args(binding_hash))
 
 
+def test_partnerpoint_public_email_policy_accepts_address_visible_on_official_site(
+    tmp_path, monkeypatch
+):
+    _, authority_sha256 = _authority(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "app.growth_ops.registry._managed_secret",
+        lambda _reference: tmp_path / "unused-test-secret.json",
+    )
+    raw = _raw(authority_sha256)
+    source = raw["sources"]["DYNAMIC_HU_ARCHIKON_HU"]
+    source["recipient_binding"]["recipient_email"] = "archikon.office@gmail.com"
+    source["recipient_binding"]["verification_policy"] = (
+        GrowthRegistry.PARTNERPOINT_PUBLIC_EMAIL_POLICY
+    )
+    source["binding_sha256"] = _official_source_binding_sha256(
+        "DYNAMIC_HU_ARCHIKON_HU", source
+    )
+
+    registry = GrowthRegistry(raw)
+
+    assert (
+        registry.sources["DYNAMIC_HU_ARCHIKON_HU"]["recipient_binding"][
+            "recipient_email"
+        ]
+        == "archikon.office@gmail.com"
+    )
+
+
+def test_cross_domain_official_email_without_partnerpoint_policy_remains_blocked(
+    tmp_path, monkeypatch
+):
+    _, authority_sha256 = _authority(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "app.growth_ops.registry._managed_secret",
+        lambda _reference: tmp_path / "unused-test-secret.json",
+    )
+    raw = _raw(authority_sha256)
+    source = raw["sources"]["DYNAMIC_HU_ARCHIKON_HU"]
+    source["recipient_binding"]["recipient_email"] = "archikon.office@gmail.com"
+    source["binding_sha256"] = _official_source_binding_sha256(
+        "DYNAMIC_HU_ARCHIKON_HU", source
+    )
+
+    with pytest.raises(GrowthRegistryError, match="email crosses root domains"):
+        GrowthRegistry(raw)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -251,7 +298,7 @@ def test_official_company_signal_binding_is_exact_and_fresh(
         (
             ("sources", "DYNAMIC_HU_ARCHIKON_HU", "bucket"),
             "referral_partner",
-            "restricted",
+            "recipient lane",
         ),
         (
             ("sources", "DYNAMIC_HU_ARCHIKON_HU", "url"),
@@ -271,7 +318,7 @@ def test_official_company_signal_binding_is_exact_and_fresh(
                 "recipient_type",
             ),
             "referral_partner",
-            "recipient binding",
+            "recipient lane",
         ),
         (
             (
