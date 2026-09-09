@@ -10,9 +10,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime, timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, text
@@ -85,6 +86,29 @@ _BLOCKED_FIRST_CONTACT_STATUS_TERMS = (
     "no_action",
     "stop_after_reply",
 )
+_PUBLIC_CONTACT_LINK_TERMS = (
+    "kapcsolat",
+    "elerhet",
+    "contact",
+    "impresszum",
+    "imprint",
+    "about",
+    "rolunk",
+)
+
+
+class _PublicContactLinkParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() != "a":
+            return
+        for key, value in attrs:
+            if key.casefold() == "href" and value:
+                self.hrefs.append(str(value))
+                break
 
 
 def _utcnow() -> datetime:
@@ -497,18 +521,7 @@ def _source_entry(
     source_url = candidate["source_url"]
     root_domain = _registrable_domain(urlsplit(source_url).hostname or "")
     source_id = "DYNAMIC_HU_" + re.sub(r"[^A-Z0-9]+", "_", root_domain.upper()).strip("_")
-    page, body = _fetch_html(
-        source_url,
-        allowed_urls={source_url},
-        root_domain=root_domain,
-        max_bytes=OFFICIAL_SOURCE_MAX_RESPONSE_BYTES,
-        max_redirects=OFFICIAL_SOURCE_MAX_REDIRECTS,
-        expected_final_url=source_url,
-        deadline_monotonic=(__import__("time").monotonic() + OFFICIAL_SOURCE_TIMEOUT_SECONDS),
-    )
-    visible_emails = _visible_email_addresses(body)
-    if candidate["email"] not in visible_emails:
-        raise GrowthRegistryError("partnerpoint_official_email_not_visible")
+    page, evidence_url = _public_email_evidence(candidate, root_domain=root_domain)
     checked_at = _utcnow()
     binding: dict[str, Any] = {
         "recipient_type": candidate["recipient_type"],
@@ -528,7 +541,7 @@ def _source_entry(
             {
                 "business_context": candidate["business_context"],
                 "business_context_verified": True,
-                "business_context_evidence_url": source_url,
+                "business_context_evidence_url": evidence_url,
             }
         )
         authority = {
@@ -550,14 +563,14 @@ def _source_entry(
         "bucket": bucket,
         "kind": GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND,
         "fetch_mode": GrowthRegistry.OFFICIAL_COMPANY_FETCH_MODE,
-        "url": source_url,
-        "allowed_evidence_urls": [source_url],
-        "context_evidence_url": source_url,
-        "public_contact_url": source_url,
+        "url": evidence_url,
+        "allowed_evidence_urls": [evidence_url],
+        "context_evidence_url": evidence_url,
+        "public_contact_url": evidence_url,
         "recipient_binding": binding,
         "policy_evidence": {
-            "evidence_url": source_url,
-            "final_url": source_url,
+            "evidence_url": evidence_url,
+            "final_url": evidence_url,
             "http_status": page.http_status,
             "content_type": page.content_type,
             "content_sha256": page.content_sha256,
@@ -569,6 +582,70 @@ def _source_entry(
     }
     source["binding_sha256"] = _official_source_binding_sha256(source_id, source)
     return source_id, source
+
+
+def _public_email_evidence(
+    candidate: dict[str, Any], *, root_domain: str
+) -> tuple[Any, str]:
+    source_url = str(candidate["source_url"])
+    parsed = urlsplit(source_url)
+    root_url = urlunsplit(("https", parsed.netloc.casefold(), "/", "", ""))
+    pending = list(dict.fromkeys((source_url, root_url)))
+    attempted: set[str] = set()
+    first_error: GrowthRegistryError | None = None
+    fetched_any = False
+    while pending and len(attempted) < 6:
+        current = pending.pop(0)
+        if current in attempted:
+            continue
+        attempted.add(current)
+        try:
+            page, body = _fetch_html(
+                current,
+                allowed_urls={current},
+                root_domain=root_domain,
+                max_bytes=OFFICIAL_SOURCE_MAX_RESPONSE_BYTES,
+                max_redirects=OFFICIAL_SOURCE_MAX_REDIRECTS,
+                expected_final_url=current,
+                deadline_monotonic=(
+                    __import__("time").monotonic() + OFFICIAL_SOURCE_TIMEOUT_SECONDS
+                ),
+            )
+        except GrowthRegistryError as exc:
+            if first_error is None:
+                first_error = exc
+            continue
+        fetched_any = True
+        if candidate["email"] in _visible_email_addresses(body):
+            return page, current
+        parser = _PublicContactLinkParser()
+        try:
+            parser.feed(body)
+            parser.close()
+        except (ValueError, RecursionError):
+            continue
+        links: list[str] = []
+        for href in parser.hrefs:
+            try:
+                link = _canonical_url(urljoin(current, href))
+            except GrowthRegistryError:
+                continue
+            if (
+                link not in attempted
+                and link not in pending
+                and _registrable_domain(urlsplit(link).hostname or "") == root_domain
+                and any(
+                    term in (urlsplit(link).path + "?" + urlsplit(link).query).casefold()
+                    for term in _PUBLIC_CONTACT_LINK_TERMS
+                )
+            ):
+                links.append(link)
+        pending.extend(links)
+    if fetched_any:
+        raise GrowthRegistryError("partnerpoint_official_email_not_visible")
+    if first_error is not None:
+        raise first_error
+    raise GrowthRegistryError("partnerpoint_official_email_not_visible")
 
 
 def _write_runtime_sources(sources: dict[str, dict[str, Any]]) -> None:
