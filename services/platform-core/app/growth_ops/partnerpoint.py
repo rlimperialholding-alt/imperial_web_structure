@@ -631,6 +631,25 @@ def _partner_lane_created_today(db: Session) -> dict[str, int]:
     return {str(lane): int(count) for lane, count in rows}
 
 
+def _partner_external_keys_created_today(db: Session) -> set[str]:
+    local_start = (
+        _utcnow()
+        .astimezone(ZoneInfo(settings().timezone))
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(UTC)
+    )
+    return set(
+        db.scalars(
+            select(GrowthSignal.external_key)
+            .join(OutreachMessage, OutreachMessage.signal_id == GrowthSignal.signal_id)
+            .where(
+                OutreachMessage.created_at >= local_start,
+                GrowthSignal.source_bucket.in_(("architect_office", "referral_partner")),
+            )
+        )
+    )
+
+
 def sync_candidates(db: Session) -> dict[str, Any]:
     if not settings().partnerpoint_enabled:
         return {"status": "disabled", "discovered": 0, "qualified": 0, "queued": 0}
@@ -675,18 +694,21 @@ def sync_candidates(db: Session) -> dict[str, Any]:
             for lane in ("architect_office", "referral_partner")
         }
         lane_counts = {"architect_office": 0, "referral_partner": 0}
+        existing_revalidated = {"architect_office": 0, "referral_partner": 0}
         daily_targets = {
             "architect_office": settings().partnerpoint_architect_daily_max,
             "referral_partner": settings().partnerpoint_referral_daily_max,
         }
         already_created_today = _partner_lane_created_today(db)
+        created_today_keys = _partner_external_keys_created_today(db)
         limits = {
             lane: max(0, target - already_created_today.get(lane, 0))
             for lane, target in daily_targets.items()
         }
         for candidate in candidates:
             lane = candidate["recipient_type"]
-            if lane_counts[lane] >= limits[lane]:
+            existing_today = candidate["candidate_id"] in created_today_keys
+            if not existing_today and lane_counts[lane] >= limits[lane]:
                 continue
             try:
                 gate_id = canonical_registry.hard_gate_match(
@@ -714,7 +736,10 @@ def sync_candidates(db: Session) -> dict[str, Any]:
                     raise GrowthRegistryError("partnerpoint_duplicate_root_domain")
                 sources[source_id] = source
                 qualified.append({**candidate, "source_id": source_id, "source": source})
-                lane_counts[lane] += 1
+                if existing_today:
+                    existing_revalidated[lane] += 1
+                else:
+                    lane_counts[lane] += 1
             except GrowthRegistryError as exc:
                 blocked.append(
                     {
@@ -744,6 +769,7 @@ def sync_candidates(db: Session) -> dict[str, Any]:
         dispatch_order = [*architects[:1], *referrals[:1], *architects[1:], *referrals[1:]]
 
         queued = 0
+        newly_queued = {"architect_office": 0, "referral_partner": 0}
         receipts: list[dict[str, Any]] = []
         for candidate in dispatch_order:
             source = candidate["source"]
@@ -783,7 +809,11 @@ def sync_candidates(db: Session) -> dict[str, Any]:
                 source_payload_hash=source["binding_sha256"],
             )
             receipt = ingest_signal(db, data)
-            queued += bool(receipt.outreach_id and receipt.status == "queued")
+            was_newly_queued = bool(
+                receipt.outreach_id and receipt.status == "queued" and not receipt.idempotent
+            )
+            queued += was_newly_queued
+            newly_queued[candidate["recipient_type"]] += was_newly_queued
             receipts.append(
                 {
                     "candidate_id": candidate["candidate_id"],
@@ -794,9 +824,9 @@ def sync_candidates(db: Session) -> dict[str, Any]:
                     "reasons": receipt.reasons,
                 }
             )
-        architect_total_today = already_created_today.get("architect_office", 0) + lane_counts[
-            "architect_office"
-        ]
+        architect_total_today = already_created_today.get(
+            "architect_office", 0
+        ) + newly_queued["architect_office"]
         architect_shortfall = max(
             0,
             daily_targets["architect_office"] - architect_total_today,
@@ -804,10 +834,12 @@ def sync_candidates(db: Session) -> dict[str, Any]:
         detail = {
             "status": "healthy" if not architect_shortfall else "degraded",
             "discovered": len(candidates),
-            "qualified": len(qualified),
+            "qualified": sum(lane_counts.values()),
             "queued": queued,
             "lane_discovered": lane_discovered,
             "lane_qualified": lane_counts,
+            "lane_revalidated_existing": existing_revalidated,
+            "lane_newly_queued": newly_queued,
             "architect_daily_target": daily_targets["architect_office"],
             "already_created_today": already_created_today,
             "remaining_before_run": limits,

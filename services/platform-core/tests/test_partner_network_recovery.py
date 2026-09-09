@@ -298,6 +298,10 @@ def test_partnerpoint_daily_capacity_counts_existing_created_messages(db):
         "architect_office": 1,
         "referral_partner": 1,
     }
+    assert partnerpoint._partner_external_keys_created_today(db) == {
+        architect.external_key,
+        referral.external_key,
+    }
 
 
 def test_partnerpoint_control_state_keeps_large_json_valid(db):
