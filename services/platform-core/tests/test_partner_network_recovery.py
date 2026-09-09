@@ -327,6 +327,87 @@ def test_partnerpoint_control_state_keeps_large_json_valid(db):
     assert json.loads(stored.reason) == detail
 
 
+def test_partnerpoint_source_follows_same_domain_contact_page_for_public_email(monkeypatch):
+    candidate = {
+        "source_url": "https://example.hu/team",
+        "email": "office@example.hu",
+        "recipient_type": "architect_office",
+        "company": "Példa Építésziroda Kft.",
+        "organization_marker": "Példa",
+        "recipient_name": "",
+    }
+    fetched: list[str] = []
+
+    def fetch(url, **_kwargs):
+        fetched.append(url)
+        body = (
+            '<a href="/kapcsolat">Kapcsolat</a>'
+            if url != "https://example.hu/kapcsolat"
+            else '<a href="mailto:office@example.hu">office@example.hu</a>'
+        )
+        return (
+            SimpleNamespace(
+                http_status=200,
+                content_type="text/html; charset=utf-8",
+                content_sha256="a" * 64,
+            ),
+            body,
+        )
+
+    monkeypatch.setattr(partnerpoint, "_fetch_html", fetch)
+
+    source_id, source = partnerpoint._source_entry(
+        candidate,
+        architect_authority={"registry_id": "ARCHITECT_FIXTURE"},
+    )
+
+    assert source_id == "DYNAMIC_HU_EXAMPLE_HU"
+    assert source["url"] == "https://example.hu/kapcsolat"
+    assert source["public_contact_url"] == "https://example.hu/kapcsolat"
+    assert (
+        source["recipient_binding"]["verification_policy"]
+        == service.GrowthRegistry.PARTNERPOINT_PUBLIC_EMAIL_POLICY
+    )
+    assert fetched == [
+        "https://example.hu/team",
+        "https://example.hu/",
+        "https://example.hu/kapcsolat",
+    ]
+
+
+def test_partnerpoint_source_rejects_contact_pages_without_the_public_email(monkeypatch):
+    candidate = {
+        "source_url": "https://example.hu/team",
+        "email": "office@example.hu",
+        "recipient_type": "architect_office",
+        "company": "Példa Építésziroda Kft.",
+        "organization_marker": "Példa",
+        "recipient_name": "",
+    }
+
+    monkeypatch.setattr(
+        partnerpoint,
+        "_fetch_html",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(
+                http_status=200,
+                content_type="text/html; charset=utf-8",
+                content_sha256="b" * 64,
+            ),
+            '<a href="/kapcsolat">Kapcsolat</a>',
+        ),
+    )
+
+    with pytest.raises(
+        partnerpoint.GrowthRegistryError,
+        match="partnerpoint_official_email_not_visible",
+    ):
+        partnerpoint._source_entry(
+            candidate,
+            architect_authority={"registry_id": "ARCHITECT_FIXTURE"},
+        )
+
+
 def test_unsubscribe_stops_the_corporate_account_without_touching_other_domains(db):
     first = _signal(signal_id="SIG-DNC-SENT", email="info@example.hu", status="contacted")
     sibling = _signal(signal_id="SIG-DNC-PENDING", email="sales@example.hu", status="queued")
