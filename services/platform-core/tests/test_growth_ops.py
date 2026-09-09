@@ -697,7 +697,7 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
         "GROWTH_PARTNERPOINT_SPEC_FILE_ID": "1AFLKbiYQ7KydaxftuXZPoHrY4Pw3I869",
         "GROWTH_PARTNERPOINT_SPEC_VERSION": "1.8",
         "GROWTH_PARTNERPOINT_RUNTIME_SOURCES_FILE": "/app/runtime/growth-partnerpoint-sources.json",
-        "GROWTH_PARTNERPOINT_ARCHITECT_DAILY_MAX": "8",
+        "GROWTH_PARTNERPOINT_ARCHITECT_DAILY_MAX": "30",
         "GROWTH_PARTNERPOINT_REFERRAL_DAILY_MAX": "2",
     }
     text = override.read_text(encoding="utf-8")

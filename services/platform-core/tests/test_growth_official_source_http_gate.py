@@ -137,6 +137,32 @@ def test_visible_mailto_is_accepted_as_exact_public_contact(monkeypatch):
     assert [page.requested_url for page in evidence.pages] == [ROOT_URL, CONTACT_URL]
 
 
+def test_partnerpoint_public_email_policy_does_not_require_duplicate_name_markers(
+    monkeypatch,
+):
+    source = _source()
+    source["recipient_binding"]["verification_policy"] = (
+        "PARTNERPOINT_PUBLIC_BUSINESS_EMAIL_VISIBLE"
+    )
+    _stub_bound_pages(
+        monkeypatch,
+        context_html="<main>Nyilvános építészirodai kapcsolat</main>",
+        contact_html="<a href='mailto:office@example.hu'>E-mail</a>",
+    )
+
+    evidence = official_source.fetch_official_source_evidence(
+        SOURCE_ID,
+        source,
+        expected_recipient_name="Selected Studio",
+        expected_organization_names=["Example Architects"],
+    )
+
+    assert evidence.matched_email == "office@example.hu"
+    assert evidence.matched_organization_marker == ""
+    assert evidence.matched_recipient_marker == ""
+    assert evidence.verification_policy == "PARTNERPOINT_PUBLIC_BUSINESS_EMAIL_VISIBLE"
+
+
 def test_registry_alias_does_not_replace_exact_selected_render_recipient(monkeypatch):
     _stub_bound_pages(
         monkeypatch,
