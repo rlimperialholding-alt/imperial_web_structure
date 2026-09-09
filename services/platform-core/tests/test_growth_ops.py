@@ -2163,6 +2163,33 @@ def test_land_agent_gdn_gate_blocks_before_storage(db, growth_runtime):
     assert not db.scalars(select(GrowthSignal)).all()
 
 
+@pytest.mark.parametrize(
+    ("identity", "gate_id"),
+    [
+        ("KIMA Projekt", "BLOCK_KIMA_PROJEKT_OWNER_EXCLUSION"),
+        ("Materny Károly", "BLOCK_MATERNY_KAROLY_OWNER_EXCLUSION"),
+        ("Antal Miklós", "BLOCK_ANTAL_MIKLOS_OWNER_EXCLUSION"),
+        ("Südi Olivér", "BLOCK_SUDI_OLIVER_OWNER_EXCLUSION"),
+        ("Gyetvai Zoltán", "BLOCK_GYETVAI_ZOLTAN_OWNER_EXCLUSION"),
+        ("Finta Ádám", "BLOCK_FINTA_ADAM_OWNER_EXCLUSION"),
+    ],
+)
+def test_owner_architect_exclusions_block_before_storage(
+    db, growth_runtime, identity, gate_id
+):
+    signal = _signal(
+        external_key=f"ARCH-OWNER-BLOCK-{gate_id}",
+        company_name=f"{identity} Építésziroda",
+        recipient_organization_name=identity,
+        recipient_name=identity,
+    )
+
+    with pytest.raises(GrowthRegistryError, match=gate_id):
+        service.ingest_signal(db, signal)
+
+    assert not db.scalars(select(GrowthSignal)).all()
+
+
 def test_motor_skips_blocked_agent_and_continues_same_source_batch(db, growth_runtime, monkeypatch):
     blocked = _signal(
         external_key="LAND-GDN-BATCH",
