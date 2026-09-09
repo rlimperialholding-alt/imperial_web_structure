@@ -122,6 +122,13 @@ class GrowthSettings:
     canonical_publication_digest_kill_switch_file: str
     canonical_publication_digest_per_minute_limit: int
     canonical_publication_digest_rolling_24h_limit: int
+    partnerpoint_enabled: bool
+    partnerpoint_sheet_id: str
+    partnerpoint_spec_file_id: str
+    partnerpoint_spec_version: str
+    partnerpoint_runtime_sources_file: str
+    partnerpoint_architect_daily_max: int
+    partnerpoint_referral_daily_max: int
     deepseek_api_key_file: str
     deepseek_base_url: str
     deepseek_routine_model: str
@@ -312,6 +319,31 @@ def settings() -> GrowthSettings:
                 int(os.getenv("CANONICAL_PUBLICATION_DIGEST_ROLLING_24H_LIMIT", "20")),
             ),
         ),
+        partnerpoint_enabled=os.getenv("GROWTH_PARTNERPOINT_ENABLED", "false").lower()
+        == "true",
+        partnerpoint_sheet_id=os.getenv("GROWTH_PARTNERPOINT_SHEET_ID", "").strip(),
+        partnerpoint_spec_file_id=os.getenv("GROWTH_PARTNERPOINT_SPEC_FILE_ID", "").strip(),
+        partnerpoint_spec_version=os.getenv(
+            "GROWTH_PARTNERPOINT_SPEC_VERSION", ""
+        ).strip(),
+        partnerpoint_runtime_sources_file=os.getenv(
+            "GROWTH_PARTNERPOINT_RUNTIME_SOURCES_FILE",
+            "/app/runtime/growth-partnerpoint-sources.json",
+        ),
+        partnerpoint_architect_daily_max=_strict_int_setting(
+            "GROWTH_PARTNERPOINT_ARCHITECT_DAILY_MAX",
+            "30",
+            minimum=1,
+            maximum=30,
+            error="partnerpoint_architect_daily_max_invalid",
+        ),
+        partnerpoint_referral_daily_max=_strict_int_setting(
+            "GROWTH_PARTNERPOINT_REFERRAL_DAILY_MAX",
+            "2",
+            minimum=1,
+            maximum=8,
+            error="partnerpoint_referral_daily_max_invalid",
+        ),
         deepseek_api_key_file=os.getenv(
             "DEEPSEEK_API_KEY_FILE", "/run/secrets/growth/deepseek-api-key"
         ),
@@ -388,6 +420,11 @@ class GrowthRegistry:
         "f8f86c9a28160e1f2d919bf5f86bde7d6765bcea30945b17bba9a4364f478a1f"
     )
     ARCHITECT_SOURCE_AUTHORITY_ID = "IMPERIAL_REAL_ESTATE_DISCOVERY_SOURCES_HU_V1"
+    PARTNERPOINT_RUNTIME_SCHEMA = "partnerpoint-runtime-official-sources-v1"
+    PARTNERPOINT_PUBLIC_EMAIL_POLICY = "PARTNERPOINT_PUBLIC_BUSINESS_EMAIL_VISIBLE"
+    PARTNERPOINT_SHEET_ID = "1uey0XRxxjckH6h_EPfU4C3mDMXjPvdpa24XKu2emfV0"
+    PARTNERPOINT_SPEC_FILE_ID = "1AFLKbiYQ7KydaxftuXZPoHrY4Pw3I869"
+    PARTNERPOINT_SPEC_VERSION = "1.8"
     REQUIRED_MOTORS = {"construction", "distress", "ivs"}
     REQUIRED_CONSTRUCTION_BUCKETS = {
         "etdr",
@@ -425,8 +462,47 @@ class GrowthRegistry:
         self._validate()
 
     @classmethod
-    def load(cls) -> GrowthRegistry:
-        return cls(_load_json(Path(settings().registry_file)))
+    def load(cls, *, include_runtime_sources: bool = True) -> GrowthRegistry:
+        config = settings()
+        registry_path = Path(config.registry_file)
+        raw = _load_json(registry_path)
+        if include_runtime_sources and config.partnerpoint_enabled:
+            runtime_path = Path(config.partnerpoint_runtime_sources_file)
+            if runtime_path.is_file():
+                runtime = _load_json(runtime_path)
+                try:
+                    generated_at = _parse_time(runtime.get("generated_at"))
+                    runtime_sources = runtime.get("sources")
+                    base_sha256 = hashlib.sha256(registry_path.read_bytes()).hexdigest()
+                except OSError as exc:
+                    raise GrowthRegistryError(
+                        "PartnerPont runtime source registry is unreadable"
+                    ) from exc
+                if (
+                    runtime.get("schema") != cls.PARTNERPOINT_RUNTIME_SCHEMA
+                    or runtime.get("base_registry_sha256") != base_sha256
+                    or runtime.get("sheet_id") != cls.PARTNERPOINT_SHEET_ID
+                    or runtime.get("spec_file_id") != cls.PARTNERPOINT_SPEC_FILE_ID
+                    or runtime.get("spec_version") != cls.PARTNERPOINT_SPEC_VERSION
+                    or not generated_at
+                    or generated_at > datetime.now(UTC)
+                    or datetime.now(UTC) - generated_at > timedelta(hours=36)
+                    or not isinstance(runtime_sources, dict)
+                ):
+                    raise GrowthRegistryError(
+                        "PartnerPont runtime source registry is stale or untrusted"
+                    )
+                merged = json.loads(json.dumps(raw))
+                sources = merged.get("sources")
+                if not isinstance(sources, dict):
+                    raise GrowthRegistryError("Growth registry sources are invalid")
+                if set(sources).intersection(runtime_sources):
+                    raise GrowthRegistryError(
+                        "PartnerPont runtime source conflicts with the base registry"
+                    )
+                sources.update(runtime_sources)
+                raw = merged
+        return cls(raw)
 
     def _validate(self) -> None:
         if set(self.motors) != self.REQUIRED_MOTORS:
@@ -564,9 +640,17 @@ class GrowthRegistry:
     def _validate_official_company_source(self, source_id: str, source: dict[str, Any]) -> None:
         if str(source.get("fetch_mode") or "") != self.OFFICIAL_COMPANY_FETCH_MODE:
             raise GrowthRegistryError(f"Official-company source must be ingest-only: {source_id}")
-        if source.get("motor") != "construction" or source.get("bucket") != "architect_office":
+        binding = source.get("recipient_binding")
+        recipient_type = (
+            str(binding.get("recipient_type") or "") if isinstance(binding, dict) else ""
+        )
+        expected_bucket = {
+            "architect_office": "architect_office",
+            "referral_partner": "referral_partner",
+        }.get(recipient_type)
+        if source.get("motor") != "construction" or source.get("bucket") != expected_bucket:
             raise GrowthRegistryError(
-                f"Official-company source is restricted to architect offices: {source_id}"
+                f"Official-company source recipient lane is invalid: {source_id}"
             )
         url = str(source.get("url") or "")
         source_host = urlparse(url).hostname or ""
@@ -602,27 +686,41 @@ class GrowthRegistry:
                 raise GrowthRegistryError(
                     f"Official-company evidence URL crosses root domains: {source_id}"
                 )
-        binding = source.get("recipient_binding")
         if not isinstance(binding, dict):
             raise GrowthRegistryError(
                 f"Official-company recipient binding is required: {source_id}"
             )
         expected_email = str(binding.get("recipient_email") or "").strip().lower()
+        verification_policy = str(binding.get("verification_policy") or "")
         organization_names = binding.get("organization_names")
         recipient_names = binding.get("recipient_names")
         if (
-            binding.get("recipient_type") != "architect_office"
+            recipient_type not in {"architect_office", "referral_partner"}
             or binding.get("recipient_email_type") != "role"
             or binding.get("contact_basis") != "public_business_contact"
             or binding.get("primary_language") != "hu"
+            or verification_policy
+            not in {"", self.PARTNERPOINT_PUBLIC_EMAIL_POLICY}
             or not _valid_email(expected_email)
             or binding.get("recipient_email") != expected_email
             or not _clean_unique_strings(organization_names)
             or not _clean_unique_strings(recipient_names)
         ):
             raise GrowthRegistryError(f"Official-company recipient binding is invalid: {source_id}")
-        if _registrable_domain(expected_email.rsplit("@", 1)[1]) != source_root_domain:
+        if (
+            verification_policy != self.PARTNERPOINT_PUBLIC_EMAIL_POLICY
+            and _registrable_domain(expected_email.rsplit("@", 1)[1])
+            != source_root_domain
+        ):
             raise GrowthRegistryError(f"Official-company email crosses root domains: {source_id}")
+        if recipient_type == "referral_partner" and (
+            not str(binding.get("business_context") or "").strip()
+            or binding.get("business_context_verified") is not True
+            or binding.get("business_context_evidence_url") not in allowed_urls
+        ):
+            raise GrowthRegistryError(
+                f"Official-company referral business context is invalid: {source_id}"
+            )
         evidence = source.get("policy_evidence")
         if not isinstance(evidence, dict):
             raise GrowthRegistryError(f"Official-company policy evidence is required: {source_id}")
@@ -648,6 +746,27 @@ class GrowthRegistry:
         authority = source.get("authority")
         if not isinstance(authority, dict):
             raise GrowthRegistryError(f"Official-company source authority is required: {source_id}")
+        if recipient_type == "referral_partner":
+            if (
+                authority.get("registry_id") != "PARTNERPOINT_CONTROL_V1"
+                or authority.get("sheet_id") != self.PARTNERPOINT_SHEET_ID
+                or authority.get("spec_file_id") != self.PARTNERPOINT_SPEC_FILE_ID
+                or authority.get("spec_version") != self.PARTNERPOINT_SPEC_VERSION
+                or not str(authority.get("candidate_id") or "").strip()
+                or not _sha256_hex(authority.get("control_row_sha256"))
+                or not str(authority.get("owner_instruction_ref") or "").strip()
+            ):
+                raise GrowthRegistryError(
+                    f"Official-company referral authority is invalid: {source_id}"
+                )
+            if not _sha256_hex(source.get("binding_sha256")) or source.get(
+                "binding_sha256"
+            ) != _official_source_binding_sha256(source_id, source):
+                raise GrowthRegistryError(
+                    f"Official-company source binding hash is invalid: {source_id}"
+                )
+            return
+
         authority_path = Path(settings().real_estate_source_registry_file)
         authority_raw = _load_json(authority_path)
         try:
@@ -715,6 +834,9 @@ class GrowthRegistry:
         recipient_organization_name: str | None = None,
         evidence_url: str | None = None,
         public_contact_url: str | None = None,
+        business_context: str | None = None,
+        business_context_verified: bool | None = None,
+        business_context_evidence_url: str | None = None,
         source_payload_hash: str | None = None,
         detected_at: datetime | None = None,
     ) -> None:
@@ -744,6 +866,15 @@ class GrowthRegistry:
             or not organization_values.issubset(allowed_organizations)
             or evidence_url != source["context_evidence_url"]
             or public_contact_url != source["public_contact_url"]
+            or (
+                binding["recipient_type"] == "referral_partner"
+                and (
+                    business_context != binding["business_context"]
+                    or business_context_verified is not True
+                    or business_context_evidence_url
+                    != binding["business_context_evidence_url"]
+                )
+            )
             or source_payload_hash != source["binding_sha256"]
         ):
             raise GrowthRegistryError(

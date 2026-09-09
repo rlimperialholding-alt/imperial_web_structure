@@ -630,6 +630,75 @@ class GrowthControlState(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class GrowthAccountStop(Base):
+    """Durable cross-campaign stop for one mailbox or corporate account."""
+
+    __tablename__ = "growth_account_stops"
+    __table_args__ = (
+        UniqueConstraint(
+            "source",
+            "source_event_id",
+            "account_key",
+            name="uq_growth_account_stop_source_event_account",
+        ),
+        CheckConstraint(
+            "scope IN ('email','domain','organization','group')",
+            name="ck_growth_account_stop_scope",
+        ),
+        CheckConstraint(
+            "stop_kind IN ('response','rejection','dnc','bounce','complaint',"
+            "'existing_relationship','hard_suppression','other_brand_active')",
+            name="ck_growth_account_stop_kind",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stop_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    account_key: Mapped[str] = mapped_column(String(500), index=True)
+    organization_key: Mapped[str | None] = mapped_column(String(500), index=True)
+    scope: Mapped[str] = mapped_column(String(30), index=True)
+    stop_kind: Mapped[str] = mapped_column(String(40), index=True)
+    source: Mapped[str] = mapped_column(String(120), index=True)
+    source_event_id: Mapped[str] = mapped_column(String(500), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    details_json: Mapped[str] = mapped_column(Text, default="{}")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class GrowthOutreachReconciliation(Base):
+    """One immutable classification for every legacy PartnerPont handoff."""
+
+    __tablename__ = "growth_outreach_reconciliations"
+    __table_args__ = (
+        UniqueConstraint("source_record_id", name="uq_growth_reconciliation_source_record"),
+        CheckConstraint(
+            "classification IN ('ALREADY_SENT','REPLIED_STOP','DNC_STOP','BOUNCE_BLOCK',"
+            "'OWNER_MANUAL_ONLY','DUPLICATE_STOP','STALE_REQUALIFY','READY_TO_SEND',"
+            "'SEND_UNVERIFIED_REVIEW','OTHER')",
+            name="ck_growth_reconciliation_classification",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reconciliation_id: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    source_record_id: Mapped[str] = mapped_column(String(160), index=True)
+    candidate_id: Mapped[str | None] = mapped_column(String(160), index=True)
+    recipient_email: Mapped[str | None] = mapped_column(String(320), index=True)
+    classification: Mapped[str] = mapped_column(String(40), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    evidence_json: Mapped[str] = mapped_column(Text, default="{}")
+    reconciled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class CanonicalGrowthDailyRun(Base):
     __tablename__ = "canonical_growth_daily_runs"
     __table_args__ = (

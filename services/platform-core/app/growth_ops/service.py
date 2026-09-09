@@ -8,6 +8,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from email.utils import parseaddr
 from pathlib import Path
 from secrets import token_urlsafe
 from threading import Event
@@ -33,6 +34,7 @@ from ..models import AuditLog, MailSendingDomain, MailSuppression
 from .canonical_policy import (
     LAND_AGENT_HARD_GATE_REASONS,
     assert_outreach_copy,
+    assert_partnerpoint_outreach_copy,
     contains_no_monitoring_entity,
     land_agent_hard_gate_reason,
 )
@@ -44,6 +46,7 @@ from .email import (
     SMTPEmailAdapter,
 )
 from .models import (
+    GrowthAccountStop,
     GrowthControlState,
     GrowthLandCanarySlot,
     GrowthLandCanaryState,
@@ -64,7 +67,14 @@ from .official_source import (
     is_public_unicast_address,
     normalize_official_source_marker,
 )
-from .registry import BrandBinding, GrowthRegistry, GrowthRegistryError, settings, writes_unlocked
+from .registry import (
+    BrandBinding,
+    GrowthRegistry,
+    GrowthRegistryError,
+    _registrable_domain,
+    settings,
+    writes_unlocked,
+)
 from .scheduled_gmail_auth import ScheduledGmailClientPrincipal
 from .schemas import (
     GrowthSignalIn,
@@ -85,9 +95,7 @@ LAND_RENDER_RECIPIENT_NAME_BY_ROLE = {
     "property_owner": "Hirdető",
 }
 LAND_RENDER_RECIPIENT_NAME_POLICY_VERSION = "LAND-PUBLIC-ROLE-NAME-FALLBACK-V2"
-PUBLIC_LAND_TRANSIENT_QUEUE_REASONS = frozenset(
-    {"brand_daily_rate_limit", "growth_writes_locked"}
-)
+PUBLIC_LAND_TRANSIENT_QUEUE_REASONS = frozenset({"brand_daily_rate_limit", "growth_writes_locked"})
 
 OUTREACH_CAPACITY_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_252
 OUTREACH_TRANSPORT_ADVISORY_LOCK_KEY = 3_292_944_878_079_892_253
@@ -156,9 +164,7 @@ def _scheduled_gmail_lease_token(
     key = platform_settings.imperial_release_hmac_key
     if len(key) < 32:
         raise GrowthRegistryError("scheduled_gmail_lease_hmac_key_missing")
-    payload = (
-        f"scheduled-gmail\0{lease_id}\0{client_id}\0{outreach_id}\0{token_nonce}"
-    )
+    payload = f"scheduled-gmail\0{lease_id}\0{client_id}\0{outreach_id}\0{token_nonce}"
     signature = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return f"{lease_id}.{signature}"
 
@@ -262,17 +268,9 @@ def _validated_source_evidence(
     }
     expected_known = {
         **expected_required,
-        **(
-            {"recipient_name": data.recipient_name}
-            if data.recipient_name is not None
-            else {}
-        ),
+        **({"recipient_name": data.recipient_name} if data.recipient_name is not None else {}),
         **({"location": data.location} if data.location is not None else {}),
-        **(
-            {"plot_size_sqm": str(data.plot_size_sqm)}
-            if data.plot_size_sqm is not None
-            else {}
-        ),
+        **({"plot_size_sqm": str(data.plot_size_sqm)} if data.plot_size_sqm is not None else {}),
         **(
             {"recipient_organization_name": data.recipient_organization_name}
             if data.recipient_organization_name is not None
@@ -476,9 +474,7 @@ def _valid_land_canary_slot(row: GrowthLandCanarySlot) -> bool:
 
 
 def _claim_land_canary_slot(db: Session, outreach_id: str, *, now: datetime | None = None) -> bool:
-    if not str(
-        getattr(settings(), "land_outreach_production_canary_local_date", "") or ""
-    ).strip():
+    if not str(getattr(settings(), "land_outreach_production_canary_local_date", "") or "").strip():
         return False
     limit, scope_date, active = _land_canary_scope(db, now)
     if not active:
@@ -1099,10 +1095,7 @@ def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
         reasons.append("iora_internal_executive_review_only")
     if not public_land_contact and score < 55:
         reasons.append("score_below_55")
-    if (
-        not public_land_contact
-        and utcnow() - _aware(data.detected_at) > timedelta(days=30)
-    ):
+    if not public_land_contact and utcnow() - _aware(data.detected_at) > timedelta(days=30):
         reasons.append("signal_older_than_30_days")
     if not data.recipient_email:
         reasons.append("recipient_email_missing")
@@ -1132,11 +1125,7 @@ def _eligibility(data: GrowthSignalIn, score: int) -> list[str]:
         reasons.append("recipient_classification_not_verified_no_send")
     if not data.exclusion_screening_verified:
         reasons.append("exclusion_screening_not_verified_no_send")
-    if (
-        not public_land_contact
-        and data.recipient_type != "unknown"
-        and not data.recipient_name
-    ):
+    if not public_land_contact and data.recipient_type != "unknown" and not data.recipient_name:
         reasons.append("recipient_name_missing")
     if data.recipient_type == "architect_office" and not data.sender_company_name:
         reasons.append("sender_company_name_missing")
@@ -1277,6 +1266,310 @@ def _recipient_suppressed(db: Session, email: str) -> bool:
     )
 
 
+_FREE_ACCOUNT_DOMAINS = frozenset(
+    {
+        "gmail.com",
+        "icloud.com",
+        "freemail.hu",
+        "citromail.hu",
+        "outlook.com",
+        "hotmail.com",
+        "yahoo.com",
+        "t-online.hu",
+        "chello.hu",
+        "datanet.hu",
+    }
+)
+
+
+def _normalized_email(value: str) -> str:
+    return parseaddr(str(value or ""))[1].strip().casefold()
+
+
+def _account_key_for_email(value: str, *, force_email: bool = False) -> tuple[str, str]:
+    email = _normalized_email(value)
+    if "@" not in email:
+        raise GrowthRegistryError("account_stop_email_invalid")
+    domain = email.rsplit("@", 1)[1]
+    if force_email or domain in _FREE_ACCOUNT_DOMAINS:
+        return f"email:{email}", "email"
+    return f"domain:{_registrable_domain(domain)}", "domain"
+
+
+def _active_account_stop_reason(db: Session, email: str) -> str | None:
+    try:
+        domain_key, _scope = _account_key_for_email(email)
+        email_key, _email_scope = _account_key_for_email(email, force_email=True)
+    except GrowthRegistryError:
+        return "account_stop_email_invalid"
+    row = db.scalar(
+        select(GrowthAccountStop)
+        .where(
+            GrowthAccountStop.active.is_(True),
+            GrowthAccountStop.account_key.in_((domain_key, email_key)),
+        )
+        .order_by(GrowthAccountStop.occurred_at.desc())
+        .limit(1)
+    )
+    return f"account_stop:{row.stop_kind}:{row.source_event_id}" if row else None
+
+
+def _block_account_pending_outreach(
+    db: Session,
+    *,
+    account_key: str,
+    stop_kind: str,
+    matched_outreach_id: str | None = None,
+    occurred_at: datetime | None = None,
+) -> int:
+    key_type, key_value = account_key.split(":", 1)
+    query = select(OutreachMessage).where(
+        OutreachMessage.status.in_(("queued", "claimed", "failed", "dead_letter"))
+    )
+    if key_type == "email":
+        query = query.where(func.lower(OutreachMessage.recipient_email) == key_value)
+    else:
+        query = query.where(func.lower(OutreachMessage.recipient_email).like(f"%@{key_value}"))
+    blocked = 0
+    for row in db.scalars(query.with_for_update()).all():
+        row.status = "blocked"
+        row.last_error = f"STOP_{stop_kind.upper()}"
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+        signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
+        if signal:
+            signal.status = "responded" if stop_kind in {"response", "rejection"} else "suppressed"
+            signal.rejection_reasons_json = canonical_json([row.last_error])
+        blocked += 1
+    if matched_outreach_id and stop_kind in {"response", "rejection"}:
+        matched = db.scalar(
+            select(OutreachMessage)
+            .where(OutreachMessage.outreach_id == matched_outreach_id)
+            .with_for_update()
+        )
+        if matched and matched.status in {"sent", "delivered"}:
+            matched.status = "responded"
+            matched.response_at = _aware(occurred_at or utcnow())
+            signal = db.scalar(
+                select(GrowthSignal).where(GrowthSignal.signal_id == matched.signal_id)
+            )
+            if signal:
+                signal.status = "responded"
+    return blocked
+
+
+def upsert_account_stop(
+    db: Session,
+    *,
+    recipient_email: str,
+    stop_kind: str,
+    source: str,
+    source_event_id: str,
+    reason: str,
+    occurred_at: datetime,
+    organization_key: str | None = None,
+    force_email_scope: bool = False,
+    matched_outreach_id: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> tuple[GrowthAccountStop, bool, int]:
+    account_key, scope = _account_key_for_email(recipient_email, force_email=force_email_scope)
+    existing = next(
+        (
+            item
+            for item in db.new
+            if isinstance(item, GrowthAccountStop)
+            and item.source == source
+            and item.source_event_id == source_event_id
+            and item.account_key == account_key
+        ),
+        None,
+    )
+    if existing is None:
+        existing = db.scalar(
+            select(GrowthAccountStop).where(
+                GrowthAccountStop.source == source,
+                GrowthAccountStop.source_event_id == source_event_id,
+                GrowthAccountStop.account_key == account_key,
+            )
+        )
+    created = existing is None
+    row = existing or GrowthAccountStop(
+        stop_id=f"GST-{uuid4().hex[:20].upper()}",
+        source=source,
+        source_event_id=source_event_id,
+        account_key=account_key,
+        occurred_at=_aware(occurred_at),
+    )
+    if created:
+        db.add(row)
+    row.organization_key = organization_key
+    row.scope = scope
+    row.stop_kind = stop_kind
+    row.reason = reason
+    row.details_json = canonical_json(details or {})
+    row.active = True
+    row.occurred_at = _aware(occurred_at)
+    blocked = _block_account_pending_outreach(
+        db,
+        account_key=account_key,
+        stop_kind=stop_kind,
+        matched_outreach_id=matched_outreach_id,
+        occurred_at=occurred_at,
+    )
+    audit(
+        db,
+        actor="growth-stop-processor",
+        action="growth_account_stop_applied",
+        entity_type="growth_account_stop",
+        entity_id=row.stop_id,
+        after={
+            "account_key": account_key,
+            "stop_kind": stop_kind,
+            "source": source,
+            "source_event_id": source_event_id,
+            "blocked_outreach": blocked,
+        },
+    )
+    return row, created, blocked
+
+
+def sync_sales_agent_reply_stops(db: Session) -> dict[str, Any]:
+    state_key = "reply-sync:sales-agent-to-growth"
+    state = db.get(GrowthControlState, state_key)
+    since = (
+        _aware(state.changed_at) - timedelta(minutes=5)
+        if state and state.enabled and state.changed_at
+        else utcnow() - timedelta(days=120)
+    )
+    processed = 0
+    matched_count = 0
+    blocked_count = 0
+    try:
+        inbound = db.execute(
+            text(
+                "SELECT gmail_message_id, sender, internal_date_ms, created_at "
+                "FROM sales_agent_processed_emails "
+                "WHERE created_at >= :since OR internal_date_ms >= :since_ms "
+                "ORDER BY created_at ASC"
+            ),
+            {"since": since, "since_ms": int(since.timestamp() * 1000)},
+        ).mappings()
+        for event in inbound:
+            processed += 1
+            sender = _normalized_email(str(event["sender"] or ""))
+            if (
+                not sender
+                or sender == "info@imperialholding.hu"
+                or sender.startswith(("mailer-daemon@", "postmaster@", "no-reply@", "noreply@"))
+            ):
+                continue
+            try:
+                account_key, _scope = _account_key_for_email(sender)
+            except GrowthRegistryError:
+                continue
+            key_type, key_value = account_key.split(":", 1)
+            sent_query = select(OutreachMessage).where(
+                OutreachMessage.sequence_step == 0,
+                OutreachMessage.status.in_(("sent", "delivered", "responded")),
+                OutreachMessage.sent_at.is_not(None),
+            )
+            if key_type == "email":
+                sent_query = sent_query.where(
+                    func.lower(OutreachMessage.recipient_email) == key_value
+                )
+            else:
+                sent_query = sent_query.where(
+                    func.lower(OutreachMessage.recipient_email).like(f"%@{key_value}")
+                )
+            sent = db.scalar(sent_query.order_by(OutreachMessage.sent_at.desc()).limit(1))
+            if sent is None:
+                continue
+            when = (
+                datetime.fromtimestamp(int(event["internal_date_ms"]) / 1000, tz=UTC)
+                if event["internal_date_ms"]
+                else _aware(event["created_at"])
+            )
+            if sent.sent_at and when < _aware(sent.sent_at):
+                continue
+            _row, _created, blocked = upsert_account_stop(
+                db,
+                recipient_email=sender,
+                stop_kind="response",
+                source="sales_agent_gmail_history",
+                source_event_id=str(event["gmail_message_id"]),
+                reason="Inbound corporate reply after an Imperial first-touch",
+                occurred_at=when,
+                matched_outreach_id=sent.outreach_id,
+                details={"gmail_message_id": str(event["gmail_message_id"])},
+            )
+            matched_count += 1
+            blocked_count += blocked
+
+        suppressions = db.execute(
+            text(
+                "SELECT id, normalized_value, reason, source, created_at "
+                "FROM sales_agent_suppressions WHERE active IS TRUE"
+            )
+        ).mappings()
+        for item in suppressions:
+            value = _normalized_email(str(item["normalized_value"] or ""))
+            if "@" not in value:
+                continue
+            reason_text = str(item["reason"] or "").casefold()
+            stop_kind = (
+                "bounce"
+                if "bounce" in reason_text or "kézbes" in reason_text
+                else "complaint"
+                if "complaint" in reason_text or "spam" in reason_text
+                else "dnc"
+            )
+            _row, _created, blocked = upsert_account_stop(
+                db,
+                recipient_email=value,
+                stop_kind=stop_kind,
+                source="sales_agent_suppression",
+                source_event_id=str(item["id"]),
+                reason=str(item["reason"] or stop_kind),
+                occurred_at=_aware(item["created_at"]),
+                force_email_scope=stop_kind == "bounce",
+                details={"suppression_source": str(item["source"] or "")},
+            )
+            blocked_count += blocked
+        if state is None:
+            state = GrowthControlState(key=state_key)
+            db.add(state)
+        state.enabled = True
+        state.reason = canonical_json(
+            {
+                "processed": processed,
+                "matched": matched_count,
+                "blocked": blocked_count,
+            }
+        )
+        state.changed_by = "growth-reply-processor"
+        state.changed_at = utcnow()
+        db.commit()
+        return {
+            "status": "healthy",
+            "processed": processed,
+            "matched": matched_count,
+            "blocked": blocked_count,
+        }
+    except Exception as exc:
+        db.rollback()
+        state = db.get(GrowthControlState, state_key)
+        if state is None:
+            state = GrowthControlState(key=state_key)
+            db.add(state)
+        state.enabled = False
+        state.reason = canonical_json({"error_type": type(exc).__name__, "reason": str(exc)[:300]})
+        state.changed_by = "growth-reply-processor"
+        state.changed_at = utcnow()
+        db.commit()
+        return {"status": "failed", "processed": processed, "matched": matched_count}
+
+
 def _rate_errors(
     db: Session,
     binding: BrandBinding,
@@ -1301,9 +1594,7 @@ def _rate_errors(
         OutreachMessage.status.in_(("queued", "claimed", "sent", "delivered", "responded")),
     )
     if exclude_outreach_id:
-        recent_query = recent_query.where(
-            OutreachMessage.outreach_id != exclude_outreach_id
-        )
+        recent_query = recent_query.where(OutreachMessage.outreach_id != exclude_outreach_id)
     recent_recipient = db.scalar(recent_query.limit(1))
     errors: list[str] = []
     if recent_recipient:
@@ -1327,6 +1618,9 @@ def _queue_message(
         raise GrowthRegistryError(hard_gate_reason)
     if _recipient_suppressed(db, signal.recipient_email or ""):
         raise GrowthRegistryError("Recipient is suppressed")
+    account_stop = _active_account_stop_reason(db, signal.recipient_email or "")
+    if account_stop:
+        raise GrowthRegistryError(account_stop)
     if enforce_recipient_cooldown:
         # A queued candidate is not a Gmail transport reservation. The rolling
         # 24-hour account quota, single concurrency and persisted pacing gates
@@ -1396,6 +1690,35 @@ def _queue_message(
             "signal_id": signal.signal_id,
             "recipient_role": signal.recipient_role,
             "policy_scope": "single_initial_public_building_plot_outreach",
+        }
+    elif (
+        step == 0
+        and data is not None
+        and data.recipient_type in {"architect_office", "referral_partner"}
+        and signal.external_key.startswith("PC-")
+        and getattr(settings(), "partnerpoint_enabled", False)
+    ):
+        source = GrowthRegistry.load().sources.get(signal.source_id)
+        if (
+            not isinstance(source, dict)
+            or source.get("kind") != GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
+            or source.get("recipient_binding", {}).get("recipient_type") != data.recipient_type
+            or source.get("binding_sha256") != data.source_payload_hash
+        ):
+            raise GrowthRegistryError("partnerpoint_policy_source_binding_invalid")
+        assert_partnerpoint_outreach_copy(
+            row.body_text,
+            recipient_type=data.recipient_type,
+        )
+        row.release_approved_by = "owner-policy:partnerpoint-v1.8:2026-09-08"
+        row.release_approved_at = utcnow()
+        row.release_token_hash = _release_digest(row, row.release_approved_by)
+        policy_release_audit = {
+            "payload_sha256": row.payload_sha256,
+            "signal_id": signal.signal_id,
+            "recipient_type": data.recipient_type,
+            "source_binding_sha256": source["binding_sha256"],
+            "policy_scope": "partnerpoint_owner_approved_initial_outreach_v1.8",
         }
     db.add(row)
     if policy_release_audit is not None:
@@ -1478,6 +1801,9 @@ def ingest_signal(
         recipient_organization_name=data.recipient_organization_name,
         evidence_url=data.evidence_url,
         public_contact_url=data.public_contact_url,
+        business_context=data.business_context,
+        business_context_verified=data.business_context_verified,
+        business_context_evidence_url=data.business_context_evidence_url,
         source_payload_hash=data.source_payload_hash,
         detected_at=data.detected_at,
     )
@@ -1498,13 +1824,145 @@ def ingest_signal(
     )
     if existing:
         existing.last_seen_at = utcnow()
-        db.commit()
         outreach = db.scalar(
             select(OutreachMessage).where(
                 OutreachMessage.signal_id == existing.signal_id,
                 OutreachMessage.sequence_step == 0,
             )
         )
+        existing_reasons = set(json.loads(existing.rejection_reasons_json or "[]"))
+        recoverable_partnerpoint_reasons = {
+            "canonical_sender_company_conflicts_with_sender_brand_no_send",
+            "owner_locked_partner_outreach_anchor_missing",
+        }
+        if (
+            outreach is None
+            and existing.status == "blocked"
+            and existing.source_id == data.source_id
+            and existing.external_key == data.external_key
+            and existing.external_key.startswith("PC-")
+            and existing_reasons
+            and existing_reasons.issubset(recoverable_partnerpoint_reasons)
+            and getattr(settings(), "partnerpoint_enabled", False)
+        ):
+            retry_reasons = _eligibility(data, _score(data))
+            try:
+                with db.begin_nested():
+                    binding = registry.brand_binding(brand_id)
+                    _verified_sender(db, binding)
+                    if retry_reasons:
+                        raise GrowthRegistryError(";".join(retry_reasons))
+                    if not writes_unlocked() or not _control_enabled(db, data.motor_key):
+                        raise GrowthRegistryError("growth_writes_locked")
+                    previous_source_payload_hash = existing.source_payload_hash
+                    existing.source_payload_hash = data.source_payload_hash
+                    existing.detected_at = _aware(data.detected_at)
+                    if previous_source_payload_hash != data.source_payload_hash:
+                        audit(
+                            db,
+                            actor="growth-ops",
+                            action="growth_partnerpoint_source_binding_refreshed",
+                            entity_type="growth_signal",
+                            entity_id=existing.signal_id,
+                            before={"source_payload_hash": previous_source_payload_hash},
+                            after={"source_payload_hash": data.source_payload_hash},
+                        )
+                    outreach = _queue_message(
+                        db,
+                        existing,
+                        binding,
+                        step=0,
+                        available_at=utcnow(),
+                        enforce_recipient_cooldown=True,
+                        data=data,
+                        source_evidence_manifest_sha256=source_evidence_manifest,
+                    )
+                    existing.status = "queued"
+                    existing.rejection_reasons_json = "[]"
+                    source = registry.sources.get(existing.source_id)
+                    if (
+                        isinstance(source, dict)
+                        and source.get("kind") == GrowthRegistry.OFFICIAL_COMPANY_SOURCE_KIND
+                    ):
+                        _record_official_source_binding_proof(
+                            db,
+                            outreach,
+                            existing,
+                            source,
+                            actor="growth-ops",
+                            proof_origin="signal_ingest",
+                        )
+                    audit(
+                        db,
+                        actor="growth-ops",
+                        action="growth_partnerpoint_policy_block_recovered",
+                        entity_type="growth_signal",
+                        entity_id=existing.signal_id,
+                        before={"reasons": sorted(existing_reasons)},
+                        after={"status": "queued", "outreach_id": outreach.outreach_id},
+                    )
+            except (GrowthRegistryError, ValueError) as exc:
+                retry_reasons.append(str(exc))
+                outreach = None
+                existing.status = "blocked"
+                existing.rejection_reasons_json = canonical_json(sorted(set(retry_reasons)))
+        elif (
+            outreach is not None
+            and outreach.status == "queued"
+            and existing.status == "blocked"
+            and existing_reasons == {"official_source_binding_proof_write_failed"}
+            and existing.source_id == data.source_id
+            and existing.external_key == data.external_key
+            and existing.external_key.startswith("PC-")
+            and getattr(settings(), "partnerpoint_enabled", False)
+        ):
+            try:
+                with db.begin_nested():
+                    if (
+                        not _payload_matches(outreach)
+                        or outreach.release_approved_by
+                        != "owner-policy:partnerpoint-v1.8:2026-09-08"
+                    ):
+                        raise GrowthRegistryError("partnerpoint_retry_payload_not_canonical")
+                    source = registry.sources.get(existing.source_id)
+                    if not isinstance(source, dict):
+                        raise GrowthRegistryError("official_source_binding_source_missing")
+                    previous_source_payload_hash = existing.source_payload_hash
+                    existing.source_payload_hash = data.source_payload_hash
+                    existing.detected_at = _aware(data.detected_at)
+                    if previous_source_payload_hash != data.source_payload_hash:
+                        audit(
+                            db,
+                            actor="growth-ops",
+                            action="growth_partnerpoint_source_binding_refreshed",
+                            entity_type="growth_signal",
+                            entity_id=existing.signal_id,
+                            before={"source_payload_hash": previous_source_payload_hash},
+                            after={"source_payload_hash": data.source_payload_hash},
+                        )
+                    _record_official_source_binding_proof(
+                        db,
+                        outreach,
+                        existing,
+                        source,
+                        actor="growth-ops",
+                        proof_origin="signal_ingest",
+                    )
+                    existing.status = "queued"
+                    existing.rejection_reasons_json = "[]"
+                    audit(
+                        db,
+                        actor="growth-ops",
+                        action="growth_partnerpoint_binding_proof_recovered",
+                        entity_type="growth_signal",
+                        entity_id=existing.signal_id,
+                        before={"reasons": sorted(existing_reasons)},
+                        after={"status": "queued", "outreach_id": outreach.outreach_id},
+                    )
+            except (GrowthRegistryError, ValueError) as exc:
+                existing.status = "blocked"
+                existing.rejection_reasons_json = canonical_json([str(exc)])
+        db.commit()
         return GrowthSignalReceipt(
             signal_id=existing.signal_id,
             status=existing.status,
@@ -1576,9 +2034,7 @@ def ingest_signal(
     if not reasons:
         try:
             if public_land_template_fields:
-                evidenced_fields = {
-                    str(item["field_name"]) for item in validated_source_evidence
-                }
+                evidenced_fields = {str(item["field_name"]) for item in validated_source_evidence}
                 missing_template_fields = sorted(
                     field_name
                     for field_name in public_land_template_fields
@@ -1587,8 +2043,7 @@ def ingest_signal(
                 )
                 if missing_template_fields:
                     raise GrowthRegistryError(
-                        "template-variable-missing:"
-                        + ",".join(missing_template_fields)
+                        "template-variable-missing:" + ",".join(missing_template_fields)
                     )
             binding = registry.brand_binding(brand_id)
             _verified_sender(db, binding)
@@ -1609,9 +2064,7 @@ def ingest_signal(
             error = str(exc)
             render_missing_prefix = "Canonical render field is missing: "
             if error.startswith(render_missing_prefix):
-                error = "template-variable-missing:" + error.removeprefix(
-                    render_missing_prefix
-                )
+                error = "template-variable-missing:" + error.removeprefix(render_missing_prefix)
             reasons.append(error)
             if "template-variable-missing" in error:
                 row.status = "template-variable-missing"
@@ -1812,9 +2265,7 @@ def automatic_public_land_transient_block_promotion(
                 raise GrowthRegistryError(hard_gate_reason)
             validated_evidence = _validated_source_evidence(data, source_evidence)
             required_template_evidence = (
-                {"location", "plot_size_sqm"}
-                if row.recipient_role == "property_owner"
-                else set()
+                {"location", "plot_size_sqm"} if row.recipient_role == "property_owner" else set()
             )
             if data.recipient_name:
                 required_template_evidence.add("recipient_name")
@@ -1871,9 +2322,7 @@ def automatic_public_land_transient_block_promotion(
             error = str(exc)
             render_missing_prefix = "Canonical render field is missing: "
             if error.startswith(render_missing_prefix):
-                error = "template-variable-missing:" + error.removeprefix(
-                    render_missing_prefix
-                )
+                error = "template-variable-missing:" + error.removeprefix(render_missing_prefix)
             row.status = "suppressed" if "suppressed" in error else "blocked"
             row.rejection_reasons_json = canonical_json([error])
             outcome = row.status
@@ -2057,10 +2506,14 @@ def promote_public_land_name_fallback_signals(
             if any(item["field_name"] == "recipient_name" for item in source_evidence):
                 raise GrowthRegistryError("public_land_name_fallback_evidence_conflict")
             validated_evidence = _validated_source_evidence(data, source_evidence)
-            template_evidence_fields = {
-                "location",
-                "plot_size_sqm",
-            } if row.recipient_role == "property_owner" else set()
+            template_evidence_fields = (
+                {
+                    "location",
+                    "plot_size_sqm",
+                }
+                if row.recipient_role == "property_owner"
+                else set()
+            )
             evidenced_fields = {str(item["field_name"]) for item in validated_evidence}
             missing_template_fields = sorted(template_evidence_fields - evidenced_fields)
             if missing_template_fields:
@@ -2089,9 +2542,7 @@ def promote_public_land_name_fallback_signals(
             error = str(exc)
             render_missing_prefix = "Canonical render field is missing: "
             if error.startswith(render_missing_prefix):
-                error = "template-variable-missing:" + error.removeprefix(
-                    render_missing_prefix
-                )
+                error = "template-variable-missing:" + error.removeprefix(render_missing_prefix)
             row.status = "suppressed" if "suppressed" in error else "blocked"
             row.rejection_reasons_json = canonical_json([error])
             outcome = row.status
@@ -2114,13 +2565,9 @@ def promote_public_land_name_fallback_signals(
                 "policy_version": policy_version,
                 "plan_sha256": plan_sha256,
                 "recipient_role": row.recipient_role,
-                "render_recipient_name": LAND_RENDER_RECIPIENT_NAME_BY_ROLE[
-                    row.recipient_role
-                ],
+                "render_recipient_name": LAND_RENDER_RECIPIENT_NAME_BY_ROLE[row.recipient_role],
                 "render_recipient_name_origin": "ROLE_FALLBACK",
-                "source_evidence_manifest_sha256": plan_item[
-                    "source_evidence_manifest_sha256"
-                ],
+                "source_evidence_manifest_sha256": plan_item["source_evidence_manifest_sha256"],
             },
         )
     summary = {
@@ -2383,15 +2830,12 @@ def _release_expired_claims(db: Session) -> None:
                     )
             scheduled_lease.status = "accepted_unverified"
             scheduled_lease.accepted_at = now
-            scheduled_lease.quota_local_date = now.astimezone(
-                ZoneInfo("Europe/Budapest")
-            ).date()
+            scheduled_lease.quota_local_date = now.astimezone(ZoneInfo("Europe/Budapest")).date()
             scheduled_lease.updated_at = now
             for lease_request in db.scalars(
                 select(ScheduledGmailLeaseRequest)
                 .where(
-                    ScheduledGmailLeaseRequest.lease_id
-                    == scheduled_lease.lease_id,
+                    ScheduledGmailLeaseRequest.lease_id == scheduled_lease.lease_id,
                     ScheduledGmailLeaseRequest.status == "authorized",
                 )
                 .with_for_update()
@@ -2530,9 +2974,7 @@ def _outreach_capacity_usage(db: Session, now: datetime | None = None) -> Outrea
     verified_rows = [row for row in sent_rows if _gmail_sent_mime_verified(row)]
     rolling_rows = [row for row in verified_rows if _aware(row.sent_at) > rolling_start]
     previous_rows = [
-        row
-        for row in verified_rows
-        if previous_start < _aware(row.sent_at) <= rolling_start
+        row for row in verified_rows if previous_start < _aware(row.sent_at) <= rolling_start
     ]
     claimed_rows = list(
         db.scalars(select(OutreachMessage).where(OutreachMessage.status == "claimed"))
@@ -2572,9 +3014,7 @@ def _outreach_reputation_health(
 ) -> OutreachReputationHealth:
     current = _aware(now or utcnow())
     cutoff = current - timedelta(hours=24)
-    rows = db.scalars(
-        select(OutreachMessage).where(OutreachMessage.sent_at >= cutoff)
-    ).all()
+    rows = db.scalars(select(OutreachMessage).where(OutreachMessage.sent_at >= cutoff)).all()
     verified = [row for row in rows if _gmail_sent_mime_verified(row)]
     sent_count = len(verified)
     bounced = sum(row.status == "bounced" for row in verified)
@@ -2584,10 +3024,7 @@ def _outreach_reputation_health(
     complaint_rate = complained / denominator
     if complained and complaint_rate >= OUTREACH_COMPLAINT_STOP_RATE:
         action = "pause_external_outreach"
-    elif (
-        bounced >= OUTREACH_BOUNCE_STOP_MINIMUM
-        and bounce_rate >= OUTREACH_BOUNCE_STOP_RATE
-    ):
+    elif bounced >= OUTREACH_BOUNCE_STOP_MINIMUM and bounce_rate >= OUTREACH_BOUNCE_STOP_RATE:
         action = "pause_external_outreach"
     elif bounced or complained:
         action = "slow_external_outreach"
@@ -2603,9 +3040,7 @@ def _outreach_reputation_health(
     )
 
 
-def _assert_outreach_reputation_healthy(
-    db: Session, now: datetime | None = None
-) -> dict[str, Any]:
+def _assert_outreach_reputation_healthy(db: Session, now: datetime | None = None) -> dict[str, Any]:
     health = _outreach_reputation_health(db, now)
     detail = health.as_dict()
     if health.action == "pause_external_outreach":
@@ -2642,12 +3077,8 @@ def _outreach_reputation_gap_seconds(
 ) -> float:
     config = settings()
     absolute_limit = int(getattr(config, "outreach_budapest_day_max", 2000))
-    bootstrap = int(
-        getattr(config, "outreach_reputation_bootstrap_messages_per_window", 100)
-    )
-    growth_factor = float(
-        getattr(config, "outreach_reputation_max_growth_factor", 1.25)
-    )
+    bootstrap = int(getattr(config, "outreach_reputation_bootstrap_messages_per_window", 100))
+    growth_factor = float(getattr(config, "outreach_reputation_max_growth_factor", 1.25))
     jitter_fraction = float(getattr(config, "outreach_reputation_jitter_fraction", 0.20))
     if not 1 <= absolute_limit <= 2000 or int(getattr(config, "outreach_send_concurrency", 1)) != 1:
         raise GrowthRegistryError("outreach_transport_policy_invalid_no_send")
@@ -2680,9 +3111,7 @@ def _outreach_reputation_gap_seconds(
 
 
 def _outreach_pacing_detail(db: Session, *, lock: bool = False) -> dict[str, Any]:
-    query = select(GrowthControlState).where(
-        GrowthControlState.key == OUTREACH_PACING_STATE_KEY
-    )
+    query = select(GrowthControlState).where(GrowthControlState.key == OUTREACH_PACING_STATE_KEY)
     if lock:
         query = query.with_for_update()
     row = db.scalar(query)
@@ -2707,9 +3136,7 @@ def _outreach_pacing_next_at(db: Session) -> datetime | None:
         raise GrowthRegistryError("outreach_pacing_state_invalid_no_send") from exc
 
 
-def _assert_gmail_account_pacing_due(
-    db: Session, *, now: datetime | None = None
-) -> None:
+def _assert_gmail_account_pacing_due(db: Session, *, now: datetime | None = None) -> None:
     current = _aware(now or utcnow())
     next_at = _outreach_pacing_next_at(db)
     if next_at is not None and current < next_at:
@@ -2740,9 +3167,7 @@ def _assert_no_scheduled_gmail_escrow_slot_conflict(
     conflict = db.scalar(
         select(ScheduledGmailEscrowPermit)
         .where(
-            ScheduledGmailEscrowPermit.status.in_(
-                {"reserved", "consuming", "accepted_unverified"}
-            ),
+            ScheduledGmailEscrowPermit.status.in_({"reserved", "consuming", "accepted_unverified"}),
             ScheduledGmailEscrowPermit.slot_not_before <= upper_bound,
             ScheduledGmailEscrowPermit.slot_not_after >= lower_bound,
         )
@@ -2819,11 +3244,7 @@ def _record_outreach_pacing_backoff(
     current = _aware(now)
     prior = _outreach_pacing_detail(db, lock=True)
     previous_penalty = max(1.0, float(prior.get("penalty_multiplier") or 1.0))
-    penalty = (
-        min(64.0, previous_penalty * 2.0)
-        if error.rate_limited
-        else previous_penalty
-    )
+    penalty = min(64.0, previous_penalty * 2.0) if error.rate_limited else previous_penalty
     retry_after = error.retry_after_seconds
     if retry_after is None:
         retry_after = error.detail.get("retry_after_seconds")
@@ -2872,9 +3293,9 @@ def _budapest_day_bounds(now: datetime | None = None) -> tuple[datetime, datetim
         raise GrowthRegistryError("outreach_budapest_timezone_unavailable_no_send") from exc
     local_date = current.astimezone(zone).date()
     day_start = datetime.combine(local_date, time.min, tzinfo=zone).astimezone(UTC)
-    day_end = datetime.combine(
-        local_date + timedelta(days=1), time.min, tzinfo=zone
-    ).astimezone(UTC)
+    day_end = datetime.combine(local_date + timedelta(days=1), time.min, tzinfo=zone).astimezone(
+        UTC
+    )
     return day_start, day_end
 
 
@@ -2917,8 +3338,7 @@ def _outreach_budapest_day_usage(
         if reserved.sent_at is not None:
             continue
         is_pending = _delivery_verification_pending(reserved) or (
-            _delivery_acceptance_ambiguous(reserved)
-            and reserved.lease_expires_at is None
+            _delivery_acceptance_ambiguous(reserved) and reserved.lease_expires_at is None
         )
         is_active = bool(
             reserved.claimed_by
@@ -2927,11 +3347,7 @@ def _outreach_budapest_day_usage(
         )
         if is_pending:
             reservation_at = _claimed_reservation_at(reserved)
-            if (
-                reservation_at is None
-                or reservation_at < day_start
-                or reservation_at >= day_end
-            ):
+            if reservation_at is None or reservation_at < day_start or reservation_at >= day_end:
                 continue
         elif not is_active:
             continue
@@ -2999,9 +3415,7 @@ def _outreach_budapest_day_usage(
             ScheduledGmailLease.status == "authorized",
             ScheduledGmailLease.quota_local_date == previous_local_date,
             ScheduledGmailLease.expires_at >= boundary_cutoff,
-            ScheduledGmailLease.lease_id.not_in(
-                select(ScheduledGmailEscrowPermit.lease_id)
-            ),
+            ScheduledGmailLease.lease_id.not_in(select(ScheduledGmailEscrowPermit.lease_id)),
         )
     ):
         reservation_key = f"outreach:{boundary_lease.outreach_id}"
@@ -3069,9 +3483,7 @@ def _assert_outreach_budapest_day_quota_reserved(
                 "sent_first_contacts": usage.sent_first_contacts,
                 "verified_first_contacts": usage.verified_first_contacts,
                 "active_claim_reservations": usage.active_claim_reservations,
-                "pending_verification_reservations": (
-                    usage.pending_verification_reservations
-                ),
+                "pending_verification_reservations": (usage.pending_verification_reservations),
                 "effective_reserved_count": usage.effective_reserved_count,
                 "limit": usage.limit,
                 "day_start": usage.day_start.isoformat(),
@@ -3276,8 +3688,7 @@ def _assert_current_canonical_screening(
     if not isinstance(render_input, dict):
         raise GrowthRegistryError("canonical_render_input_missing")
     if (
-        "source_evidence_manifest_sha256" in metadata
-        or "recipient_name_render_policy" in metadata
+        "source_evidence_manifest_sha256" in metadata or "recipient_name_render_policy" in metadata
     ) and not _public_land_signal(signal):
         raise GrowthRegistryError("public_land_source_evidence_classification_mismatch")
     if _public_land_signal(signal):
@@ -3648,6 +4059,9 @@ def _official_source_validation_values(
         "recipient_organization_name": signal.recipient_organization_name,
         "evidence_url": signal.evidence_url,
         "public_contact_url": signal.public_contact_url,
+        "business_context": render_input.get("business_context"),
+        "business_context_verified": render_input.get("business_context_verified"),
+        "business_context_evidence_url": render_input.get("business_context_evidence_url"),
         "source_payload_hash": signal.source_payload_hash,
     }
 
@@ -4310,6 +4724,30 @@ def _assert_official_source_evidence_fresh(
         if value
     }
     expected_email = str(signal.recipient_email or "").strip().casefold()
+    binding = source.get("recipient_binding")
+    verification_policy = (
+        str(binding.get("verification_policy") or "")
+        if isinstance(binding, dict)
+        else ""
+    ) or "OFFICIAL_ORGANIZATION_AND_EMAIL_VISIBLE"
+    public_email_only = (
+        verification_policy == GrowthRegistry.PARTNERPOINT_PUBLIC_EMAIL_POLICY
+    )
+    identity_receipt_matches = (
+        receipt.get("verification_policy") == verification_policy
+        and (
+            (
+                receipt.get("matched_recipient_marker") == ""
+                and receipt.get("matched_organization_marker") == ""
+            )
+            if public_email_only
+            else (
+                receipt.get("matched_recipient_marker") == expected_recipient_marker
+                and receipt.get("matched_organization_marker")
+                in expected_organization_markers
+            )
+        )
+    )
 
     def valid_page(page: Any) -> bool:
         if not isinstance(page, dict):
@@ -4345,8 +4783,7 @@ def _assert_official_source_evidence_fresh(
         or receipt.get("signal_dedupe_hash") != signal.dedupe_hash
         or receipt.get("recipient_email") != signal.recipient_email
         or receipt.get("matched_email") != expected_email
-        or receipt.get("matched_recipient_marker") != expected_recipient_marker
-        or receipt.get("matched_organization_marker") not in expected_organization_markers
+        or not identity_receipt_matches
         or receipt.get("signal_identity_unchanged") is not True
         or receipt.get("payload_and_release_unchanged") is not True
         or receipt.get("release_token_sha256")
@@ -4404,9 +4841,7 @@ def _assert_outreach_pre_send_guard(
     capacity_reserved = (
         _outreach_transport_capacity_reserved(db, locked_row)
         if claimed_by is None
-        else _outreach_transport_capacity_reserved(
-            db, locked_row, claimed_by=expected_claimed_by
-        )
+        else _outreach_transport_capacity_reserved(db, locked_row, claimed_by=expected_claimed_by)
     )
     if not capacity_reserved:
         raise GrowthRegistryError("outreach_transport_capacity_not_reserved_no_send")
@@ -4420,6 +4855,9 @@ def _assert_outreach_pre_send_guard(
         or _delivery_verification_pending(locked_row)
     ):
         raise GrowthRegistryError("outreach_pre_send_state_invalid_no_send")
+    account_stop = _active_account_stop_reason(db, locked_row.recipient_email)
+    if account_stop:
+        raise GrowthRegistryError(account_stop)
     try:
         _assert_official_source_evidence_fresh(
             db,
@@ -4493,6 +4931,18 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         )
         db.commit()
         return row
+    account_stop = _active_account_stop_reason(db, row.recipient_email)
+    if account_stop:
+        row.status = "blocked"
+        row.last_error = account_stop
+        row.claimed_by = None
+        row.claimed_at = None
+        row.lease_expires_at = None
+        if signal:
+            signal.status = "suppressed"
+            signal.rejection_reasons_json = canonical_json([account_stop])
+        db.commit()
+        return row
     if not _outreach_sending_window_open():
         return _release_untransported_claim(
             db, row, reason="outreach_sending_window_closed_no_send"
@@ -4530,6 +4980,13 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
         if _recipient_suppressed(db, row.recipient_email):
             row.status = "suppressed"
             row.last_error = "global_suppression"
+            signal.status = "suppressed"
+            db.commit()
+            return row
+        account_stop = _active_account_stop_reason(db, row.recipient_email)
+        if account_stop:
+            row.status = "blocked"
+            row.last_error = account_stop
             signal.status = "suppressed"
             db.commit()
             return row
@@ -4605,9 +5062,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
             _lock_outreach_transport_account(db)
             _assert_central_gmail_transport_available(db)
             _assert_gmail_account_pacing_due(db)
-            account_reputation_attestation.update(
-                _assert_outreach_reputation_healthy(db)
-            )
+            account_reputation_attestation.update(_assert_outreach_reputation_healthy(db))
             _assert_outreach_pre_send_guard(
                 db,
                 row,
@@ -4646,9 +5101,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                 _assert_live_listing_evidence_attestation(row, live_listing_evidence)
 
         def immediate_account_quota_guard() -> None:
-            account_quota_attestation.update(
-                _assert_outreach_budapest_day_quota_reserved(db, row)
-            )
+            account_quota_attestation.update(_assert_outreach_budapest_day_quota_reserved(db, row))
 
         if not _outreach_sending_window_open():
             raise GrowthRegistryError("outreach_sending_window_closed_no_send")
@@ -4890,9 +5343,7 @@ def dispatch_outreach(db: Session, row: OutreachMessage) -> OutreachMessage:
                 utcnow() + timedelta(minutes=2 ** min(row.attempt_count, 8)),
                 next_at or utcnow(),
             )
-        authentication_failure = (
-            isinstance(exc, EmailDeliveryError) and exc.authentication_failure
-        )
+        authentication_failure = isinstance(exc, EmailDeliveryError) and exc.authentication_failure
         if authentication_failure:
             _record_central_gmail_authentication_failure(
                 db,
@@ -5110,9 +5561,7 @@ def _scheduled_gmail_authorization_preflight(
         from .public_land import live_listing_revalidation
 
         live_validation = live_listing_revalidation(db, signal)
-        live_listing_evidence = _attest_live_listing_evidence(
-            row, live_validation.audit_evidence
-        )
+        live_listing_evidence = _attest_live_listing_evidence(row, live_validation.audit_evidence)
         audit(
             db,
             actor="scheduled-gmail-coordinator",
@@ -5140,9 +5589,7 @@ def _scheduled_gmail_authorization_preflight(
         claimed_by=claimed_by,
     )
     immediate_registry = GrowthRegistry.load()
-    immediate_reason = _authoritative_send_readiness_reason(
-        db, immediate_registry, signal
-    )
+    immediate_reason = _authoritative_send_readiness_reason(db, immediate_registry, signal)
     if immediate_reason:
         raise GrowthRegistryError(immediate_reason)
     immediate_binding = immediate_registry.brand_binding(row.brand_id)
@@ -5157,9 +5604,7 @@ def _scheduled_gmail_authorization_preflight(
     )
     if immediate_cooldown:
         raise GrowthRegistryError(";".join(immediate_cooldown))
-    immediate_official_required = _official_source_required(
-        db, row, signal, immediate_registry
-    )
+    immediate_official_required = _official_source_required(db, row, signal, immediate_registry)
     if immediate_official_required:
         _assert_official_source_evidence_fresh(
             db,
@@ -5187,9 +5632,7 @@ def _defer_scheduled_gmail_candidate_no_send(
 
     db.rollback()
     failed_row = db.scalar(
-        select(OutreachMessage)
-        .where(OutreachMessage.outreach_id == outreach_id)
-        .with_for_update()
+        select(OutreachMessage).where(OutreachMessage.outreach_id == outreach_id).with_for_update()
     )
     if failed_row is None or failed_row.provider_message_id is not None:
         db.commit()
@@ -5276,8 +5719,7 @@ def lease_scheduled_gmail_outreach(
             if (
                 prior_lease.status != "authorized"
                 or prior_row.status != "claimed"
-                or prior_row.claimed_by
-                != _scheduled_gmail_claimed_by(principal.client_id)
+                or prior_row.claimed_by != _scheduled_gmail_claimed_by(principal.client_id)
                 or prior_row.lease_expires_at is None
                 or _aware(prior_row.lease_expires_at) <= now
             ):
@@ -5342,14 +5784,11 @@ def lease_scheduled_gmail_outreach(
             if (
                 existing_lease.status == "authorized"
                 and existing_row.status == "claimed"
-                and existing_row.claimed_by
-                == _scheduled_gmail_claimed_by(principal.client_id)
+                and existing_row.claimed_by == _scheduled_gmail_claimed_by(principal.client_id)
                 and existing_row.lease_expires_at
                 and _aware(existing_row.lease_expires_at) > now
             ):
-                raise GrowthRegistryError(
-                    "scheduled_gmail_active_lease_request_id_mismatch"
-                )
+                raise GrowthRegistryError("scheduled_gmail_active_lease_request_id_mismatch")
 
     if _outreach_send_capacity(db, now) <= 0:
         db.commit()
@@ -5362,12 +5801,8 @@ def lease_scheduled_gmail_outreach(
             OutreachMessage.status == "queued",
             OutreachMessage.available_at <= now,
             OutreachMessage.attempt_count < OutreachMessage.max_attempts,
-            func.lower(OutreachMessage.sender_email).in_(
-                sorted(principal.sender_emails)
-            ),
-            func.lower(OutreachMessage.motor_key).in_(
-                sorted(principal.motor_keys)
-            ),
+            func.lower(OutreachMessage.sender_email).in_(sorted(principal.sender_emails)),
+            func.lower(OutreachMessage.motor_key).in_(sorted(principal.motor_keys)),
         )
     )
     if data.outreach_id:
@@ -5406,9 +5841,7 @@ def lease_scheduled_gmail_outreach(
                 _remaining_candidates=_remaining_candidates - 1,
             )
         raise GrowthRegistryError(preclaim_reason)
-    signal = db.scalar(
-        select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id)
-    )
+    signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id))
     if signal is None:
         db.rollback()
         raise GrowthRegistryError("growth_signal_missing")
@@ -5519,30 +5952,21 @@ def lease_scheduled_gmail_outreach(
             commit=False,
         )
         if not guard.may_send or not guard.claim_token:
-            raise GrowthRegistryError(
-                f"global_recipient_guard_no_send:{guard.decision}"
-            )
+            raise GrowthRegistryError(f"global_recipient_guard_no_send:{guard.decision}")
         lease.global_guard_claim_token = guard.claim_token
         authorized_at = utcnow()
         _quota_day_start, quota_day_end = _budapest_day_bounds(authorized_at)
-        seconds_until_quota_day_end = (
-            quota_day_end - authorized_at
-        ).total_seconds()
+        seconds_until_quota_day_end = (quota_day_end - authorized_at).total_seconds()
         if seconds_until_quota_day_end < SCHEDULED_GMAIL_MIN_TRANSPORT_WINDOW_SECONDS:
-            raise GrowthRegistryError(
-                "scheduled_gmail_quota_day_boundary_too_close_no_send"
-            )
+            raise GrowthRegistryError("scheduled_gmail_quota_day_boundary_too_close_no_send")
         expires_at = min(
             authorized_at + timedelta(seconds=SCHEDULED_GMAIL_LEASE_SECONDS),
-            quota_day_end
-            - timedelta(seconds=SCHEDULED_GMAIL_PROVIDER_ACCEPTANCE_GRACE_SECONDS),
+            quota_day_end - timedelta(seconds=SCHEDULED_GMAIL_PROVIDER_ACCEPTANCE_GRACE_SECONDS),
         )
         row.lease_expires_at = expires_at
         lease.authorized_at = authorized_at
         lease.expires_at = expires_at
-        lease.quota_local_date = authorized_at.astimezone(
-            ZoneInfo("Europe/Budapest")
-        ).date()
+        lease.quota_local_date = authorized_at.astimezone(ZoneInfo("Europe/Budapest")).date()
         db.flush()
         if not _outreach_sending_window_open(authorized_at) or not writes_unlocked():
             raise GrowthRegistryError("scheduled_gmail_final_authorization_closed")
@@ -5662,9 +6086,7 @@ def _hold_scheduled_gmail_delivery_unverified(
     lease.status = "accepted_unverified"
     lease.provider_message_id = provider_message_id
     lease.accepted_at = contained_at
-    lease.quota_local_date = contained_at.astimezone(
-        ZoneInfo("Europe/Budapest")
-    ).date()
+    lease.quota_local_date = contained_at.astimezone(ZoneInfo("Europe/Budapest")).date()
     lease.updated_at = contained_at
     pacing_backoff_error: str | None = None
     if delivery_error is not None and (
@@ -5676,9 +6098,9 @@ def _hold_scheduled_gmail_delivery_unverified(
                 error=delivery_error,
                 now=contained_at,
             )
-            receipt["delivery_verification"]["detail"][
-                "account_pacing_backoff_until"
-            ] = next_at.isoformat()
+            receipt["delivery_verification"]["detail"]["account_pacing_backoff_until"] = (
+                next_at.isoformat()
+            )
             row.receipt_json = canonical_json(receipt)
         except (GrowthRegistryError, RuntimeError, ValueError) as exc:
             # The already durable no-resend hold remains authoritative.  A bad
@@ -5778,9 +6200,7 @@ def finalize_scheduled_gmail_outreach(
     # caller has still declared that Gmail transport was invoked.  Hold the row
     # permanently with the reported id in its receipt rather than permitting an
     # abort/requeue that could duplicate the real, different message.
-    stored_provider_message_id = (
-        None if provider_reuse_conflict else data.provider_message_id
-    )
+    stored_provider_message_id = None if provider_reuse_conflict else data.provider_message_id
 
     # The provider id itself is sufficient evidence that transport was
     # attempted.  Persist the irreversible no-resend hold in a deliberately
@@ -5836,9 +6256,7 @@ def finalize_scheduled_gmail_outreach(
         lease.status = "accepted_unverified"
         lease.provider_message_id = stored_provider_message_id
         lease.accepted_at = reported_at
-        lease.quota_local_date = reported_at.astimezone(
-            ZoneInfo("Europe/Budapest")
-        ).date()
+        lease.quota_local_date = reported_at.astimezone(ZoneInfo("Europe/Budapest")).date()
         lease.updated_at = reported_at
         if lease_request.status != "authorized":
             raise GrowthRegistryError("scheduled_gmail_request_state_conflict")
@@ -5847,9 +6265,7 @@ def finalize_scheduled_gmail_outreach(
         db.flush()
         try:
             _record_outreach_pacing_success(db, now=reported_at)
-            pending_receipt["scheduled_gmail"][
-                "pacing_advanced_at"
-            ] = reported_at.isoformat()
+            pending_receipt["scheduled_gmail"]["pacing_advanced_at"] = reported_at.isoformat()
         except (GrowthRegistryError, RuntimeError, ValueError) as exc:
             pending_receipt["scheduled_gmail"]["pacing_advance_error"] = str(exc)
         row.receipt_json = canonical_json(pending_receipt)
@@ -5862,8 +6278,7 @@ def finalize_scheduled_gmail_outreach(
         existing_verification = existing_receipt.get("delivery_verification")
         reported_id_matches = bool(
             isinstance(existing_verification, dict)
-            and existing_verification.get("provider_message_id")
-            == data.provider_message_id
+            and existing_verification.get("provider_message_id") == data.provider_message_id
         )
         if (
             lease.provider_message_id != stored_provider_message_id
@@ -5904,9 +6319,7 @@ def finalize_scheduled_gmail_outreach(
             "lease_id": lease.lease_id,
             "client_id": lease.client_id,
         }
-    effects_complete = bool(
-        scheduled_detail.get("coordination_effects_complete") is True
-    )
+    effects_complete = bool(scheduled_detail.get("coordination_effects_complete") is True)
     if not effects_complete:
         guard_token = lease.global_guard_claim_token or claimed_global_recipient_token(
             db,
@@ -5970,9 +6383,7 @@ def finalize_scheduled_gmail_outreach(
         return _scheduled_gmail_lease_response(row, lease, include_token=False)
 
     signal = db.scalar(
-        select(GrowthSignal)
-        .where(GrowthSignal.signal_id == row.signal_id)
-        .with_for_update()
+        select(GrowthSignal).where(GrowthSignal.signal_id == row.signal_id).with_for_update()
     )
     if signal is None:
         raise GrowthRegistryError("growth_signal_missing")
@@ -5983,9 +6394,7 @@ def finalize_scheduled_gmail_outreach(
             or not _payload_matches(row)
             or not _release_matches(row)
         ):
-            raise GrowthRegistryError(
-                "scheduled_gmail_finalize_payload_release_drift"
-            )
+            raise GrowthRegistryError("scheduled_gmail_finalize_payload_release_drift")
         binding = GrowthRegistry.load().brand_binding(row.brand_id)
         _verified_sender(db, binding)
         metadata = _canonical_metadata(row)
@@ -6025,8 +6434,7 @@ def finalize_scheduled_gmail_outreach(
         if (
             provider_accepted_at < authorized_at - timedelta(minutes=5)
             or provider_accepted_at
-            > expires_at
-            + timedelta(seconds=SCHEDULED_GMAIL_PROVIDER_ACCEPTANCE_GRACE_SECONDS)
+            > expires_at + timedelta(seconds=SCHEDULED_GMAIL_PROVIDER_ACCEPTANCE_GRACE_SECONDS)
             or provider_accepted_at > reported_at + timedelta(minutes=5)
             or provider_accepted_at.astimezone(ZoneInfo("Europe/Budapest")).date()
             != lease.quota_local_date
@@ -6091,9 +6499,7 @@ def finalize_scheduled_gmail_outreach(
         pending_verification["reserved_at"] = provider_accepted_at.isoformat()
         pending_receipt["delivery_verification"] = pending_verification
         row.receipt_json = canonical_json(pending_receipt)
-        lease.quota_local_date = provider_accepted_at.astimezone(
-            ZoneInfo("Europe/Budapest")
-        ).date()
+        lease.quota_local_date = provider_accepted_at.astimezone(ZoneInfo("Europe/Budapest")).date()
         db.flush()
         quota_attestation = _assert_outreach_budapest_day_quota_reserved(
             db,
@@ -6153,9 +6559,7 @@ def finalize_scheduled_gmail_outreach(
         lease.readback_mime_sha256 = str(receipt.detail["readback_mime_sha256"])
         lease.accepted_at = provider_accepted_at
         lease.verified_at = completed_at
-        lease.quota_local_date = provider_accepted_at.astimezone(
-            ZoneInfo("Europe/Budapest")
-        ).date()
+        lease.quota_local_date = provider_accepted_at.astimezone(ZoneInfo("Europe/Budapest")).date()
         lease.updated_at = completed_at
         sent_request = _scheduled_gmail_request_record(
             db,
@@ -6319,14 +6723,10 @@ def scheduled_gmail_lease_status(
     principal: ScheduledGmailClientPrincipal,
 ) -> dict[str, Any]:
     principal.assert_scope(permission="read")
-    lease = db.scalar(
-        select(ScheduledGmailLease).where(ScheduledGmailLease.lease_id == lease_id)
-    )
+    lease = db.scalar(select(ScheduledGmailLease).where(ScheduledGmailLease.lease_id == lease_id))
     if lease is None:
         raise GrowthRegistryError("scheduled_gmail_lease_missing")
-    row = db.scalar(
-        select(OutreachMessage).where(OutreachMessage.outreach_id == lease.outreach_id)
-    )
+    row = db.scalar(select(OutreachMessage).where(OutreachMessage.outreach_id == lease.outreach_id))
     if row is None:
         raise GrowthRegistryError("scheduled_gmail_outreach_missing")
     principal.assert_scope(
@@ -6393,15 +6793,13 @@ def scheduled_gmail_coordination_readiness(
         "active_transport_reservations": active_claims,
         "offline_escrow": offline_escrow,
         "budapest_day": {
-            "local_date": usage.day_start.astimezone(
-                ZoneInfo("Europe/Budapest")
-            ).date().isoformat(),
+            "local_date": usage.day_start.astimezone(ZoneInfo("Europe/Budapest"))
+            .date()
+            .isoformat(),
             "limit": usage.limit,
             "sent_first_contacts": usage.sent_first_contacts,
             "active_claim_reservations": usage.active_claim_reservations,
-            "pending_verification_reservations": (
-                usage.pending_verification_reservations
-            ),
+            "pending_verification_reservations": (usage.pending_verification_reservations),
             "effective_reserved_count": usage.effective_reserved_count,
             "remaining": quota_remaining,
         },
@@ -6492,6 +6890,17 @@ def record_outreach_event(db: Session, outreach_id: str, data: OutreachEventIn) 
         row.response_at = when
         if signal:
             signal.status = "responded"
+        upsert_account_stop(
+            db,
+            recipient_email=row.recipient_email,
+            stop_kind="response",
+            source="growth_ops_provider_event",
+            source_event_id=data.provider_event_id or f"response:{row.outreach_id}",
+            reason="Provider response event stopped the corporate account",
+            occurred_at=when,
+            matched_outreach_id=row.outreach_id,
+            details={"outreach_id": row.outreach_id},
+        )
     else:
         status = {"bounce": "bounced", "complaint": "complained", "unsubscribe": "unsubscribed"}[
             data.event_type
@@ -6509,6 +6918,21 @@ def record_outreach_event(db: Session, outreach_id: str, data: OutreachEventIn) 
         suppression.details_json = canonical_json({"outreach_id": row.outreach_id})
         if signal:
             signal.status = "suppressed"
+        upsert_account_stop(
+            db,
+            recipient_email=row.recipient_email,
+            stop_kind={
+                "bounce": "bounce",
+                "complaint": "complaint",
+                "unsubscribe": "dnc",
+            }[data.event_type],
+            source="growth_ops_provider_event",
+            source_event_id=data.provider_event_id or f"{data.event_type}:{row.outreach_id}",
+            reason=f"Provider {data.event_type} event stopped the account",
+            occurred_at=when,
+            force_email_scope=data.event_type == "bounce",
+            details={"outreach_id": row.outreach_id},
+        )
     audit(
         db,
         actor="growth-provider",
@@ -6552,6 +6976,157 @@ def heartbeat(
     db.commit()
 
 
+def partner_lane_kpis(db: Session) -> dict[str, dict[str, int]]:
+    zone = ZoneInfo(settings().timezone)
+    local_now = utcnow().astimezone(zone)
+    local_start = datetime.combine(local_now.date(), time.min, tzinfo=zone).astimezone(UTC)
+    local_end = local_start + timedelta(days=1)
+    template_lanes = {
+        "ARCHITECT_OFFICE_FIRST_CONTACT_HU": "architect",
+        "REFERRAL_PARTNER_FIRST_CONTACT_HU": "referral",
+        "REAL_ESTATE_AGENT_FIRST_CONTACT_HU": "real_estate",
+    }
+    result = {
+        lane: {
+            "discovered": 0,
+            "qualified": 0,
+            "ready": 0,
+            "queued": 0,
+            "sent": 0,
+            "readback_verified": 0,
+            "replies": 0,
+            "followups": 0,
+            "blocked": 0,
+        }
+        for lane in ("architect", "referral", "real_estate")
+    }
+    rows = db.scalars(
+        select(OutreachMessage).where(
+            or_(
+                and_(
+                    OutreachMessage.created_at >= local_start,
+                    OutreachMessage.created_at < local_end,
+                ),
+                and_(
+                    OutreachMessage.sent_at >= local_start,
+                    OutreachMessage.sent_at < local_end,
+                ),
+                and_(
+                    OutreachMessage.response_at >= local_start,
+                    OutreachMessage.response_at < local_end,
+                ),
+            )
+        )
+    ).all()
+    for row in rows:
+        try:
+            receipt = json.loads(row.receipt_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            receipt = {}
+        template = receipt.get("canonical_template") or {}
+        lane = template_lanes.get(template.get("template_id"))
+        if lane is None:
+            continue
+        created_today = local_start <= _aware(row.created_at) < local_end
+        if created_today:
+            result[lane]["discovered"] += 1
+            result[lane]["qualified"] += 1
+            result[lane]["ready"] += 1
+            result[lane]["queued"] += 1
+            if row.status in {"blocked", "suppressed", "bounced", "complained", "unsubscribed"}:
+                result[lane]["blocked"] += 1
+        if row.sent_at and local_start <= _aware(row.sent_at) < local_end:
+            result[lane]["sent"] += 1
+            detail = receipt.get("delivery_detail") or {}
+            if detail.get("readback_verified") is True and detail.get("readback_mime_sha256"):
+                result[lane]["readback_verified"] += 1
+        if row.response_at and local_start <= _aware(row.response_at) < local_end:
+            result[lane]["replies"] += 1
+        if row.sequence_step > 0 and created_today:
+            result[lane]["followups"] += 1
+    return result
+
+
+def outbound_health(
+    db: Session,
+    *,
+    partnerpoint_sync: dict[str, Any],
+    reply_sync: dict[str, Any],
+    writeback: dict[str, Any],
+) -> dict[str, Any]:
+    fatal: list[str] = []
+    degraded: list[str] = []
+    provider: dict[str, Any]
+    try:
+        registry = GrowthRegistry.load()
+        binding = registry.brand_binding("imperial")
+        _verified_sender(db, binding)
+        provider = SMTPEmailAdapter(binding).live_preflight(delivery_scope="external_customer")
+        _assert_central_gmail_transport_available(db)
+    except Exception as exc:
+        provider = {"ready": False, "reason": f"{type(exc).__name__}:{str(exc)[:300]}"}
+        fatal.append("central_gmail_provider_unavailable")
+    if reply_sync.get("status") != "healthy":
+        fatal.append("reply_processor_failed")
+    if getattr(settings(), "partnerpoint_enabled", False) and partnerpoint_sync.get(
+        "status"
+    ) not in {
+        "healthy",
+        "degraded",
+        "cached",
+    }:
+        fatal.append("partnerpoint_ingest_failed")
+    elif partnerpoint_sync.get("status") == "degraded":
+        degraded.append("partnerpoint_ingest_degraded")
+    if writeback.get("status") == "failed":
+        fatal.append("partnerpoint_writeback_failed")
+    kpis = partner_lane_kpis(db)
+    control_lane_map = {
+        "architect_office": "architect",
+        "referral_partner": "referral",
+    }
+    for control_lane, report_lane in control_lane_map.items():
+        kpis[report_lane]["discovered"] = max(
+            kpis[report_lane]["discovered"],
+            int((partnerpoint_sync.get("lane_discovered") or {}).get(control_lane) or 0),
+        )
+        kpis[report_lane]["qualified"] = max(
+            kpis[report_lane]["qualified"],
+            int((partnerpoint_sync.get("lane_qualified") or {}).get(control_lane) or 0),
+        )
+        kpis[report_lane]["blocked"] = max(
+            kpis[report_lane]["blocked"],
+            sum(
+                item.get("recipient_type") == control_lane
+                for item in partnerpoint_sync.get("blocked") or []
+            ),
+        )
+    for lane, values in kpis.items():
+        if values["sent"] != values["readback_verified"]:
+            fatal.append(f"{lane}_sent_readback_missing")
+        if values["ready"] > 0 and values["sent"] == 0:
+            degraded.append(f"{lane}_ready_without_sent")
+    queued = (
+        db.scalar(
+            select(func.count())
+            .select_from(OutreachMessage)
+            .where(OutreachMessage.status.in_(("queued", "claimed")))
+        )
+        or 0
+    )
+    if queued:
+        degraded.append("outreach_queue_backlog_present")
+    status = "failed_outbound" if fatal else "degraded" if degraded else "healthy"
+    return {
+        "status": status,
+        "fatal": sorted(set(fatal)),
+        "degraded": sorted(set(degraded)),
+        "provider": provider,
+        "queue_backlog": int(queued),
+        "lanes": kpis,
+    }
+
+
 def run_once(
     db: Session,
     *,
@@ -6565,6 +7140,7 @@ def run_once(
         sync_growth_plot_signals,
     )
     from .catalog import scan_due_routes
+    from .partnerpoint import sync_candidates, write_daily_checkpoint, writeback_sent
     from .processing import (
         enqueue_daily_publications,
         generate_daily_content,
@@ -6573,6 +7149,9 @@ def run_once(
         send_publication_digest,
     )
     from .wide_service import run_due as run_due_wide
+
+    reply_sync = sync_sales_agent_reply_stops(db)
+    partnerpoint_sync = sync_candidates(db)
 
     try:
         transient_block_promotion = automatic_public_land_transient_block_promotion(db)
@@ -6634,13 +7213,38 @@ def run_once(
     runs = run_due_motors(db)
     followups = schedule_followups(db) if writes_unlocked() else 0
     sent = early_sent + (dispatch_batch(db) if writes_unlocked() else 0)
+    partnerpoint_writeback = writeback_sent(db)
+    outbound = outbound_health(
+        db,
+        partnerpoint_sync=partnerpoint_sync,
+        reply_sync=reply_sync,
+        writeback=partnerpoint_writeback,
+    )
+    partnerpoint_checkpoint = write_daily_checkpoint(
+        db,
+        outbound=outbound,
+        writeback=partnerpoint_writeback,
+    )
+    if partnerpoint_checkpoint.get("status") == "failed":
+        outbound["fatal"] = sorted(
+            set([*outbound["fatal"], "partnerpoint_checkpoint_writeback_failed"])
+        )
+        outbound["status"] = "failed_outbound"
     content_ok = content_factory.get("status") == "complete"
     promotion_ok = all(
         result.get("status") != "blocked"
         for result in (transient_block_promotion, name_fallback_promotion)
     )
+    non_outbound_status = "healthy" if content_ok and land_ready and promotion_ok else "degraded"
+    result_status = (
+        "failed_outbound"
+        if outbound["status"] == "failed_outbound"
+        else "degraded"
+        if outbound["status"] == "degraded" or non_outbound_status == "degraded"
+        else "healthy"
+    )
     result = {
-        "status": "healthy" if content_ok and land_ready and promotion_ok else "degraded",
+        "status": result_status,
         "runs": len(runs),
         "wide_run": wide_run.run_id if wide_run else None,
         "route_scan": route_scan,
@@ -6656,10 +7260,15 @@ def run_once(
         "public_land_name_fallback_promotion": name_fallback_promotion,
         "followups": followups,
         "sent": sent,
+        "partnerpoint_sync": partnerpoint_sync,
+        "partnerpoint_writeback": partnerpoint_writeback,
+        "partnerpoint_checkpoint": partnerpoint_checkpoint,
+        "reply_sync": reply_sync,
+        "outbound_health": outbound,
         "blocking_errors": (
-            []
-            if content_ok and land_ready and promotion_ok
-            else [
+            [
+                *outbound["fatal"],
+                *outbound["degraded"],
                 *([] if content_ok else ["daily_content_not_complete"]),
                 *([] if land_ready else land_readiness_detail.get("blocking_reasons", [])),
                 *(
@@ -6694,8 +7303,7 @@ def _degraded_worker_is_non_send_critical(hb: GrowthWorkerHeartbeat) -> bool:
         return False
     allowed = {"daily_content_not_complete", "unrelated_content_not_complete"}
     return all(
-        isinstance(blocker, str)
-        and (blocker in allowed or blocker.startswith("unresolved_brand:"))
+        isinstance(blocker, str) and (blocker in allowed or blocker.startswith("unresolved_brand:"))
         for blocker in blockers
     )
 
@@ -6718,9 +7326,7 @@ def _production_daily_automation_state(config: Any) -> dict[str, Any]:
     }
     actual = {
         "growth_ops_enabled": getattr(config, "enabled", False) is True,
-        "canonical_growth_enabled": (
-            getattr(config, "canonical_wide_enabled", False) is True
-        ),
+        "canonical_growth_enabled": (getattr(config, "canonical_wide_enabled", False) is True),
         "canonical_route_scanning_enabled": (
             getattr(config, "canonical_route_scanning_enabled", False) is True
         ),
@@ -6729,15 +7335,9 @@ def _production_daily_automation_state(config: Any) -> dict[str, Any]:
         ),
         "timezone": str(getattr(config, "timezone", "")),
         "daily_at": str(getattr(config, "canonical_daily_at", "")),
-        "outreach_send_start_local": str(
-            getattr(config, "outreach_send_start_local", "")
-        ),
-        "outreach_send_end_local": str(
-            getattr(config, "outreach_send_end_local", "")
-        ),
-        "outreach_budapest_day_max": getattr(
-            config, "outreach_budapest_day_max", None
-        ),
+        "outreach_send_start_local": str(getattr(config, "outreach_send_start_local", "")),
+        "outreach_send_end_local": str(getattr(config, "outreach_send_end_local", "")),
+        "outreach_budapest_day_max": getattr(config, "outreach_budapest_day_max", None),
         "outreach_send_concurrency": getattr(config, "outreach_send_concurrency", None),
         "outreach_reputation_bootstrap_messages_per_window": getattr(
             config, "outreach_reputation_bootstrap_messages_per_window", None
@@ -6786,15 +7386,11 @@ def readiness(
                 binding = registry.brand_binding(brand_id)
                 _verified_sender(db, binding)
                 live_sender = (
-                    SMTPEmailAdapter(binding).live_preflight(
-                        delivery_scope="external_customer"
-                    )
+                    SMTPEmailAdapter(binding).live_preflight(delivery_scope="external_customer")
                     if live_provider_preflight
                     else {"live_preflight": "not_requested_for_platform_health"}
                 )
-                sender_states.append(
-                    {"brand_id": brand_id, "ready": True, **live_sender}
-                )
+                sender_states.append({"brand_id": brand_id, "ready": True, **live_sender})
             except GrowthRegistryError as exc:
                 sender_states.append({"brand_id": brand_id, "ready": False, "reason": str(exc)})
     except GrowthRegistryError as exc:

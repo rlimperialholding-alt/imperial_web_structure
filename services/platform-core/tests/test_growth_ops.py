@@ -314,9 +314,7 @@ def test_public_land_named_and_role_fallback_render_samples_are_hash_bound(
         listing_location=listing_location,
         listing_size=listing_size,
         listing_url=listing_url,
-        unsubscribe_url=(
-            f"https://imperialholding.hu/growth/unsubscribe/{case_id}"
-        ),
+        unsubscribe_url=(f"https://imperialholding.hu/growth/unsubscribe/{case_id}"),
         recipient_classification_verified=True,
         exclusion_screening_verified=True,
         screening_values=[recipient_name, recipient_type, listing_url],
@@ -409,8 +407,7 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
     monkeypatch.setattr(
         service,
         "automatic_public_land_transient_block_promotion",
-        lambda _db: events.append("transient_promotion")
-        or {"status": "applied", "queued": 0},
+        lambda _db: events.append("transient_promotion") or {"status": "applied", "queued": 0},
     )
     monkeypatch.setattr(
         service,
@@ -555,9 +552,7 @@ def test_production_daily_automation_contract_accepts_all_day_sentinel(growth_ru
     assert state["expected"]["outreach_send_end_local"] == "00:00"
 
 
-def test_growth_readiness_is_not_ready_when_growth_ops_is_disabled(
-    db, growth_runtime, monkeypatch
-):
+def test_growth_readiness_is_not_ready_when_growth_ops_is_disabled(db, growth_runtime, monkeypatch):
     config = service.settings()
     monkeypatch.setattr(
         service,
@@ -595,9 +590,7 @@ def test_growth_readiness_is_not_ready_when_growth_ops_is_disabled(
     assert "growth_ops_enabled" in payload["daily_automation"]["mismatches"]
 
 
-def test_readiness_rejects_fresh_send_critical_degraded_worker(
-    db, growth_runtime, monkeypatch
-):
+def test_readiness_rejects_fresh_send_critical_degraded_worker(db, growth_runtime, monkeypatch):
     monkeypatch.setattr(
         service,
         "_outbound_send_readiness_state",
@@ -699,6 +692,13 @@ def test_growth_production_compose_contract_enables_core_and_worker_exactly():
         "GROWTH_OPS_OUTREACH_REPUTATION_BOOTSTRAP_MESSAGES_PER_WINDOW": "100",
         "GROWTH_OPS_OUTREACH_REPUTATION_MAX_GROWTH_FACTOR": "1.25",
         "GROWTH_OPS_OUTREACH_REPUTATION_JITTER_FRACTION": "0.20",
+        "GROWTH_PARTNERPOINT_ENABLED": "true",
+        "GROWTH_PARTNERPOINT_SHEET_ID": "1uey0XRxxjckH6h_EPfU4C3mDMXjPvdpa24XKu2emfV0",
+        "GROWTH_PARTNERPOINT_SPEC_FILE_ID": "1AFLKbiYQ7KydaxftuXZPoHrY4Pw3I869",
+        "GROWTH_PARTNERPOINT_SPEC_VERSION": "1.8",
+        "GROWTH_PARTNERPOINT_RUNTIME_SOURCES_FILE": "/app/runtime/growth-partnerpoint-sources.json",
+        "GROWTH_PARTNERPOINT_ARCHITECT_DAILY_MAX": "30",
+        "GROWTH_PARTNERPOINT_REFERRAL_DAILY_MAX": "2",
     }
     text = override.read_text(encoding="utf-8")
     for key, value in expected_environment.items():
@@ -828,19 +828,13 @@ def test_queued_payload_is_bound_to_the_canonical_registry(db, growth_runtime):
     assert service._canonical_metadata_sha256(metadata)
 
 
-def test_rfc8058_one_click_unsubscribe_is_strict_and_idempotent(
-    db, client, growth_runtime
-):
-    result = service.ingest_signal(
-        db, _signal(external_key="ETDR-RFC8058-ONE-CLICK")
-    )
+def test_rfc8058_one_click_unsubscribe_is_strict_and_idempotent(db, client, growth_runtime):
+    result = service.ingest_signal(db, _signal(external_key="ETDR-RFC8058-ONE-CLICK"))
     message = db.scalar(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
     assert message is not None
-    unsubscribe_url = service._canonical_metadata(message)["render_input"][
-        "unsubscribe_url"
-    ]
+    unsubscribe_url = service._canonical_metadata(message)["render_input"]["unsubscribe_url"]
     token = unsubscribe_url.rsplit("/", 1)[-1]
 
     invalid = client.post(
@@ -863,9 +857,7 @@ def test_rfc8058_one_click_unsubscribe_is_strict_and_idempotent(
         select(OutreachMessage).where(OutreachMessage.outreach_id == result.outreach_id)
     )
     suppression = db.scalar(
-        select(MailSuppression).where(
-            MailSuppression.email == refreshed.recipient_email
-        )
+        select(MailSuppression).where(MailSuppression.email == refreshed.recipient_email)
     )
     assert refreshed.status == "unsubscribed"
     assert suppression is not None and suppression.active is True
@@ -1468,11 +1460,14 @@ def test_more_than_fifty_unique_public_land_contacts_all_queue_before_dispatch(
     assert len(db.scalars(select(OutreachMessage)).all()) == 51
     # The legacy registry value is intentionally not a queue reservation. The
     # The Budapest-day first-contact quota and persisted pacing are transport gates.
-    assert service._rate_errors(
-        db,
-        queue_limited_brand_binding("imperial"),
-        "new-recipient@example.test",
-    ) == []
+    assert (
+        service._rate_errors(
+            db,
+            queue_limited_brand_binding("imperial"),
+            "new-recipient@example.test",
+        )
+        == []
+    )
 
 
 def test_transient_public_land_blocks_auto_promote_and_are_idempotent(
@@ -1532,9 +1527,7 @@ def test_transient_public_land_blocks_auto_promote_and_are_idempotent(
     assert applied["blocked"] == 0
     assert applied["suppressed"] == 0
     for receipt in legacy_receipts:
-        signal = db.scalar(
-            select(GrowthSignal).where(GrowthSignal.signal_id == receipt.signal_id)
-        )
+        signal = db.scalar(select(GrowthSignal).where(GrowthSignal.signal_id == receipt.signal_id))
         outreach = db.scalar(
             select(OutreachMessage).where(OutreachMessage.signal_id == receipt.signal_id)
         )
@@ -1542,9 +1535,7 @@ def test_transient_public_land_blocks_auto_promote_and_are_idempotent(
         assert outreach is not None and outreach.release_token_hash
         assert outreach.release_approved_by == "owner-policy:land-public-listing-v3:2026-08-28"
         metadata = service._canonical_metadata(outreach)
-        assert metadata["recipient_name_render_policy"]["origin"] == (
-            "VERIFIED_LISTING_EVIDENCE"
-        )
+        assert metadata["recipient_name_render_policy"]["origin"] == ("VERIFIED_LISTING_EVIDENCE")
         assert metadata["source_evidence_manifest_sha256"] == (
             service._persisted_source_evidence_manifest_sha256(db, receipt.signal_id)
         )
@@ -1667,19 +1658,13 @@ def test_transient_promotion_rechecks_cooldown_suppression_and_exact_reason_only
     assert applied["blocked"] == 1
     assert applied["suppressed"] == 1
     cooldown = db.scalar(
-        select(GrowthSignal).where(
-            GrowthSignal.signal_id == legacy["cooldown"].signal_id
-        )
+        select(GrowthSignal).where(GrowthSignal.signal_id == legacy["cooldown"].signal_id)
     )
     suppressed = db.scalar(
-        select(GrowthSignal).where(
-            GrowthSignal.signal_id == legacy["suppression"].signal_id
-        )
+        select(GrowthSignal).where(GrowthSignal.signal_id == legacy["suppression"].signal_id)
     )
     combined = db.scalar(
-        select(GrowthSignal).where(
-            GrowthSignal.signal_id == legacy["combined"].signal_id
-        )
+        select(GrowthSignal).where(GrowthSignal.signal_id == legacy["combined"].signal_id)
     )
     assert cooldown is not None and cooldown.status == "blocked"
     assert json.loads(cooldown.rejection_reasons_json) == ["recipient_brand_cooldown"]
@@ -2173,6 +2158,33 @@ def test_land_agent_gdn_gate_blocks_before_storage(db, growth_runtime):
     )
 
     with pytest.raises(GrowthRegistryError, match=LAND_AGENT_HARD_GATE_GDN):
+        service.ingest_signal(db, signal)
+
+    assert not db.scalars(select(GrowthSignal)).all()
+
+
+@pytest.mark.parametrize(
+    ("identity", "gate_id"),
+    [
+        ("KIMA Projekt", "BLOCK_KIMA_PROJEKT_OWNER_EXCLUSION"),
+        ("Materny Károly", "BLOCK_MATERNY_KAROLY_OWNER_EXCLUSION"),
+        ("Antal Miklós", "BLOCK_ANTAL_MIKLOS_OWNER_EXCLUSION"),
+        ("Südi Olivér", "BLOCK_SUDI_OLIVER_OWNER_EXCLUSION"),
+        ("Gyetvai Zoltán", "BLOCK_GYETVAI_ZOLTAN_OWNER_EXCLUSION"),
+        ("Finta Ádám", "BLOCK_FINTA_ADAM_OWNER_EXCLUSION"),
+    ],
+)
+def test_owner_architect_exclusions_block_before_storage(
+    db, growth_runtime, identity, gate_id
+):
+    signal = _signal(
+        external_key=f"ARCH-OWNER-BLOCK-{gate_id}",
+        company_name=f"{identity} Építésziroda",
+        recipient_organization_name=identity,
+        recipient_name=identity,
+    )
+
+    with pytest.raises(GrowthRegistryError, match=gate_id):
         service.ingest_signal(db, signal)
 
     assert not db.scalars(select(GrowthSignal)).all()

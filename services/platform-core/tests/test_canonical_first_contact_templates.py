@@ -519,6 +519,18 @@ def test_referral_partner_missing_or_unverified_business_context_fails_closed(ch
             ["Leier Hungária Kft.", "info@leier.hu"],
             "BLOCK_LEIER_INCIDENT_CONTAINMENT",
         ),
+        (["KIMA Projekt Kft."], "BLOCK_KIMA_PROJEKT_OWNER_EXCLUSION"),
+        (["KIMAProject"], "BLOCK_KIMA_PROJEKT_OWNER_EXCLUSION"),
+        (["Materny Károly"], "BLOCK_MATERNY_KAROLY_OWNER_EXCLUSION"),
+        (["KárolyMaterny"], "BLOCK_MATERNY_KAROLY_OWNER_EXCLUSION"),
+        (["Antal Miklós"], "BLOCK_ANTAL_MIKLOS_OWNER_EXCLUSION"),
+        (["MiklósAntal"], "BLOCK_ANTAL_MIKLOS_OWNER_EXCLUSION"),
+        (["Südi Olivér"], "BLOCK_SUDI_OLIVER_OWNER_EXCLUSION"),
+        (["OlivérSüdi"], "BLOCK_SUDI_OLIVER_OWNER_EXCLUSION"),
+        (["Gyetvai Zoltán"], "BLOCK_GYETVAI_ZOLTAN_OWNER_EXCLUSION"),
+        (["ZoltánGyetvai"], "BLOCK_GYETVAI_ZOLTAN_OWNER_EXCLUSION"),
+        (["Finta Ádám"], "BLOCK_FINTA_ADAM_OWNER_EXCLUSION"),
+        (["ÁdámFinta"], "BLOCK_FINTA_ADAM_OWNER_EXCLUSION"),
     ],
 )
 def test_named_hard_gates_run_before_template_render(screening_values, gate_id):

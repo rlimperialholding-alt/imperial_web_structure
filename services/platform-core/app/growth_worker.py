@@ -84,7 +84,7 @@ def _terminal_heartbeat(result: dict[str, Any]) -> None:
         _record_heartbeat(status="disabled")
         return
     status = str(result.get("status") or "")
-    if status not in {"healthy", "degraded"}:
+    if status not in {"healthy", "degraded", "failed_outbound"}:
         raise RuntimeError("invalid_growth_worker_terminal_status")
     _record_heartbeat(status=status, detail=result)
 

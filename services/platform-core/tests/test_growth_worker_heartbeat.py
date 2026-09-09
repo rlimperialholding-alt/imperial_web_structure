@@ -150,6 +150,21 @@ def test_run_failure_stops_pulse_before_degraded_terminal_heartbeat(monkeypatch)
     assert len(statuses) == status_count
 
 
+def test_failed_outbound_is_a_valid_terminal_health_state(monkeypatch):
+    calls: list[tuple[str, dict | None]] = []
+    monkeypatch.setattr(growth_worker, "settings", _worker_settings)
+    monkeypatch.setattr(
+        growth_worker,
+        "_record_heartbeat",
+        lambda *, status, detail=None: calls.append((status, detail)),
+    )
+    result = {"status": "failed_outbound", "blocking_errors": ["reply_processor_failed"]}
+
+    growth_worker._terminal_heartbeat(result)
+
+    assert calls == [("failed_outbound", result)]
+
+
 def test_main_preserves_graceful_stop_and_records_stopped_after_iteration(monkeypatch):
     sessions = _SessionFactory()
     statuses: list[str] = []
