@@ -10,7 +10,12 @@ import pytest
 from sqlalchemy import select, text
 
 from app.growth_ops import canonical_policy, partnerpoint, service
-from app.growth_ops.models import GrowthAccountStop, GrowthSignal, OutreachMessage
+from app.growth_ops.models import (
+    GrowthAccountStop,
+    GrowthControlState,
+    GrowthSignal,
+    OutreachMessage,
+)
 from scripts.reconcile_partnerpoint_backlog import _historical_control_rows
 
 
@@ -293,6 +298,29 @@ def test_partnerpoint_daily_capacity_counts_existing_created_messages(db):
         "architect_office": 1,
         "referral_partner": 1,
     }
+
+
+def test_partnerpoint_control_state_keeps_large_json_valid(db):
+    detail = {
+        "status": "healthy",
+        "receipts": [
+            {"candidate_id": f"PC-ARCH-{index:03d}", "status": "queued"}
+            for index in range(100)
+        ],
+    }
+    reason = json.dumps(detail, ensure_ascii=False, sort_keys=True)
+    assert len(reason) > 4000
+
+    partnerpoint._state(
+        db,
+        "partnerpoint:test-large-state",
+        enabled=True,
+        reason=reason,
+    )
+
+    stored = db.get(GrowthControlState, "partnerpoint:test-large-state")
+    assert stored is not None
+    assert json.loads(stored.reason) == detail
 
 
 def test_unsubscribe_stops_the_corporate_account_without_touching_other_domains(db):

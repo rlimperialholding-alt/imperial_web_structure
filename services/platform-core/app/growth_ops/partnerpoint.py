@@ -606,7 +606,7 @@ def _state(db: Session, key: str, *, enabled: bool, reason: str) -> None:
         row = GrowthControlState(key=key)
         db.add(row)
     row.enabled = enabled
-    row.reason = reason[:4000]
+    row.reason = reason
     row.changed_by = "growth-partnerpoint"
     row.changed_at = _utcnow()
     db.commit()
