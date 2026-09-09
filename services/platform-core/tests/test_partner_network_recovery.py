@@ -196,6 +196,11 @@ def test_partnerpoint_candidate_filter_accepts_unsent_pass_rows_without_status_l
     stale = list(eligible)
     stale[0] = "PC-260827-A01"
     stale[3] = "MINŐSÍTVE – KÖZPONTI ÁTADÁSI CSOMAG KÉSZ"
+    public_gmail = list(eligible)
+    public_gmail[0] = "PC-PUBLIC-GMAIL"
+    public_gmail[7] = "https://peldaepitesz.hu/kapcsolat"
+    public_gmail[10] = "peldaepitesz@gmail.com"
+    public_gmail[14] = "https://peldaepitesz.hu/kapcsolat"
     manual = list(eligible)
     manual[0] = "PC-MANUAL"
     manual[1] = "Hofstädter Építőanyag Centrum Kft."
@@ -203,12 +208,58 @@ def test_partnerpoint_candidate_filter_accepts_unsent_pass_rows_without_status_l
     manual[18] = "REFERRAL_PARTNER_FIRST_CONTACT_HU"
     manual[21] = "OWNER_MANUAL_ONLY"
 
-    result = partnerpoint._candidate_rows({"Partner_Universe": [header, eligible, stale, manual]})
+    result = partnerpoint._candidate_rows(
+        {"Partner_Universe": [header, eligible, stale, public_gmail, manual]}
+    )
 
     assert [item["candidate_id"] for item in result] == [
         "PC-260908-A01",
         "PC-260827-A01",
+        "PC-PUBLIC-GMAIL",
     ]
+
+
+def test_partnerpoint_shared_mailbox_history_checks_exact_address_only(db, monkeypatch):
+    db.execute(
+        text(
+            "CREATE TABLE sales_agent_leads ("
+            "id VARCHAR, email VARCHAR, created_at TIMESTAMP)"
+        )
+    )
+    db.execute(
+        text(
+            "INSERT INTO sales_agent_leads (id, email, created_at) "
+            "VALUES ('OTHER', 'someone.else@gmail.com', CURRENT_TIMESTAMP)"
+        )
+    )
+    db.commit()
+    gmail_queries: list[str] = []
+
+    def gmail_messages(_token, query, **_kwargs):
+        gmail_queries.append(query)
+        return []
+
+    monkeypatch.setattr(partnerpoint, "_gmail_message_ids", gmail_messages)
+    try:
+        result = partnerpoint._existing_relationship_gate(
+            db,
+            {
+                "email": "peldaepitesz@gmail.com",
+                "company": "Példa Építésziroda Kft.",
+                "candidate_id": "PC-PUBLIC-GMAIL",
+            },
+            gmail_token="fixture",
+        )
+
+        assert result is None
+        assert gmail_queries == [
+            "in:sent newer_than:365d to:(peldaepitesz@gmail.com)",
+            "newer_than:365d from:(peldaepitesz@gmail.com)",
+        ]
+    finally:
+        db.rollback()
+        db.execute(text("DROP TABLE sales_agent_leads"))
+        db.commit()
 
 
 @pytest.mark.parametrize(
