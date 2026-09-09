@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "registry_id": "IMPERIAL_CANONICAL_FIRST_CONTACT_TEMPLATES_HU",
-  "registry_version": 4,
+  "registry_version": 5,
   "locale": "hu-HU",
   "status": [
     "OWNER_APPROVED",
@@ -231,6 +231,72 @@
         "info leier hu",
         "kpertekesites leier hu",
         "kurucz hajnalka"
+      ]
+    },
+    {
+      "gate_id": "BLOCK_KIMA_PROJEKT_OWNER_EXCLUSION",
+      "decision": "NO_SEND",
+      "scope": "FULL_ENTITY_AND_ALL_CONTACTS",
+      "normalized_any": [
+        "kima projekt",
+        "kima project",
+        "kimaprojekt",
+        "kimaproject"
+      ]
+    },
+    {
+      "gate_id": "BLOCK_MATERNY_KAROLY_OWNER_EXCLUSION",
+      "decision": "NO_SEND",
+      "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+      "normalized_any": [
+        "materny karoly",
+        "karoly materny",
+        "maternykaroly",
+        "karolymaterny"
+      ]
+    },
+    {
+      "gate_id": "BLOCK_ANTAL_MIKLOS_OWNER_EXCLUSION",
+      "decision": "NO_SEND",
+      "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+      "normalized_any": [
+        "antal miklos",
+        "miklos antal",
+        "antalmiklos",
+        "miklosantal"
+      ]
+    },
+    {
+      "gate_id": "BLOCK_SUDI_OLIVER_OWNER_EXCLUSION",
+      "decision": "NO_SEND",
+      "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+      "normalized_any": [
+        "sudi oliver",
+        "oliver sudi",
+        "sudioliver",
+        "oliversudi"
+      ]
+    },
+    {
+      "gate_id": "BLOCK_GYETVAI_ZOLTAN_OWNER_EXCLUSION",
+      "decision": "NO_SEND",
+      "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+      "normalized_any": [
+        "gyetvai zoltan",
+        "zoltan gyetvai",
+        "gyetvaizoltan",
+        "zoltangyetvai"
+      ]
+    },
+    {
+      "gate_id": "BLOCK_FINTA_ADAM_OWNER_EXCLUSION",
+      "decision": "NO_SEND",
+      "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+      "normalized_any": [
+        "finta adam",
+        "adam finta",
+        "fintaadam",
+        "adamfinta"
       ]
     }
   ],

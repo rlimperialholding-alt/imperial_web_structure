@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from .canonical_templates import CanonicalFirstContactRegistry
 from .models import GrowthControlState, GrowthSignal, OutreachMessage
 from .official_source import (
     OFFICIAL_SOURCE_MAX_REDIRECTS,
@@ -620,6 +621,7 @@ def sync_candidates(db: Session) -> dict[str, Any]:
         stop_sync = sync_control_stops(db, snapshot)
         candidates = _candidate_rows(snapshot)
         base = GrowthRegistry.load(include_runtime_sources=False)
+        canonical_registry = CanonicalFirstContactRegistry.load()
         architect_source = next(
             (
                 source
@@ -651,6 +653,19 @@ def sync_candidates(db: Session) -> dict[str, Any]:
             if lane_counts[lane] >= limits[lane]:
                 continue
             try:
+                gate_id = canonical_registry.hard_gate_match(
+                    [
+                        candidate["candidate_id"],
+                        candidate["company"],
+                        candidate["organization_marker"],
+                        candidate["recipient_name"],
+                        candidate["email"],
+                        candidate["category"],
+                        candidate["source_url"],
+                    ]
+                )
+                if gate_id:
+                    raise GrowthRegistryError(f"canonical_hard_gate_blocked:{gate_id}")
                 relationship_reason = _existing_relationship_gate(
                     db,
                     candidate,

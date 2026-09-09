@@ -25,7 +25,7 @@ REQUIRED_TEMPLATE_IDS = {
 }
 OWNER_APPROVED = {"OWNER_APPROVED", "CANONICAL"}
 LEGACY_REFERRAL_TEMPLATE_ID = "PARTNERPOINT_LEGACY_1_PERCENT_FIRST_CONTACT_HU"
-EXPECTED_REGISTRY_SHA256 = "bd5f8f2f0d8419c9fbe9ca05a8a5501fc1a6fbd7cdbaacbd2ae719d1a116f6e7"
+EXPECTED_REGISTRY_SHA256 = "57f45087aefa5a7a6ced4751dad77ddd22492a9d0efcd55b44db09047f4b32be"
 EXPECTED_SELECTION_PIPELINE = [
     "HARD_GATES",
     "RECIPIENT_CLASSIFICATION_VERIFIED",
@@ -228,6 +228,72 @@ EXPECTED_HARD_GATES: list[dict[str, Any]] = [
             "kurucz hajnalka",
         ],
     },
+    {
+        "gate_id": "BLOCK_KIMA_PROJEKT_OWNER_EXCLUSION",
+        "decision": "NO_SEND",
+        "scope": "FULL_ENTITY_AND_ALL_CONTACTS",
+        "normalized_any": [
+            "kima projekt",
+            "kima project",
+            "kimaprojekt",
+            "kimaproject",
+        ],
+    },
+    {
+        "gate_id": "BLOCK_MATERNY_KAROLY_OWNER_EXCLUSION",
+        "decision": "NO_SEND",
+        "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+        "normalized_any": [
+            "materny karoly",
+            "karoly materny",
+            "maternykaroly",
+            "karolymaterny",
+        ],
+    },
+    {
+        "gate_id": "BLOCK_ANTAL_MIKLOS_OWNER_EXCLUSION",
+        "decision": "NO_SEND",
+        "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+        "normalized_any": [
+            "antal miklos",
+            "miklos antal",
+            "antalmiklos",
+            "miklosantal",
+        ],
+    },
+    {
+        "gate_id": "BLOCK_SUDI_OLIVER_OWNER_EXCLUSION",
+        "decision": "NO_SEND",
+        "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+        "normalized_any": [
+            "sudi oliver",
+            "oliver sudi",
+            "sudioliver",
+            "oliversudi",
+        ],
+    },
+    {
+        "gate_id": "BLOCK_GYETVAI_ZOLTAN_OWNER_EXCLUSION",
+        "decision": "NO_SEND",
+        "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+        "normalized_any": [
+            "gyetvai zoltan",
+            "zoltan gyetvai",
+            "gyetvaizoltan",
+            "zoltangyetvai",
+        ],
+    },
+    {
+        "gate_id": "BLOCK_FINTA_ADAM_OWNER_EXCLUSION",
+        "decision": "NO_SEND",
+        "scope": "NAMED_RECIPIENT_ALL_CONTACTS",
+        "normalized_any": [
+            "finta adam",
+            "adam finta",
+            "fintaadam",
+            "adamfinta",
+        ],
+    },
 ]
 REQUIRED_HARD_GATE_CASES = {
     "BLOCK_TURCZER_JOZSEF": ["Turczer József"],
@@ -237,6 +303,12 @@ REQUIRED_HARD_GATE_CASES = {
     ],
     "BLOCK_GDN_INGATLANHALOZAT": ["GDN Ingatlanhálózat"],
     "BLOCK_LEIER_INCIDENT_CONTAINMENT": ["Leier Hungária", "info@leier.hu"],
+    "BLOCK_KIMA_PROJEKT_OWNER_EXCLUSION": ["KIMA Projekt"],
+    "BLOCK_MATERNY_KAROLY_OWNER_EXCLUSION": ["Materny Károly"],
+    "BLOCK_ANTAL_MIKLOS_OWNER_EXCLUSION": ["Antal Miklós"],
+    "BLOCK_SUDI_OLIVER_OWNER_EXCLUSION": ["Südi Olivér"],
+    "BLOCK_GYETVAI_ZOLTAN_OWNER_EXCLUSION": ["Gyetvai Zoltán"],
+    "BLOCK_FINTA_ADAM_OWNER_EXCLUSION": ["Finta Ádám"],
 }
 
 
@@ -353,7 +425,7 @@ class CanonicalFirstContactRegistry:
         return cls(raw, source_bytes=source_bytes, source_path=source_path)
 
     def _validate(self) -> None:
-        if self.raw.get("schema_version") != "1.0" or self.raw.get("registry_version") != 4:
+        if self.raw.get("schema_version") != "1.0" or self.raw.get("registry_version") != 5:
             raise GrowthRegistryError("Unsupported canonical first-contact registry version")
         if set(self.raw.get("status") or []) != OWNER_APPROVED:
             raise GrowthRegistryError("Canonical registry status is not OWNER_APPROVED/CANONICAL")
