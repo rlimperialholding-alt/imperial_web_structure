@@ -707,7 +707,11 @@ class GrowthRegistry:
             or not _clean_unique_strings(recipient_names)
         ):
             raise GrowthRegistryError(f"Official-company recipient binding is invalid: {source_id}")
-        if _registrable_domain(expected_email.rsplit("@", 1)[1]) != source_root_domain:
+        if (
+            verification_policy != self.PARTNERPOINT_PUBLIC_EMAIL_POLICY
+            and _registrable_domain(expected_email.rsplit("@", 1)[1])
+            != source_root_domain
+        ):
             raise GrowthRegistryError(f"Official-company email crosses root domains: {source_id}")
         if recipient_type == "referral_partner" and (
             not str(binding.get("business_context") or "").strip()
