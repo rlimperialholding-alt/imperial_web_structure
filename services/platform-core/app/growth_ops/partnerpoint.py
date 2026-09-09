@@ -291,14 +291,7 @@ def _candidate_rows(snapshot: dict[str, list[list[str]]]) -> list[dict[str, Any]
             or ";" in email
         ):
             continue
-        email_domain = email.rsplit("@", 1)[1]
-        if email_domain in _FREE_MAIL_DOMAINS:
-            continue
         source_url = _canonical_url(row[14] or row[7])
-        if _registrable_domain(urlsplit(source_url).hostname or "") != _registrable_domain(
-            email_domain
-        ):
-            continue
         marker = _brand_marker(company)
         if not marker:
             continue
@@ -344,13 +337,19 @@ def _existing_relationship_gate(
 
     email = candidate["email"]
     domain = email.rsplit("@", 1)[1]
+    shared_mail_domain = domain in _FREE_MAIL_DOMAINS
+    crm_query = (
+        "SELECT id, created_at FROM sales_agent_leads "
+        "WHERE lower(email) = :email "
+        "ORDER BY created_at DESC LIMIT 1"
+        if shared_mail_domain
+        else "SELECT id, created_at FROM sales_agent_leads "
+        "WHERE lower(email) = :email OR lower(email) LIKE :domain "
+        "ORDER BY created_at DESC LIMIT 1"
+    )
     crm = (
         db.execute(
-            text(
-                "SELECT id, created_at FROM sales_agent_leads "
-                "WHERE lower(email) = :email OR lower(email) LIKE :domain "
-                "ORDER BY created_at DESC LIMIT 1"
-            ),
+            text(crm_query),
             {"email": email, "domain": f"%@{domain}"},
         )
         .mappings()
@@ -370,8 +369,15 @@ def _existing_relationship_gate(
         )
         db.commit()
         return "partnerpoint_existing_relationship_crm"
-    sent = _gmail_message_ids(gmail_token, f"in:sent newer_than:365d to:({domain})")
-    inbound = _gmail_message_ids(gmail_token, f"newer_than:365d from:({domain})")
+    correspondence_target = email if shared_mail_domain else domain
+    sent = _gmail_message_ids(
+        gmail_token,
+        f"in:sent newer_than:365d to:({correspondence_target})",
+    )
+    inbound = _gmail_message_ids(
+        gmail_token,
+        f"newer_than:365d from:({correspondence_target})",
+    )
     if not sent:
         return None
     stop_kind = "existing_relationship" if inbound else "other_brand_active"
