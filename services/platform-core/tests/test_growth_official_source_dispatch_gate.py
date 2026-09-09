@@ -307,6 +307,12 @@ def _live_evidence(
     observed_at: datetime | None = None,
 ) -> OfficialSourceLiveEvidence:
     current = observed_at or datetime.now(UTC)
+    verification_policy = str(
+        source.get("recipient_binding", {}).get("verification_policy") or ""
+    ) or "OFFICIAL_ORGANIZATION_AND_EMAIL_VISIBLE"
+    public_email_only = (
+        verification_policy == "PARTNERPOINT_PUBLIC_BUSINESS_EMAIL_VISIBLE"
+    )
     pages = tuple(
         OfficialSourcePageEvidence(
             requested_url=url,
@@ -325,8 +331,9 @@ def _live_evidence(
         observed_at=current,
         pages=pages,
         matched_email="office@example.hu",
-        matched_organization_marker="example architects",
-        matched_recipient_marker="selected studio",
+        matched_organization_marker="" if public_email_only else "example architects",
+        matched_recipient_marker="" if public_email_only else "selected studio",
+        verification_policy=verification_policy,
     )
 
 
@@ -411,6 +418,41 @@ def test_refresh_is_before_global_guard_and_callback_is_immediately_before_post(
         "global_finalize",
     ]
     assert signal.status == "contacted"
+
+
+def test_partnerpoint_public_email_policy_receipt_passes_dispatch_freshness(
+    db,
+    monkeypatch,
+    official_runtime,
+):
+    source = official_runtime.current.sources[OFFICIAL_ID]
+    source["recipient_binding"]["verification_policy"] = (
+        "PARTNERPOINT_PUBLIC_BUSINESS_EMAIL_VISIBLE"
+    )
+    signal, row = _prepare_claimed(
+        db,
+        _signal(external_key="PARTNERPOINT-PUBLIC-EMAIL-POLICY"),
+    )
+    monkeypatch.setattr(
+        service,
+        "fetch_official_source_evidence",
+        lambda *_args, **_kwargs: _live_evidence(source),
+    )
+
+    assert service._refresh_official_source_evidence(
+        db,
+        row,
+        signal,
+        official_runtime.current,
+        service._canonical_metadata(row),
+    ) is True
+    db.flush()
+    service._assert_official_source_evidence_fresh(
+        db,
+        row,
+        signal,
+        official_required=True,
+    )
 
 
 def test_ingest_proof_hmac_binds_signal_id_and_immediately_verifies(

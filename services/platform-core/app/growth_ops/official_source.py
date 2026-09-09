@@ -63,6 +63,7 @@ class OfficialSourceLiveEvidence:
     matched_email: str
     matched_organization_marker: str
     matched_recipient_marker: str
+    verification_policy: str = "OFFICIAL_ORGANIZATION_AND_EMAIL_VISIBLE"
 
     def audit_payload(self) -> dict[str, Any]:
         return {
@@ -73,6 +74,7 @@ class OfficialSourceLiveEvidence:
             "matched_email": self.matched_email,
             "matched_organization_marker": self.matched_organization_marker,
             "matched_recipient_marker": self.matched_recipient_marker,
+            "verification_policy": self.verification_policy,
         }
 
 
@@ -569,6 +571,25 @@ def fetch_official_source_evidence(
         or not organization_markers.issubset(allowed_organization_markers)
     ):
         raise OfficialSourceEvidenceError("official_source_organization_binding_mismatch")
+    verification_policy = str(binding.get("verification_policy") or "")
+    if verification_policy == GrowthRegistry.PARTNERPOINT_PUBLIC_EMAIL_POLICY:
+        allowed_recipient_markers = {
+            _normalized_marker(str(value))
+            for value in binding.get("recipient_names") or []
+            if _normalized_marker(str(value))
+        }
+        if not recipient_marker or recipient_marker not in allowed_recipient_markers:
+            raise OfficialSourceEvidenceError("official_source_recipient_binding_mismatch")
+        return OfficialSourceLiveEvidence(
+            source_id=source_id,
+            binding_sha256=str(source["binding_sha256"]),
+            observed_at=observation_started_at,
+            pages=tuple(pages),
+            matched_email=email,
+            matched_organization_marker="",
+            matched_recipient_marker="",
+            verification_policy=verification_policy,
+        )
     matched_organizations = sorted(
         (
             marker

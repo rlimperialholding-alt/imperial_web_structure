@@ -342,9 +342,9 @@ def settings() -> GrowthSettings:
         ),
         partnerpoint_architect_daily_max=_strict_int_setting(
             "GROWTH_PARTNERPOINT_ARCHITECT_DAILY_MAX",
-            "8",
-            minimum=5,
-            maximum=8,
+            "30",
+            minimum=1,
+            maximum=30,
             error="partnerpoint_architect_daily_max_invalid",
         ),
         partnerpoint_referral_daily_max=_strict_int_setting(
@@ -431,6 +431,7 @@ class GrowthRegistry:
     )
     ARCHITECT_SOURCE_AUTHORITY_ID = "IMPERIAL_REAL_ESTATE_DISCOVERY_SOURCES_HU_V1"
     PARTNERPOINT_RUNTIME_SCHEMA = "partnerpoint-runtime-official-sources-v1"
+    PARTNERPOINT_PUBLIC_EMAIL_POLICY = "PARTNERPOINT_PUBLIC_BUSINESS_EMAIL_VISIBLE"
     PARTNERPOINT_SHEET_ID = "1uey0XRxxjckH6h_EPfU4C3mDMXjPvdpa24XKu2emfV0"
     PARTNERPOINT_SPEC_FILE_ID = "1AFLKbiYQ7KydaxftuXZPoHrY4Pw3I869"
     PARTNERPOINT_SPEC_VERSION = "1.8"
@@ -700,6 +701,7 @@ class GrowthRegistry:
                 f"Official-company recipient binding is required: {source_id}"
             )
         expected_email = str(binding.get("recipient_email") or "").strip().lower()
+        verification_policy = str(binding.get("verification_policy") or "")
         organization_names = binding.get("organization_names")
         recipient_names = binding.get("recipient_names")
         if (
@@ -707,6 +709,8 @@ class GrowthRegistry:
             or binding.get("recipient_email_type") != "role"
             or binding.get("contact_basis") != "public_business_contact"
             or binding.get("primary_language") != "hu"
+            or verification_policy
+            not in {"", self.PARTNERPOINT_PUBLIC_EMAIL_POLICY}
             or not _valid_email(expected_email)
             or binding.get("recipient_email") != expected_email
             or not _clean_unique_strings(organization_names)

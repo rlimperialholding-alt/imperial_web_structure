@@ -173,8 +173,8 @@ def test_banati_real_reply_replay_stops_account_and_pending_followup(db):
         db.commit()
 
 
-def test_partnerpoint_candidate_filter_keeps_only_exact_current_pass_rows(monkeypatch):
-    monkeypatch.setenv("GROWTH_PARTNERPOINT_ARCHITECT_DAILY_MAX", "8")
+def test_partnerpoint_candidate_filter_accepts_unsent_pass_rows_without_status_lock(monkeypatch):
+    monkeypatch.setenv("GROWTH_PARTNERPOINT_ARCHITECT_DAILY_MAX", "30")
     monkeypatch.setenv("GROWTH_PARTNERPOINT_REFERRAL_DAILY_MAX", "2")
     header = [f"c{i}" for i in range(23)]
     eligible = [""] * 23
@@ -200,7 +200,99 @@ def test_partnerpoint_candidate_filter_keeps_only_exact_current_pass_rows(monkey
 
     result = partnerpoint._candidate_rows({"Partner_Universe": [header, eligible, stale, manual]})
 
-    assert [item["candidate_id"] for item in result] == ["PC-260908-A01"]
+    assert [item["candidate_id"] for item in result] == [
+        "PC-260908-A01",
+        "PC-260827-A01",
+    ]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "MEGKERESVE – SENT READBACK IGAZOLT",
+        "POZITÍV VÁLASZ – EGYEZTETÉSRE VÁR",
+        "HARD BOUNCE",
+        "SUPPRESSION_REVIEW",
+        "BLOKKOLT – DNC",
+        "90 NAPON BELÜLI IGAZOLT KAPCSOLATI ELŐZMÉNY",
+    ],
+)
+def test_partnerpoint_terminal_statuses_remain_blocked(status):
+    assert partnerpoint._status_allows_first_contact(status) is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "MINŐSÍTVE – ELSŐ KAPCSOLAT KÖVETKEZŐ KÖRRE",
+        "MINŐSÍTVE – KÖZPONTI ÁTADÁSI CSOMAG KÉSZ",
+        "MINŐSÍTVE – KÖZPONTI ÁTADÁSRA VÁR",
+        "NINCS IGAZOLT ÜZLETI KAPCSOLAT",
+        "ÚJ – KÖZPONTI ÁTADÁSRA KÉSZ",
+    ],
+)
+def test_partnerpoint_unsent_status_labels_do_not_block_first_contact(status):
+    assert partnerpoint._status_allows_first_contact(status) is True
+
+
+def test_partnerpoint_daily_capacity_counts_existing_created_messages(db):
+    architect = _signal(
+        signal_id="SIG-ARCH-TODAY",
+        email="architect@example.hu",
+        status="queued",
+    )
+    referral = _signal(
+        signal_id="SIG-REF-TODAY",
+        email="referral@example.hu",
+        status="queued",
+    )
+    referral.source_bucket = "referral_partner"
+    old = _signal(
+        signal_id="SIG-ARCH-YESTERDAY",
+        email="old@example.hu",
+        status="contacted",
+    )
+    db.add_all(
+        [
+            architect,
+            referral,
+            old,
+            _outreach(
+                outreach_id="OUT-ARCH-TODAY",
+                signal_id=architect.signal_id,
+                email="architect@example.hu",
+                status="queued",
+                sent_at=None,
+            ),
+            _outreach(
+                outreach_id="OUT-REF-TODAY",
+                signal_id=referral.signal_id,
+                email="referral@example.hu",
+                status="queued",
+                sent_at=None,
+            ),
+            _outreach(
+                outreach_id="OUT-ARCH-YESTERDAY",
+                signal_id=old.signal_id,
+                email="old@example.hu",
+                status="sent",
+                sent_at=datetime.now(UTC) - timedelta(days=1),
+            ),
+        ]
+    )
+    db.commit()
+    yesterday = datetime.now(UTC) - timedelta(days=1)
+    db.scalar(
+        select(OutreachMessage).where(
+            OutreachMessage.outreach_id == "OUT-ARCH-YESTERDAY"
+        )
+    ).created_at = yesterday
+    db.commit()
+
+    assert partnerpoint._partner_lane_created_today(db) == {
+        "architect_office": 1,
+        "referral_partner": 1,
+    }
 
 
 def test_unsubscribe_stops_the_corporate_account_without_touching_other_domains(db):

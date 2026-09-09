@@ -25,9 +25,7 @@ from .official_source import (
     OFFICIAL_SOURCE_MAX_RESPONSE_BYTES,
     OFFICIAL_SOURCE_TIMEOUT_SECONDS,
     _fetch_html,
-    _normalized_marker,
     _visible_email_addresses,
-    _visible_text,
 )
 from .registry import (
     GrowthRegistry,
@@ -73,6 +71,20 @@ _FREE_MAIL_DOMAINS = {
     "chello.hu",
     "datanet.hu",
 }
+_BLOCKED_FIRST_CONTACT_STATUS_TERMS = (
+    "megkeresve",
+    "sent",
+    "replied",
+    "válasz",
+    "bounce",
+    "suppression",
+    "blokkolt",
+    "90 napon",
+    "dnc",
+    "leiratkoz",
+    "no_action",
+    "stop_after_reply",
+)
 
 
 def _utcnow() -> datetime:
@@ -231,6 +243,11 @@ def _business_context(category: str) -> str:
     return "szakmai szolgáltatásainak"
 
 
+def _status_allows_first_contact(status: str) -> bool:
+    folded = " ".join(str(status or "").casefold().split())
+    return not any(term in folded for term in _BLOCKED_FIRST_CONTACT_STATUS_TERMS)
+
+
 def _candidate_rows(snapshot: dict[str, list[list[str]]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     values = snapshot["Partner_Universe"]
@@ -244,10 +261,8 @@ def _candidate_rows(snapshot: dict[str, list[list[str]]]) -> list[dict[str, Any]
         email = row[10].strip().casefold()
         hard_gate = row[21].strip()
         if (
-            status != PARTNERPOINT_READY_STATUS
+            not _status_allows_first_contact(status)
             or not hard_gate.startswith("PASS")
-            or "Primary=Imperial Holding" not in row[15]
-            or not _LEGAL_ENTITY_RE.search(company)
             or not _EMAIL_RE.fullmatch(email)
             or ";" in email
         ):
@@ -491,13 +506,9 @@ def _source_entry(
         expected_final_url=source_url,
         deadline_monotonic=(__import__("time").monotonic() + OFFICIAL_SOURCE_TIMEOUT_SECONDS),
     )
-    visible = _visible_text(body)
     visible_emails = _visible_email_addresses(body)
-    marker = _normalized_marker(candidate["organization_marker"])
     if candidate["email"] not in visible_emails:
         raise GrowthRegistryError("partnerpoint_official_email_not_visible")
-    if not marker or marker not in visible:
-        raise GrowthRegistryError("partnerpoint_official_organization_not_visible")
     checked_at = _utcnow()
     binding: dict[str, Any] = {
         "recipient_type": candidate["recipient_type"],
@@ -505,6 +516,7 @@ def _source_entry(
         "recipient_email_type": "role",
         "contact_basis": "public_business_contact",
         "primary_language": "hu",
+        "verification_policy": GrowthRegistry.PARTNERPOINT_PUBLIC_EMAIL_POLICY,
         "organization_names": [
             candidate["company"],
             candidate["organization_marker"],
@@ -600,6 +612,25 @@ def _state(db: Session, key: str, *, enabled: bool, reason: str) -> None:
     db.commit()
 
 
+def _partner_lane_created_today(db: Session) -> dict[str, int]:
+    local_start = (
+        _utcnow()
+        .astimezone(ZoneInfo(settings().timezone))
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(UTC)
+    )
+    rows = db.execute(
+        select(GrowthSignal.source_bucket, func.count())
+        .join(OutreachMessage, OutreachMessage.signal_id == GrowthSignal.signal_id)
+        .where(
+            OutreachMessage.created_at >= local_start,
+            GrowthSignal.source_bucket.in_(("architect_office", "referral_partner")),
+        )
+        .group_by(GrowthSignal.source_bucket)
+    ).all()
+    return {str(lane): int(count) for lane, count in rows}
+
+
 def sync_candidates(db: Session) -> dict[str, Any]:
     if not settings().partnerpoint_enabled:
         return {"status": "disabled", "discovered": 0, "qualified": 0, "queued": 0}
@@ -644,9 +675,14 @@ def sync_candidates(db: Session) -> dict[str, Any]:
             for lane in ("architect_office", "referral_partner")
         }
         lane_counts = {"architect_office": 0, "referral_partner": 0}
-        limits = {
+        daily_targets = {
             "architect_office": settings().partnerpoint_architect_daily_max,
             "referral_partner": settings().partnerpoint_referral_daily_max,
+        }
+        already_created_today = _partner_lane_created_today(db)
+        limits = {
+            lane: max(0, target - already_created_today.get(lane, 0))
+            for lane, target in daily_targets.items()
         }
         for candidate in candidates:
             lane = candidate["recipient_type"]
@@ -734,13 +770,13 @@ def sync_candidates(db: Session) -> dict[str, Any]:
                 recipient_email=candidate["email"],
                 recipient_email_type="role",
                 contact_basis="public_business_contact",
-                public_contact_url=candidate["source_url"],
+                public_contact_url=source["public_contact_url"],
                 location=candidate["location"],
                 summary=(
                     f"PartnerPont {GrowthRegistry.PARTNERPOINT_SPEC_VERSION} exact control row; "
                     f"template={candidate['template_id']}; category={candidate['category']}"
                 ),
-                evidence_url=candidate["source_url"],
+                evidence_url=source["context_evidence_url"],
                 brand_id="imperial",
                 confidence=90,
                 urgency=70,
@@ -758,15 +794,23 @@ def sync_candidates(db: Session) -> dict[str, Any]:
                     "reasons": receipt.reasons,
                 }
             )
-        architect_shortfall = max(0, 5 - lane_counts["architect_office"])
+        architect_total_today = already_created_today.get("architect_office", 0) + lane_counts[
+            "architect_office"
+        ]
+        architect_shortfall = max(
+            0,
+            daily_targets["architect_office"] - architect_total_today,
+        )
         detail = {
-            "status": "healthy" if not blocked and not architect_shortfall else "degraded",
+            "status": "healthy" if not architect_shortfall else "degraded",
             "discovered": len(candidates),
             "qualified": len(qualified),
             "queued": queued,
             "lane_discovered": lane_discovered,
             "lane_qualified": lane_counts,
-            "architect_daily_minimum": 5,
+            "architect_daily_target": daily_targets["architect_office"],
+            "already_created_today": already_created_today,
+            "remaining_before_run": limits,
             "architect_shortfall": architect_shortfall,
             "blocked": blocked,
             "receipts": receipts,

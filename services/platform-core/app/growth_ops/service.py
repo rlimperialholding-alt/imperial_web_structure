@@ -4724,6 +4724,30 @@ def _assert_official_source_evidence_fresh(
         if value
     }
     expected_email = str(signal.recipient_email or "").strip().casefold()
+    binding = source.get("recipient_binding")
+    verification_policy = (
+        str(binding.get("verification_policy") or "")
+        if isinstance(binding, dict)
+        else ""
+    ) or "OFFICIAL_ORGANIZATION_AND_EMAIL_VISIBLE"
+    public_email_only = (
+        verification_policy == GrowthRegistry.PARTNERPOINT_PUBLIC_EMAIL_POLICY
+    )
+    identity_receipt_matches = (
+        receipt.get("verification_policy") == verification_policy
+        and (
+            (
+                receipt.get("matched_recipient_marker") == ""
+                and receipt.get("matched_organization_marker") == ""
+            )
+            if public_email_only
+            else (
+                receipt.get("matched_recipient_marker") == expected_recipient_marker
+                and receipt.get("matched_organization_marker")
+                in expected_organization_markers
+            )
+        )
+    )
 
     def valid_page(page: Any) -> bool:
         if not isinstance(page, dict):
@@ -4759,8 +4783,7 @@ def _assert_official_source_evidence_fresh(
         or receipt.get("signal_dedupe_hash") != signal.dedupe_hash
         or receipt.get("recipient_email") != signal.recipient_email
         or receipt.get("matched_email") != expected_email
-        or receipt.get("matched_recipient_marker") != expected_recipient_marker
-        or receipt.get("matched_organization_marker") not in expected_organization_markers
+        or not identity_receipt_matches
         or receipt.get("signal_identity_unchanged") is not True
         or receipt.get("payload_and_release_unchanged") is not True
         or receipt.get("release_token_sha256")
