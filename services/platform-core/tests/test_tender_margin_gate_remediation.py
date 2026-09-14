@@ -28,7 +28,7 @@ from app.services.commercial_integration import generate_contract_package
 from app.services.contract_workflow import (record_contract_dispatch, record_signed_contract, review_contract, submit_contract_review,)
 from app.services.project_finance import (clone_finance_plan, leadership_approve_plan, require_finance_plan_project_scope, require_project_finance_scope,)
 from app.services.tender_margin_gate import (MarginGateBlocked, evaluate_commitment_gate, plan_content_sha256,)
-from tests.test_budget_import import _csv_bytes, _draft_plan, _row
+from tests.test_budget_import import _csv_bytes, _draft_plan, _persist_user, _row
 
 PROJECT = "REMED-001"
 
@@ -62,19 +62,15 @@ def test_migration_0073_downgrade_restores_previous_schema_exactly():
     migration, migration_path = _load_migration_module()
     order = list(migration._DOWNGRADE_DROP_ORDER)
     assert set(order) == set(migration._NEW_TABLES)
-    # Az FK-függő gyerektáblák a szülők ELŐTT törlődnek, különben a
-    # PostgreSQL RESTRICT a downgrade-ot elutasítaná (Review B MEDIUM).
+    # Az FK-függő gyerektáblák a szülők ELŐTT törlődnek (PG RESTRICT-biztos).
     assert order.index("finance_allocation_snapshot_rows") < order.index("finance_allocation_snapshots")
     # Task78: az upgrade által hozzáadott egyedi kényszert a downgrade
-    # guarddal eldobja (re-upgrade idempotens), mégpedig a függő táblák
-    # eldobása ELŐTT — a végső séma azonos a 0072-es headdel.
     source = Path(migration_path).read_text(encoding="utf-8")
     assert "_drop_unique_constraint_if_exists" in source
     assert 'batch_op.drop_constraint(name, type_="unique")' in source
     assert "uq_ops_procurement_orders_selection_id" in source
     assert source.index("_drop_unique_constraint_if_exists(") < source.index("op.drop_table")
     # Task79: a regiszterek pontosan az upgrade-felvételeket fedik le, a
-    # downgrade FK-biztos sorrendben (kényszer < index < oszlop < tábla) dob.
     upgrade_columns = set(re.findall(r'_add_missing_column\(inspector, "([^"]+)", sa\.Column\("([^"]+)"', source))
     assert upgrade_columns == {(table, column) for table, column, _n, _d in migration._ADDED_COLUMNS}
     upgrade_indexes = set(re.findall(r'_add_missing_index\("([^"]+)", "([^"]+)"', source))
@@ -86,9 +82,7 @@ def test_migration_0073_downgrade_restores_previous_schema_exactly():
 def test_migration_0073_postgresql_dialect_ddl_compiles():
     # Task80: PostgreSQL-dialektus DDL-verifikáció — a Boolean server_default
     # ``DEFAULT false``-ként fordul (a korábbi "0" egész-literal, amit a PG
-    # boolean-ra elutasít), az oszlopdobás plain ``DROP COLUMN`` (nincs
-    # SQLite batch-újraépítés PG-n); a forrás a PG-érvényes literal-t és a
-    # batch-oszlopdobást használja.
+    # boolean-ra elutasít), az oszlopdobás plain ``DROP COLUMN`` PG-n; a
     from pathlib import Path
     import re
     import sqlalchemy as sa
@@ -118,9 +112,7 @@ def test_migration_0073_postgresql_dialect_ddl_compiles():
 
 
 def test_migration_0073_upgrade_downgrade_reupgrade_and_row_refusal(tmp_path):
-    # Futás idejű lánc (izolált alprocessz, az env.py importkészletével):
-    # upgrade head → üzleti soros downgrade fail-closed elutasítás → üres
-    # downgrade (teljes séma-összehasonlítás a 0072-es állapottal) → re-upgrade.
+    # Futás idejű lánc (izolált alprocessz): upgrade head → üzleti soros
     import os
     import subprocess
     import sys
@@ -233,17 +225,9 @@ def test_migration_0073_upgrade_downgrade_reupgrade_and_row_refusal(tmp_path):
 
 
 def _evaluate(db, *, cost_code="MAT-A", amount="100", subject_id="S-1", project=PROJECT):
-    return evaluate_commitment_gate(db,
-        project_id=project,
-        action_type="tender_award",
-        subject_type="tender_bid",
-        subject_id=subject_id,
-        cost_code=cost_code,
-        proposed_net_huf=Decimal(amount),
-        actor="fixture@imperial.local",)
+    return evaluate_commitment_gate(db, project_id=project, action_type="tender_award", subject_type="tender_bid", subject_id=subject_id, cost_code=cost_code, proposed_net_huf=Decimal(amount), actor="fixture@imperial.local",)
 
 
-# --- C1: a BLOCK-bizonyíték FK-mentes (nincs plan_id_fk) ---
 
 
 def test_block_and_pass_decision_evidence_plan_fk_contract(db):
@@ -253,8 +237,6 @@ def test_block_and_pass_decision_evidence_plan_fk_contract(db):
     rows = list(db.scalars(select(MarginGateDecision)).all())
     assert rows and rows[0].decision == "BLOCK"
     # A független bizonyíték-tranzakció nem hivatkozza az FK-n a tervsort
-    # (a hívó FOR UPDATE zárja alatt a Postgres FK-ellenőrzés holtpontra
-    # futna); a tervazonosítás a szöveges mezőkön át történik.
     assert rows[0].plan_id_fk is None
     assert rows[0].plan_id and rows[0].plan_version == 1
     assert rows[0].plan_content_sha256
@@ -305,7 +287,6 @@ def test_leadership_approval_rebinds_commitments_to_new_plan(db):
     commitment = db.scalar(select(FinanceCommitment))
     assert commitment.plan_id_fk == v2.id
     # A v2-n értékelt ÚJ tárgy a régi lekötést is a vetületbe számítja:
-    # 6.5M régi + 100 új → (10M − 6.5001M)/10M = 34.999% → BLOCK.
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, subject_id="NEW-COMMIT", amount="100")
     assert excinfo.value.reason_code == "margin_below_minimum"
@@ -314,8 +295,7 @@ def test_leadership_approval_rebinds_commitments_to_new_plan(db):
 
 def test_leadership_approval_blocks_orphan_commitment_codes(db):
     # Review A CRITICAL: a v2 tervből hiányzik a v1-en lekötött MAT-A
-    # költségkód — a jóváhagyás az aktiválás ELŐTT fail-closed blokkol,
-    # különben a lekötés kikerülne a fedezetszámításból (fail-open).
+    # költségkód — a jóváhagyás az aktiválás ELŐTT fail-closed blokkol.
     plan_v1 = seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
     _evaluate(db, subject_id="ORPHAN-COMMIT", amount="100000")
     db.commit()
@@ -323,8 +303,7 @@ def test_leadership_approval_blocks_orphan_commitment_codes(db):
     with pytest.raises(ValueError, match="MAT-A"):
         leadership_approve_plan(db, v2.plan_id, _user("managing-director", "md@imperial.local"), note="Vezetői jóváhagyás árva költségkóddal.", margin_exception_reason="",)
     db.rollback()
-    # A blokkolt aktiválás után a régi terv jóváhagyott marad, a lekötés a
-    # régi tervhez kötött, az új terv nem aktiválódott.
+    # A blokkolt aktiválás után a régi terv jóváhagyott marad, a lekötés
     assert db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == plan_v1.plan_id)).status == "approved"
     assert db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == v2.plan_id)).status == "finance_approved"
     commitment = db.scalar(select(FinanceCommitment))
@@ -332,9 +311,7 @@ def test_leadership_approval_blocks_orphan_commitment_codes(db):
 
 
 def test_gate_counts_orphan_commitment_conservatively(db):
-    # Defense-in-depth: ha mégis árva lekötés kerülne a tervhez (pl. migrált
-    # állapot), a kapu annak TELJES összegét a várható direct költségbe
-    # számítja — soha nem tűnhet el a fedezetszámításból.
+    # Defense-in-depth: ha mégis árva lekötés kerülne a tervhez, a kapu
     plan = seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
     db.add(FinanceCommitment(commitment_id="FCOMMIT-ORPHAN", plan_id_fk=plan.id, cost_code="GHOST-CODE",
         subject_type="tender_bid", subject_id="GHOST-1", net_huf=Decimal("100000"),
@@ -353,7 +330,6 @@ def test_gate_counts_orphan_commitment_conservatively(db):
     db.rollback()
 
 
-# --- M1: tartalék-allokáció (részleges eset a canonic gate-tesztben is) ---
 
 
 def test_full_contingency_allocation_counts_line_amount(db):
@@ -558,11 +534,9 @@ def test_subcontract_dispatch_transition_is_gated(db):
     assert dispatched.status == "dispatched"
     commitments = list(db.scalars(select(FinanceCommitment)).all())
     # A generálás → előkészítés → jóváhagyás → kézbesítés lánc ugyanazzal a
-    # subject-kulccsal fut: pontosan egy lekötés.
     assert len(commitments) == 1
 
 
-# --- M3/MEDIUM-3: második megrendelés blokk (service szint) ---
 
 
 def test_second_order_for_same_selection_is_rejected(client, db):
@@ -588,7 +562,6 @@ def test_second_order_for_same_selection_is_rejected(client, db):
     assert len(list(db.scalars(select(FinanceCommitment)).all())) == 1
 
 
-# --- Task79: commit-kori IntegrityError pontos kezelése ---
 
 
 def _order_payload(selection_id):
@@ -606,13 +579,13 @@ def _approved_selection(client, db, cost_code="MAT-ENF"):
     return selection_id
 
 
-def test_commit_time_selection_unique_conflict_maps_to_duplicate_and_audits_selection(client, db, monkeypatch):
-    # BIZONYÍTOTT selection-unique ütközés → duplicate hiba; az audit a
-    # perzisztált DÖNTÉSRE hivatkozik (a nem perzisztált rendeléssorról nincs lelet).
+def test_commit_time_selection_unique_conflict_maps_to_duplicate_without_artifacts(client, db, monkeypatch):
+    # BIZONYÍTOTT selection-unique ütközés → duplicate hiba (409); Task81
     from sqlalchemy.exc import IntegrityError
     from app.models import AuditLog, ProcurementOrderProjection as OrderRow
     from app.services.procurement import create_order
     selection_id = _approved_selection(client, db)
+    passed_before = len(list(db.scalars(select(AuditLog.id).where(AuditLog.action == "margin_gate.passed")).all()))
     original_commit = db.commit
     calls: list[int] = []
 
@@ -627,11 +600,9 @@ def test_commit_time_selection_unique_conflict_maps_to_duplicate_and_audits_sele
         create_order(db, _order_payload(selection_id), actor="fixture@imperial.local")
     assert db.scalar(select(OrderRow.id).where(OrderRow.selection_id == selection_id)) is None
     assert db.scalar(select(AuditLog.id).where(AuditLog.action == "procurement.order.create")) is None
-    blocked = list(db.scalars(select(AuditLog).where(AuditLog.action == "procurement.order.duplicate_blocked")).all())
-    assert len(blocked) == 1
-    assert blocked[0].entity_type == "procurement_selection"
-    assert blocked[0].entity_id == selection_id
-
+    assert db.scalar(select(AuditLog.id).where(AuditLog.action == "procurement.order.duplicate_blocked")) is None
+    passed_after = len(list(db.scalars(select(AuditLog.id).where(AuditLog.action == "margin_gate.passed")).all()))
+    assert passed_after == passed_before
 
 def test_commit_time_unrelated_integrity_error_stays_visible_without_audit(client, db, monkeypatch):
     # Más integritás-hiba eredeti formában terjed (nincs téves mapping/audit).
@@ -767,6 +738,7 @@ def test_concurrent_order_creation_creates_at_most_one_order(tmp_path):
 
 
 def test_import_approval_rechecks_draft_after_lock_acquisition(db):
+    _persist_user(db, role="finance", email="fixture-finance@imperial.local")
     row = preview_budget_import(db, project_id="IMP-T77", file_name="budget.csv", data=_csv_bytes([_row("MAT-LOCK")]), actor="fixture@imperial.local",)
     plan = _draft_plan(db, project_id="IMP-T77", plan_id="FIN-PLAN-T77-LOCK")
     # Az actor sessionje már látta a draft tervet (elavult identitástérkép)…
@@ -795,6 +767,8 @@ def test_concurrent_import_approval_applies_lines_at_most_once(db):
         data=_csv_bytes([_row("MAT-T78-CONC", amount="1000000")]),
         actor="fixture@imperial.local",)
     plan = _draft_plan(db, project_id="IMP-T78", plan_id="FIN-PLAN-T78-CONC")
+    _persist_user(db, role="finance", email="other-finance@imperial.local")
+    _persist_user(db, role="finance", email="first-finance@imperial.local")
     # Deterministikus verseny: az első jóváhagyás a tervzárnál átengedi a
     # másodikat, amely commitol; az első a zár UTÁNI sorállapot-ellenőrzésen
     # bukik — a sorok legfeljebb egyszer kerülnek a tervre.

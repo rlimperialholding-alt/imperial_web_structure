@@ -1,13 +1,8 @@
 """Szigorú, fail-closed szintetikus CSV/XLSX költségvetés-import (Task75).
 
-Korlátok: kiterjesztés/méret/sor/oszlop/felirat; képlet (xlsx cella, CSV
-'='/@/+ kezdet), makró (vbaProject.bin) és külső hivatkozás elutasítása;
-pontos fejlécsor, ismétlődő fejléc/költségkód elutasítása; nettó HUF
-normalizáció (nincs rejtett árfolyamváltás); amount_basis kizárólag összegző
-soron, ott kötelező; content-hash a nyers fájlra, preview_sha256 a tárolt
-preview-ra („preview után megváltozott bemenet" determinisztikusan
-elutasított); jóváhagyás kizárólag draft tervre, provenance-nyommal — az
-import soha nem hoz létre jóváhagyott tervet.
+Képlet/makró/külső hivatkozás és fejléc/kód-ismétlés elutasítása; nettó HUF
+normalizáció; content/preview hash-védelem; jóváhagyás kizárólag draft
+tervre (az import soha nem hoz létre jóváhagyott tervet).
 """
 
 from __future__ import annotations
@@ -20,11 +15,11 @@ import zipfile
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit
-from ..models import (ProjectBudgetImport, ProjectFinanceBudgetLine, ProjectFinancePlan,)
+from ..models import (ProjectBudgetImport, ProjectFinanceBudgetLine, ProjectFinancePlan, User,)
 from .project_finance import require_project_finance_scope
 from .tender_margin_gate import (AMOUNT_BASES, COST_CLASSES, DIRECT_COMPONENTS, MarginGateBlocked, _id, canonical_json, sha256_hex, utcnow,)
 
@@ -301,39 +296,50 @@ def preview_budget_import(db: Session, *, project_id: str, file_name: str, data:
     return row
 
 
-def _verified_approver(user: object) -> tuple[str, str]:
-    """Task80: az effective actor (email, szerepkör) KIZÁRÓLAG a hitelesített
-    user-objektumból származik — külön actor/actor_role paraméter nincs, így
-    önkényes ``actor_role='finance'`` vagy idegen audit-actor nem adható át;
-    hiányzó kontextus, azonosítatlan user vagy nem jóváhagyó szerepkör
-    fail-closed PermissionError (mutáció előtt)."""
+def _verified_approver(user: object) -> tuple[str, object]:
+    """Task80/Task81: az actor e-mail KIZÁRÓLAG a hitelesített user-objektumból
+    származik; a szerepkör döntése a perzisztált rekordból."""
     if user is None:
         raise PermissionError("A költségvetés-import jóváhagyása hitelesített felhasználói kontextus nélkül nem végezhető el.")
     actor = getattr(user, "email", None)
-    role = getattr(user, "role", None)
-    if not isinstance(actor, str) or not actor:
+    if not isinstance(actor, str) or not actor.strip():
         raise PermissionError("A költségvetés-import jóváhagyása azonosítatlan felhasználóval nem végezhető el.")
-    if role not in IMPORT_ROLES:
+    return actor.strip().lower(), getattr(user, "role", None)
+
+
+def _load_persisted_approver(db: Session, claimed_email: str, claimed_role: object) -> User:
+    """Task81/Task82: a jóváhagyót a szolgáltatás a hitelesített azonosító
+    alapján ÚJRATÖLTI az adatbázisból; ismeretlen, inaktív, jelszóváltásra
+    kötelezett, nem jóváhagyó szerepkörű, hiányzó/ellentmondó szerepkör-állítású user fail-closed PermissionError."""
+    persisted = db.scalar(select(User).where(func.lower(User.email) == claimed_email))
+    if persisted is None:
+        raise PermissionError("A költségvetés-import jóváhagyása ismeretlen felhasználóval nem végezhető el.")
+    if not persisted.active:
+        raise PermissionError("A költségvetés-import jóváhagyása inaktív felhasználóval nem végezhető el.")
+    if persisted.must_change_password:
+        raise PermissionError("A költségvetés-import jóváhagyása jelszóváltásra kötelezett felhasználóval nem végezhető el.")
+    if persisted.role not in IMPORT_ROLES:
         raise PermissionError("A költségvetés-import jóváhagyására nincs jogosultság.")
-    return actor, role
-
-
+    if claimed_role != persisted.role:
+        raise PermissionError("A költségvetés-import jóváhagyásának felhasználói kontextusa nem egyezik a perzisztált rekorddal.")
+    return persisted
 def approve_budget_import(db: Session, *, import_id: str, plan_id: str, user: object) -> ProjectBudgetImport:
     """Jóváhagyás kizárólag draft tervre, a tárolt, hash-elt preview-ból; a
     „preview után megváltozott bemenet" fail-closed elutasítás.
 
-    Task80: a jóváhagyó actor (email, szerepkör) a SZOLGÁLTATÁSBAN a
-    hitelesített user-objektumból származik — PM-felelősség önmagában soha
-    nem elég; a zár utáni újrazárolt soron a status ÉS a preview_sha256 is
-    újraellenőrzött (TOCTOU-védelem a védett tranzakcióban)."""
-    actor, _actor_role = _verified_approver(user)
+    Task80/Task81: a jóváhagyó actor a hitelesített user-objektumból, a
+    szerepkör és az aktív állapot a PERZISZTÁLT rekordból származik — a
+    PM-felelősség önmagában soha nem elég; a zár utáni újrazárolt soron a
+    status ÉS a preview_sha256 is újraellenőrzött (TOCTOU-védelem a védett
+    tranzakcióban)."""
+    claimed_email, claimed_role = _verified_approver(user)
+    approver = _load_persisted_approver(db, claimed_email, claimed_role)
+    actor = approver.email
     row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id))
     if row is None:
         raise KeyError(import_id)
     # Task79: az import PONTOS projektjének jogosultsága a SZOLGÁLTATÁSBAN
-    # ellenőrzött; actor-kontextus nélkül vagy a kanonikus projekthalmazon
-    # kívül fail-closed elutasítás.
-    require_project_finance_scope(db, user, row.project_id)
+    require_project_finance_scope(db, approver, row.project_id)
     if row.status != "preview":
         raise MarginGateBlocked("import_not_preview", "Csak hibátlan preview állapotú import hagyható jóvá.",)
     if sha256_hex(row.preview_json) != row.preview_sha256:
@@ -367,7 +373,6 @@ def approve_budget_import(db: Session, *, import_id: str, plan_id: str, user: ob
     payload = json.loads(row.preview_json)
     applied = 0
     # Első menet: sorok felvitele; a fájlbeli szülő-költségkódokat a második
-    # menet oldja fel a terv sorazonosítóira (line_id).
     pending_parents: dict[int, str] = {}
     for index, entry in enumerate(payload["rows"]):
         existing_line = db.scalar(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.cost_code == entry["cost_code"],))

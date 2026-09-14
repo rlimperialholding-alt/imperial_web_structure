@@ -1,8 +1,7 @@
 """Közös szintetikus fixture-ek a TENDER-kapu tesztekhez (Task75).
 
-Kizárólag szintetikus adat; a tartalomlenyomat a kanonikus
-plan_content_sha256 függvénnyel keletkezik, így a kapu
-provenance-ellenőrzése a fixture-ön is éles.
+Kizárólag szintetikus adat; a tartalomlenyomat a kanonikus plan_content_sha256
+függvénnyel keletkezik (éles provenance-őr).
 """
 
 from __future__ import annotations

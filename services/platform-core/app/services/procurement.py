@@ -298,8 +298,7 @@ def create_order(db: Session, data: ProcurementOrderIn, actor: str) -> Procureme
         raise KeyError(selection.offer_id)
     if data.ordered_quantity > requirement.max_orderable_quantity:
         raise ValueError("A rendelt mennyiség meghaladja a jóváhagyott nettó mennyiség + káló maximumot; igényrevízió szükséges.")
-    # Egy döntéshez legfeljebb egy megrendelés (Review A M3): a
-    # szétbontott szállítás külön igényrevízióval indítható.
+    # Egy döntéshez legfeljebb egy megrendelés (Review A M3); a
     if db.scalar(
         select(ProcurementOrderProjection.id).where(
             ProcurementOrderProjection.selection_id == selection.selection_id
@@ -349,27 +348,15 @@ def create_order(db: Session, data: ProcurementOrderIn, actor: str) -> Procureme
     _event(db, project_id=requirement.project_id, event_type="PROCUREMENT_ORDERED", object_type="ProcurementOrder", object_id=row.order_id, title="Jóváhagyott megrendelés létrejött", financial_impact_huf=row.total_huf)
     audit(db, actor=actor, action="procurement.order.create", entity_type="procurement_order", entity_id=row.order_id, after={"selection_id": selection.selection_id, "sha256": row.content_sha256, "ordered_quantity": str(row.ordered_quantity)})
     verify_plan_unchanged(db, decision)
-    selection_key = selection.selection_id
     try:
         db.commit()
     except IntegrityError as exc:
         # Task77 Gate7: a kényszer konkurens kettősnél atomi módon zár.
         # Task79: csak a BIZONYÍTOTT ütközés képeződik domain hibára (409);
-        # más integritás-hiba eredeti formában látható. Az audit a
-        # perzisztált DÖNTÉSRE hivatkozik (a nem perzisztált rendeléssorról
-        # nincs lelet).
+        # más integritás-hiba eredeti formában látható. Task81: a sikertelen
         db.rollback()
         if not _selection_unique_conflict(f"{exc} {exc.orig}"):
             raise
-        audit(
-            db,
-            actor=actor,
-            action="procurement.order.duplicate_blocked",
-            entity_type="procurement_selection",
-            entity_id=selection_key,
-            after={"selection_id": selection_key},
-        )
-        db.commit()
         raise ValueError(
             "Ehhez a beszerzési döntéshez már készült megrendelés; a "
             "szétbontott szállítás külön igényrevízióval indítható."

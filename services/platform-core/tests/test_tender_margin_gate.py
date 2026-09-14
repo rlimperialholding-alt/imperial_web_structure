@@ -30,16 +30,7 @@ PROJECT = "GATE-TEST-001"
 
 
 def _evaluate(db, *, cost_code="MAT-A", amount="500000", subject_id="S-1", action="tender_award", subject_type="tender_bid", project=PROJECT):
-    return evaluate_commitment_gate(
-        db,
-        project_id=project,
-        action_type=action,
-        subject_type=subject_type,
-        subject_id=subject_id,
-        cost_code=cost_code,
-        proposed_net_huf=Decimal(amount),
-        actor="fixture@imperial.local",
-    )
+    return evaluate_commitment_gate(db, project_id=project, action_type=action, subject_type=subject_type, subject_id=subject_id, cost_code=cost_code, proposed_net_huf=Decimal(amount), actor="fixture@imperial.local",)
 
 
 def _foundation_plan(db, *, revenue="6000000", amount="6000000"):
@@ -74,7 +65,6 @@ def _snapshot_rows(db, plan, cost_code="FOUNDATION"):
     return snapshot
 
 
-# --- Alapvető határesetek ---
 
 
 @pytest.mark.parametrize(
@@ -108,7 +98,6 @@ def test_margin_boundaries(db, direct_amount, proposed, expected):
         assert direct_amount not in message and revenue not in message
 
 
-# --- Terv- és sor-validációk ---
 
 
 @pytest.mark.parametrize(
@@ -207,7 +196,6 @@ def test_contingency_over_budget_blocks(db):
 def test_explicit_contingency_line_replaces_conservative_bucket(db):
     plan = seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")], contingency="1000000")
     # A tartalék-allokáció csak TELJES lehet — a részleges sor fail-closed
-    # blokk, a fel nem osztott maradék nem eshet ki a vetületből.
     from app.models import ProjectFinanceBudgetLine
     line = ProjectFinanceBudgetLine(
         line_id="FIN-LINE-CONTINGENCY",
@@ -337,7 +325,6 @@ def test_direct_cost_baseline_package_requires_full_revenue(db):
 @pytest.mark.parametrize( "revenue,amount", [("9230769.23", "6000000"), ("9000000", "100")], )
 def test_direct_cost_baseline_insufficient_revenue_blocks_fail_closed(db, revenue, amount):
     # Kerekített elvárt bevétel mellett a pontos hányados 35.00 ALATT marad;
-    # a kapu a kerekítetlen értékkel dönt, ezért blokkol.
     plan = seed_gate_plan(db, project_id=PROJECT, revenue=revenue, summary_lines=[{"cost_code": "FOUNDATION-DCB", "amount": "6000000", "amount_basis": "DIRECT_COST_BASELINE", "component": "other"}],)
     _dcb_snapshot(db, plan)
     with pytest.raises(MarginGateBlocked) as excinfo:
@@ -397,7 +384,6 @@ def test_detailed_children_sum_to_envelope_passes(db):
 
 def test_detailed_children_over_envelope_block_build_and_gate(db):
     # A gyerekek boríték fölé nőttek: a részletes pillanatkép létrehozása
-    # fail-closed, NORM_TABLE pillanatképpel a kapu is blokkol.
     plan = _foundation_plan(db)
     parent_id = get_line(db, plan, "FOUNDATION").line_id
     _add_foundation_children(db, plan, parent_id, ("2000000", "1560000", "585000", "390000", "195000"))
@@ -449,8 +435,6 @@ def _partial_detailed_plan(db, *, children=("2000000", "2000000"), project=PROJE
 
 def test_partial_detailed_allocation_unallocated_blocks_before_mutation(db):
     # A korábbi vetület 40% fedezet → PASS lett volna; a fel nem osztott
-    # 2.5M boríték-maradékot a kapu MUTÁCIÓ ELŐTT zárolja (15% BLOCK) —
-    # részleges allokáció nem javíthat fedezetet, határt nem léphet át.
     plan = _partial_detailed_plan(db)
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="CHILD-P1", amount="100")
@@ -465,7 +449,6 @@ def test_partial_detailed_allocation_unallocated_blocks_before_mutation(db):
 
 def test_partial_detailed_allocation_remainder_counted_once_not_outperforming(db):
     # Inkonzisztens pillanatkép (unallocated=0, gyerekösszeg < boríték): a
-    # fedetlen maradék konzervatívan EGYSZER a vetületbe (15% → BLOCK).
     plan = _partial_detailed_plan(db)
     snapshot = db.scalar(select(FinanceAllocationSnapshot).where(FinanceAllocationSnapshot.plan_id_fk == plan.id))
     snapshot.unallocated_amount = Decimal("0")
@@ -484,7 +467,6 @@ def test_partial_detailed_allocation_remainder_counted_once_not_outperforming(db
     assert calc["packages"][parent_id]["projected_direct"] == "2500000.00"
     assert calc["projected_total_direct"] == "8500000.00"
     # Teljes, pontosan egyeztetett gyerekallokáció: a vetület AZONOS
-    # (8.5M, 15% BLOCK) — a részleges soha nem „javíthat" a teljeshez képest.
     complete = _partial_detailed_plan(db, children=("3250000", "3250000"), project="GATE-TEST-CMPL")
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="CHILD-P1", amount="100", project="GATE-TEST-CMPL")
@@ -522,7 +504,6 @@ def _detailed_norm_plan(db, *, snapshot_code="EXTRA-TRADE"):
 def test_snapshot_only_trade_code_commitment_counts_in_projection(db):
     plan = _detailed_norm_plan(db)
     # A gyereksorok pontosan a borítékot (3.9M) fedik; a snapshot-only kódra
-    # kötött 100k a vetületbe számít: 33.33 → BLOCK (nem 35.00 PASS).
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, cost_code="EXTRA-TRADE", amount="100000")
     assert excinfo.value.reason_code == "margin_below_minimum"
@@ -542,6 +523,54 @@ def test_snapshot_only_trade_code_commitment_respects_envelope(db):
     assert excinfo.value.reason_code == "package_envelope_exceeded"
 
 
+# --- Task81 (Review-1 HIGH): snapshot-only lekötés pontosan egyszer ---
+
+def _partial_norm_plan(db, *, children, project=PROJECT):
+    """NRE-csomag (boríték 3.9M) részleges gyerekekkel, NORM_TABLE
+    pillanatkép snapshot-only szakágkóddal (EXTRA-TRADE, 30%)."""
+    plan = seed_gate_plan(db, project_id=project, revenue="6000000", summary_lines=[{"cost_code": "FOUNDATION", "amount": "6000000", "amount_basis": "NET_REVENUE_ENVELOPE", "component": "other"}],)
+    parent_id = get_line(db, plan, "FOUNDATION").line_id
+    for (_code, _name, _component), amount in zip(_FOUNDATION_CHILDREN[:len(children)], children):
+        add_child_line(db, plan, cost_code=_code, amount=amount, component="material", parent_summary_line_id=parent_id)
+    create_allocation_snapshot(db, plan_id=plan.plan_id, summary_line_id=parent_id, source_type="NORM_TABLE",
+        source_version="NORM-FOUND-2026-2", source_hash="b" * 64, approver="fixture-finance@imperial.local",
+        rationale="Szintetikus normatábla snapshot-only szakágkóddal.",
+        rows=[{"trade_code": "REINFORCING", "direct_cost_component": "material", "normalized_ratio": Decimal("70")},
+              {"trade_code": "EXTRA-TRADE", "direct_cost_component": "other", "normalized_ratio": Decimal("30")}],)
+    return plan
+
+
+@pytest.mark.parametrize(
+    "children,proposed,expected_decision,expected_margin,expected_total,expected_package",
+    [
+        # A lekötés a fedetlen maradékon BELÜL van: a vetület pontosan a boríték
+        (("2000000", "1000000"), "100000", "PASS", "35.00", "3900000.00", "900000.00"),
+        # A lekötés MEGHALADJA a maradékot: a vetület pontosan gyerekek + 500k
+        (("2000000", "1500000"), "500000", "margin_below_minimum", "33.33", "4000000.00", "500000.00"),
+    ],
+    ids=["inside_remainder_not_double_counted", "beyond_remainder_not_omitted"],
+)
+def test_snapshot_only_commitment_counted_exactly_once(db, children, proposed, expected_decision, expected_margin, expected_total, expected_package):
+    plan = _partial_norm_plan(db, children=children)
+    import json
+    if expected_decision == "PASS":
+        decision = _evaluate(db, cost_code="EXTRA-TRADE", amount=proposed)
+        assert decision.decision == "PASS"
+        assert decision.margin_percent == Decimal(expected_margin)
+        assert decision.projected_direct_cost_huf == Decimal(expected_total)
+        calc = json.loads(decision.calculation_json)
+        db.commit()
+    else:
+        with pytest.raises(MarginGateBlocked) as excinfo:
+            _evaluate(db, cost_code="EXTRA-TRADE", amount=proposed)
+        assert excinfo.value.reason_code == expected_decision
+        assert excinfo.value.margin_percent == Decimal(expected_margin)
+        calc = json.loads(list(db.scalars(select(MarginGateDecision)).all())[-1].calculation_json)
+        assert db.scalars(select(FinanceCommitment)).all() == []
+    parent_id = get_line(db, plan, "FOUNDATION").line_id
+    assert calc["packages"][parent_id]["projected_direct"] == expected_package
+    assert calc["projected_total_direct"] == expected_total
+    assert calc["per_line"]["EXTRA-TRADE"]["post_direct"] == f"{proposed}.00"
 # --- AC-03: indirect gyereksor blokk a kapu értékelésében ---
 
 
@@ -620,7 +649,6 @@ def test_normalized_ratios_replay_is_deterministic():
     assert sum(_normalized_ratios(raw), Decimal("0")) == Decimal("100.0000")
 
 
-# --- Idempotencia és csere ---
 
 
 def test_cost_code_change_on_retry_blocks(db):
@@ -635,7 +663,6 @@ def test_cost_code_change_on_retry_blocks(db):
     assert len(rows) == 1 and rows[0].cost_code == "MAT-A"
 
 
-# --- Döntés-bizonyíték és szivárgásgátlás ---
 
 
 def test_block_evidence_persists_after_rollback(db):
@@ -725,7 +752,7 @@ def test_list_decisions_filters_to_allowed_projects_only(db):
     seed_gate_plan(db, project_id="OTHER-PROJECT", revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
     _evaluate(db, subject_id="SCOPE-2", amount="100", project="OTHER-PROJECT")
     db.commit()
-    # Task77 Gate7: az allowed_project_ids szűrő csak a kör döntéseit adja vissza (keresztprojekt dump tilos).
+    # Task77 Gate7: az allowed_project_ids szűrő csak a kör döntéseit adja vissza.
     rows = list_decisions(db, allowed_project_ids={PROJECT})
     assert {row.project_id for row in rows} == {PROJECT}
     assert list_decisions(db, allowed_project_ids=set()) == []

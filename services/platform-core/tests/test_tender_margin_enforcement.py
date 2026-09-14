@@ -1,9 +1,6 @@
 """A TENDER-kapu enforcement-tesztjei a tiltott mutációk határain — Task75.
 
 Tender-odaítélés, PO-előkészítés-jóváhagyás, beszerzési döntés
-véglegesítés, megrendelés létrehozás/visszaigazolás, finance-commitment
-outbox, alvállalkozói szerződés-átmenetek: minden út a kanonikus kapun
-keresztül fut, blokk esetén mutáció, outbox és lekötés nélkül.
 Kizárólag szintetikus fixture-ek.
 """
 
@@ -118,26 +115,28 @@ def _award(client, bid):
     return client.post(f"/tenders/{TENDER_ID}/bids/{bid.bid_id}/award", data={"summary": "A dokumentált értékelés alapján kiválasztott ajánlat."}, follow_redirects=False,)
 
 
-def test_award_blocks_without_budget_or_over_envelope(client, db):
+@pytest.mark.parametrize(
+    "seed_plan,net_total",
+    [
+        (False, "5000000"),  # terv nélkül → BLOCK
+        (True, "6500000.01"),  # pontosan 35% fedezet mellett a boríték fölé növő ajánlat → BLOCK
+    ],
+    ids=["without_budget", "over_envelope"],
+)
+def test_award_blocks_without_budget_or_over_envelope(client, db, seed_plan, net_total):
     _project(db)
     _login(client)
     tender = _tender(db, cost_code="MAT-ENF")
-    bid = _bid(db, tender)
-    response = _award(client, bid)
+    if seed_plan:
+        seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-ENF", "6500000", "labour")])
+    response = _award(client, _bid(db, tender, net_total=net_total))
     assert response.status_code == 400
     fresh = db.scalar(select(TenderPackage).where(TenderPackage.tender_id == TENDER_ID))
     assert fresh.status != "awarded" and fresh.awarded_bid_id is None
-    decisions = list(db.scalars(select(MarginGateDecision)).all())
-    assert decisions and decisions[0].decision == "BLOCK"
-    # Pontosan 35.00% fedezetű tervvel a boríték fölé növő ajánlat → BLOCK.
-    seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-ENF", "6500000", "labour")])
-    response = _award(client, _bid(db, tender, net_total="6500000.01"))
-    assert response.status_code == 400
-    fresh = db.scalar(select(TenderPackage).where(TenderPackage.tender_id == TENDER_ID))
-    assert fresh.status != "awarded"
     assert db.scalars(select(TenderPurchaseOrderPreparation)).all() == []
     assert db.scalars(select(FinanceCommitment)).all() == []
-
+    decisions = list(db.scalars(select(MarginGateDecision)).all())
+    assert decisions and decisions[0].decision == "BLOCK"
 
 def test_award_with_approved_budget_passes(client, db):
     _project(db)
@@ -165,34 +164,31 @@ def _preparation(db, preparation_id: str, *, bid=None, status="draft") -> Tender
     return preparation
 
 
-# --- PO-előkészítés jóváhagyás ---
-
-
-def test_po_preparation_approval_requires_gate(client, db):
+@pytest.mark.parametrize("seed_plan", [False, True], ids=["without_plan", "with_plan"])
+def test_po_preparation_approval_gate(client, db, seed_plan):
+    # Task82: VALÓDI bool paraméterek (a (False,) tuple mindig truthy volt, így a
+    # negatív ág sosem futott); a negatív ág AZONOSÍTOTT klienssel hív — az
+    # elutasítás a kapu 400-ja, nem hitelesítési válasz.
     _project(db)
-    _login(client)
     bid = _tender_with_bid(db)[1]
-    response = _award(client, bid)
-    assert response.status_code == 400  # terv nélkül az odaítélés sem mehet
+    if seed_plan:
+        seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-ENF", "5000000", "labour")])
+    _login(client)
+    if not seed_plan:
+        assert _award(client, bid).status_code == 400  # terv nélkül az odaítélés sem mehet
     _preparation(db, "POPREP-ENF-1", bid=bid)
-    response = client.post("/tenders/purchase-order-preparations/POPREP-ENF-1/approve")
-    assert response.status_code == 400
-    db.refresh(db.scalar(select(TenderPurchaseOrderPreparation)))
-    assert db.scalar(select(TenderPurchaseOrderPreparation)).status == "draft"
-
-
-def test_po_preparation_approval_passes_with_gate(client, db):
-    _project(db)
-    seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-ENF", "5000000", "labour")])
-    bid = _tender_with_bid(db)[1]
-    _preparation(db, "POPREP-ENF-2", bid=bid)
-    _login(client)
-    response = client.post("/tenders/purchase-order-preparations/POPREP-ENF-2/approve", follow_redirects=False,)
-    assert response.status_code == 303
+    response = client.post("/tenders/purchase-order-preparations/POPREP-ENF-1/approve", follow_redirects=False,)
     preparation = db.scalar(select(TenderPurchaseOrderPreparation))
-    db.refresh(preparation)
-    assert preparation.status == "approved"
-
+    if seed_plan:
+        assert response.status_code == 303
+        db.refresh(preparation)
+        assert preparation.status == "approved"
+    else:
+        assert response.status_code == 400
+        db.refresh(preparation)
+        assert preparation.status == "draft"
+        assert db.scalars(select(FinanceCommitment)).all() == []
+        assert db.scalar(select(TenderPackage).where(TenderPackage.tender_id == TENDER_ID)).status != "awarded"
 
 def test_po_preparation_approval_requires_decision_role(client, db):
     _project(db)

@@ -858,8 +858,7 @@ class ProcurementRequirementIn(BaseModel):
     required_at: datetime
     budget_huf: Decimal = Field(gt=0)
     target_huf: Decimal = Field(gt=0)
-    # A TENDER-kapu kötelező finance-költségkód-hozzárendelése; hiánya a
-    # döntés véglegesítését és a megrendelést fail-closed blokkolja.
+    # A TENDER-kapu kötelező finance-költségkód-hozzárendelése; hiánya a döntés véglegesítését és a megrendelést fail-closed blokkolja.
     cost_code: str | None = Field(default=None, max_length=100)
 
 

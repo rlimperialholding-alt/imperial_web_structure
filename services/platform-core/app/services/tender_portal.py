@@ -1410,7 +1410,6 @@ def award_bid(
     if tender.prequalification_required and not eligibility["eligible"]:
         raise ValueError("A partner nem felel meg az odaítélési kapunak: " + ", ".join(eligibility["blockers"]))
     # TENDER-kapu: az odaítélés elköteleződést keletkeztet, ezért a kanonikus
-    # 35% direct-margin kapu ugyanabban a tranzakcióban, a mutációk előtt fut.
     decision = _evaluate_bid_commitment_gate(
         db,
         project_id=tender.project_id,
@@ -1511,8 +1510,7 @@ def approve_purchase_order_preparation(
     if bid is None:
         raise ValueError("Az előkészítéshez tartozó ajánlat nem található.")
     # A PO-előkészítés ugyanazt az odaítélt ajánlati összeget köti le, ezért
-    # az odaítéléssel AZONOS subject-kulccsal kerül értékelésre: az ismételt
-    # kiértékelés idempotens csere, kettős számolás kizárt (Review A M3).
+    # az odaítéléssel AZONOS subject-kulccsal értékelődik (idempotens csere).
     decision = _evaluate_bid_commitment_gate(
         db,
         project_id=preparation.project_id,

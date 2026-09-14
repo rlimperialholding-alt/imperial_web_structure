@@ -15134,10 +15134,7 @@ def api_budget_import_approve(
     user: User = Depends(require_api_token_finance_actor),
 ):
     # A generikus API token nem ad platform-admin szerepkört: a jóváhagyó a
-    # bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó; Task78: az import
-    # projektjét ELŐBB fel kell oldani, az actor hozzáférése az import PONTOS
-    # projektjéhez kötelező — a szolgáltatás import-terv egyezése nem
-    # helyettesíti az actor-jogosultságot.
+    # bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó; az import
     import_row = db.scalar(
         select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id)
     )
@@ -15152,8 +15149,7 @@ def api_budget_import_approve(
             db,
             import_id=import_id,
             plan_id=payload.plan_id,
-            # Task80: az actor (email, szerepkör) a szolgáltatásban a hitelesített
-            # user-objektumból származik — külön actor/role paraméter nincs.
+            # Task80/Task81: az actor a hitelesített user-objektumból, a szerepkör
             user=user,
         )
     except KeyError as exc:
@@ -15207,7 +15203,6 @@ def api_allocation_from_detailed_lines(
     db: Session = Depends(get_db),
     user: User = Depends(require_api_token_finance_actor),
 ):
-    # Task77 Gate7: ugyanaz a fail-closed projekt-scope ellenőrzés.
     try:
         require_finance_plan_project_scope(db, user, payload.plan_id)
         row = build_allocation_from_detailed_lines(
@@ -15236,7 +15231,6 @@ def api_allocation_snapshots(
     db: Session = Depends(get_db),
     user: User = Depends(require_api_token_finance_actor),
 ):
-    # Task77 Gate7: a lista is projekt-scope ellenőrzött (defense-in-depth).
     try:
         require_finance_plan_project_scope(db, user, plan_id)
         rows = list_allocations(db, plan_id)
@@ -15287,7 +15281,6 @@ def api_margin_gate_decisions(
 ):
     # Task77 Gate7: a generikus token soha nem fedhet fel keresztprojekt
     # döntést — pénzügyi/vezetői actor kell, a lista projektscope-ra szűrt.
-    # Task78: a kötelező /api út ugyanazzal a jogosultsági/szűrési lánccal.
     allowed = finance_project_ids_for_user(db, user)
     if project_id is not None:
         try:
@@ -15333,8 +15326,6 @@ def margin_gate_dashboard(
             403, "A TENDER-kapu döntésnaplója csak pénzügyi/vezetői jogosultsággal érhető el."
         )
     # Task78: a dashboard az actor engedélyezett projektkörét használja —
-    # körön kívüli projekt 403, a naplólista ugyanazzal a scope-szűréssel
-    # (keresztprojekt-döntés soha nem renderelődik). None = teljes portfólió.
     allowed = finance_project_ids_for_user(db, user)
     if project_id and allowed is not None and project_id not in allowed:
         raise HTTPException(

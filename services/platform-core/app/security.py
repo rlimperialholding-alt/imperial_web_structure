@@ -69,9 +69,8 @@ def require_api_token_finance_actor(
     db: Session = Depends(get_db),
     x_api_token: Annotated[str | None, Header()] = None,
 ) -> User:
-    """API token + bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó:
-    a generikus token ÖNMAGÁBAN nem ad platform-admin szerepkört — a tényleges
-    actor a session-felhasználó, az ő szerepköre az auditált döntéshozó."""
+    """API token + bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó;
+    a generikus token ÖNMAGÁBAN nem ad platform-admin szerepkört."""
     if settings.api_token and not hmac.compare_digest(x_api_token or "", settings.api_token):
         raise HTTPException(status_code=401, detail="Érvénytelen API token.")
     user = current_user(request, db)

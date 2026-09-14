@@ -51,7 +51,6 @@ def _create_project(db) -> None:
             )
         )
         db.commit()
-    # TENDER-kapu: jóváhagyott, hash-elt terv az odaítélési úthoz.
     ensure_gate_plan(
         db,
         project_id=PROJECT_ID,

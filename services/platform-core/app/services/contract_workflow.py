@@ -87,8 +87,7 @@ def _row(
     return row
 
 
-# A szerződéstípusok zárt szótára (Review A L1): az ismeretlen típus
-# fail-closed blokkol — új típus nem kerülheti meg némán a kaput.
+# A szerződéstípusok zárt szótára (Review A L1): az ismeretlen típus fail-closed blokkol.
 CUSTOMER_CONTRACT_TYPES = frozenset(
     {"customer_construction", "customer_design_execution_plans", "customer_type_house_design_build"}
 )
@@ -250,8 +249,7 @@ def create_contract_workflow(
         generated_by=actor.strip().lower(),
         legal_required=relationship == "customer" or contract_type.startswith("customer_"),
     )
-    # TENDER-kapu a generálási kapunál: a kanonikus kapu a rekord
-    # hozzáadása ELŐTT fut (BLOCK-bizonyíték nem láthat pending sort).
+    # TENDER-kapu a generálási kapunál: a kanonikus kapu a rekord hozzáadása
     generation_decision = _contract_commitment(
         db, row, actor.strip().lower(), "contract_generation"
     )
@@ -310,7 +308,6 @@ def submit_contract_review(
     if row.status != "generated":
         raise ValueError("Csak elkészült szerződéscsomag küldhető jóváhagyásra.")
     # TENDER-kapu: a szerződés-előkészítés elköteleződést hordoz; a kapu a
-    # mutáció előtt fut.
     decision = _contract_commitment(db, row, email, "contract_preparation")
     row.status = "review"
     row.submitted_by = email
@@ -368,9 +365,6 @@ def review_contract(
         if email in _approved_actors(row):
             raise ValueError("A jóváhagyási kapukhoz külön személyek szükségesek.")
         # TENDER-kapu: az utolsó jóváhagyási kapu lezárása a szerződés
-        # jóváhagyását jelenti; elköteleződést hordozó szerződésnél a
-        # kanonikus 35% direct-margin kapu MINDEN mutáció ELŐTT fut
-        # (Review A L2: a sorrend a gate-before-mutation invariáns).
         will_complete = all(
             getattr(row, GATE_FIELDS[required][0])
             for required in _required_gates(row)

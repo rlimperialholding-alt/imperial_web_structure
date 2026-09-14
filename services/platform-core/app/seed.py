@@ -114,7 +114,6 @@ def demo_accounts_allowed() -> bool:
 DEMO_CREDENTIALS_STATE_ENV = "DEMO_CREDENTIALS_STATE_PATH"
 # Korlátos lock-várakozási ablak; kimerülése explicit fail-closed hiba.
 # Task80 (Gate4): a coverage-futás CPU/AV-terhelésére kibővített, még mindig
-# KORLÁTOS ablak; a kimerülés továbbra is fail-closed hiba.
 _DEMO_STATE_LOCK_RETRY_DELAYS = (0.02, 0.05, 0.1, 0.2, 0.4, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8)
 # Az írás utáni visszaolvasás korlátos újrapróbálása (Windows AV/indexer
 # blokkolhatja a frissen cserélt fájlt); kimerülése fail-closed hiba.
@@ -169,9 +168,7 @@ def _try_create_demo_state_lock(lock_path: Path) -> bool:
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except (FileExistsError, PermissionError):
-        # Windows pending-delete ablak: a CREATE_NEW ERROR_ACCESS_DENIED-t
-        # (PermissionError) ad FileExistsError helyett; ez is „másik holder
-        # birtokolja" — fail-safe False, a hívó korlátos retry-ablaka kezeli.
+        # Windows pending-delete ablak: a CREATE_NEW PermissionError-ja is
         return False
     try:
         os.write(fd, (str(os.getpid()) + "\n").encode("utf-8"))

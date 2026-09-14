@@ -63,8 +63,7 @@ def _generated(
 ):
     payload = _payload(example, commitment=commitment)
     if commitment:
-        # TENDER-kapu: jóváhagyott, hash-elt terv az alvállalkozói
-        # szerződés commitment-leírójához.
+        # TENDER-kapu: jóváhagyott, hash-elt terv az alvállalkozói commitment-leíróhoz.
         seed_gate_plan(
             db,
             project_id=payload["ids"]["ProjectID"],

@@ -175,7 +175,6 @@ class TestHouseDesignerE2EJourney:
 class TestTenderInvitationE2EJourney:
     def test_full_tender_journey_from_invite_to_award(self, client, db) -> None:
         _ensure_project(db, "PRJ-IMPERIAL-01")
-        # TENDER-kapu: jóváhagyott, hash-elt terv az odaítélési kapuhoz.
         ensure_gate_plan(
             db,
             project_id="PRJ-IMPERIAL-01",

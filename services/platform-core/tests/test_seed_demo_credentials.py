@@ -372,9 +372,6 @@ class TestDemoCredentialsConcurrentCreation:
     """Valódi többfolyamatos verseny az első állapotlétrehozásra."""
 
     def test_default_lock_window_is_bounded_but_load_resilient(self) -> None:
-        # Task80 (Gate4): a coverage-futás CPU/AV-terhelésére kibővített,
-        # DE továbbra is korlátos ablak — a kimerülés fail-closed marad
-        # (held-lock teszt), a konvergencia-állítás nem gyengült.
         delays = seed._DEMO_STATE_LOCK_RETRY_DELAYS
         assert len(delays) > 0 and all(delay > 0 for delay in delays)
         assert 5.0 <= sum(delays) <= 30.0

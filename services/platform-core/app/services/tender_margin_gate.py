@@ -1,22 +1,9 @@
-"""TENDER-kapu: kanonikus 35% direct-margin hard gate (Task75/Task76).
+"""TENDER-kapu: kanonikus 35% direct-margin hard gate (Task75–81).
 
 Az EGYETLEN kanonikus, tranzakcióba ágyazott, fail-closed kapu a tender-
-odaítélés, beszerzési döntés véglegesítés, megrendelés létrehozás/
-visszaigazolás, finance-commitment outbox és alvállalkozói szerződés-
-átmenetek commitment-mutatóihoz. Nincs admin/owner override. Szabályok:
-- fedezet = (jóváhagyott nettó bevétel − várható teljes direct költség) /
-  bevétel × 100, determinisztikus Decimal; a kapu a KEREKÍTETLEN hányadost
-  veti össze 35.00-zal (34.99 blokk);
-- minden sor explicit direct/indirect besorolású (besorolatlan = blokk), a
-  tartalék konzervatívan direct, a summary-csomag gyereksora csak direct;
-- soronkénti várható direct költség = max(sorkeret, actual + ETC, lekötött);
-  az árva lekötések teljes összege konzervatívan a vetületben;
-- összegző csomaghoz jóváhagyott, verziózott, immutable allokációs
-  pillanatkép kötelező (stale-detekció); roll-downnál a teljes 65%-os
-  boríték várható direct költség, a boríték feletti elköteleződés blokk;
-- a kapu nettó alapon számol; ÁFA kizárólag külön auditált konfigurációban
-  él, a számítást soha nem módosítja.
-Kizárólag szintetikus fixture-ek; éles tender/megrendelés/külső írás kizárt.
+odaítélés, megrendelés/visszaigazolás, finance-commitment outbox és
+alvállalkozói szerződés-átmenetek commitment-mutatóihoz. Nincs admin/owner
+override. Kizárólag szintetikus fixture-ek; éles tender/megrendelés kizárt.
 """
 
 from __future__ import annotations
@@ -316,9 +303,7 @@ def resolve_allocations(db: Session, plan: ProjectFinancePlan) -> dict[str, Fina
                     "Az összegző csomag allokációs pillanatképe a terv egy "
                     f"korábbi állapotához tartozik; a TENDER-kapu zárol. "
                     f"Elhárítás: {REMEDIATION_LINK} allokáció újrarögzítése.",)
-            # Task78: a fel nem osztott boríték-maradék (unallocated_amount)
-            # soha nem tűnhet el némán a vetületből — fail-closed zárolás,
-            # mielőtt bármely mutáció megtörténhetne.
+            # Task78: a fel nem osztott boríték-maradék soha nem tűnhet el
             if snapshot.unallocated_amount != 0:
                 raise _block_unallocated()
         else:
@@ -371,7 +356,6 @@ def _upsert_commitment(db: Session,
         db.add(row)
     else:
         # Idempotens csere: a lekötés az aktuális tervre kötődik, így a
-        # committed-baseline és a kapu-lekötések nem duplázódnak.
         if row.plan_id_fk != plan.id:
             row.plan_id_fk = plan.id
         if row.net_huf != proposed_net_huf:
@@ -432,8 +416,8 @@ def _decision_row(*,
 
 
 def _commit_block_evidence(row: MarginGateDecision, actor: str) -> None:
-    """BLOCK-bizonyíték + audit független tranzakcióban (visszagördülés után
-    is megmarad)."""
+    """BLOCK-bizonyíték + audit független tranzakcióban (visszagördülés után is
+    megmarad)."""
     from ..database import SessionLocal
 
     with SessionLocal() as session:
@@ -577,7 +561,6 @@ def _evaluate_commitment_gate_inner(db: Session,
             committed_by_code[commit_row.cost_code] = (committed_by_code.get(commit_row.cost_code, Decimal("0")) + _money(commit_row.net_huf))
     committed_by_code[cost_code] = committed_by_code.get(cost_code, Decimal("0")) + (proposed_net_huf)
     # Review A CRITICAL: az árva lekötések konzervatívan a várható direct
-    # költségbe számítanak — nem eshetnek ki némán a fedezetszámításból.
     orphan_codes = sorted(code for code in committed_by_code if code not in known_codes)
     orphan_committed = sum((committed_by_code[code] for code in orphan_codes), Decimal("0"))
     # Soronkénti várható akció utáni direct költség.
@@ -618,8 +601,7 @@ def _evaluate_commitment_gate_inner(db: Session,
                 if child.parent_summary_line_id == line.line_id
             ]
             # Review B CRITICAL: a snapshot-only szakágkódok is a csomag-
-            # elköteleződésbe és a direct vetületbe számítanak — különben a
-            # rájuk kötött elköteleződés eltűnne (fail-open).
+            # elköteleződésbe számítanak — különben a rájuk kötött lekötés
             snapshot_only = [code for code in trade_rows if code not in child_codes]
             package_codes = child_codes + snapshot_only
         else:
@@ -634,19 +616,21 @@ def _evaluate_commitment_gate_inner(db: Session,
                 f"revízió a {REMEDIATION_LINK} modulban.",)
         if line.line_id in child_line_ids:
             # A gyereksorok a per_line ciklusban már a vetületben vannak
-            # (a szülő dupla számolása kizárt); a gyerekösszeg egyeztetése a
-            # csomagértékekkel forrástípustól függetlenül kötelező.
             children_sum = child_sum_by_parent.get(line.line_id, Decimal("0"))
             if (line.amount_basis == "DIRECT_COST_BASELINE" and children_sum != package_max_direct):
                 raise _block("child_sum_mismatch", "Az összegző csomag gyereksorainak összege nem egyezik " "a direct költség-alap csomagértékkel; a TENDER-kapu zárol.",)
             if children_sum > package_max_direct:
                 raise _block("child_sum_over_envelope", "Az összegző csomag gyereksorainak összege meghaladja a " "csomag direct borítékát; a TENDER-kapu zárol.",)
-            # Task78: a gyereksorok a per_line ciklusban már a vetületben
-            # vannak; az esetlegesen fedetlen boríték-maradék (inkonzisztens
-            # pillanatképnél) konzervatívan EGYSZER a vetületbe kerül —
-            # részleges allokáció soha nem javíthatja a fedezetet (a teljes
-            # 65%-os boríték fedezve marad, dupla számolás kizárt).
-            package_projected = max(Decimal("0"), package_max_direct - children_sum)
+            # Task78/Task81: a gyereksorok a per_line ciklusban már a
+            # vetületben vannak; a snapshot-only lekötés a fedetlen boríték-
+            # maradékon belül EGYSZER számít (a maradék már fedezi), a
+            # maradék fölött konzervatívan EGYSZER a vetületbe kerül —
+            # sem kihagyás, sem dupla számolás nem lehetséges:
+            # csomag-vetület = max(boríték, gyerek-vetület + snapshot-only
+            # lekötés) − gyerek-vetület (Review-1 HIGH Task81).
+            children_post_sum = sum((Decimal(per_line[code]["post_direct"]) for code in child_codes), Decimal("0"))
+            snapshot_only_committed_total = sum((committed_by_code.get(code, Decimal("0")) for code in snapshot_only), Decimal("0"))
+            package_projected = max(package_max_direct - children_post_sum, snapshot_only_committed_total)
         else:
             # Roll-down: a teljes boríték konzervatívan várható direct költség
             # (a boríték feletti elköteleződés fent blokkolt).
@@ -655,6 +639,8 @@ def _evaluate_commitment_gate_inner(db: Session,
         for code in snapshot_only:
             snapshot_only_committed = committed_by_code.get(code, Decimal("0"))
             if snapshot_only_committed > 0:
+                # Bizonyíték-sor a számítási naplóhoz; a vetületbe a
+                # csomag-képlet fent EGYSZER számította be.
                 per_line[code] = {
                     "budget_net": "0.00",
                     "actual_plus_etc": "0.00",
@@ -662,7 +648,6 @@ def _evaluate_commitment_gate_inner(db: Session,
                     "committed_after": str(snapshot_only_committed),
                     "post_direct": str(snapshot_only_committed),
                 }
-                projected_direct += snapshot_only_committed
         trade_margins = {}
         for trade_code, row in trade_rows.items():
             trade_envelope = (package_max_direct * _money(row.normalized_ratio) / Decimal("100")).quantize(Decimal("0.01"), ROUND_HALF_UP)
@@ -685,7 +670,6 @@ def _evaluate_commitment_gate_inner(db: Session,
         }
     projected_total = (projected_direct + contingency_direct + orphan_committed).quantize(Decimal("0.01"), ROUND_HALF_UP)
     # A kapu a kerekítetlen hányadossal dönt (34.995 blokk), a megjelenített
-    # érték determinisztikusan két tizedesre kerekített.
     margin_exact = (revenue - projected_total) / revenue * 100
     margin_display = margin_exact.quantize(Decimal("0.01"), ROUND_HALF_UP)
     input_snapshot: dict[str, Any] = {

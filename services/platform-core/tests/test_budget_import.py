@@ -90,11 +90,28 @@ def _user(role: str, email: str | None = None):
     from types import SimpleNamespace
     return SimpleNamespace(role=role, email=email if email is not None else f"{role}@imperial.local")
 
+def _persist_user(db, *, role, email, active=True, pw_change=False):
+    """Perzisztált user-sor a szolgáltatási approver-ellenőrzéshez (Task81); a
+    password_hash futásidőben, NEM TITKOS szintetikus bemenetből keletkezik (Task82)."""
+    from app.models import User
+    from app.security import hash_password
+    existing = db.scalar(select(User).where(User.email == email))
+    if existing is None:
+        existing = User(email=email, password_hash=hash_password(email), name=email, role=role,
+                        active=active, must_change_password=pw_change)
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+    return existing
+
 
 def _approve(db, row, plan, *, role="finance", user_email=None):
-    # Task80: a hívás KIZÁRÓLAG hitelesített user-kontextust visz.
+    # Task80/Task81: a hívás KIZÁRÓLAG hitelesített user-kontextust vis; a
+    # szolgáltatás a PERZISZTÁLT rekordot ellenőrzi — a fixture aktív, jóváhagyó
+    email = user_email or f"{role}@imperial.local"
+    _persist_user(db, role=role, email=email)
     return approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
-        user=_user(role, user_email or f"{role}@imperial.local"),)
+        user=_user(role, email),)
 
 
 def _happy_rows():
@@ -252,7 +269,6 @@ def test_approve_rejected_or_changed_import_blocks(db):
     plan = _draft_plan(db)
     with pytest.raises(ValueError, match="Csak hibátlan preview"):
         _approve(db, row, plan)
-    # A preview után megváltozott bemenet fail-closed elutasítás.
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     tampered = json.loads(row.preview_json)
     tampered["rows"][0]["amount"] = "999999999"
@@ -303,12 +319,20 @@ def test_approve_signature_rejects_caller_supplied_actor_or_role(db):
     assert {"import_id", "plan_id", "user"} <= parameters and not ({"actor", "actor_role"} & parameters)
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     plan = _draft_plan(db)
-    with pytest.raises(TypeError):
+    # Task82: a perzisztált jóváhagyó létezik — a visszautasítás CSAK a szignatúra
+    # fail-closed védelme lehet; pontos TypeError + mutáció/audit-mentesség bizonyíték.
+    _persist_user(db, role="finance", email="fixture-finance@imperial.local")
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
         approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
             actor="fixture-finance@imperial.local", actor_role="finance", user=_user("finance", "fixture-finance@imperial.local"),)
+    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
+    assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+    from app.models import AuditLog
+    assert db.scalars(select(AuditLog).where(AuditLog.action == "budget.import.approved")).all() == []
 
 
 def test_approve_unknown_import_or_plan_key_errors(db):
+    _persist_user(db, role="finance", email="fixture-finance@imperial.local")
     plan = _draft_plan(db)
     with pytest.raises(KeyError):
         approve_budget_import(db, import_id="NINCS", plan_id=plan.plan_id, user=_user("finance", "fixture-finance@imperial.local"),)
@@ -318,7 +342,7 @@ def test_approve_unknown_import_or_plan_key_errors(db):
 
 
 def test_approve_enforces_user_context_role_and_project_scope(db):
-    # A PM-felelősség a KANONIKUS projekten belül SEM elég; finance szerepkörrel lefut.
+    # A PM-felelősség a KANONIKUS projekten belül SEM elég (Task81: a
     from app.models import ProjectRegistry
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     plan = _draft_plan(db)
@@ -334,6 +358,7 @@ def test_approve_enforces_user_context_role_and_project_scope(db):
             user=_user("project-manager", "pm-canon@imperial.local"),)
     assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
     assert len(list(db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all())) == 0
+    _persist_user(db, role="finance", email="fixture-finance@imperial.local")
     approved = approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
         user=_user("finance", "fixture-finance@imperial.local"),)
     assert approved.status == "approved"
@@ -341,6 +366,7 @@ def test_approve_enforces_user_context_role_and_project_scope(db):
 
 
 def test_approve_rechecks_preview_sha_after_lock_acquisition(db):
+    _persist_user(db, role="finance", email="fixture-finance@imperial.local")
     """Determinisztikus TOCTOU-negatív (Task80): a zár előtti hash-ellenőrzés
     és a tervzár KÖZÖTT egy konkurens író megváltoztatja a preview_json-t; a
     zár utáni újraellenőrzés fail-closed elutasít."""
@@ -379,4 +405,47 @@ def test_approve_rechecks_preview_sha_after_lock_acquisition(db):
     fresh_row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id))
     assert fresh_row.status == "preview"
     assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+    assert db.scalars(select(AuditLog).where(AuditLog.action == "budget.import.approved")).all() == []
+
+
+# --- Task81 (Review-1 MEDIUM): perzisztált approver-ellenőrzés fail-closed ---
+
+@pytest.mark.parametrize(
+    "persist_kwargs,claimed",
+    [
+        (None, _user("finance", "nobody@imperial.local")),
+        (dict(role="finance", email="inactive-fin@imperial.local", active=False), _user("finance", "inactive-fin@imperial.local")),
+        (dict(role="finance", email="pwchange-fin@imperial.local", pw_change=True), _user("finance", "pwchange-fin@imperial.local")),
+        (dict(role="project-manager", email="pm-persisted@imperial.local"), _user("project-manager", "pm-persisted@imperial.local")),
+        (dict(role="project-manager", email="pm-persisted@imperial.local"), _user("finance", "pm-persisted@imperial.local")),
+        (dict(role="finance", email="real-fin@imperial.local"), _user("operator", "real-fin@imperial.local")),
+        (dict(role="finance", email="fin-norole@imperial.local"), _user(None, "fin-norole@imperial.local")),
+    ],
+    ids=["unknown_user", "inactive_user", "must_change_password", "persisted_pm", "forged_role", "claimed_role_mismatch", "missing_claimed_role"],
+)
+def test_approve_persisted_approver_contexts_fail_closed(db, persist_kwargs, claimed):
+    # A szolgáltatás a hitelesített azonosító alapján a PERZISZTÁLT user-sort
+    if persist_kwargs:
+        _persist_user(db, **persist_kwargs)
+    row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
+    plan = _draft_plan(db)
+    with pytest.raises(PermissionError):
+        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id, user=claimed)
+    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
+    assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+    from app.models import AuditLog
+    assert db.scalars(select(AuditLog).where(AuditLog.action == "budget.import.approved")).all() == []
+
+
+def test_approve_cross_project_plan_blocks_without_mutation(db):
+    # Keresztprojekt: az import és a célterv projektje eltér — fail-closed
+    _persist_user(db, role="finance", email="fixture-finance@imperial.local")
+    row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
+    plan = _draft_plan(db, project_id="IMP-OTHER-PROJECT", plan_id="FIN-PLAN-OTHER")
+    with pytest.raises(MarginGateBlocked, match="projektje"):
+        approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
+            user=_user("finance", "fixture-finance@imperial.local"),)
+    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
+    assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+    from app.models import AuditLog
     assert db.scalars(select(AuditLog).where(AuditLog.action == "budget.import.approved")).all() == []

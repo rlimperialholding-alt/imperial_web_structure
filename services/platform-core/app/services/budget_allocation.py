@@ -1,10 +1,8 @@
 """Összegző költségvetési csomagok verziózott, immutable allokációs pillanatképei.
 
-Forrás-precedencia: (1) részletes jóváhagyott sorok, (2) verziózott
-normatábla, (3) historikus tény vagy szállítói bizonyíték; minden más
-ALLOCATION_UNRESOLVED és fail-closed blokk. Az arányok determinisztikusan
-pontosan 100.0000 összeget adnak, az allokált nettó HUF pontosan a direct
-boríték; a pillanatkép írásvédett, a verziószám monoton nő.
+Forrás-precedencia: (1) részletes jóváhagyott sorok, (2) verziózott normatábla,
+(3) historikus tény vagy szállítói bizonyíték; minden más ALLOCATION_UNRESOLVED
+és fail-closed blokk.
 """
 
 from __future__ import annotations
@@ -89,7 +87,6 @@ def _detailed_rows(db: Session, plan: ProjectFinancePlan, line: ProjectFinanceBu
     if len(children) > MAX_ALLOCATION_ROWS:
         raise MarginGateBlocked("too_many_allocation_rows", "Az allokációs sorok száma meghaladja a korlátot.")
     # Review B LOW-2: a gyereksorok csak direct besorolásúak lehetnek érvényes
-    # költségnemmel — az indirect gyerek explicit fail-closed blokk.
     for child in children:
         if child.cost_class != "direct" or child.direct_cost_component not in DIRECT_COMPONENTS:
             raise MarginGateBlocked("indirect_child_forbidden", "Az összegző csomag gyereksorai csak direct besorolásúak " "lehetnek érvényes költségnemmel; az allokáció nem rögzíthető.",)
@@ -180,7 +177,6 @@ def create_allocation_snapshot(db: Session,
         unallocated = Decimal("0")
         effective_source_hash = source_hash
     # Review B MEDIUM-2: a szakágkódok terven belül csomagonként egyediek
-    # (keresztfinanszírozás tilalma).
     other_trade_codes = {
         code
         for code in db.scalars(select(FinanceAllocationSnapshotRow.trade_code)

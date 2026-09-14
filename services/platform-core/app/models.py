@@ -790,8 +790,7 @@ class ProjectFinancePlan(Base):
     leadership_approved_by: Mapped[str | None] = mapped_column(String(255))
     leadership_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     margin_exception_reason: Mapped[str | None] = mapped_column(Text)
-    # Tender-margin-gate: a jóváhagyott terv kanonikus tartalomlenyomata és
-    # az import/provenance-nyomvonal (a kapu csak lenyomatos tervet fogad el).
+    # Tender-margin-gate: a jóváhagyott terv kanonikus tartalomlenyomata és import/provenance-nyomvonal.
     content_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
     provenance_json: Mapped[str] = mapped_column(Text, default="{}")
     created_by: Mapped[str] = mapped_column(String(255))
@@ -868,8 +867,7 @@ class ProjectFinanceCashflowLine(Base):
 
 
 class ProjectBudgetImport(Base):
-    """Szigorú, szintetikus CSV/XLSX költségvetés-import bizonyítékrekordja:
-    a preview nem módosít tervet, az approve a tárolt, hash-elt preview-ból ír."""
+    """Szigorú, szintetikus CSV/XLSX költségvetés-import bizonyítékrekordja."""
 
     __tablename__ = "finance_budget_imports"
     __table_args__ = (
