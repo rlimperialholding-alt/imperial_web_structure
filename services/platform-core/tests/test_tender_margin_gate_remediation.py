@@ -64,13 +64,11 @@ def test_migration_0073_downgrade_restores_previous_schema_exactly():
     assert set(order) == set(migration._NEW_TABLES)
     # Az FK-függő gyerektáblák a szülők ELŐTT törlődnek (PG RESTRICT-biztos).
     assert order.index("finance_allocation_snapshot_rows") < order.index("finance_allocation_snapshots")
-    # Task78: az upgrade által hozzáadott egyedi kényszert a downgrade
     source = Path(migration_path).read_text(encoding="utf-8")
     assert "_drop_unique_constraint_if_exists" in source
     assert 'batch_op.drop_constraint(name, type_="unique")' in source
     assert "uq_ops_procurement_orders_selection_id" in source
     assert source.index("_drop_unique_constraint_if_exists(") < source.index("op.drop_table")
-    # Task79: a regiszterek pontosan az upgrade-felvételeket fedik le, a
     upgrade_columns = set(re.findall(r'_add_missing_column\(inspector, "([^"]+)", sa\.Column\("([^"]+)"', source))
     assert upgrade_columns == {(table, column) for table, column, _n, _d in migration._ADDED_COLUMNS}
     upgrade_indexes = set(re.findall(r'_add_missing_index\("([^"]+)", "([^"]+)"', source))
@@ -80,9 +78,7 @@ def test_migration_0073_downgrade_restores_previous_schema_exactly():
 
 
 def test_migration_0073_postgresql_dialect_ddl_compiles():
-    # Task80: PostgreSQL-dialektus DDL-verifikáció — a Boolean server_default
-    # ``DEFAULT false``-ként fordul (a korábbi "0" egész-literal, amit a PG
-    # boolean-ra elutasít), az oszlopdobás plain ``DROP COLUMN`` PG-n; a
+    # Task80: PG-dialektus DDL: Boolean server_default ``DEFAULT false``, oszlopdobás plain ``DROP COLUMN``.
     from pathlib import Path
     import re
     import sqlalchemy as sa
@@ -112,7 +108,7 @@ def test_migration_0073_postgresql_dialect_ddl_compiles():
 
 
 def test_migration_0073_upgrade_downgrade_reupgrade_and_row_refusal(tmp_path):
-    # Futás idejű lánc (izolált alprocessz): upgrade head → üzleti soros
+    # Futás idejű lánc (izolált alprocessz): upgrade → downgrade → re-upgrade.
     import os
     import subprocess
     import sys
@@ -228,15 +224,13 @@ def _evaluate(db, *, cost_code="MAT-A", amount="100", subject_id="S-1", project=
     return evaluate_commitment_gate(db, project_id=project, action_type="tender_award", subject_type="tender_bid", subject_id=subject_id, cost_code=cost_code, proposed_net_huf=Decimal(amount), actor="fixture@imperial.local",)
 
 
-
-
 def test_block_and_pass_decision_evidence_plan_fk_contract(db):
     seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6501000", "material")])
     with pytest.raises(MarginGateBlocked):
         _evaluate(db, amount="100")
     rows = list(db.scalars(select(MarginGateDecision)).all())
     assert rows and rows[0].decision == "BLOCK"
-    # A független bizonyíték-tranzakció nem hivatkozza az FK-n a tervsort
+    # A független bizonyíték-tranzakció nem hivatkozza az FK-n a tervsort.
     assert rows[0].plan_id_fk is None
     assert rows[0].plan_id and rows[0].plan_version == 1
     assert rows[0].plan_content_sha256
@@ -294,8 +288,7 @@ def test_leadership_approval_rebinds_commitments_to_new_plan(db):
 
 
 def test_leadership_approval_blocks_orphan_commitment_codes(db):
-    # Review A CRITICAL: a v2 tervből hiányzik a v1-en lekötött MAT-A
-    # költségkód — a jóváhagyás az aktiválás ELŐTT fail-closed blokkol.
+    # Review A CRITICAL: a v2-ből hiányzó v1-es MAT-A kód — jóváhagyás az aktiválás ELŐTT blokkol.
     plan_v1 = seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
     _evaluate(db, subject_id="ORPHAN-COMMIT", amount="100000")
     db.commit()
@@ -303,7 +296,7 @@ def test_leadership_approval_blocks_orphan_commitment_codes(db):
     with pytest.raises(ValueError, match="MAT-A"):
         leadership_approve_plan(db, v2.plan_id, _user("managing-director", "md@imperial.local"), note="Vezetői jóváhagyás árva költségkóddal.", margin_exception_reason="",)
     db.rollback()
-    # A blokkolt aktiválás után a régi terv jóváhagyott marad, a lekötés
+    # A blokkolt aktiválás után a régi terv jóváhagyott marad.
     assert db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == plan_v1.plan_id)).status == "approved"
     assert db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == v2.plan_id)).status == "finance_approved"
     commitment = db.scalar(select(FinanceCommitment))
@@ -311,7 +304,7 @@ def test_leadership_approval_blocks_orphan_commitment_codes(db):
 
 
 def test_gate_counts_orphan_commitment_conservatively(db):
-    # Defense-in-depth: ha mégis árva lekötés kerülne a tervhez, a kapu
+    # Defense-in-depth: az árva lekötés teljes összege a vetületben számít.
     plan = seed_gate_plan(db, project_id=PROJECT, revenue="10000000", direct_lines=[("MAT-A", "6500000", "material")])
     db.add(FinanceCommitment(commitment_id="FCOMMIT-ORPHAN", plan_id_fk=plan.id, cost_code="GHOST-CODE",
         subject_type="tender_bid", subject_id="GHOST-1", net_huf=Decimal("100000"),
@@ -328,8 +321,6 @@ def test_gate_counts_orphan_commitment_conservatively(db):
     assert calc["orphan_codes"] == ["GHOST-CODE"]
     assert calc["orphan_committed_direct"] == "100000.00"
     db.rollback()
-
-
 
 
 def test_full_contingency_allocation_counts_line_amount(db):
@@ -359,8 +350,7 @@ def test_full_contingency_allocation_counts_line_amount(db):
     [
         # post = max(6M, actual 5M + ETC 2M) = 7M → 30% → BLOCK.
         (lambda line: (setattr(line, "actual_net", Decimal("5000000")), setattr(line, "estimate_to_complete_net", Decimal("2000000"))), "30.00"),
-        # post = max(6M, committed_baseline 6.5M) = 6.5M → 35.00; a 100 új
-        # lekötéssel 6.5001M → 34.999 → BLOCK (megjelenítve 35.00).
+        # post = max(6M, 6.5M) = 6.5M → 35.00; 100 új lekötéssel 6.5001M → 34.999 → BLOCK.
         (lambda line: setattr(line, "committed_net", Decimal("6500000")), "35.00"),
     ],)
 def test_max_branches_dominate_projection(db, mutator, expected_margin):
@@ -386,8 +376,7 @@ def test_empty_budget_plan_blocks_with_explicit_reason(db):
 
 
 def test_very_large_decimal_block_boundary(db):
-    # SQLite NUMERIC-affinitás miatt az értékek float64-pontosak maradnak
-    # (Postgres Numeric(18,2)-ben egzaktak); a határ 35.00 alá visz.
+    # SQLite NUMERIC-affinitás: float64-pontosság (PG Numeric(18,2) egzakt); 35.00 alá visz.
     seed_gate_plan(db, project_id=PROJECT, revenue="10000000000000000", direct_lines=[("MAT-A", "6500000000000001", "material")])
     with pytest.raises(MarginGateBlocked) as excinfo:
         _evaluate(db, amount="1")
@@ -533,10 +522,8 @@ def test_subcontract_dispatch_transition_is_gated(db):
         electronic_attachment_sha256=digest,)
     assert dispatched.status == "dispatched"
     commitments = list(db.scalars(select(FinanceCommitment)).all())
-    # A generálás → előkészítés → jóváhagyás → kézbesítés lánc ugyanazzal a
+    # A generálás → kézbesítés lánc ugyanazzal a subject-kulccsal fut.
     assert len(commitments) == 1
-
-
 
 
 def test_second_order_for_same_selection_is_rejected(client, db):
@@ -562,8 +549,6 @@ def test_second_order_for_same_selection_is_rejected(client, db):
     assert len(list(db.scalars(select(FinanceCommitment)).all())) == 1
 
 
-
-
 def _order_payload(selection_id):
     from app.schemas import ProcurementOrderIn
     return ProcurementOrderIn(selection_id=selection_id, ordered_quantity=Decimal("100"),
@@ -580,7 +565,7 @@ def _approved_selection(client, db, cost_code="MAT-ENF"):
 
 
 def test_commit_time_selection_unique_conflict_maps_to_duplicate_without_artifacts(client, db, monkeypatch):
-    # BIZONYÍTOTT selection-unique ütközés → duplicate hiba (409); Task81
+    # BIZONYÍTOTT selection-unique ütközés → duplicate hiba (409), artifact nélkül.
     from sqlalchemy.exc import IntegrityError
     from app.models import AuditLog, ProcurementOrderProjection as OrderRow
     from app.services.procurement import create_order
@@ -628,9 +613,7 @@ def test_commit_time_unrelated_integrity_error_stays_visible_without_audit(clien
 
 
 def test_award_then_po_preparation_approval_counts_once(client, db):
-    # Review B HIGH-1 / Review A M3: az odaítélés és a PO-előkészítés
-    # jóváhagyása ugyanazt az ajánlati összeget köti le — AZONOS
-    # subject-kulccsal, így a lánc nem dupláz.
+    # Review B HIGH-1 / Review A M3: odaítélés és PO-jóváhagyás AZONOS subject-kulccsal — nem dupláz.
     from app.models import TenderPurchaseOrderPreparation
     from tests.test_tender_margin_enforcement import (TENDER_ID, _bid, _login, _project, _tender,)
     _project(db)
@@ -654,9 +637,8 @@ def test_award_then_po_preparation_approval_counts_once(client, db):
     assert commitments[0].subject_id == bid.bid_id
 
 
-# --- Task77 (Gate7) authorization/concurrency: AC-01 scope-segédek, AC-04
-# --- egy-döntés-egy-megrendelés, AC-05/05b import sorzár + draft-újraellenőrzés,
-# --- AC-06 klónozás parent-remap, AC-07 kényszer.
+# --- Task77 (Gate7): AC-01 scope, AC-04 egy-döntés-egy-megrendelés,
+# --- AC-05/05b import sorzár + draft, AC-06 parent-remap, AC-07 kényszer.
 
 
 def test_allocation_project_scope_helpers_fail_closed(db):
@@ -683,8 +665,7 @@ def test_concurrent_order_creation_creates_at_most_one_order(tmp_path):
     with factory() as seed:
         seed_gate_plan(seed, project_id="T77-RACE", revenue="10000000", direct_lines=[("MAT-RACE", "6000000", "labour")],)
         seed.add(ProjectRegistry(project_id="T77-RACE", name="T77-RACE szintetikus projekt"))
-        # Jóváhagyott döntés a versenyhelyzethez (a jóváhagyási lánc
-        # bizonyítéka az enforcement tesztfájlban él).
+        # Jóváhagyott döntés a versenyhez (a lánc bizonyítéka az enforcement fájlban).
         seed.add(ProcurementRequirement(requirement_id="REQ-RACE", project_id="T77-RACE", category="falazat",
             scope_description="Falazóanyag teljes mennyiség", specification="Tégla 30 N+F",
             net_quantity=Decimal("100"), waste_pct=Decimal("0"),
@@ -716,9 +697,8 @@ def test_concurrent_order_creation_creates_at_most_one_order(tmp_path):
     def gate_hook(db, **kwargs):
         calls.append("gate")
         if len(calls) == 1:
-            # A második kísérlet TELJESEN lefut, míg az első tranzakció még nem
-            # commitolt; a versenyt az uq_ops_procurement_orders_selection_id
-            # kényszer zárja atomi módon (kanonikus domain hibára képezve).
+            # A második kísérlet TELJESEN lefut, míg az első még nem commitolt; a
+            # versenyt az uq_ops_procurement_orders_selection_id kényszer zárja atomi módon.
             second_result["order"] = procurement_service.create_order(s2, data, actor="owner@imperial.local")
         return original_gate(db, **kwargs)
 
@@ -769,15 +749,13 @@ def test_concurrent_import_approval_applies_lines_at_most_once(db):
     plan = _draft_plan(db, project_id="IMP-T78", plan_id="FIN-PLAN-T78-CONC")
     _persist_user(db, role="finance", email="other-finance@imperial.local")
     _persist_user(db, role="finance", email="first-finance@imperial.local")
-    # Deterministikus verseny: az első jóváhagyás a tervzárnál átengedi a
-    # másodikat, amely commitol; az első a zár UTÁNI sorállapot-ellenőrzésen
-    # bukik — a sorok legfeljebb egyszer kerülnek a tervre.
+    # Deterministikus verseny: az első jóváhagyás a tervzárnál átengedi a másodikat;
+    # az első a zár UTÁNI sorállapot-ellenőrzésen bukik — a sorok egyszer kerülnek a tervre.
     original_select = budget_import_service.select
     fired = {"value": False}
 
     def select_hook(*args, **kwargs):
-        # A select(Model) a modellosztályt kapja argumentumként — a hook a
-        # célterv-zár kiválasztását ismeri fel róla.
+        # A select(Model) a modellosztályt kapja — a hook erről ismeri fel a célterv-zárat.
         if args and args[0] is ProjectFinancePlan and not fired["value"]:
             fired["value"] = True
             with SessionLocal() as other:

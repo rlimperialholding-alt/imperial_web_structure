@@ -241,10 +241,9 @@ def _parse_csv(data: bytes) -> tuple[list[dict[str, str]], list[str]]:
     if not rows:
         raise BudgetImportError([_fail("Üres CSV-állomány.", None, "empty_file")])
     for row in rows:
-        # Képlet-injekció védelem: '=' (akár vezető szóközzel) és @/+/
-        # tabulátor/CR kezdetű cella nem importálható. A '-' kezdet a
-        # negatív összegek legitim jelölése, azokat a numerikus validáció
-        # (negative_value) utasítja el.
+        # Képlet-injekció védelem: '=' (akár vezető szóközzel) és @/+/tabulátor/CR
+        # kezdetű cella nem importálható. A '-' kezdet a negatív összegek legitim
+        # jelölése, azokat a numerikus validáció (negative_value) utasítja el.
         for cell in row:
             stripped = (cell or "").lstrip()
             if stripped.startswith(("=", "@", "+")) or (cell and cell[0] in ("\t", "\r")):
@@ -298,7 +297,7 @@ def preview_budget_import(db: Session, *, project_id: str, file_name: str, data:
 
 def _verified_approver(user: object) -> tuple[str, object]:
     """Task80/Task81: az actor e-mail KIZÁRÓLAG a hitelesített user-objektumból
-    származik; a szerepkör döntése a perzisztált rekordból."""
+    származik; a szerepkör döntése a perzisztált rekordból (lent)."""
     if user is None:
         raise PermissionError("A költségvetés-import jóváhagyása hitelesített felhasználói kontextus nélkül nem végezhető el.")
     actor = getattr(user, "email", None)
@@ -308,9 +307,9 @@ def _verified_approver(user: object) -> tuple[str, object]:
 
 
 def _load_persisted_approver(db: Session, claimed_email: str, claimed_role: object) -> User:
-    """Task81/Task82: a jóváhagyót a szolgáltatás a hitelesített azonosító
-    alapján ÚJRATÖLTI az adatbázisból; ismeretlen, inaktív, jelszóváltásra
-    kötelezett, nem jóváhagyó szerepkörű, hiányzó/ellentmondó szerepkör-állítású user fail-closed PermissionError."""
+    """Task81/Task82: a jóváhagyót a hitelesített azonosító alapján ÚJRATÖLTI
+    az adatbázisból; ismeretlen/inaktív/jelszóváltás-köteles/nem jóváhagyó
+    szerepkörű/hiányzó vagy ellentmondó szerepkör-állítású user fail-closed."""
     persisted = db.scalar(select(User).where(func.lower(User.email) == claimed_email))
     if persisted is None:
         raise PermissionError("A költségvetés-import jóváhagyása ismeretlen felhasználóval nem végezhető el.")
@@ -331,7 +330,10 @@ def approve_budget_import(db: Session, *, import_id: str, plan_id: str, user: ob
     szerepkör és az aktív állapot a PERZISZTÁLT rekordból származik — a
     PM-felelősség önmagában soha nem elég; a zár utáni újrazárolt soron a
     status ÉS a preview_sha256 is újraellenőrzött (TOCTOU-védelem a védett
-    tranzakcióban)."""
+    tranzakcióban). Task83: a projekt-egyezőség és a finance-scope az
+    ÚJRAZÁROLT soron is kötelezően újravalidált minden mutáció előtt — elavult,
+    zár előtti olvasáson validált projekt-identitás nem hatalmazhat fel
+    megváltozott projektű importot."""
     claimed_email, claimed_role = _verified_approver(user)
     approver = _load_persisted_approver(db, claimed_email, claimed_role)
     actor = approver.email
@@ -339,40 +341,43 @@ def approve_budget_import(db: Session, *, import_id: str, plan_id: str, user: ob
     if row is None:
         raise KeyError(import_id)
     # Task79: az import PONTOS projektjének jogosultsága a SZOLGÁLTATÁSBAN
+    # (korai elutasítás; a kötelező újravalidálás a zárolt soron lent fut).
     require_project_finance_scope(db, approver, row.project_id)
     if row.status != "preview":
         raise MarginGateBlocked("import_not_preview", "Csak hibátlan preview állapotú import hagyható jóvá.",)
     if sha256_hex(row.preview_json) != row.preview_sha256:
         raise MarginGateBlocked("import_changed_after_preview", "Az import tartalma a preview óta megváltozott; a jóváhagyás " "fail-closed elutasítva.",)
-    # Task77 Gate7: a célterv sorzárral (FOR UPDATE) töltődik, a draft-
-    # ellenőrzés a zár UTÁN fut (konkurens jóváhagyás nem írathat immutable
-    # tervre); a populate_existing az elavult identitástérkép-objektumot is
-    # frissíti.
+    # Task77 Gate7: a célterv sorzárral (FOR UPDATE) töltődik, a draft-ellenőrzés a zár
+    # UTÁN fut (immutable tervre konkurens írás kizárt); populate_existing frissíti a sort.
     plan = db.scalar(select(ProjectFinancePlan) .where(ProjectFinancePlan.plan_id == plan_id) .with_for_update() .execution_options(populate_existing=True))
     if plan is None:
         raise KeyError(plan_id)
-    # Projekt-scope (Review A HIGH / Task76): keresztprojekt-import fail-closed.
+    # Projekt-scope (Review A HIGH / Task76): keresztprojekt-import fail-closed
+    # (korai elutasítás; a KÖTELEZŐ újravalidálás a zárolt soron lent fut — Task83).
     if plan.project_id != row.project_id:
         raise MarginGateBlocked("import_plan_project_mismatch", "A költségvetés-import projektje és a célterv projektje nem " "egyezik; a jóváhagyás fail-closed elutasítva.",)
-    # Task78: a tervzár UTÁN az import sor újrazárolása és a preview-állapot
-    # ÚJRAELLENŐRZÉSE a védett tranzakcióban — két konkurens jóváhagyás közül
-    # a második itt már approved státuszt lát, a sorok legfeljebb egyszer
-    # kerülnek a tervre.
+    # Task78: a tervzár UTÁN az import sor újrazárolása és a preview-állapot ÚJRAELLENŐRZÉSE —
+    # a második konkurens jóváhagyás itt approved státuszt lát, a sorok legfeljebb egyszer kerülnek a tervre.
     row = db.scalar(select(ProjectBudgetImport) .where(ProjectBudgetImport.import_id == import_id) .with_for_update() .execution_options(populate_existing=True))
     if row is None:
         raise KeyError(import_id)
     if row.status != "preview":
         raise MarginGateBlocked("import_not_preview", "Csak hibátlan preview állapotú import hagyható jóvá.",)
-    # Task80 (Review MEDIUM): a zár utáni újrazárolt soron a preview_sha256 is
-    # ÚJRAELLENŐRZÖTT — a zár előtti ellenőrzés óta megváltoztatott preview
-    # determinisztikusan elutasított (TOCTOU-védelem a védett tranzakcióban).
+    # Task80 (Review MEDIUM): a zár utáni újrazárolt soron a preview_sha256 is ÚJRAELLENŐRZÖTT (TOCTOU).
     if sha256_hex(row.preview_json) != row.preview_sha256:
         raise MarginGateBlocked("import_changed_after_preview", "Az import tartalma a preview óta megváltozott; a jóváhagyás " "fail-closed elutasítva.",)
     if plan.status != "draft":
         raise MarginGateBlocked("import_target_not_draft", "A költségvetés-import kizárólag draft tervre írható; jóváhagyott " "terv immutable.",)
+    # Task83 (defense-in-depth): a projekt-egyezőség ÉS a finance-scope az
+    # ÚJRAZÁROLT soron is érvényesül KÖZVETLENÜL minden mutáció előtt — elavult,
+    # zár előtti olvasáson validált projekt-identitás nem hatalmazhat fel
+    # megváltozott projektű importot; az elutasítás minden változás ELŐTT fut.
+    require_project_finance_scope(db, approver, row.project_id)
+    if plan.project_id != row.project_id:
+        raise MarginGateBlocked("import_plan_project_mismatch", "A költségvetés-import projektje és a célterv projektje nem " "egyezik; a jóváhagyás fail-closed elutasítva.",)
     payload = json.loads(row.preview_json)
     applied = 0
-    # Első menet: sorok felvitele; a fájlbeli szülő-költségkódokat a második
+    # Első menet: sorok felvitele; a szülő-költségkódokat a második oldja fel.
     pending_parents: dict[int, str] = {}
     for index, entry in enumerate(payload["rows"]):
         existing_line = db.scalar(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id, ProjectFinanceBudgetLine.cost_code == entry["cost_code"],))

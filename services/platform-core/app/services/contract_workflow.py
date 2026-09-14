@@ -249,7 +249,7 @@ def create_contract_workflow(
         generated_by=actor.strip().lower(),
         legal_required=relationship == "customer" or contract_type.startswith("customer_"),
     )
-    # TENDER-kapu a generálási kapunál: a kanonikus kapu a rekord hozzáadása
+    # TENDER-kapu a generálási kapunál: a kapu a rekord hozzáadása ELŐTT fut.
     generation_decision = _contract_commitment(
         db, row, actor.strip().lower(), "contract_generation"
     )
@@ -307,7 +307,7 @@ def submit_contract_review(
     _require_project_scope(db, user, row.project_id)
     if row.status != "generated":
         raise ValueError("Csak elkészült szerződéscsomag küldhető jóváhagyásra.")
-    # TENDER-kapu: a szerződés-előkészítés elköteleződést hordoz; a kapu a
+    # TENDER-kapu: az előkészítés elköteleződést hordoz; a kapu a mutáció előtt fut.
     decision = _contract_commitment(db, row, email, "contract_preparation")
     row.status = "review"
     row.submitted_by = email
@@ -364,7 +364,7 @@ def review_contract(
     else:
         if email in _approved_actors(row):
             raise ValueError("A jóváhagyási kapukhoz külön személyek szükségesek.")
-        # TENDER-kapu: az utolsó jóváhagyási kapu lezárása a szerződés
+        # TENDER-kapu: az utolsó kapu lezárása a szerződés jóváhagyása.
         will_complete = all(
             getattr(row, GATE_FIELDS[required][0])
             for required in _required_gates(row)
@@ -470,8 +470,7 @@ def record_contract_dispatch(
         raise ValueError("Kézbesítési időpont nem előzheti meg az aláírást.")
     if max(postal_sent_at, electronic_sent_at) > utcnow() + timedelta(minutes=5):
         raise ValueError("Jövőbeli kézbesítési időpont nem rögzíthető.")
-    # TENDER-kapu: az alvállalkozói szerződés kézbesítése elköteleződést
-    # igazol; a kapu a mutáció előtt fut.
+    # TENDER-kapu: az alvállalkozói szerződés kézbesítése elköteleződést igazol; a kapu a mutáció előtt fut.
     dispatch_decision = _contract_commitment(db, row, email, "contract_dispatch")
     row.postal_sent_at = postal_sent_at
     row.postal_tracking_number = postal_tracking_number.strip()

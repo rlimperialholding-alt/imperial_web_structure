@@ -166,9 +166,8 @@ def _preparation(db, preparation_id: str, *, bid=None, status="draft") -> Tender
 
 @pytest.mark.parametrize("seed_plan", [False, True], ids=["without_plan", "with_plan"])
 def test_po_preparation_approval_gate(client, db, seed_plan):
-    # Task82: VALÓDI bool paraméterek (a (False,) tuple mindig truthy volt, így a
-    # negatív ág sosem futott); a negatív ág AZONOSÍTOTT klienssel hív — az
-    # elutasítás a kapu 400-ja, nem hitelesítési válasz.
+    # Task82: VALÓDI bool paraméterek (a (False,) tuple mindig truthy volt);
+    # a negatív ág AZONOSÍTOTT klienssel hív — az elutasítás a kapu 400-ja.
     _project(db)
     bid = _tender_with_bid(db)[1]
     if seed_plan:
@@ -446,9 +445,7 @@ def test_budget_import_approve_api_requires_finance_actor(client, db):
 
 
 def test_margin_gate_decisions_api_role_and_scope(client, db, monkeypatch):
-    # Task77 AC-02 + Task78: a generikus token soha nem fedhet fel
-    # keresztprojekt döntést; a lista az actor projektscope-jára szűrt a
-    # kötelező /api elérési úton is.
+    # Task77 AC-02 + Task78: a generikus token nem fedhet fel keresztprojekt döntést; a lista scope-szűrt.
     from app.models import MarginGateDecision
     for project_id, decision_id in ((PROJECT, "MGD-API-1"), ("TASK77-002", "MGD-API-2")):
         db.add(MarginGateDecision(decision_id=decision_id, project_id=project_id,
@@ -490,8 +487,7 @@ def test_budget_import_approve_api_rejects_cross_project_plan(client, db):
 
 
 def test_budget_import_approve_requires_actor_project_access(client, db, monkeypatch):
-    # Task78: a jóváhagyás az import projektjét ELŐSZÖR feloldja; a bejelentkezett
-    # actor hozzáférése az import PONTOS projektjéhez kötelező.
+    # Task78: a jóváhagyás az import projektjét ELŐSZÖR feloldja; az actor hozzáférése az import projektjéhez kötelező.
     from app.models import AuditLog, ProjectBudgetImport, ProjectFinanceBudgetLine
     import_id = _previewed_import(client, project_id="TASK77-002")
     _draft_plan_row(db, project_id="TASK77-002", plan_id="FIN-PLAN-API-03")

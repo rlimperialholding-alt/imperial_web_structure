@@ -206,9 +206,7 @@ def _direct_lines(plan: ProjectFinancePlan,) -> tuple[list[ProjectFinanceBudgetL
                 f"tartalmaz; a TENDER-kapu zárol. Elhárítás: minden sor "
                 f"besorolása a {REMEDIATION_LINK} modulban.",)
         if line.parent_summary_line_id and line.cost_class != "direct":
-            # Review A MEDIUM: indirect/besorolatlan gyereksor némán kiesne a
-            # direct boríték-vetületből — a kapu ugyanúgy blokkol, mint az
-            # import és az allokáció-készítés.
+            # Review A MEDIUM: indirect/besorolatlan gyereksor némán kiesne a direct vetületből — blokk.
             raise _block("indirect_child_forbidden",
                 "Egy összegző csomag gyereksora csak direct besorolású lehet "
                 f"érvényes költségnemmel; a TENDER-kapu zárol. Elhárítás: "
@@ -219,22 +217,19 @@ def _direct_lines(plan: ProjectFinancePlan,) -> tuple[list[ProjectFinanceBudgetL
             if "contingency" in (line.category or "").lower():
                 contingency_lines.append(line)
                 continue
-            # Összegző csomagsorok nem kerülnek a per-line ciklusba (a
-            # NET_REVENUE_ENVELOPE sorbudget bevétel; a direct vetületet a
-            # gyereksorok vagy a roll-down boríték adják).
+            # Összegző csomagsorok nem kerülnek a per-line ciklusba (a direct vetületet a gyereksorok adják).
             if line.is_summary_package:
                 continue
             direct.append(line)
     if not contingency_lines:
-        # Konzervatív szabály: a tartalékkeret direct, amíg jóváhagyott
-        # revízió explicit sorra nem allokálja.
+        # Konzervatív szabály: a tartalékkeret direct, amíg explicit revízió
+        # sorra nem allokálja.
         return direct, _money(plan.contingency_net), None
     if len(contingency_lines) > 1:
         raise _block("duplicate_contingency_allocation", "A tartalékkeret explicit allokációja több soron is szerepel; a " "TENDER-kapu zárol. Elhárítás: egyetlen tartalék-allokációs sor.",)
     contingency_line = contingency_lines[0]
     if _money(contingency_line.budget_net) != _money(plan.contingency_net):
-        # A konzervatív szabály csak TELJES explicit allokációnál kapcsol át
-        # (részlegesnél a fel nem osztott maradék némán kiesne — Review A M1).
+        # A konzervatív szabály csak TELJES allokációnál kapcsol át (részlegesnél a maradék kiesne — Review A M1).
         raise _block("partial_contingency_allocation",
             "A tartalék-allokációs sor nem fedi le pontosan a jóváhagyott "
             "tartalékkeretet; a TENDER-kapu zárol. Elhárítás: auditált "
@@ -303,7 +298,7 @@ def resolve_allocations(db: Session, plan: ProjectFinancePlan) -> dict[str, Fina
                     "Az összegző csomag allokációs pillanatképe a terv egy "
                     f"korábbi állapotához tartozik; a TENDER-kapu zárol. "
                     f"Elhárítás: {REMEDIATION_LINK} allokáció újrarögzítése.",)
-            # Task78: a fel nem osztott boríték-maradék soha nem tűnhet el
+            # Task78: a fel nem osztott boríték-maradék soha nem tűnhet el némán.
             if snapshot.unallocated_amount != 0:
                 raise _block_unallocated()
         else:
@@ -355,7 +350,7 @@ def _upsert_commitment(db: Session,
             created_by=actor,)
         db.add(row)
     else:
-        # Idempotens csere: a lekötés az aktuális tervre kötődik, így a
+        # Idempotens csere: a lekötés az aktuális tervre kötődik.
         if row.plan_id_fk != plan.id:
             row.plan_id_fk = plan.id
         if row.net_huf != proposed_net_huf:
@@ -386,9 +381,8 @@ def _decision_row(*,
     plan_fk: bool = True,
     plan_id_override: str | None = None,
     plan_version_override: int | None = None,) -> MarginGateDecision:
-    # A BLOCK-bizonyíték független tranzakciója nem hivatkozhatja az FK-n a
-    # tervsort (a hívó FOR UPDATE zárja alatt a Postgres FK-ellenőrzés
-    # holtpontra futna); a PASS-döntés a hívó tranzakciójában commitolódik.
+    # A BLOCK-bizonyíték független tranzakciója nem hivatkozhatja az FK-n a tervsort
+    # (a hívó FOR UPDATE zárja alatt a PG FK-ellenőrzés holtpontra futna); a PASS a hívó tranzakcióban commitol.
     input_snapshot_json = canonical_json(input_snapshot)
     return MarginGateDecision(decision_id=_id("MGATE"),
         project_id=project_id,
@@ -560,7 +554,7 @@ def _evaluate_commitment_gate_inner(db: Session,
         if commit_row.commitment_id != commitment.commitment_id:
             committed_by_code[commit_row.cost_code] = (committed_by_code.get(commit_row.cost_code, Decimal("0")) + _money(commit_row.net_huf))
     committed_by_code[cost_code] = committed_by_code.get(cost_code, Decimal("0")) + (proposed_net_huf)
-    # Review A CRITICAL: az árva lekötések konzervatívan a várható direct
+    # Review A CRITICAL: az árva lekötések a várható direct költségbe számítanak.
     orphan_codes = sorted(code for code in committed_by_code if code not in known_codes)
     orphan_committed = sum((committed_by_code[code] for code in orphan_codes), Decimal("0"))
     # Soronkénti várható akció utáni direct költség.
@@ -600,8 +594,7 @@ def _evaluate_commitment_gate_inner(db: Session,
                 for child in direct
                 if child.parent_summary_line_id == line.line_id
             ]
-            # Review B CRITICAL: a snapshot-only szakágkódok is a csomag-
-            # elköteleződésbe számítanak — különben a rájuk kötött lekötés
+            # Review B CRITICAL: a snapshot-only szakágkódok is a csomag-elköteleződésbe számítanak — különben a lekötés eltűnne.
             snapshot_only = [code for code in trade_rows if code not in child_codes]
             package_codes = child_codes + snapshot_only
         else:
@@ -615,32 +608,25 @@ def _evaluate_commitment_gate_inner(db: Session,
                 f"TENDER-kapu zárol. Elhárítás: auditált költségvetési "
                 f"revízió a {REMEDIATION_LINK} modulban.",)
         if line.line_id in child_line_ids:
-            # A gyereksorok a per_line ciklusban már a vetületben vannak
+            # A gyereksorok a per_line ciklusban már a vetületben vannak.
             children_sum = child_sum_by_parent.get(line.line_id, Decimal("0"))
             if (line.amount_basis == "DIRECT_COST_BASELINE" and children_sum != package_max_direct):
                 raise _block("child_sum_mismatch", "Az összegző csomag gyereksorainak összege nem egyezik " "a direct költség-alap csomagértékkel; a TENDER-kapu zárol.",)
             if children_sum > package_max_direct:
                 raise _block("child_sum_over_envelope", "Az összegző csomag gyereksorainak összege meghaladja a " "csomag direct borítékát; a TENDER-kapu zárol.",)
-            # Task78/Task81: a gyereksorok a per_line ciklusban már a
-            # vetületben vannak; a snapshot-only lekötés a fedetlen boríték-
-            # maradékon belül EGYSZER számít (a maradék már fedezi), a
-            # maradék fölött konzervatívan EGYSZER a vetületbe kerül —
-            # sem kihagyás, sem dupla számolás nem lehetséges:
-            # csomag-vetület = max(boríték, gyerek-vetület + snapshot-only
-            # lekötés) − gyerek-vetület (Review-1 HIGH Task81).
+            # Task78/Task81: a snapshot-only lekötés a fedetlen maradékon belül EGYSZER számít,
+            # fölötte EGYSZER a vetületbe — csomag-vetület = max(boríték, gyerek + snapshot-only) − gyerek (Review-1 HIGH Task81).
             children_post_sum = sum((Decimal(per_line[code]["post_direct"]) for code in child_codes), Decimal("0"))
             snapshot_only_committed_total = sum((committed_by_code.get(code, Decimal("0")) for code in snapshot_only), Decimal("0"))
             package_projected = max(package_max_direct - children_post_sum, snapshot_only_committed_total)
         else:
-            # Roll-down: a teljes boríték konzervatívan várható direct költség
-            # (a boríték feletti elköteleződés fent blokkolt).
+            # Roll-down: a teljes boríték konzervatívan várható direct költség (a feletti elköteleződés blokkolt).
             package_projected = package_max_direct
         projected_direct += package_projected
         for code in snapshot_only:
             snapshot_only_committed = committed_by_code.get(code, Decimal("0"))
             if snapshot_only_committed > 0:
-                # Bizonyíték-sor a számítási naplóhoz; a vetületbe a
-                # csomag-képlet fent EGYSZER számította be.
+                # Bizonyíték-sor a naplóhoz; a vetületbe a csomag-képlet fent EGYSZER számította be.
                 per_line[code] = {
                     "budget_net": "0.00",
                     "actual_plus_etc": "0.00",
@@ -669,7 +655,7 @@ def _evaluate_commitment_gate_inner(db: Session,
             "trade_margins": trade_margins,
         }
     projected_total = (projected_direct + contingency_direct + orphan_committed).quantize(Decimal("0.01"), ROUND_HALF_UP)
-    # A kapu a kerekítetlen hányadossal dönt (34.995 blokk), a megjelenített
+    # A kapu a kerekítetlen hányadossal dönt (34.995 blokk).
     margin_exact = (revenue - projected_total) / revenue * 100
     margin_display = margin_exact.quantize(Decimal("0.01"), ROUND_HALF_UP)
     input_snapshot: dict[str, Any] = {

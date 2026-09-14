@@ -26,9 +26,8 @@ _NEW_TABLES = ("finance_budget_imports",
     "margin_gate_decisions",
     "margin_gate_vat_rules",)
 
-# A downgrade DROP-sorrend child-before-parent (Review B MEDIUM): az
-# FK-függő gyerektáblák a szülők ELŐTT törlődnek, különben a PostgreSQL
-# RESTRICT a visszagörgetést elutasítaná.
+# A downgrade DROP-sorrend child-before-parent (Review B MEDIUM): az FK-függő
+# gyerektáblák a szülők ELŐTT törlődnek, különben a PostgreSQL RESTRICT elutasítaná.
 _DOWNGRADE_DROP_ORDER = ("finance_budget_imports",
     "margin_gate_decisions",
     "finance_commitments",
@@ -87,9 +86,8 @@ def _add_missing_unique_constraint(table: str, name: str, columns: tuple[str, ..
 
 
 def _drop_unique_constraint_if_exists(table: str, name: str) -> None:
-    # Task78: a downgrade pontosan a 0072-es head sémát állítja vissza — a
-    # selection-id egyedi kényszert is eldobja (guarddal, a re-upgrade
-    # idempotens marad); batch-mód a hordozhatóságért (SQLite tábla-újraépítés).
+    # Task78: a downgrade pontosan a 0072-es head sémát állítja vissza — a selection-id
+    # kényszert is eldobja (guarddal, re-upgrade idempotens); batch-mód (SQLite tábla-újraépítés).
     inspector = sa.inspect(op.get_bind())
     names = {item.get("name") for item in inspector.get_unique_constraints(table)}
     if name not in names:
@@ -106,11 +104,9 @@ def _drop_index_if_exists(table: str, name: str) -> None:
 
 
 def _drop_column_if_exists(table: str, name: str) -> None:
-    # Task80 (Review MEDIUM): az oszlopdobás batch-módban történik — a
-    # PostgreSQL-ben ez ugyanúgy plain ``ALTER TABLE ... DROP COLUMN``-ra
-    # fordul, az SQLite viszont kizárólag tábla-újraépítéssel (batch) tud
-    # oszlopot dobni; a korábbi közvetlen op.drop_column SQLite alatt
-    # hordozhatatlan volt.
+    # Task80 (Review MEDIUM): az oszlopdobás batch-módban történik — PG-ben
+    # plain ``ALTER TABLE ... DROP COLUMN``, SQLite viszont kizárólag
+    # tábla-újraépítéssel (batch) tud oszlopot dobni.
     inspector = sa.inspect(op.get_bind())
     columns = {item["name"] for item in inspector.get_columns(table)}
     if name in columns:
@@ -271,8 +267,7 @@ def upgrade() -> None:
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.CheckConstraint("status IN ('pending_approval','approved','rejected')",
                 name="ck_margin_gate_vat_rule_status",),)
-        # Az indexek csak az itteni (tényleges) létrehozás után; a 0001
-        # bootstrap-ágban a modellek metadataja már létrehozta őket.
+        # Az indexek csak az itteni (tényleges) létrehozás után; a 0001 bootstrap-ágban a metadata már létrehozta őket.
         _indexes("finance_budget_imports", "finance_budget_imports", ("import_id", "content_sha256"),)
         _indexes("finance_commitments", "finance_commitments", ("cost_code", "subject_type", "subject_id"),)
         _indexes("finance_allocation_snapshots", "finance_allocation_snapshots", ("parent_summary_line_id", "snapshot_sha256"),)
@@ -288,8 +283,7 @@ def upgrade() -> None:
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("amount_basis", sa.String(40), nullable=True),)
     # Task80 (Review HIGH): a Boolean oszlop server_default-ja PG-érvényes
     # boolean-literál (``DEFAULT false``); a korábbi "0" egész-literál, amit
-    # a PostgreSQL boolean oszlopra elutasít. A sa.text konstans, interpoláció
-    # nélküli — a Semgrep avoid-sqlalchemy-text szerződése nem sérül.
+    # a PostgreSQL boolean oszlopra elutasít. A sa.text konstans, interpoláció nélküli (Semgrep-szerződés nem sérül).
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("is_summary_package", sa.Boolean(), nullable=False, server_default=sa.text("false")),)
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("parent_summary_line_id", sa.String(120), nullable=True),)
     _add_missing_column(inspector, "finance_project_budget_lines", sa.Column("currency", sa.String(3), nullable=False, server_default="HUF"),)
@@ -298,9 +292,8 @@ def upgrade() -> None:
 
     # Indexek az új oszlopokon (guarddal).
     _add_missing_index("finance_project_plans", "ix_finance_project_plans_content_sha256", ("content_sha256",),)
-    # Az indexnevek a modellek auto-neveivel egyeznek
-    # (ix_finance_project_budget_lines_*), így a friss adatbázis (0001
-    # bootstrap) és a migrált adatbázis sémája azonos (Review B LOW-1).
+    # Az indexnevek a modellek auto-neveivel egyeznek (ix_finance_project_budget_lines_*),
+    # így a friss (0001 bootstrap) és a migrált adatbázis sémája azonos (Review B LOW-1).
     _add_missing_index("finance_project_budget_lines", "ix_finance_project_budget_lines_cost_class", ("cost_class",),)
     _add_missing_index("finance_project_budget_lines", "ix_finance_project_budget_lines_parent_summary_line_id", ("parent_summary_line_id",),)
     _add_missing_index("tender_packages", "ix_tender_packages_cost_code", ("cost_code",))
@@ -319,9 +312,8 @@ def downgrade() -> None:
     for table in _DOWNGRADE_DROP_ORDER:
         if table not in existing:
             continue
-        # A táblanév kizárólag a forráskódban rögzített tuple-ból
-        # származik; az SQLAlchemy table-clause idézi az azonosítót
-        # (nincs text()-interpoláció, Semgrep avoid-sqlalchemy-text tiszta).
+        # A táblanév kizárólag a forráskódban rögzített tuple-ból származik; az
+        # SQLAlchemy table-clause idézi az azonosítót (nincs text()-interpoláció).
         count = op.get_bind().execute(sa.select(sa.func.count()).select_from(sa.table(table))).scalar()
         if count:
             raise RuntimeError(f"0073 downgrade refused: {table} contains business rows; " "use an approved forward migration instead.")
@@ -336,9 +328,8 @@ def downgrade() -> None:
             raise RuntimeError(f"0073 downgrade refused: {table}.{column} contains business data; " "use an approved forward migration instead.")
     # Task78: az upgrade által hozzáadott egyedi kényszer eldobása a függő
     # táblák ELŐTT (FK-biztos sorrend) — a downgrade pontosan a 0072-es head
-    # sémát állítja vissza, a re-upgrade a guard miatt idempotens. Üzleti
-    # soroknál a downgrade fent fail-closed elutasításra került, így itt
-    # részleges visszaállítás nem történhet.
+    # sémát állítja vissza, a re-upgrade a guard miatt idempotens. Üzleti soroknál a
+    # downgrade fent fail-closed elutasításra került, így itt részleges visszaállítás nincs.
     _drop_unique_constraint_if_exists("ops_procurement_orders", "uq_ops_procurement_orders_selection_id")
     # FK-biztos sorrend: kényszer → oszlopindexek → oszlopok → új táblák.
     for table, index_names in _ADDED_INDEXES.items():

@@ -106,8 +106,7 @@ def _persist_user(db, *, role, email, active=True, pw_change=False):
 
 
 def _approve(db, row, plan, *, role="finance", user_email=None):
-    # Task80/Task81: a hívás KIZÁRÓLAG hitelesített user-kontextust vis; a
-    # szolgáltatás a PERZISZTÁLT rekordot ellenőrzi — a fixture aktív, jóváhagyó
+    # Task80/Task81: a hívás KIZÁRÓLAG hitelesített user-kontextust vis.
     email = user_email or f"{role}@imperial.local"
     _persist_user(db, role=role, email=email)
     return approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
@@ -301,8 +300,7 @@ def test_approve_to_approved_plan_blocks(db):
 )
 def test_approve_fails_closed_without_verified_finance_user(db, user):
     # Task80: hiányzó user-kontextus, azonosítatlan user és PM-szerepkör
-    # egyaránt PermissionError — mutáció nélkül; a szerepkör a hitelesített
-    # user-objektumból származik, az audit actor nem lehet üres/idegen.
+    # egyaránt PermissionError — mutáció nélkül; az audit actor nem lehet üres/idegen.
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     plan = _draft_plan(db)
     with pytest.raises(PermissionError):
@@ -342,7 +340,7 @@ def test_approve_unknown_import_or_plan_key_errors(db):
 
 
 def test_approve_enforces_user_context_role_and_project_scope(db):
-    # A PM-felelősség a KANONIKUS projekten belül SEM elég (Task81: a
+    # A PM-felelősség a KANONIKUS projekten belül SEM elég.
     from app.models import ProjectRegistry
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     plan = _draft_plan(db)
@@ -383,8 +381,7 @@ def test_approve_rechecks_preview_sha_after_lock_acquisition(db):
     fired = {"value": False}
 
     def select_hook(*args, **kwargs):
-        # A konkurens író a célterv-zárnál (a zár előtti ellenőrzés UTÁN)
-        # írja át a preview-t — pontosan a TOCTOU-ablak.
+        # A konkurens író a célterv-zárnál (a zár előtti ellenőrzés UTÁN) írja át a preview-t.
         if args and args[0] is ProjectFinancePlan and not fired["value"]:
             fired["value"] = True
             with SessionLocal() as other:
@@ -424,7 +421,7 @@ def test_approve_rechecks_preview_sha_after_lock_acquisition(db):
     ids=["unknown_user", "inactive_user", "must_change_password", "persisted_pm", "forged_role", "claimed_role_mismatch", "missing_claimed_role"],
 )
 def test_approve_persisted_approver_contexts_fail_closed(db, persist_kwargs, claimed):
-    # A szolgáltatás a hitelesített azonosító alapján a PERZISZTÁLT user-sort
+    # A szolgáltatás a PERZISZTÁLT user-sort ellenőrzi a hitelesített azonosító alapján.
     if persist_kwargs:
         _persist_user(db, **persist_kwargs)
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
@@ -438,14 +435,64 @@ def test_approve_persisted_approver_contexts_fail_closed(db, persist_kwargs, cla
 
 
 def test_approve_cross_project_plan_blocks_without_mutation(db):
-    # Keresztprojekt: az import és a célterv projektje eltér — fail-closed
+    # Keresztprojekt (statikus): az import és a célterv projektje eltér —
+    # fail-closed, pontos kapukóddal; mutáció/provenance/audit-nyom nélkül.
     _persist_user(db, role="finance", email="fixture-finance@imperial.local")
     row = preview_budget_import(db, project_id="IMP-IMPORT-001", file_name="b.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
     plan = _draft_plan(db, project_id="IMP-OTHER-PROJECT", plan_id="FIN-PLAN-OTHER")
-    with pytest.raises(MarginGateBlocked, match="projektje"):
+    with pytest.raises(MarginGateBlocked, match="projektje") as excinfo:
         approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
             user=_user("finance", "fixture-finance@imperial.local"),)
+    assert excinfo.value.reason_code == "import_plan_project_mismatch"
+    db.expire_all()
     assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).status == "preview"
+    assert db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id)).approved_by is None
     assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+    assert json.loads(db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == plan.plan_id)).provenance_json) == {}
     from app.models import AuditLog
+    assert db.scalars(select(AuditLog).where(AuditLog.action == "budget.import.approved")).all() == []
+
+
+def test_approve_revalidates_project_on_locked_refresh_without_mutation(db):
+    """Determinisztikus between-read projektváltás (Task83): az első (zár
+    előtti) import-olvasás és a zárolt/frissített újraolvasás KÖZÖTT egy
+    konkurens író MÁSIK projektre írja az import sort; a zárolt soron futó
+    kötelező projekt-újravalidálás fail-closed elutasít — a mutáció előtt,
+    imported sor/provenance/status/audit változás nélkül."""
+    _persist_user(db, role="finance", email="fixture-finance@imperial.local")
+    from app.database import SessionLocal
+    from app.models import AuditLog
+    from app.services import budget_import as budget_import_service
+    row = preview_budget_import(db, project_id="IMP-TOCTOU-PROJ", file_name="budget.csv", data=_csv_bytes(_happy_rows()), actor="fixture@imperial.local",)
+    plan = _draft_plan(db, project_id="IMP-TOCTOU-PROJ", plan_id="FIN-PLAN-PROJ-SWAP")
+    original_select = budget_import_service.select
+    fired = {"value": False}
+
+    def select_hook(*args, **kwargs):
+        # Konkurens író a célterv-zárnál (a zár előtti ellenőrzések UTÁN) másik projektre írja az import sort.
+        if args and args[0] is ProjectFinancePlan and not fired["value"]:
+            fired["value"] = True
+            with SessionLocal() as other:
+                other_row = other.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id))
+                other_row.project_id = "IMP-OTHER-PROJECT"
+                other.commit()
+        return original_select(*args, **kwargs)
+
+    budget_import_service.select = select_hook
+    try:
+        with pytest.raises(MarginGateBlocked, match="projektje") as excinfo:
+            approve_budget_import(db, import_id=row.import_id, plan_id=plan.plan_id,
+                user=_user("finance", "fixture-finance@imperial.local"),)
+    finally:
+        budget_import_service.select = original_select
+    assert excinfo.value.reason_code == "import_plan_project_mismatch"
+    # A konkurens projektváltás ténylegesen látszik (a teszt nem üres), de a
+    # jóváhagyás semmit nem mutált: sor/provenance/status/audit érintetlen.
+    db.expire_all()
+    fresh_row = db.scalar(select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == row.import_id))
+    assert fresh_row.project_id == "IMP-OTHER-PROJECT"
+    assert fresh_row.status == "preview"
+    assert fresh_row.approved_by is None
+    assert db.scalars(select(ProjectFinanceBudgetLine).where(ProjectFinanceBudgetLine.plan_id_fk == plan.id)).all() == []
+    assert json.loads(db.scalar(select(ProjectFinancePlan).where(ProjectFinancePlan.plan_id == plan.plan_id)).provenance_json) == {}
     assert db.scalars(select(AuditLog).where(AuditLog.action == "budget.import.approved")).all() == []

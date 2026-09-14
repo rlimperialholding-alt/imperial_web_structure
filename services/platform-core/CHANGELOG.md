@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.43.2 – TENDER-kapu: lockolt/frissített import-projekt kötelező újravalidálása (Task83)
+
+- A projekt-egyezőség és a finance-scope az ÚJRAZÁROLT (frissített) import soron is kötelezően érvényesül közvetlenül minden mutáció előtt (elavult, zár előtti olvasáson validált projekt-identitás nem hatalmazhat fel megváltozott projektű importot); determinisztikus between-read projektváltás-teszt és statikus keresztprojekt kapukód-bizonyíték; commit-kötött AST-bizonyíték a `_user` helper egyetlen returnjéről és a Task81→Task82 removalról.
+
 ## 1.43.1 – TENDER-kapu: margin-bypass, scope, konkurencia és review-conflict remediáció (Task78/Task81/Task82)
 
 - Részleges gyerekallokáció nem javíthat fedezetet: gyereksoros csomagnál a nem nulla `unallocated_amount` fail-closed blokk a mutáció ELŐTT, a fedetlen boríték-maradék konzervatívan egyszer a direct vetületbe számít; kötelező `/api/margin-gate/decisions` út azonos jogosultsági/szűrési lánccal, a HTML `/margin-gate` dashboard az actor projektkörére szűr (körön kívüli kérés 403).

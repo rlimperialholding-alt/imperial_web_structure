@@ -1,8 +1,6 @@
 """Összegző költségvetési csomagok verziózott, immutable allokációs pillanatképei.
 
-Forrás-precedencia: (1) részletes jóváhagyott sorok, (2) verziózott normatábla,
-(3) historikus tény vagy szállítói bizonyíték; minden más ALLOCATION_UNRESOLVED
-és fail-closed blokk.
+Forrás-precedencia: (1) részletes jóváhagyott sorok, (2) verziózott normatábla, (3) historikus tény vagy szállítói bizonyíték; minden más ALLOCATION_UNRESOLVED és fail-closed blokk.
 """
 
 from __future__ import annotations
@@ -86,7 +84,7 @@ def _detailed_rows(db: Session, plan: ProjectFinancePlan, line: ProjectFinanceBu
         raise MarginGateBlocked("no_detailed_children", "A részletes-sor forráshoz a csomagnak gyereksorokkal kell " "rendelkeznie; ellenkező esetben arányforrást kell megadni.",)
     if len(children) > MAX_ALLOCATION_ROWS:
         raise MarginGateBlocked("too_many_allocation_rows", "Az allokációs sorok száma meghaladja a korlátot.")
-    # Review B LOW-2: a gyereksorok csak direct besorolásúak lehetnek érvényes
+    # Review B LOW-2: a gyereksorok csak direct besorolásúak lehetnek.
     for child in children:
         if child.cost_class != "direct" or child.direct_cost_component not in DIRECT_COMPONENTS:
             raise MarginGateBlocked("indirect_child_forbidden", "Az összegző csomag gyereksorai csak direct besorolásúak " "lehetnek érvényes költségnemmel; az allokáció nem rögzíthető.",)
@@ -176,7 +174,7 @@ def create_allocation_snapshot(db: Session,
         final_rows = normalized_rows
         unallocated = Decimal("0")
         effective_source_hash = source_hash
-    # Review B MEDIUM-2: a szakágkódok terven belül csomagonként egyediek
+    # Review B MEDIUM-2: a szakágkódok csomagonként egyediek.
     other_trade_codes = {
         code
         for code in db.scalars(select(FinanceAllocationSnapshotRow.trade_code)

@@ -1409,7 +1409,7 @@ def award_bid(
     eligibility = eligibility_report(db, invitation.partner_id, tender=tender, contract_value=bid.net_total)
     if tender.prequalification_required and not eligibility["eligible"]:
         raise ValueError("A partner nem felel meg az odaítélési kapunak: " + ", ".join(eligibility["blockers"]))
-    # TENDER-kapu: az odaítélés elköteleződést keletkeztet, ezért a kanonikus
+    # TENDER-kapu: az odaítélés elköteleződést keletkeztet, ezért a kapu kötelező.
     decision = _evaluate_bid_commitment_gate(
         db,
         project_id=tender.project_id,

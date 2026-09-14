@@ -15133,8 +15133,7 @@ def api_budget_import_approve(
     db: Session = Depends(get_db),
     user: User = Depends(require_api_token_finance_actor),
 ):
-    # A generikus API token nem ad platform-admin szerepkört: a jóváhagyó a
-    # bejelentkezett, pénzügyi/vezetői szerepkörű felhasználó; az import
+    # A generikus API token nem ad platform-admin szerepkört: a jóváhagyó a bejelentkezett, pénzügyi/vezetői felhasználó.
     import_row = db.scalar(
         select(ProjectBudgetImport).where(ProjectBudgetImport.import_id == import_id)
     )
@@ -15149,7 +15148,7 @@ def api_budget_import_approve(
             db,
             import_id=import_id,
             plan_id=payload.plan_id,
-            # Task80/Task81: az actor a hitelesített user-objektumból, a szerepkör
+            # Task80/Task81: az actor a hitelesített user-objektumból.
             user=user,
         )
     except KeyError as exc:
@@ -15279,8 +15278,7 @@ def api_margin_gate_decisions(
     db: Session = Depends(get_db),
     user: User = Depends(require_api_token_finance_actor),
 ):
-    # Task77 Gate7: a generikus token soha nem fedhet fel keresztprojekt
-    # döntést — pénzügyi/vezetői actor kell, a lista projektscope-ra szűrt.
+    # Task77 Gate7: a generikus token nem fedhet fel keresztprojekt döntést — a lista projektscope-ra szűrt.
     allowed = finance_project_ids_for_user(db, user)
     if project_id is not None:
         try:
