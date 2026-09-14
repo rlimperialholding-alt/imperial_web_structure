@@ -1,0 +1,58 @@
+[
+  {
+    "defect": "Hiányzó vagy el nem végzett munkarész",
+    "percent": 100,
+    "minimum_amount": 0,
+    "basis": "az érintett, hiányzó munkarész szerződéses értéke",
+    "release_condition": "hiánytalan kijavítás, új műszaki átvétel és aláírt TIG"
+  },
+  {
+    "defect": "Eltakart munkarész előzetes műszaki átvétel vagy fotódokumentáció nélkül",
+    "percent": 20,
+    "minimum_amount": 150000,
+    "basis": "az érintett munkarész értéke; a feltárás és visszaállítás költsége külön levonható",
+    "release_condition": "feltárás, megfelelőség igazolása és helyreállítás"
+  },
+  {
+    "defect": "Méret-, sík-, függő- vagy szinteltérés a jóváhagyott tűrésen túl",
+    "percent": 10,
+    "minimum_amount": 100000,
+    "basis": "az érintett munkarész értéke",
+    "release_condition": "szakszerű javítás és ismételt mérési jegyzőkönyv"
+  },
+  {
+    "defect": "Esztétikai vagy felületi hiba, amely javítható, de átadáskor fennáll",
+    "percent": 5,
+    "minimum_amount": 50000,
+    "basis": "az érintett munkarész értéke",
+    "release_condition": "hibamentes javítás és átvétel"
+  },
+  {
+    "defect": "Hiányzó napi fotódokumentáció vagy ellenőrzési bizonyíték",
+    "percent": 2,
+    "minimum_amount": 50000,
+    "basis": "az adott számla bruttó értéke",
+    "release_condition": "utólagos bizonyítás elfogadása vagy feltárás"
+  },
+  {
+    "defect": "Hiányzó megfelelőségi nyilatkozat, teljesítménynyilatkozat, mérési jegyzőkönyv vagy megvalósulási dokumentáció",
+    "percent": 5,
+    "minimum_amount": 100000,
+    "basis": "az adott számla bruttó értéke",
+    "release_condition": "hiánytalan dokumentáció átadása és jóváhagyása"
+  },
+  {
+    "defect": "Súlyos műszaki nemmegfelelőség vagy bontást, teljes újrakészítést igénylő hiba",
+    "percent": 25,
+    "minimum_amount": 250000,
+    "basis": "az érintett munkarész értéke",
+    "release_condition": "teljes helyreállítás, független ellenőrzés és új TIG"
+  },
+  {
+    "defect": "Munkaterület rendezetlenül, hulladékkal vagy balesetveszélyesen történő elhagyása",
+    "amount": 100000,
+    "minimum_amount": 100000,
+    "basis": "eseményenként; a tényleges takarítási és helyreállítási költség külön levonható",
+    "release_condition": "rendezett munkaterület átadása"
+  }
+]

@@ -1,0 +1,107 @@
+{
+  "version": "2026-08-16T00:00:00Z",
+  "source": "example",
+  "motors": {
+    "construction": {
+      "interval_minutes": 60,
+      "max_raw_signals_per_run": 500,
+      "daily_raw_review_target": 300
+    },
+    "distress": {
+      "interval_minutes": 60,
+      "max_raw_signals_per_run": 500
+    },
+    "ivs": {
+      "daily_at": "08:00",
+      "max_raw_signals_per_run": 500
+    }
+  },
+  "sources": {
+    "construction_etdr": {"enabled": false, "motor": "construction", "bucket": "etdr"},
+    "construction_public_request": {"enabled": false, "motor": "construction", "bucket": "public_request"},
+    "construction_fitout_change": {"enabled": false, "motor": "construction", "bucket": "fitout_change"},
+    "construction_property_development": {"enabled": false, "motor": "construction", "bucket": "property_development"},
+    "construction_horeca": {"enabled": false, "motor": "construction", "bucket": "horeca"},
+    "construction_contractor_capacity": {"enabled": false, "motor": "construction", "bucket": "contractor_capacity"},
+    "distress_liquidation": {"enabled": false, "motor": "distress", "bucket": "liquidation"},
+    "distress_bankruptcy": {"enabled": false, "motor": "distress", "bucket": "bankruptcy"},
+    "distress_enforcement": {"enabled": false, "motor": "distress", "bucket": "enforcement"},
+    "distress_officer_change": {"enabled": false, "motor": "distress", "bucket": "officer_change"},
+    "distress_registered_office_change": {"enabled": false, "motor": "distress", "bucket": "registered_office_change"},
+    "distress_construction_dispute": {"enabled": false, "motor": "distress", "bucket": "construction_dispute"},
+    "ivs_existing_target_engine": {"enabled": false, "motor": "ivs", "bucket": "existing_target_engine"}
+  },
+  "brands": {
+    "exitflow": {
+      "brand_name": "ExitFlow",
+      "sender_email": "REPLACE_EXITFLOW_SENDER@example.invalid",
+      "domain_key": "REPLACE_EXITFLOW_DOMAIN_KEY",
+      "secret_ref": "exitflow-smtp.json",
+      "max_daily_messages": 100,
+      "recipient_cooldown_days": 30,
+      "followup_delays_days": [4, 8],
+      "templates": {"default": {
+        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+      }}
+    },
+    "veritas": {
+      "brand_name": "Veritas",
+      "sender_email": "REPLACE_VERITAS_SENDER@example.invalid",
+      "domain_key": "REPLACE_VERITAS_DOMAIN_KEY",
+      "secret_ref": "veritas-smtp.json",
+      "templates": {"default": {
+        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+      }}
+    },
+    "baushield": {
+      "brand_name": "BauShield",
+      "sender_email": "REPLACE_BAUSHIELD_SENDER@example.invalid",
+      "domain_key": "REPLACE_BAUSHIELD_DOMAIN_KEY",
+      "secret_ref": "baushield-smtp.json",
+      "templates": {"default": {
+        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+      }}
+    },
+    "bautica": {
+      "brand_name": "Bautica",
+      "sender_email": "REPLACE_BAUTICA_SENDER@example.invalid",
+      "domain_key": "REPLACE_BAUTICA_DOMAIN_KEY",
+      "secret_ref": "bautica-smtp.json",
+      "templates": {"default": {
+        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+      }}
+    },
+    "prefab": {
+      "brand_name": "Prefab",
+      "sender_email": "REPLACE_PREFAB_SENDER@example.invalid",
+      "domain_key": "REPLACE_PREFAB_DOMAIN_KEY",
+      "secret_ref": "prefab-smtp.json",
+      "templates": {"default": {
+        "initial": {"subject": "Célzott szakmai egyeztetés", "body": "{company_name}! A nyilvános üzleti jelzés alapján az alábbi helyzet lehet releváns: {signal_summary}. Forrás: {evidence_url}. Ha hasznos, válaszban egyeztetünk. Leiratkozás: {unsubscribe_url}"},
+        "followup_1": {"subject": "Rövid utánkövetés", "body": "{company_name}! Röviden visszatérünk a korábbi szakmai megkeresésre. A jelzés összefoglalója: {signal_summary}. Ha nem aktuális, itt leiratkozhat: {unsubscribe_url}"},
+        "followup_2": {"subject": "Utolsó utánkövetés", "body": "{company_name}! Ez az utolsó utánkövetésünk a korábban jelzett ügyben. Ha szeretnének egyeztetni, elég erre az üzenetre válaszolni. Leiratkozás: {unsubscribe_url}"}
+      }}
+    }
+  },
+  "routing": {
+    "liquidation": "exitflow",
+    "bankruptcy": "exitflow",
+    "enforcement": "veritas",
+    "construction_dispute": "baushield",
+    "residential_construction": "bautica",
+    "renovation": "bautica",
+    "extension": "bautica",
+    "fitout": "bautica",
+    "hall": "prefab",
+    "contractor_capacity": "prefab",
+    "ivs_target": "veritas"
+  }
+}

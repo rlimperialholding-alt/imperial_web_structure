@@ -1,0 +1,122 @@
+{
+  "release": "0.7.0",
+  "status": "PASS",
+  "steps": [
+    {
+      "name": "pytest",
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "stdout": "...................................................                      [100%]\n51 passed in 2.21s\n",
+      "stderr": "",
+      "metadata": {}
+    },
+    {
+      "name": "compileall",
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "-m",
+        "compileall",
+        "-q",
+        "app",
+        "scripts",
+        "tests"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": "",
+      "metadata": {}
+    },
+    {
+      "name": "compose_validation",
+      "command": null,
+      "ok": true,
+      "returncode": 0,
+      "stdout": "Docker Compose YAML structure is valid",
+      "stderr": "",
+      "metadata": {
+        "base_services": [
+          "api",
+          "beat",
+          "create-bucket",
+          "directus",
+          "migrate",
+          "minio",
+          "n8n",
+          "postgres",
+          "redis",
+          "worker"
+        ],
+        "staging_services": [
+          "api",
+          "beat",
+          "directus",
+          "migrate",
+          "minio",
+          "n8n",
+          "postgres",
+          "redis",
+          "worker"
+        ],
+        "production_services": [
+          "api",
+          "backup",
+          "backup-verify",
+          "beat",
+          "create-bucket",
+          "directus",
+          "migrate",
+          "minio",
+          "n8n",
+          "postgres",
+          "redis",
+          "restore-drill",
+          "worker"
+        ]
+      }
+    },
+    {
+      "name": "migration_cycle",
+      "command": null,
+      "ok": true,
+      "returncode": 0,
+      "stdout": "Alembic upgrade/downgrade/upgrade cycle succeeded",
+      "stderr": "INFO  [alembic.runtime.migration] Context impl SQLiteImpl.\nINFO  [alembic.runtime.migration] Will assume non-transactional DDL.\nINFO  [alembic.runtime.migration] Running upgrade  -> 431439b9fde5, initial application schema\nINFO  [alembic.runtime.migration] Running upgrade 431439b9fde5 -> 8f6db9b7a701, add audit events\n\nINFO  [alembic.runtime.migration] Context impl SQLiteImpl.\nINFO  [alembic.runtime.migration] Will assume non-transactional DDL.\nINFO  [alembic.runtime.migration] Running downgrade 8f6db9b7a701 -> 431439b9fde5, add audit events\nINFO  [alembic.runtime.migration] Running downgrade 431439b9fde5 -> , initial application schema\n\nINFO  [alembic.runtime.migration] Context impl SQLiteImpl.\nINFO  [alembic.runtime.migration] Will assume non-transactional DDL.\nINFO  [alembic.runtime.migration] Running upgrade  -> 431439b9fde5, initial application schema\nINFO  [alembic.runtime.migration] Running upgrade 431439b9fde5 -> 8f6db9b7a701, add audit events\n",
+      "metadata": {}
+    },
+    {
+      "name": "staging_preflight",
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "scripts/staging_preflight.py",
+        "--output",
+        "/mnt/data/iip-v0.7.0-staging-gate-final/preflight.json"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "stdout": "{\n  \"status\": \"PASS\",\n  \"check_count\": 4,\n  \"failed_count\": 0,\n  \"checks\": [\n    {\n      \"name\": \"configuration\",\n      \"ok\": true,\n      \"detail\": \"Configuration is valid\",\n      \"environment\": \"development\"\n    },\n    {\n      \"name\": \"operational_catalog\",\n      \"ok\": true,\n      \"detail\": \"99/99 Process Card and checklist mapping is consistent\",\n      \"path\": \"/mnt/data/imperial-intelligence-integration-hub-v0.7.0/config/operational-process-catalog-v1.0.json\",\n      \"processes\": 99,\n      \"templates\": 99,\n      \"roles\": [\n        \"Marketinges\",\n        \"Projektmenedzser\",\n        \"Pénzügyes\",\n        \"Értékesítő\",\n        \"Ügyvezető\"\n      ]\n    },\n    {\n      \"name\": \"runtime_storage\",\n      \"ok\": true,\n      \"detail\": \"Runtime storage is writable\",\n      \"paths\": [\n        \"/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/process_cards\",\n        \"/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/published_process_cards\",\n        \"/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/checklists\"\n      ]\n    },\n    {\n      \"name\": \"google_service_account\",\n      \"ok\": true,\n      \"detail\": \"Google publication features are disabled\"\n    }\n  ]\n}\n",
+      "stderr": "",
+      "metadata": {}
+    },
+    {
+      "name": "operational_guidance_99x99_qa",
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "scripts/qa_operational_guidance.py",
+        "--output",
+        "/mnt/data/iip-v0.7.0-staging-gate-final/operational-guidance-artifacts"
+      ],
+      "ok": true,
+      "returncode": 0,
+      "stdout": "{\n  \"catalog\": {\n    \"processes_imported\": 99,\n    \"processes_unchanged\": 0,\n    \"checklists_imported\": 99,\n    \"checklists_unchanged\": 0,\n    \"total_processes\": 99,\n    \"total_checklists\": 99\n  },\n  \"processes\": 99,\n  \"checklist_templates\": 99,\n  \"artifacts_inspected\": 396,\n  \"issues\": [],\n  \"passed\": true\n}\n",
+      "stderr": "",
+      "metadata": {}
+    }
+  ]
+}

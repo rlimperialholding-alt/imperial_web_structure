@@ -1,0 +1,156 @@
+{
+  "imperial": {
+    "enabled": false,
+    "url": "https://www.imperialholding.hu/api/internal/content-publish",
+    "secret": "replace-with-a-unique-secret",
+    "brand_key": "imperial",
+    "kind": "custom_website"
+  },
+  "danishfabrik": {
+    "enabled": false,
+    "url": "https://www.danishfabrik.hu/api/internal/content-publish",
+    "secret": "replace-with-a-unique-secret",
+    "brand_key": "danishfabrik",
+    "kind": "custom_website"
+  },
+  "bautica": {
+    "enabled": false,
+    "url": "https://www.bautica.hu/api/internal/content-publish",
+    "secret": "replace-with-a-unique-secret",
+    "brand_key": "bautica",
+    "kind": "custom_website"
+  },
+  "prefab": {
+    "enabled": false,
+    "url": "https://www.prefab.hu/api/internal/content-publish",
+    "secret": "replace-with-a-unique-secret",
+    "brand_key": "prefab",
+    "kind": "custom_website"
+  },
+  "timberhaus": {
+    "enabled": false,
+    "url": "https://www.timberhaus.hu/api/internal/content-publish",
+    "secret": "replace-with-a-unique-secret",
+    "brand_key": "timberhaus",
+    "kind": "custom_website"
+  },
+  "casamoderna": {
+    "enabled": false,
+    "url": "",
+    "secret": "",
+    "brand_key": "casamoderna",
+    "kind": "custom_website"
+  },
+  "property360": {
+    "enabled": false,
+    "url": "",
+    "secret": "",
+    "brand_key": "property360",
+    "kind": "custom_website"
+  },
+  "everydayhomes": {
+    "enabled": false,
+    "url": "",
+    "secret": "",
+    "brand_key": "everydayhomes",
+    "kind": "custom_website"
+  },
+  "familyhomes": {
+    "enabled": false,
+    "url": "",
+    "secret": "",
+    "brand_key": "familyhomes",
+    "kind": "custom_website"
+  },
+  "budapestimagasepito": {
+    "enabled": false,
+    "url": "",
+    "secret": "",
+    "brand_key": "budapestimagasepito",
+    "kind": "custom_website"
+  },
+  "redproperty": {
+    "enabled": false,
+    "url": "",
+    "secret": "",
+    "brand_key": "redproperty",
+    "kind": "custom_website"
+  },
+  "imperial-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "imperial",
+    "url": "https://blog.imperialholding.hu/wp-json/imperial/v1/articles",
+    "secret": ""
+  },
+  "danishfabrik-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "danishfabrik",
+    "url": "https://blog.danishfabrik.hu/wp-json/imperial/v1/articles",
+    "secret": ""
+  },
+  "bautica-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "bautica",
+    "url": "https://blog.bautica.hu/wp-json/imperial/v1/articles",
+    "secret": ""
+  },
+  "prefab-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "prefab",
+    "url": "https://blog.prefab.hu/wp-json/imperial/v1/articles",
+    "secret": ""
+  },
+  "timberhaus-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "timberhaus",
+    "url": "https://blog.timberhaus.hu/wp-json/imperial/v1/articles",
+    "secret": ""
+  },
+  "casamoderna-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "casamoderna",
+    "url": "",
+    "secret": ""
+  },
+  "property360-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "property360",
+    "url": "",
+    "secret": ""
+  },
+  "everydayhomes-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "everydayhomes",
+    "url": "",
+    "secret": ""
+  },
+  "familyhomes-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "familyhomes",
+    "url": "",
+    "secret": ""
+  },
+  "budapestimagasepito-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "budapestimagasepito",
+    "url": "",
+    "secret": ""
+  },
+  "redproperty-blog": {
+    "enabled": false,
+    "kind": "wordpress_blog",
+    "brand_key": "redproperty",
+    "url": "",
+    "secret": ""
+  }
+}

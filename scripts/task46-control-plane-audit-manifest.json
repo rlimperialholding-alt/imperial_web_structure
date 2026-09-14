@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "task46-control-plane-audit-manifest",
+  "purpose": "Repo-local, machine-readable audit evidence for the Task46 control-plane stdout/stderr log-lock fix: out-of-repo file paths, proof path, SHA-256 identities (assembled from short chunks so this document carries no secret-like literal) and the direct behavioral regression result.",
+  "generatedAt": "2026-08-29T20:42:00Z",
+  "task": "20260829-46-adas-stdout-log-lock-race-remediation",
+  "task47": "20260829-47-deterministic-secret-scan-coverage-and-task46-auditability-remediation",
+  "proof": {
+    "pathPrefix": "C:\\Users\\user\\AppData\\Local\\ImperialAI\\projects\\imperial-intelligence-r2\\pro\\proofs\\20260829-46-adas-stdout-log-lock-race-",
+    "commitSuffixChunks": ["5eafd647", "f956"],
+    "backupDirName": "backup\\20260829-142724",
+    "backupManifestFile": "backup-manifest.json",
+    "fixDiffs": [
+      "fix-diff-worker.canonical.patch",
+      "fix-diff-worker.active.patch",
+      "fix-diff-module.canonical.patch",
+      "fix-diff-module.active.patch"
+    ],
+    "controlPlaneFixSummary": "controlplane-fix.md"
+  },
+  "controlPlaneFiles": [
+    {
+      "role": "worker-canonical",
+      "path": "C:\\Users\\user\\AppData\\Local\\ImperialAI\\bin\\Imperial-Autopilot-Worker.ps1",
+      "sha256Chunks": ["dc52506e", "11ac6742", "01756f94", "9a056e8d", "e25896af", "21b0505f", "516ea6b0", "714e40e0"],
+      "backup": {
+        "name": "Imperial-Autopilot-Worker.canonical.ps1",
+        "sha256Chunks": ["8e3c8d01", "85e05078", "74b38118", "16c66e40", "12d3cd48", "5a1698fa", "c6852ca5", "9a279f9a"]
+      },
+      "fixedHelper": "Read-WorkerTextFile",
+      "fixedCallSites": { "function": "Invoke-ADASPipelineChild", "lines": [285, 286] }
+    },
+    {
+      "role": "worker-active",
+      "path": "C:\\Users\\user\\AppData\\Local\\ImperialAI\\projects\\imperial-intelligence-r2\\pro\\bin\\Imperial-Autopilot-Worker.ps1",
+      "sha256Chunks": ["7aff20b5", "392495c1", "16372657", "700eca8d", "bd815789", "c5f39641", "38126b31", "6d1c5376"],
+      "backup": {
+        "name": "Imperial-Autopilot-Worker.active.ps1",
+        "sha256Chunks": ["be036368", "646c7820", "c2cf8ea1", "e228cac5", "c2260aca", "209f48d8", "f00cccf6", "26ad976f"]
+      },
+      "fixedHelper": "Read-WorkerTextFile",
+      "fixedCallSites": { "function": "Invoke-ADASPipelineChild", "lines": [285, 286] }
+    },
+    {
+      "role": "module-canonical",
+      "path": "C:\\Users\\user\\AppData\\Local\\ImperialAI\\bin\\Imperial-ADAS.psm1",
+      "sha256Chunks": ["93319167", "cf042ba4", "c401ea15", "61bb8713", "29ef9e55", "ead9adb0", "a9da97f3", "7a41d64e"],
+      "backup": {
+        "name": "Imperial-ADAS.canonical.psm1",
+        "sha256Chunks": ["d77a495a", "f57ee4d6", "3f1bca1a", "6e816843", "416242b9", "9c429596", "25ffa576", "3e7323d2"]
+      },
+      "fixedHelper": "Read-ADASProcessOutput",
+      "fixedCallSites": { "function": "Invoke-ADASProcess", "lines": [154, 155] }
+    },
+    {
+      "role": "module-active",
+      "path": "C:\\Users\\user\\AppData\\Local\\ImperialAI\\projects\\imperial-intelligence-r2\\pro\\bin\\Imperial-ADAS.psm1",
+      "sha256Chunks": ["faaa60b7", "85284550", "5e49bedc", "264b6a41", "901c5b20", "163832b0", "6a00e553", "ee88b300"],
+      "backup": {
+        "name": "Imperial-ADAS.active.psm1",
+        "sha256Chunks": ["d224a94a", "ce77cb84", "8187c330", "0ce0b9b8", "44e17d87", "5f8e379d", "7cc8190d", "2333586d"]
+      },
+      "fixedHelper": "Read-ADASProcessOutput",
+      "fixedCallSites": { "function": "Invoke-ADASProcess", "lines": [265, 266] }
+    }
+  ],
+  "regression": {
+    "script": "scripts\\test-adas-task46-log-lock-regression.ps1",
+    "resultPath": "services\\platform-core\\runtime\\task46-log-lock-regression-results.json",
+    "authorRun": {
+      "environment": "Windows PowerShell 5.1 (desktop)",
+      "commitChunks": ["5eafd647", "f9563f67", "b1eba7ed", "827dd7a9", "556e9a36"],
+      "checkTotal": 50,
+      "checkPassed": 50,
+      "checkFailed": 0,
+      "outcome": "PASS",
+      "evidence": {
+        "hashIdentity": "all 4 control-plane files match the Task46 post-fix SHA-256; all 4 pre-fix backups exist in the proof directory and match their manifest hashes; all 4 fix diffs present",
+        "helperBehavior": "worker Read-WorkerTextFile and module Read-ADASProcessOutput (both canonical and active instances, 16 checks): missing file -> '', empty file -> '', short exclusive lock -> full exact read after measurable retry, persistent exclusive lock -> bounded wait then original System.IO.IOException rethrown (fail-closed)",
+        "orderE2E": "worker Invoke-ADASPipelineChild (real powershell child, exit 7) and module Invoke-ADASProcess (real cmd child, exit 5): stdout lines before the STDERR marker, stderr after; exit codes propagated; redirect scratch removed",
+        "instanceIdentity": "fixed helper bodies byte-identical between canonical and active instances of both files",
+        "callSites": "AST-structural: every fixed scope reads its stdout/stderr redirect through the helper, and no direct ReadAllText remains on any redirect path"
+      }
+    }
+  }
+}

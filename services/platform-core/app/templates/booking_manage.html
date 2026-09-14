@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Foglalás kezelése{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">BOOKINGID {{ booking.booking_id }}</span><h1>Foglalás kezelése</h1><p>{{ booking.customer_name }} · {{ booking.status }}</p></div></div>
+{% if message %}<div class="alert">{{ message }}</div>{% endif %}
+<section class="panel"><div class="key-value-grid"><div><span>Foglalás</span><b>{{ booking.booking_id }}</b></div><div><span>Állapot</span><b>{{ booking.status }}</b></div><div><span>Naptári szinkron</span><b>{{ booking.external_sync_status }}</b></div><div><span>Találkozás</span><b>{{ booking.booking_type }}</b></div></div></section>
+{% if booking.status not in ['cancelled','completed','expired','no_show'] %}<div class="two-column"><section class="panel"><h2>Átfoglalás</h2><form method="post" action="/booking/manage/{{ booking.cancellation_token }}/reschedule" class="form-card"><label>Új idősáv<select name="new_slot_id" required>{% for row in slots %}<option value="{{ row.slot_id }}">{{ row.starts_at|dt }}</option>{% endfor %}</select></label><label>Indok<input name="reason" required></label><button class="button primary">Új idősáv zárolása</button></form></section><section class="panel"><h2>Lemondás</h2><form method="post" action="/booking/manage/{{ booking.cancellation_token }}/cancel" class="form-card"><label>Indok<input name="reason" required></label><button class="button">Foglalás lemondása</button></form></section></div>{% endif %}
+{% endblock %}

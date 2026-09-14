@@ -1,0 +1,301 @@
+{
+  "brands": [
+    {
+      "key": "imperial",
+      "name": "Imperial Holding",
+      "status": "active",
+      "websites": [
+        {
+          "key": "imperial",
+          "name": "Imperial Holding",
+          "status": "active",
+          "base_url": "https://www.imperialholding.hu"
+        },
+        {
+          "key": "imperial-blog",
+          "name": "Imperial Otthon Magazin",
+          "kind": "wordpress_blog",
+          "status": "active",
+          "base_url": "https://blog.imperialholding.hu"
+        }
+      ],
+      "editorial": {
+        "author_login": "adam-kovari",
+        "author_display_name": "Ádám Kővári",
+        "author_email": "adam.kovari@imperial-authors.invalid",
+        "site_title": "Imperial Otthon Magazin",
+        "site_description": "Biztonságos családiház-építés, fix árak és mérnöki útmutatók."
+      }
+    },
+    {
+      "key": "danishfabrik",
+      "name": "Danish Fabrik",
+      "status": "active",
+      "websites": [
+        {
+          "key": "danishfabrik",
+          "name": "Danish Fabrik",
+          "status": "active",
+          "base_url": "https://www.danishfabrik.hu"
+        },
+        {
+          "key": "danishfabrik-blog",
+          "name": "Danish Fabrik Journal",
+          "kind": "wordpress_blog",
+          "status": "active",
+          "base_url": "https://blog.danishfabrik.hu"
+        }
+      ],
+      "editorial": {
+        "author_login": "mikkel-norgaard",
+        "author_display_name": "Mikkel Nørgaard",
+        "author_email": "mikkel.norgaard@danishfabrik-authors.invalid",
+        "site_title": "Danish Fabrik Journal",
+        "site_description": "Skandináv könnyűszerkezetes otthonok, energiahatékonyság és kortárs életforma."
+      }
+    },
+    {
+      "key": "bautica",
+      "name": "Bautica",
+      "status": "active",
+      "websites": [
+        {
+          "key": "bautica",
+          "name": "Bautica",
+          "status": "active",
+          "base_url": "https://www.bautica.hu"
+        },
+        {
+          "key": "bautica-blog",
+          "name": "Bautica Felújítási Magazin",
+          "kind": "wordpress_blog",
+          "status": "active",
+          "base_url": "https://blog.bautica.hu"
+        }
+      ],
+      "editorial": {
+        "author_login": "bence-varadi",
+        "author_display_name": "Bence Váradi",
+        "author_email": "bence.varadi@bautica-authors.invalid",
+        "site_title": "Bautica Felújítási Magazin",
+        "site_description": "Gyors, tervezhető felújítások, műszaki megoldások és költségtudatos döntések."
+      }
+    },
+    {
+      "key": "prefab",
+      "name": "Prefab",
+      "status": "active",
+      "websites": [
+        {
+          "key": "prefab",
+          "name": "Prefab",
+          "status": "active",
+          "base_url": "https://www.prefab.hu"
+        },
+        {
+          "key": "prefab-blog",
+          "name": "Prefab Építőipar 2.0",
+          "kind": "wordpress_blog",
+          "status": "active",
+          "base_url": "https://blog.prefab.hu"
+        }
+      ],
+      "editorial": {
+        "author_login": "levente-pal",
+        "author_display_name": "Levente Pál",
+        "author_email": "levente.pal@prefab-authors.invalid",
+        "site_title": "Prefab Építőipar 2.0",
+        "site_description": "Előregyártott betonrendszerek, gyors kivitelezés és mérnöki pontosság."
+      }
+    },
+    {
+      "key": "timberhaus",
+      "name": "Timberhaus",
+      "status": "active",
+      "websites": [
+        {
+          "key": "timberhaus",
+          "name": "Timberhaus",
+          "status": "active",
+          "base_url": "https://www.timberhaus.hu"
+        },
+        {
+          "key": "timberhaus-blog",
+          "name": "Timberhaus Faépítészeti Napló",
+          "kind": "wordpress_blog",
+          "status": "active",
+          "base_url": "https://blog.timberhaus.hu"
+        }
+      ],
+      "editorial": {
+        "author_login": "daniel-erdos",
+        "author_display_name": "Dániel Erdős",
+        "author_email": "daniel.erdos@timberhaus-authors.invalid",
+        "site_title": "Timberhaus Faépítészeti Napló",
+        "site_description": "Faépítészet, természetes anyagok és korszerű, energiatakarékos otthonok."
+      }
+    },
+    {
+      "key": "casamoderna",
+      "name": "Casa Moderna",
+      "status": "active",
+      "websites": [
+        {
+          "key": "casamoderna",
+          "name": "Casa Moderna",
+          "status": "pending_configuration",
+          "base_url": null
+        },
+        {
+          "key": "casamoderna-blog",
+          "name": "Casa Moderna Living",
+          "kind": "wordpress_blog",
+          "status": "pending_configuration",
+          "base_url": null
+        }
+      ],
+      "editorial": {
+        "author_login": "lorenzo-bellini",
+        "author_display_name": "Lorenzo Bellini",
+        "author_email": "lorenzo.bellini@casamoderna-authors.invalid",
+        "site_title": "Casa Moderna Living",
+        "site_description": "Prémium építészet, enteriőr, anyaghasználat és időtálló modern elegancia."
+      }
+    },
+    {
+      "key": "property360",
+      "name": "Property 360",
+      "status": "active",
+      "websites": [
+        {
+          "key": "property360",
+          "name": "Property 360",
+          "status": "pending_configuration",
+          "base_url": null
+        },
+        {
+          "key": "property360-blog",
+          "name": "Property 360 Insights",
+          "kind": "wordpress_blog",
+          "status": "pending_configuration",
+          "base_url": null
+        }
+      ],
+      "editorial": {
+        "author_login": "mark-szentpeteri",
+        "author_display_name": "Márk Szentpéteri",
+        "author_email": "mark.szentpeteri@property360-authors.invalid",
+        "site_title": "Property 360 Insights",
+        "site_description": "Ingatlanpiaci elemzések, finanszírozás, értékesítés és befektetési döntések."
+      }
+    },
+    {
+      "key": "everydayhomes",
+      "name": "Everyday Homes",
+      "status": "active",
+      "websites": [
+        {
+          "key": "everydayhomes",
+          "name": "Everyday Homes",
+          "status": "pending_configuration",
+          "base_url": null
+        },
+        {
+          "key": "everydayhomes-blog",
+          "name": "Everyday Homes Stories",
+          "kind": "wordpress_blog",
+          "status": "pending_configuration",
+          "base_url": null
+        }
+      ],
+      "editorial": {
+        "author_login": "nora-foldesi",
+        "author_display_name": "Nóra Földesi",
+        "author_email": "nora.foldesi@everydayhomes-authors.invalid",
+        "site_title": "Everyday Homes Stories",
+        "site_description": "Élhető otthonok, praktikus alaprajzok és a mindennapokat könnyebbé tevő megoldások."
+      }
+    },
+    {
+      "key": "familyhomes",
+      "name": "Family Homes",
+      "status": "active",
+      "websites": [
+        {
+          "key": "familyhomes",
+          "name": "Family Homes",
+          "status": "pending_configuration",
+          "base_url": null
+        },
+        {
+          "key": "familyhomes-blog",
+          "name": "Family Homes Családi Magazin",
+          "kind": "wordpress_blog",
+          "status": "pending_configuration",
+          "base_url": null
+        }
+      ],
+      "editorial": {
+        "author_login": "eszter-csalogany",
+        "author_display_name": "Eszter Csalogány",
+        "author_email": "eszter.csalogany@familyhomes-authors.invalid",
+        "site_title": "Family Homes Családi Magazin",
+        "site_description": "Családbarát házak, biztonságos terek és hosszú távon működő otthontervezés."
+      }
+    },
+    {
+      "key": "budapestimagasepito",
+      "name": "Budapesti Magasépítő Vállalat",
+      "status": "active",
+      "websites": [
+        {
+          "key": "budapestimagasepito",
+          "name": "Budapesti Magasépítő Vállalat",
+          "status": "pending_configuration",
+          "base_url": null
+        },
+        {
+          "key": "budapestimagasepito-blog",
+          "name": "Budapesti Magasépítő Szakmai Közlöny",
+          "kind": "wordpress_blog",
+          "status": "pending_configuration",
+          "base_url": null
+        }
+      ],
+      "editorial": {
+        "author_login": "gabor-hidvegi",
+        "author_display_name": "Gábor Hídvégi",
+        "author_email": "gabor.hidvegi@bmv-authors.invalid",
+        "site_title": "Budapesti Magasépítő Szakmai Közlöny",
+        "site_description": "Magasépítés, városi beruházások, szerkezetépítés és kivitelezési szakmai tartalmak."
+      }
+    },
+    {
+      "key": "redproperty",
+      "name": "RED Property",
+      "status": "active",
+      "websites": [
+        {
+          "key": "redproperty",
+          "name": "RED Property",
+          "status": "pending_configuration",
+          "base_url": null
+        },
+        {
+          "key": "redproperty-blog",
+          "name": "RED Property Report",
+          "kind": "wordpress_blog",
+          "status": "pending_configuration",
+          "base_url": null
+        }
+      ],
+      "editorial": {
+        "author_login": "robert-voros",
+        "author_display_name": "Róbert Vörös",
+        "author_email": "robert.voros@redproperty-authors.invalid",
+        "site_title": "RED Property Report",
+        "site_description": "Ingatlanfejlesztések, városi projektek, értékteremtés és beruházási hírek."
+      }
+    }
+  ]
+}

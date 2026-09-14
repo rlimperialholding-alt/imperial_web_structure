@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.batch.batch_id }} · HousePlan köteg{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/house-studio.css?v={{ asset_version }}">
+<section class="hero house-studio-hero">
+  <div>
+    <span class="eyebrow light">HOUSEPLAN KÖTEG</span>
+    <h1>{{ detail.batch.batch_id }}</h1>
+    <p>{{ detail.batch.status }} · {{ detail.batch.created_at|dt }} · {{ detail.batch.actor_subject }}</p>
+  </div>
+</section>
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">EREDMÉNYEK</span><h2>Soronkénti végrehajtási napló</h2></div></div>
+  <p>Összes: {{ detail.batch.total_count }} · Létrejött: {{ detail.batch.created_count }} · Hibás: {{ detail.batch.invalid_count }} · Duplikált: {{ detail.batch.duplicate_count }} · Blokkolt: {{ detail.batch.blocked_count }}</p>
+  <div class="house-studio-source-table"><table>
+    <thead><tr><th>Sor</th><th>Állapot</th><th>Terv</th><th>Duplikátum</th><th>Hasonlóság</th><th>Hiba / üzenet</th></tr></thead>
+    <tbody>
+    {% for item in detail["items"] %}
+      <tr>
+        <td>{{ item.row_number }}</td><td>{{ item.status }}</td>
+        <td>{% if item.plan_id %}<a href="/house-studio/plans/{{ item.plan_id }}">{{ item.plan_id }}</a>{% else %}—{% endif %}</td>
+        <td>{{ item.duplicate_plan_id or '—' }}</td><td>{{ item.similarity_score or '—' }}</td>
+        <td>{{ item.error_code or '—' }}{% if item.message %}<br>{{ item.message }}{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="6">A köteghez még nincs feldolgozott sor.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% if detail.batch.status in ['failed','partial'] %}
+  <form method="post" action="/house-studio/batches/{{ detail.batch.batch_id }}/retry">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Hibás köteg újrapróbálása</button>
+  </form>
+  {% endif %}
+</section>
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">IMMUTÁBIL KÉRÉS</span><h2>Eltárolt bemeneti sorok</h2></div></div>
+  <pre>{{ detail["rows"]|tojson(indent=2) }}</pre>
+</section>
+{% endblock %}

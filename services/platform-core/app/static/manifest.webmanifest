@@ -1,0 +1,10 @@
+{
+  "name": "Imperial Intelligence Field",
+  "short_name": "Imperial Field",
+  "start_url": "/field",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#0b1d34",
+  "lang": "hu",
+  "icons": []
+}

@@ -1,0 +1,225 @@
+{
+  "generator_version": "0.4.0",
+  "generated_at": "2026-07-18T20:12:17Z",
+  "contract_type": "customer_construction",
+  "contract_number": "VEVO-KIV-2026-0001",
+  "template": {
+    "drive_file_id": "1pa4ZN3whsGIaHkWSQ69oKxE0f4ROp_dv",
+    "file_name": "customer_construction.docx",
+    "sha256": "1ce03391f4e2a39c1ba4c204d8ae1948b222464e2d4d708416b0d7370fdddf4b"
+  },
+  "ids": {
+    "CompanyID": "COM-VEVO-KIV-2026-0001",
+    "PersonID": "PER-VEVO-KIV-2026-0001",
+    "OpportunityID": "OPP-VEVO-KIV-2026-0001",
+    "ProjectID": "PRJ-VEVO-KIV-2026-0001",
+    "PartnerID": "PAR-VEVO-KIV-2026-0001"
+  },
+  "field_fill_audit": [
+    {
+      "field": "counterparty.name",
+      "changed": true,
+      "target": "paragraph:4"
+    },
+    {
+      "field": "counterparty.birth",
+      "changed": true,
+      "target": "paragraph:5"
+    },
+    {
+      "field": "counterparty.mother_name",
+      "changed": true,
+      "target": "paragraph:6"
+    },
+    {
+      "field": "counterparty.address",
+      "changed": true,
+      "target": "paragraph:7"
+    },
+    {
+      "field": "counterparty.id",
+      "changed": true,
+      "target": "paragraph:8"
+    },
+    {
+      "field": "counterparty.contact",
+      "changed": true,
+      "target": "paragraph:9"
+    },
+    {
+      "field": "internal.name",
+      "changed": true,
+      "target": "paragraph:13"
+    },
+    {
+      "field": "internal.address",
+      "changed": true,
+      "target": "paragraph:14"
+    },
+    {
+      "field": "internal.registry",
+      "changed": true,
+      "target": "paragraph:15"
+    },
+    {
+      "field": "internal.representative",
+      "changed": true,
+      "target": "paragraph:16"
+    },
+    {
+      "field": "internal.contact",
+      "changed": true,
+      "target": "paragraph:17"
+    },
+    {
+      "field": "internal.bank",
+      "changed": true,
+      "target": "paragraph:18"
+    },
+    {
+      "field": "table_row_0",
+      "changed": true,
+      "target": "table:0:row:0:cell:2"
+    },
+    {
+      "field": "table_row_1",
+      "changed": true,
+      "target": "table:0:row:1:cell:2"
+    },
+    {
+      "field": "table_row_2",
+      "changed": true,
+      "target": "table:0:row:2:cell:2"
+    },
+    {
+      "field": "table_row_3",
+      "changed": true,
+      "target": "table:0:row:3:cell:2"
+    },
+    {
+      "field": "table_row_4",
+      "changed": true,
+      "target": "table:0:row:4:cell:2"
+    },
+    {
+      "field": "table_row_5",
+      "changed": true,
+      "target": "table:0:row:5:cell:2"
+    },
+    {
+      "field": "table_row_6",
+      "changed": true,
+      "target": "table:0:row:6:cell:2"
+    },
+    {
+      "field": "table_row_7",
+      "changed": true,
+      "target": "table:0:row:7:cell:2"
+    },
+    {
+      "field": "table_row_8",
+      "changed": true,
+      "target": "table:0:row:8:cell:2"
+    },
+    {
+      "field": "table_row_9",
+      "changed": true,
+      "target": "table:0:row:9:cell:2"
+    },
+    {
+      "field": "contract_date",
+      "changed": true,
+      "target": "paragraph:148"
+    },
+    {
+      "field": "signature_names",
+      "changed": true,
+      "target": "paragraph:154"
+    },
+    {
+      "field": "remove_stale_signature_company",
+      "changed": true,
+      "target": "paragraph:155"
+    },
+    {
+      "field": "mandatory_delivery_clause",
+      "changed": true,
+      "target": "before_paragraph:148"
+    }
+  ],
+  "field_fill_failures": [],
+  "unresolved_placeholders": [],
+  "all_fields_complete": true,
+  "dispatch_gate": {
+    "allowed": false,
+    "blockers": [
+      "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+      "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+      "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+      "SIGNED_ORIGINAL_NOT_POSTED",
+      "POSTAL_SENT_AT_MISSING",
+      "POSTAL_TRACKING_NUMBER_MISSING",
+      "POSTAL_PROOF_MISSING",
+      "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+      "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+      "ELECTRONIC_SENT_AT_MISSING",
+      "ELECTRONIC_MESSAGE_ID_MISSING"
+    ]
+  },
+  "work_start_gate": {
+    "allowed": false,
+    "blockers": [
+      "CONTRACT_NOT_SIGNED",
+      "SIGNED_FILE_MISSING",
+      "BOTH_PARTIES_SIGNATURE_MISSING",
+      "SIGNED_CONTRACT_FILE_ID_MISSING",
+      "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+      "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+      "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+      "SIGNED_ORIGINAL_NOT_POSTED",
+      "POSTAL_SENT_AT_MISSING",
+      "POSTAL_TRACKING_NUMBER_MISSING",
+      "POSTAL_PROOF_MISSING",
+      "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+      "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+      "ELECTRONIC_SENT_AT_MISSING",
+      "ELECTRONIC_MESSAGE_ID_MISSING"
+    ],
+    "dispatch_gate": {
+      "allowed": false,
+      "blockers": [
+        "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+        "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+        "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+        "SIGNED_ORIGINAL_NOT_POSTED",
+        "POSTAL_SENT_AT_MISSING",
+        "POSTAL_TRACKING_NUMBER_MISSING",
+        "POSTAL_PROOF_MISSING",
+        "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+        "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+        "ELECTRONIC_SENT_AT_MISSING",
+        "ELECTRONIC_MESSAGE_ID_MISSING"
+      ]
+    }
+  },
+  "owner_approved_policy": {
+    "version": "ICG-PAY-2026-07-18",
+    "approval_basis": "tulajdonosi döntés",
+    "effective_date": "2026-07-18"
+  },
+  "signing_queue_status": "READY_FOR_APPROVAL",
+  "files": [
+    {
+      "name": "00_contract_filled.docx",
+      "sha256": "1b0692ceb0d293ea94079ba113927c60e4dedb69a0be21a8682cfd293a53a046"
+    },
+    {
+      "name": "01_contract_data_and_terms.docx",
+      "sha256": "970a9297ca71dbec186c010dc81f34c10e3824595838d59954b944f42752b28e"
+    },
+    {
+      "name": "02_approval_delivery_and_gate_checklist.docx",
+      "sha256": "49b2eb11fea9b58f4a99d6e3ce9836f1347a866184337ed24710b65cae6528eb"
+    }
+  ]
+}

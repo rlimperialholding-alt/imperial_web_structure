@@ -1,0 +1,30 @@
+{
+  "release": "0.8.1",
+  "name": "Imperial Intelligence Integration Hub - Staging Handoff Hotfix",
+  "status": "offline_release_gate_pass_online_uat_pending",
+  "automated_tests": 58,
+  "python_files_checked": 83,
+  "operational_guidance_qa": {
+    "processes": 99,
+    "checklist_templates": 99,
+    "artifacts_inspected": 396,
+    "issues": 0,
+    "passed": true
+  },
+  "deployment_hotfixes": [
+    "staging-specific preflight",
+    "container-network integration checks",
+    "stable Compose project name",
+    "release-specific Imperial image tag",
+    "parameterized infrastructure images",
+    "rollback preflight and canary"
+  ],
+  "online_uat_processes": ["SAL-001", "PRJ-001", "FIN-001"],
+  "online_uat_executed": false,
+  "online_uat_blocker": "Real staging server and Google/Directus credentials not supplied",
+  "documents": [
+    "docs/ONLINE-STAGING-UAT-v0.8.1.md",
+    "docs/RELEASE-NOTES-v0.8.1.md",
+    "FINAL-QA-v0.8.1.txt"
+  ]
+}

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ data.project.name }} | MyImperial{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><span class="eyebrow">MYIMPERIAL · {{ data.project.project_id }}</span><h1>{{ data.project.name }}</h1><p>{{ data.project.customer_name or 'Ügyfélprojekt' }} · {{ data.project.status }}</p></div>
+  <div class="head-actions"><a class="button" href="/my-imperial">Projektlista</a><a class="button primary" href="/imperial-care">Hiba vagy garanciális ügy bejelentése</a></div>
+</div>
+<section class="metric-grid four">
+  <article><span>Készültség</span><strong>{{ data.metrics.progress }}%</strong></article><article><span>Nyitott döntés</span><strong>{{ data.metrics.open_decisions }}</strong></article><article><span>Teendő</span><strong>{{ data.metrics.open_tasks }}</strong></article><article><span>Mérföldkő</span><strong>{{ data.metrics.milestones }}</strong></article>
+</section>
+<section class="panel" id="updates">
+  <div class="panel-head"><div><span class="eyebrow">ELLENŐRZÖTT TÁJÉKOZTATÁS</span><h2>Projektfrissítések</h2></div></div>
+  {% if data.can_publish %}<form method="post" action="/my-imperial/{{ data.project.project_id }}/updates" class="form-grid">
+    <label>Cím<input name="title" required maxlength="255"></label><label>Készültség (%)<input name="progress_percent" type="number" min="0" max="100" required></label>
+    <label class="full">Ügyfélnek publikált frissítés<textarea name="body" required rows="4"></textarea></label><label class="checkbox"><input name="requires_acknowledgement" type="checkbox"> Ügyfél-visszaigazolás szükséges</label><button class="button primary" type="submit">Frissítés publikálása</button>
+  </form>{% endif %}
+  <div class="record-grid">{% for item in data.updates %}<article class="record-card">
+    <div class="panel-head"><b>{{ item.row.title }}</b><span class="status-pill">{{ item.row.progress_percent }}%</span></div><small>{{ item.row.published_at|dt }} · {{ item.row.published_by }}</small><p>{{ item.row.body }}</p>
+    {% if item.row.requires_acknowledgement %}{% if data.internal %}<small>Visszaigazolások: {{ item.acknowledgements|length }} / {{ data.accesses|length }}</small>{% elif item.acknowledged %}<span class="status-pill">Visszaigazolva</span>{% else %}<form method="post" action="/my-imperial/{{ data.project.project_id }}/updates/{{ item.row.update_id }}/acknowledge"><button class="button primary" type="submit">Elolvastam, visszaigazolom</button></form>{% endif %}{% endif %}
+  </article>{% else %}<p>Még nincs ügyfélnek publikált projektfrissítés.</p>{% endfor %}</div>
+</section>
+<section class="panel" id="decisions">
+  <div class="panel-head"><div><span class="eyebrow">VISSZAKÖVETHETŐ DÖNTÉSI KAPUK</span><h2>Ügyféldöntések</h2></div></div>
+  {% if data.can_publish %}<form method="post" action="/my-imperial/{{ data.project.project_id }}/decisions" class="form-grid">
+    <label>Döntés címe<input name="title" required maxlength="255"></label><label>Határidő<input name="due_at" type="datetime-local"></label><label class="full">Döntési helyzet és hatás<textarea name="description" required rows="4"></textarea></label><label class="full">Választható opciók (soronként egy, 2–6 opció)<textarea name="options" required rows="4"></textarea></label><button class="button primary" type="submit">Döntési kérés kiadása</button>
+  </form>{% endif %}
+  <div class="record-grid">{% for item in data.decisions %}<article class="record-card">
+    <div class="panel-head"><b>{{ item.row.title }}</b><span class="status-pill">{{ item.row.status }}</span></div><p>{{ item.row.description }}</p>{% if item.row.due_at %}<small>Határidő: {{ item.row.due_at|dt }}</small>{% endif %}
+    {% if item.response %}<p><b>Rögzített döntés:</b> {{ item.response.selected_option }}</p>{% if item.response.note %}<p>{{ item.response.note }}</p>{% endif %}<small>{{ item.response.responded_at|dt }} · {{ item.response.customer_email }}</small>
+    {% elif not data.internal and item.row.status == 'open' %}<form method="post" action="/my-imperial/{{ data.project.project_id }}/decisions/{{ item.row.decision_id }}/respond" class="form-grid"><label>Választott opció<select name="selected_option" required>{% for option in item.options %}<option value="{{ option }}">{{ option }}</option>{% endfor %}</select></label><label class="full">Megjegyzés<textarea name="note" rows="3"></textarea></label><button class="button primary" type="submit">Döntés végleges rögzítése</button></form><small>A rögzített döntés csak dokumentált ChangeControl-folyamatban módosítható.</small>{% endif %}
+  </article>{% else %}<p>Nincs nyitott vagy korábbi ügyféldöntés.</p>{% endfor %}</div>
+</section>
+{% if data.documents %}<section class="panel" id="documents"><div class="panel-head"><div><span class="eyebrow">VERZIÓZOTT ÉS HASH-ELLENŐRZÖTT</span><h2>Változtatási dokumentumok</h2></div></div><div class="record-grid">{% for document in data.documents %}<article class="record-card"><b>{{ document.title }}</b><small>{{ document.version_label }} · {{ document.verification_status }}</small><p>{{ document.extracted_summary or '' }}</p><a class="button primary" href="{{ document.source_url }}">Ügyfél PDF letöltése</a></article>{% endfor %}</div></section>{% endif %}
+<section class="two-column">
+  <article class="panel" id="tasks"><h2>Ügyfélteendők</h2>{% for task in data.tasks %}<div class="record-card"><b>{{ task.title }}</b><p>{{ task.description or '' }}</p><small>{{ task.status }}{% if task.due_at %} · {{ task.due_at|dt }}{% endif %}</small>{% if not data.internal %}<form method="post" action="/my-imperial/{{ data.project.project_id }}/tasks/{{ task.task_id }}/complete"><button class="button" type="submit">Teendő kész</button></form>{% endif %}</div>{% else %}<p>Nincs nyitott ügyfélteendő.</p>{% endfor %}</article>
+  <article class="panel"><h2>Mérföldkövek és naptár</h2>{% for row in data.milestones %}<div class="record-card"><b>{{ row.title }}</b><span>{{ row.status }}</span><small>{{ row.starts_at|dt }} – {{ row.ends_at|dt }}</small></div>{% else %}<p>Nincs publikálható mérföldkő.</p>{% endfor %}</article>
+</section>
+<section class="panel"><h2>Projektfolyamat</h2><div class="record-grid">{% for state in data.states %}<article class="record-card"><b>{{ state.source_module }}</b><span>{{ state.status }}</span><p>{{ state.summary or state.object_type }}</p><small>{{ state.updated_at|dt }}</small></article>{% else %}<p>Nincs publikálható folyamatállapot.</p>{% endfor %}</div></section>
+<section class="panel"><h2>Hibák és garanciális ügyek</h2><p>A projekttel kapcsolatos hibát, hiányt vagy garanciális ügyet kizárólag az Imperial Care felületén lehet bejelenteni. A projektfrissítésekhez és döntésekhez írt megjegyzés nem minősül hibabejelentésnek.</p><a class="button primary" href="/imperial-care">Imperial Care megnyitása</a></section>
+{% endblock %}

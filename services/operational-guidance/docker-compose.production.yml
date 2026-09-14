@@ -1,0 +1,141 @@
+services:
+  postgres:
+    ports: []
+    logging: &bounded_logging
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  redis:
+    ports: []
+    logging: *bounded_logging
+
+  migrate:
+    image: ${IMPERIAL_HUB_IMAGE:?IMPERIAL_HUB_IMAGE is required}
+    environment:
+      APP_ENV: production
+      AUTO_CREATE_DB_SCHEMA: "false"
+      DOCS_ENABLED: "false"
+      REQUIRE_ROLE_TOKENS: "true"
+      REQUIRE_IDEMPOTENCY_KEYS: "true"
+    logging: *bounded_logging
+
+  api:
+    image: ${IMPERIAL_HUB_IMAGE:?IMPERIAL_HUB_IMAGE is required}
+    ports:
+      - "127.0.0.1:${IMPERIAL_API_PORT:-8000}:8000"
+    environment:
+      APP_ENV: production
+      AUTO_CREATE_DB_SCHEMA: "false"
+      DOCS_ENABLED: "false"
+      REQUIRE_ROLE_TOKENS: "true"
+      REQUIRE_IDEMPOTENCY_KEYS: "true"
+      AUDIT_LOG_ENABLED: "true"
+    logging: *bounded_logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  worker:
+    image: ${IMPERIAL_HUB_IMAGE:?IMPERIAL_HUB_IMAGE is required}
+    environment:
+      APP_ENV: production
+      AUTO_CREATE_DB_SCHEMA: "false"
+      DOCS_ENABLED: "false"
+      REQUIRE_ROLE_TOKENS: "true"
+      REQUIRE_IDEMPOTENCY_KEYS: "true"
+    logging: *bounded_logging
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  beat:
+    image: ${IMPERIAL_HUB_IMAGE:?IMPERIAL_HUB_IMAGE is required}
+    environment:
+      APP_ENV: production
+      AUTO_CREATE_DB_SCHEMA: "false"
+      DOCS_ENABLED: "false"
+      REQUIRE_ROLE_TOKENS: "true"
+      REQUIRE_IDEMPOTENCY_KEYS: "true"
+    logging: *bounded_logging
+
+  minio:
+    image: ${MINIO_IMAGE:?MINIO_IMAGE must be a pinned image tag or digest}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    logging: *bounded_logging
+
+  create-bucket:
+    image: ${MINIO_MC_IMAGE:?MINIO_MC_IMAGE must be a pinned image tag or digest}
+    logging: *bounded_logging
+
+  directus:
+    image: ${DIRECTUS_IMAGE:?DIRECTUS_IMAGE must be a pinned image tag or digest}
+    ports:
+      - "127.0.0.1:${DIRECTUS_PORT:-8055}:8055"
+    logging: *bounded_logging
+
+  n8n:
+    image: ${N8N_IMAGE:?N8N_IMAGE must be a pinned image tag or digest}
+    ports:
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
+    logging: *bounded_logging
+
+  backup:
+    image: postgres:16-alpine
+    profiles: ["ops"]
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:-imperial}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - operational_runtime:/runtime:ro
+      - backup_data:/backups
+      - ./config:/config:ro
+      - ./scripts/ops:/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backup-verify:
+    image: postgres:16-alpine
+    profiles: ["ops"]
+    entrypoint: ["/bin/sh", "/scripts/verify-backup.sh"]
+    environment:
+      BACKUP_NAME: ${BACKUP_NAME:-latest}
+    volumes:
+      - backup_data:/backups:ro
+      - ./scripts/ops:/scripts:ro
+
+  restore-drill:
+    image: postgres:16-alpine
+    profiles: ["ops"]
+    entrypoint: ["/bin/sh", "/scripts/restore-drill.sh"]
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:-imperial}
+      BACKUP_NAME: ${BACKUP_NAME:-latest}
+    volumes:
+      - backup_data:/backups:ro
+      - ./scripts/ops:/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  backup_data:

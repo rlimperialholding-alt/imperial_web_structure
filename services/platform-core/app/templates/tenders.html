@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Tenderportál | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="page-hero compact-hero"><div><span class="eyebrow">BESZERZÉS ÉS PARTNERPORTÁL</span><h1>Tenderportál</h1><p>Valódi ajánlatkérési folyamat: partnermeghívás, tételes beadás, dokumentumok, tisztázás, értékelés és auditált odaítélés.</p></div><div class="hero-status"><b>{{ data.metrics.active }}</b><small>aktív tender</small><a class="table-link" href="/tendermail">TenderMail küldések →</a></div></section>
+<section class="metric-grid metric-grid-5">
+  <article><span>Aktív</span><strong>{{ data.metrics.active }}</strong><small>nyitott vagy értékelés alatt</small></article>
+  <article><span>Közzétett</span><strong>{{ data.metrics.published }}</strong><small>ajánlatot fogad</small></article>
+  <article><span>Beadott ajánlat</span><strong>{{ data.metrics.submitted_bids }}</strong><small>értékelhető</small></article>
+  <article><span>Odaítélt</span><strong>{{ data.metrics.awarded }}</strong><small>vezetői döntéssel</small></article>
+  <article class="metric-emphasis"><span>Folyamat</span><strong>7</strong><small>auditált lépés</small></article>
+</section>
+<div class="workspace-grid">
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">ÚJ AJÁNLATKÉRÉS</span><h2>Tendercsomag létrehozása</h2></div></div>
+<form method="post" action="/tenders" class="form-grid">
+  <label><input type="checkbox" name="prequalification_required" checked> Partner-előminősítés kötelező</label>
+  <label><input type="checkbox" name="certificate_gate_enabled"> Igazoláskapu bekapcsolása</label>
+  <label class="span-2">Kötelező igazolások<select name="required_certificate_types" multiple><option value="liability_insurance" selected>Felelősségbiztosítás</option><option value="tax_clearance" selected>Nullás adóigazolás</option><option value="quality">Minőségirányítás</option><option value="hse">HSE</option></select></label>
+  <label>Tenderazonosító<input name="tender_id" placeholder="TND-2026-001" required></label>
+  <label>Projekt<select name="project_id" required><option value="">Válasszon…</option>{% for project in projects %}<option value="{{ project.project_id }}">{{ project.project_id }} – {{ project.name }}</option>{% endfor %}</select></label>
+  <label class="span-2">Tender címe<input name="title" placeholder="Szerkezetépítési munkák" required></label>
+  <label class="span-2">Műszaki és üzleti terjedelem<textarea name="scope" rows="6" minlength="20" placeholder="Pontosan meghatározott munkatartalom, teljesítési hely, elvárt dokumentumok és kizárások…" required></textarea></label>
+  <label>Pénznem<select name="currency"><option>HUF</option><option>EUR</option></select></label>
+  <label>Kérdezési határidő<input type="datetime-local" name="question_deadline_at" required></label>
+  <label>Ajánlattételi határidő<input type="datetime-local" name="submission_deadline_at" required></label>
+  <div class="span-2"><small>Értékelési súlyok – összesen pontosan 100%</small><div class="form-grid">
+    <label>Ár %<input type="number" name="price_weight" value="40" min="0" max="100"></label>
+    <label>Műszaki tartalom %<input type="number" name="technical_weight" value="30" min="0" max="100"></label>
+    <label>Határidő %<input type="number" name="timeline_weight" value="20" min="0" max="100"></label>
+    <label>Referenciák %<input type="number" name="references_weight" value="10" min="0" max="100"></label>
+  </div></div>
+  <div class="form-action span-2"><button class="gold">Tendercsomag létrehozása</button></div>
+</form></section>
+<aside class="panel elevated"><span class="eyebrow">KONTROLLÁLT MŰKÖDÉS</span><h2>Release-kapuk</h2><div class="guard-list"><span><b>01</b>Kanonikus ProjectID nélkül nincs tender.</span><span><b>02</b>Partnerenként egyedi, nagy entrópiájú hozzáférés.</span><span><b>03</b>Határidő után a szerver nem fogad módosítást.</span><span><b>04</b>Beadás előtt tételes ár és összefoglaló kötelező.</span><span><b>05</b>Odaítélés előtt dokumentált értékelés kell.</span><span><b>06</b>Melléklet csak tiszta AV-eredménnyel tárolható és tölthető le. Állapot: {{ data.av.status }}.</span></div></aside>
+</div>
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">TENDERPORTFÓLIÓ</span><h2>Ajánlatkérések</h2></div></div><div class="table-wrap"><table><thead><tr><th>Tender</th><th>Projekt</th><th>Határidő</th><th>Állapot</th><th>Partner</th><th>Beadott</th><th></th></tr></thead><tbody>{% for tender in data.tenders %}<tr><td><b>{{ tender.title }}</b><small>{{ tender.tender_id }}</small></td><td>{{ tender.project_id }}</td><td>{{ tender.submission_deadline_at|dt }}</td><td><span class="badge {{ 'green' if tender.status == 'awarded' else 'yellow' if tender.status in ['published','evaluation'] else '' }}">{{ tender.status }}</span></td><td>{{ tender.invitations|length }}</td><td>{{ tender.bids|selectattr('status','equalto','submitted')|list|length }}</td><td><a class="table-link" href="/tenders/{{ tender.tender_id }}">Megnyitás →</a></td></tr>{% else %}<tr><td colspan="7" class="empty">Még nincs tendercsomag.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

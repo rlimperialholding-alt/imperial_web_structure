@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Szabályforrás-admin · Háztervező{% endblock %}
+{% block content %}
+<style>
+.ra-hero{background:linear-gradient(135deg,#10253c,#31546f);color:#fff;border-radius:22px;padding:28px;margin-bottom:18px}.ra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.ra-card{background:#fff;border:1px solid #dce4eb;border-radius:16px;padding:18px}.ra-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.ra-form label{display:grid;gap:4px;font-weight:650}.ra-form input,.ra-form select,.ra-form textarea{padding:9px;border:1px solid #b7c4d0;border-radius:8px}.ra-wide,.ra-form button{grid-column:1/-1}.ra-row{border-top:1px solid #e2e8ee;padding:12px 0}.ra-status{display:inline-block;border-radius:999px;background:#edf2f6;padding:4px 8px;font-size:.8rem}.ra-actions{display:flex;gap:7px;flex-wrap:wrap}.ra-alert{padding:10px;border-radius:9px;background:#fff3cd;color:#674d00;margin-bottom:12px}.ra-ok{background:#dff3e7;color:#185c36}.ra-code{font-family:monospace;font-size:.8rem;word-break:break-all}@media(max-width:900px){.ra-grid{grid-template-columns:1fr}}@media(max-width:600px){.ra-form{grid-template-columns:1fr}}
+</style>
+<section class="ra-hero">
+  <span class="eyebrow light">HOUSE DESIGNER · GOVERNED REGULATORY DATA</span>
+  <h1>Jogszabályi források és szabálykészletek</h1>
+  <p>Változatlan forrásbizonyíték → tesztelt értelmezés → hatályos szabálykészlet. Saját rekord jóváhagyása tiltott; a platform-admin technikai hozzáférése nem jelent üzleti jóváhagyási jogot.</p>
+</section>
+{% if error %}<div class="ra-alert" role="alert">A művelet leállt: <code>{{ error }}</code>.</div>{% endif %}
+{% if ok %}<div class="ra-alert ra-ok" role="status">Sikeres művelet: <code>{{ ok }}</code>.</div>{% endif %}
+<p><a href="/house-designer">← Vissza a Háztervezőhöz</a> · Szerzői jog: <strong>{{ 'igen' if actor.can_author else 'nem' }}</strong> · Review jog: <strong>{{ 'igen' if actor.can_review else 'nem' }}</strong></p>
+<div class="ra-grid">
+  <section class="ra-card" id="site-verifications" style="grid-column:1/-1">
+    <span class="eyebrow">0 · SITE IDENTITY</span><h2>Telekazonosító igazolása</h2>
+    <p>A településkód és helyrajzi szám csak külön, hash-elt bizonyítékkal válhat <strong>verified</strong> állapotúvá. Az igazolás új, megváltoztathatatlan tervrevíziót készít.</p>
+    {% if actor.can_review %}
+    <form class="ra-form ra-command" method="post" action="/house-designer/regulatory-admin/site-verifications">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="command_id">
+      <label>Házterv session ID<input name="session_id" placeholder="HDS-..." required></label>
+      <label>Módszer<select name="verification_method"><option value="official_cadastral_extract">Hivatalos tulajdoni/kataszteri kivonat</option><option value="municipal_register">Önkormányzati nyilvántartás</option><option value="signed_customer_document">Aláírt ügyféldokumentum + ellenőrzés</option></select></label>
+      <label class="ra-wide">Bizonyíték hivatkozása<input name="proof_ref" placeholder="drive:file-id vagy s3://bucket/object-version" required></label>
+      <label class="ra-wide">Bizonyíték SHA-256<input name="proof_sha256" minlength="64" maxlength="64" required></label>
+      <button>Telekazonosító igazolása</button>
+    </form>
+    {% else %}<p class="ra-alert">Ehhez a művelethez független review jogosultság szükséges.</p>{% endif %}
+    {% for row in reg.verifications %}<article class="ra-row"><strong>{{ row.municipalityCode }} · {{ row.parcelNumber }}</strong> <span class="ra-status">verified</span><br><small>{{ row.sessionId }} · {{ row.verificationMethod }} · {{ row.verifiedAt|dt }}</small><div class="ra-code">{{ row.proofSha256 }}</div></article>{% else %}<p>Nincs telekigazolás.</p>{% endfor %}
+  </section>
+
+  <section class="ra-card" id="sources">
+    <span class="eyebrow">1 · IMMUTABLE SOURCE</span><h2>Forrássnapshot</h2>
+    {% if actor.can_author %}
+    <form class="ra-form" method="post" action="/house-designer/regulatory-admin/sources">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Forráskulcs<input name="source_key" placeholder="HESZ-BUDAPEST-11" required></label><label>Típus<select name="source_type"><option>HESZ</option><option>TKR</option><option>TAK</option><option>TÉKA</option><option>OTÉK</option></select></label>
+      <label>Kibocsátó<input name="issuer" required></label><label>Területi scope<input name="scope_key" placeholder="HU:011:*" required></label>
+      <label class="ra-wide">Hivatalos HTTPS forrás<input type="url" name="source_url" required></label><label>Hatály kezdete<input type="date" name="effective_from" required></label><label>Hatály vége<input type="date" name="effective_to"></label>
+      <label class="ra-wide">Változatlan tárolóhivatkozás<input name="storage_ref" placeholder="drive:file-id vagy s3://bucket/object-version" required></label>
+      <label>Fájl SHA-256<input name="content_sha256" minlength="64" maxlength="64" required></label><label>Normalizált szöveg SHA-256<input name="normalized_text_sha256" minlength="64" maxlength="64" required></label>
+      <button type="submit">Forrássnapshot rögzítése</button>
+    </form>
+    {% endif %}
+    {% for row in reg.sources %}<article class="ra-row"><strong>{{ row.sourceKey }} v{{ row.revision }}</strong> <span class="ra-status">{{ row.status }} / {{ row.securityStatus }}</span><br><small>{{ row.issuer }} · {{ row.scopeKey }} · {{ row.createdAt|dt }}</small><div class="ra-code">{{ row.contentSha256 }}</div>{% if actor.can_review and row.status=='captured' %}<form method="post" action="/house-designer/regulatory-admin/sources/{{ row.sourceSnapshotId }}/approve"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ row.rowVersion }}"><button>Biztonsági és forrásreview jóváhagyása</button></form>{% elif actor.can_review and row.status=='active' %}<form method="post" action="/house-designer/regulatory-admin/sources/{{ row.sourceSnapshotId }}/revoke" data-confirm="Biztosan visszavonja ezt a szabályforrást? Az új megfelelőségi PASS azonnal leáll."><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ row.rowVersion }}"><button>Forrás visszavonása</button></form>{% endif %}</article>{% else %}<p>Nincs rögzített forrás.</p>{% endfor %}
+  </section>
+
+  <section class="ra-card" id="interpretations">
+    <span class="eyebrow">2 · TESTED INTERPRETATION</span><h2>Végrehajtható szabályfordítás</h2>
+    {% if actor.can_author %}
+    <form class="ra-form" method="post" action="/house-designer/regulatory-admin/interpretations">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="ra-wide">Aktív forrás<select name="source_snapshot_id" required><option value="">Válasszon</option>{% for row in reg.sources if row.status=='active' and row.securityStatus=='approved' %}<option value="{{ row.sourceSnapshotId }}">{{ row.sourceKey }} v{{ row.revision }} · {{ row.scopeKey }}</option>{% endfor %}</select></label>
+      <label class="ra-wide">Pontos forráshely<input name="source_span" placeholder="12. § (3), 4. melléklet 2. sor" required></label>
+      <label>Legfeljebb szint<input type="number" name="max_storeys" min="1" max="3"></label><label>Legfeljebb bruttó m²<input type="number" name="max_gross_area_m2" min="10" max="10000" step="0.01"></label>
+      <label class="ra-wide">Megengedett tetők, vesszővel<input name="allowed_roof_types" value="gable,hip"></label>
+      <label class="ra-wide">Deklaratív v2 szabályok JSON (legfeljebb 500)<textarea name="declarative_rules_json" rows="12">[{"code":"MAX_BUILDING_HEIGHT","category":"height_storeys","fact":"building.height_m","operator":"lte","expected":"7.5","severity":"BLOCKER","ruleRef":"12. § (3)","explanation":"Az épület magassága meghaladja a megengedett értéket.","remediation":"Csökkentse az épület teljes magasságát.","geometryPath":"levels"}]</textarea><small>A forrássnapshot-hivatkozást a rendszer köti hozzá. Csak allowlistelt szerveroldali tény és operátor fogadható el; hiányzó tény UNKNOWN eredményt ad.</small></label>
+      <label class="ra-wide">Tesztvektorok JSON<textarea name="test_vectors_json" rows="8" required>[{"geometry":{"schemaVersion":"house-design-v1","units":"mm","northAngleDeg":0,"levels":[{"id":"L01","type":"ground","elevationMm":0,"heightMm":2800,"outerBoundary":[{"x":0,"y":0},{"x":10000,"y":0},{"x":10000,"y":8000},{"x":0,"y":8000},{"x":0,"y":0}],"rooms":[],"wallSegments":[],"openings":[],"connections":[],"voids":[],"roof":{"type":"gable","pitchDeg":30}}],"verticalCores":[],"verticalConnections":[]},"site":{"verificationStatus":"verified"},"expectedOutcome":"PASS"}]</textarea></label>
+      <button>Draft értelmezés létrehozása és tesztelése</button>
+    </form>
+    {% endif %}
+    {% for row in reg.interpretations %}<article class="ra-row"><strong>{{ row.interpretationId }} · v{{ row.revision }}</strong> <span class="ra-status">{{ row.status }}</span><br><small>{{ row.sourceSnapshotId }} · {{ row.sourceSpans[0].locator }}</small><pre>{{ row.rules|tojson(indent=2) }}</pre><div class="ra-actions">{% if actor.can_author and row.status=='DRAFT' %}<form method="post" action="/house-designer/regulatory-admin/interpretations/{{ row.interpretationId }}/submit_review"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ row.rowVersion }}"><button>Review-ra küldés</button></form>{% elif actor.can_review and row.status=='IN_REVIEW' %}<form method="post" action="/house-designer/regulatory-admin/interpretations/{{ row.interpretationId }}/approve"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ row.rowVersion }}"><button>Értelmezés jóváhagyása</button></form>{% endif %}</div></article>{% else %}<p>Nincs szabályértelmezés.</p>{% endfor %}
+  </section>
+
+  <section class="ra-card" id="rulesets" style="grid-column:1/-1">
+    <span class="eyebrow">3 · EFFECTIVE RULESET</span><h2>Hatályos szabálykészlet</h2>
+    {% if actor.can_author %}
+    <form class="ra-form" method="post" action="/house-designer/regulatory-admin/rulesets">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Területi scope<input name="scope_key" placeholder="HU:011:* vagy HU:011:12345/6" required></label><label>Országos alap<select name="national_basis"><option>TÉKA</option><option>OTÉK_TRANSITION</option></select></label>
+      <label class="ra-wide">Helyi terv és verzió<input name="local_plan_basis" placeholder="HÉSZ 12/2025. (VI. 30.) · v3" required></label><label>Hatály kezdete<input type="date" name="effective_from" required></label><label>Hatály vége<input type="date" name="effective_to"></label>
+      <fieldset class="ra-wide"><legend>Jóváhagyott értelmezések</legend>{% for row in reg.interpretations if row.status=='APPROVED' %}<label><input type="checkbox" name="interpretation_ids" value="{{ row.interpretationId }}"> {{ row.interpretationId }} · {{ row.rules }}</label>{% endfor %}</fieldset>
+      <button>Draft szabálykészlet összeállítása</button>
+    </form>
+    {% endif %}
+    {% for row in reg.rulesets %}<article class="ra-row"><strong>{{ row.scopeKey }} · {{ row.nationalBasis }} · v{{ row.revision }}</strong> <span class="ra-status">{{ row.status }}</span><p>{{ row.localPlanBasis }}</p><pre>{{ row.rules|tojson(indent=2) }}</pre><small>{{ row.sourceSnapshotIds|length }} forrás · {{ row.interpretationIds|length }} értelmezés · {{ row.canonicalSha256[:16] }}</small><div class="ra-actions">{% if actor.can_author and row.status=='DRAFT' %}<form method="post" action="/house-designer/regulatory-admin/rulesets/{{ row.rulesetId }}/submit_review"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ row.rowVersion }}"><button>Review-ra küldés</button></form>{% elif actor.can_review and row.status=='IN_REVIEW' %}<form method="post" action="/house-designer/regulatory-admin/rulesets/{{ row.rulesetId }}/approve"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ row.rowVersion }}"><button>Szabálykészlet jóváhagyása</button></form>{% elif actor.can_review and row.status=='APPROVED' %}<form method="post" action="/house-designer/regulatory-admin/rulesets/{{ row.rulesetId }}/revoke" data-confirm="Biztosan visszavonja ezt a szabálykészletet? Az új megfelelőségi PASS azonnal leáll."><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ row.rowVersion }}"><button>Szabálykészlet visszavonása</button></form>{% endif %}</div></article>{% else %}<p>Nincs szabálykészlet.</p>{% endfor %}
+  </section>
+</div>
+<script>document.querySelectorAll('.ra-command').forEach(f=>{const i=f.querySelector('[name=command_id]');if(i&&!i.value)i.value=crypto.randomUUID()});</script>
+{% endblock %}

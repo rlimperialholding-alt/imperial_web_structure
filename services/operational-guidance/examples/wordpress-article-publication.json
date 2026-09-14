@@ -1,0 +1,7 @@
+{
+  "content_id": "directus-article-uuid",
+  "website_key": "imperial-blog",
+  "action": "publish",
+  "paths": ["/fix-aras-epitkezes"],
+  "tags": ["imperial", "blog", "fix-ar"]
+}

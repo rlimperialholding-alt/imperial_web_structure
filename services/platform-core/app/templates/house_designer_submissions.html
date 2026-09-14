@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}House Designer submission munkasor{% endblock %}
+{% block content %}
+<style>.hs-grid{display:grid;gap:14px}.hs-card{background:#fff;border:1px solid #dfe6ed;border-radius:14px;padding:18px}.hs-row{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start}.hs-state{border-radius:999px;background:#eef3f7;padding:5px 10px}.hs-card code{overflow-wrap:anywhere}.hs-card select,.hs-card button{min-height:44px}@media(max-width:650px){.hs-row{grid-template-columns:1fr}}</style>
+<header><span class="eyebrow">HOUSE DESIGNER · BELSŐ MUNKASOR</span><h1>Megrendelési igények review-ja</h1><p>Csak explicit ITEP project/global granttal látható. A deny mindig megelőzi az allow-t.</p></header>
+{% if error %}<div role="alert" class="hs-card">A művelet nem hajtható végre: <code>{{ error }}</code>.</div>{% endif %}
+<form method="get" class="hs-card"><label>Állapot <select name="status"><option value="">Minden állapot</option>{% for status in ['RECEIVED','SALES_REVIEW','DESIGN_REVIEW','CONSULTATION_BOOKED','CHANGES_REQUESTED','ACCEPTED','REJECTED','CANCELLED'] %}<option value="{{ status }}" {{ 'selected' if request.query_params.get('status')==status }}>{{ status }}</option>{% endfor %}</select></label><button>Szűrés</button></form>
+<section class="hs-grid">{% for item in items %}<article class="hs-card hs-row"><div><strong>{{ item.submissionId }}</strong><p><code>{{ item.projectId }}</code> · snapshot <code>{{ item.snapshotId }}</code></p><small>Frissítve: {{ item.updatedAt|dt }} · row v{{ item.rowVersion }}</small></div><div><span class="hs-state">{{ item.status }}</span><p><a href="/house-designer/submissions/{{ item.submissionId }}/review">Review megnyitása →</a></p></div></article>{% else %}<article class="hs-card">Nincs a jogosultsági körben látható submission.</article>{% endfor %}</section>
+{% endblock %}

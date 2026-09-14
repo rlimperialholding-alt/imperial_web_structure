@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: itep
+      POSTGRES_PASSWORD: ${ITEP_POSTGRES_PASSWORD:?ITEP_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: itep
+    ports:
+      - "5432:5432"
+    volumes:
+      - itep_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itep"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build: .
+    command: ["node", "dist/src/workers/main.js"]
+    environment:
+      DATABASE_URL: ${ITEP_DATABASE_URL:?ITEP_DATABASE_URL is required}
+      ENFORCEMENT_INTERVAL_MS: "60000"
+      OUTBOX_INTERVAL_MS: "15000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  itep_postgres:

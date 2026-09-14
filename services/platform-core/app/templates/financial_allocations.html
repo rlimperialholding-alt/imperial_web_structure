@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Pénzügyi projektbesorolás | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><span class="eyebrow">FINANCIAL CONTROL · KANONIKUS ADATMINŐSÉG</span><h1>Pénzügyi projektbesorolás</h1><p>A számla- és cash-flow tételek ProjectID-hez vagy igazolt vállalati költséghez rendelése. Minden döntés auditált, az eredeti forrásadat változatlan marad.</p></div>
+  <div class="head-actions"><a class="button" href="/financial/incoming-invoices">Bejövő számlák</a><a class="button primary" href="/financial/intelligence">Pénzügyi intelligencia</a></div>
+</div>
+
+<div class="metric-grid four">
+  <a class="metric-card-link" href="/financial/allocations?scope=unassigned"><article class="metric-card"><span>Besorolatlan</span><strong>{{ data.counts.unassigned }}</strong><small>ProjectID vagy vállalati döntés kell</small></article></a>
+  <a class="metric-card-link" href="/financial/allocations?scope=project"><article class="metric-card"><span>Projekthez rendelt</span><strong>{{ data.counts.project }}</strong><small>kanonikus ProjectID</small></article></a>
+  <a class="metric-card-link" href="/financial/allocations?scope=corporate"><article class="metric-card"><span>Vállalati</span><strong>{{ data.counts.corporate }}</strong><small>indoklással elfogadott</small></article></a>
+  <article class="metric-card"><span>Aktív projekttörzs</span><strong>{{ data.projects|length }}</strong><small>választható projektmester</small></article>
+</div>
+
+<section class="workspace-card filter-card">
+  <form method="get" class="filter-bar">
+    <label>Állapot<select name="scope"><option value="">Mind</option><option value="unassigned" {% if data.filters.scope=='unassigned' %}selected{% endif %}>Besorolatlan</option><option value="project" {% if data.filters.scope=='project' %}selected{% endif %}>Projekt</option><option value="corporate" {% if data.filters.scope=='corporate' %}selected{% endif %}>Vállalati</option></select></label>
+    <label>Típus<select name="entity_type"><option value="">Mind</option><option value="cashflow_entry" {% if data.filters.entity_type=='cashflow_entry' %}selected{% endif %}>Cash-flow</option><option value="supplier_invoice" {% if data.filters.entity_type=='supplier_invoice' %}selected{% endif %}>CRM számla</option><option value="incoming_invoice" {% if data.filters.entity_type=='incoming_invoice' %}selected{% endif %}>Billingo bejövő számla</option></select></label>
+    <label class="span-2">Keresés<input name="search" value="{{ data.filters.search }}" placeholder="Számlaszám, partner, leírás vagy azonosító"></label>
+    <button>Szűrés</button><a class="clear-filter" href="/financial/allocations">Törlés</a>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><h2>Besorolási munkalista</h2><p>{{ data.total }} találat · {{ data.page }}. / {{ data.total_pages }}. oldal</p></div></div>
+  <div class="record-list">
+  {% for item in data["items"] %}
+    <article class="record-card">
+      <div class="record-top"><strong>{{ item.data.invoiceNumber or item.data.description or item.record.canonical_name or item.record.external_key }}</strong><span class="status-pill {{ 'ok' if item.allocation_scope!='unassigned' else 'critical' }}">{{ item.allocation_scope }}</span></div>
+      <p>{{ item.data.partnerName or item.data.counterparty or item.data.sellerName or item.data.buyerName or 'Partner nélkül' }} · {{ (item.data.grossAmount or item.data.amount or 0)|amount }} {{ item.data.currency or 'HUF' }}</p>
+      <small>{{ item.record.entity_type }} · {{ item.record.external_key }}{% if item.record.project_id %} · {{ item.record.project_id }}{% endif %}</small>
+      {% if user.role in ['owner', 'platform-admin', 'finance'] %}
+      <form method="post" action="/financial/allocations/{{ item.record.record_id }}" class="form-grid compact-form">
+        <label>Besorolás<select name="scope" required><option value="unassigned" {% if item.allocation_scope=='unassigned' %}selected{% endif %}>Besorolatlan</option><option value="project" {% if item.allocation_scope=='project' %}selected{% endif %}>Projekt</option><option value="corporate" {% if item.allocation_scope=='corporate' %}selected{% endif %}>Vállalati</option></select></label>
+        <label class="span-2">ProjectID<select name="project_id"><option value="">— nincs projekt —</option>{% for project in data.projects %}<option value="{{ project.project_id }}" {% if item.record.project_id==project.project_id %}selected{% endif %}>{{ project.project_id }} · {{ project.name }}</option>{% endfor %}</select></label>
+        <label class="span-2">Indoklás<input name="note" value="" placeholder="Vállalati költségnél kötelező; projektbesorolásnál ajánlott"></label>
+        <div class="form-action"><button class="primary">Besorolás mentése</button></div>
+      </form>
+      {% else %}
+      <p class="empty">Megtekintési jogosultság. A kanonikus pénzügyi besorolást a pénzügy végzi.</p>
+      {% endif %}
+    </article>
+  {% else %}<p class="empty">A megadott szűrésre nincs pénzügyi tétel.</p>{% endfor %}
+  </div>
+  <div class="pagination">
+    {% if data.page > 1 %}<a class="table-link" href="/financial/allocations?page={{ data.page - 1 }}&scope={{ data.filters.scope }}&entity_type={{ data.filters.entity_type }}&search={{ data.filters.search|urlencode }}">← Előző</a>{% endif %}
+    <span>{{ data.page }}. / {{ data.total_pages }}. oldal</span>
+    {% if data.page < data.total_pages %}<a class="table-link" href="/financial/allocations?page={{ data.page + 1 }}&scope={{ data.filters.scope }}&entity_type={{ data.filters.entity_type }}&search={{ data.filters.search|urlencode }}">Következő →</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

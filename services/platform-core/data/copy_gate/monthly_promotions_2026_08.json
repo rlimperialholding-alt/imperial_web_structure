@@ -1,0 +1,232 @@
+{
+  "schema_version": "1.0",
+  "registry_id": "MONTHLY-PROMOTIONS-2026-08",
+  "period": "2026-08",
+  "source": {
+    "system": "gmail",
+    "message_id": "19f88e0de03c5a5e",
+    "thread_id": "19f60338c1275ec0",
+    "sent_at": "2026-07-22T08:11:06+02:00",
+    "sender": "info@imperialholding.hu",
+    "subject": "2026. augusztusi akciók – Imperial, Danish Fabrik, Bautica, Prefab és TimberHaus",
+    "authority": "Imperial Holding írásos kampányutasítás"
+  },
+  "global_rules": {
+    "valid_from": "2026-08-01",
+    "valid_until": "2026-08-31",
+    "promotion_copy_placement": "FIRST_BLOCK",
+    "promotion_on_creative": "OPTIONAL",
+    "discount_and_gift_stackable": false,
+    "discount_base": "A 2026-08-01-re külön jóváhagyott friss nettó alapár.",
+    "minimum_final_project_margin_pct": 35,
+    "minimum_pre_discount_margin_pct": {
+      "4": 37.6,
+      "5": 38.25,
+      "6": 38.9
+    },
+    "required_price_fields": [
+      "original_net_price",
+      "promotional_net_price",
+      "saving_huf",
+      "saving_pct",
+      "valid_until"
+    ],
+    "required_choices": [
+      "DISCOUNT",
+      "GIFT_PACKAGE"
+    ],
+    "required_approvals": [
+      "finance",
+      "legal",
+      "leadership"
+    ],
+    "legal_note": "Az ajánlat a végleges műszaki tartalomhoz, telekadottságokhoz és szerződéses feltételekhez kötött.",
+    "eligibility_copy_status": "PLACEHOLDER_ONLY_PENDING_APPROVAL",
+    "production_release_requires_separate_written_leadership_approval": true
+  },
+  "brands": {
+    "imperial": {
+      "brand_id": "imperial",
+      "monthly_policy": "SOURCE_DRIVEN",
+      "status": "ACTIVE",
+      "promotion_id": "PROMO-IMP-2026-08",
+      "campaign_message": "Augusztusban nemcsak házat kapsz. Megérkezik vele a kert legszebb része is.",
+      "secondary_message": "Válassz akár 6% kedvezményt, vagy kérd ajándékba a 12 m²-es bioklimatikus pergolát.",
+      "suggested_cta": "Kérem az augusztusi Imperial ajánlatot",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "publication_approvals": {"finance": true, "legal": true, "leadership": true},
+      "models": [
+        {"name": "Kugli", "area_sqm": 62, "discount_pct": 6},
+        {"name": "Kazimir ház", "area_sqm": 73, "discount_pct": 6},
+        {"name": "Nathan", "area_sqm": 83, "discount_pct": 5},
+        {"name": "Jura Smart", "area_sqm": 92, "discount_pct": 5},
+        {"name": "Passzát Optimum", "area_sqm": 93, "discount_pct": 5},
+        {"name": "Vitalis Energy", "area_sqm": 100, "discount_pct": 5},
+        {"name": "Tápió", "area_sqm": 115, "discount_pct": 5},
+        {"name": "Triász", "area_sqm": 125, "discount_pct": 5},
+        {"name": "South Beach", "area_sqm": 156, "discount_pct": 4},
+        {"name": "A-frame", "area_sqm": 208, "discount_pct": 4}
+      ],
+      "gift": {
+        "name": "12 m²-es bioklimatikus pergola beépítéssel",
+        "internal_net_cost_cap_huf": 600000,
+        "communicated_value_huf_min": 2500000,
+        "communicated_value_huf_max": 3500000,
+        "communicated_value_requires_market_evidence": true,
+        "under_92_sqm_alternative": {
+          "name": "Teljes 3D belsőépítészeti alapkoncepció és berendezési terv",
+          "internal_net_cost_cap_huf": 250000
+        }
+      }
+    },
+    "danish-fabrik": {
+      "brand_id": "danish-fabrik",
+      "monthly_policy": "SOURCE_DRIVEN",
+      "status": "ACTIVE",
+      "promotion_id": "PROMO-DANISH-FABRIK-2026-08",
+      "campaign_message": "Skandináv nyár. Gyors otthon. Több idő élni.",
+      "secondary_message": "Válassz kedvezményt, vagy kérd a Nordic Wellness ajándékcsomagot.",
+      "suggested_cta": "Megnézem a skandináv augusztusi ajánlatot",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "publication_approvals": {"finance": true, "legal": true, "leadership": true},
+      "models": [
+        {"name": "Lyon", "area_sqm": 58, "discount_pct": 6},
+        {"name": "Adamstown", "area_sqm": 77, "discount_pct": 6},
+        {"name": "Lome", "area_sqm": 91, "discount_pct": 5},
+        {"name": "Genf", "area_sqm": 100, "discount_pct": 5},
+        {"name": "Graz", "area_sqm": 111, "discount_pct": 5},
+        {"name": "Muzkat", "area_sqm": 116, "discount_pct": 5},
+        {"name": "Firenze", "area_sqm": 127, "discount_pct": 5},
+        {"name": "Aden", "area_sqm": 150, "discount_pct": 4},
+        {"name": "Laos", "area_sqm": 155, "discount_pct": 4},
+        {"name": "Alberobello", "area_sqm": 199, "discount_pct": 4}
+      ],
+      "gift": {
+        "name": "Nordic Wellness csomag",
+        "items": ["2 személyes prémium infra szauna", "elektromos kiállás", "elhelyezési terv"],
+        "internal_net_cost_cap_huf": 900000,
+        "under_100_sqm_alternative": {
+          "name": "Okosotthon-indítócsomag",
+          "items": ["elektromosautó-töltő előkészítés", "intelligens termosztát", "alap világításvezérlés"],
+          "internal_net_cost_cap_huf": 350000
+        }
+      }
+    },
+    "bautica": {
+      "brand_id": "bautica",
+      "monthly_policy": "SOURCE_DRIVEN",
+      "status": "PREPARATION_ONLY",
+      "promotion_id": "PROMO-BAUTICA-2026-08",
+      "campaign_message": "Prémium otthon. Tervezői segítséggel, kompromisszum nélkül.",
+      "secondary_message": "Augusztusban a ház mellé megtervezzük azt is, milyen lesz benne élni.",
+      "suggested_cta": "Kérem a Bautica Design ajánlatot",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "publication_approvals": {"finance": false, "legal": false, "leadership": false},
+      "models": [
+        {"name": "Abigial", "area_sqm": 43, "discount_pct": 6},
+        {"name": "Luca", "area_sqm": 58, "discount_pct": 6},
+        {"name": "Anna", "area_sqm": 77, "discount_pct": 5},
+        {"name": "Aelmoor Zephy", "area_sqm": 89.05, "discount_pct": 5},
+        {"name": "Accra", "area_sqm": 110, "discount_pct": 5},
+        {"name": "Apollón", "area_sqm": 115, "discount_pct": 5},
+        {"name": "Velaris", "area_sqm": 116, "discount_pct": 5},
+        {"name": "Anduin", "area_sqm": 132, "discount_pct": 5},
+        {"name": "Aria", "area_sqm": 145, "discount_pct": 4},
+        {"name": "Amszterdam", "area_sqm": 189, "discount_pct": 4}
+      ],
+      "gift": {
+        "name": "Bautica Interior Design Edition",
+        "items": ["belsőépítészeti alapkoncepció", "nappali–konyha–étkező 3D látványterv", "fürdőszobai és burkolati moodboard", "világítási és színkoncepció", "berendezési és beszerzési lista"],
+        "internal_net_cost_cap_huf": 350000,
+        "communicated_value_huf_min": 1500000,
+        "communicated_value_huf_max": 2000000,
+        "communicated_value_requires_service_evidence": true
+      },
+      "blocking_reasons": ["Élesítéshez külön pénzügyi, jogi és írásos vezetői jóváhagyás szükséges."]
+    },
+    "prefab": {
+      "brand_id": "prefab",
+      "monthly_policy": "SOURCE_DRIVEN",
+      "status": "ACTIVE",
+      "promotion_id": "PROMO-PREFAB-2026-08",
+      "campaign_message": "Szilárd alapok. Kész kertkapcsolat.",
+      "secondary_message": "Válassz kedvezményt, vagy kérd ajándékba a házhoz illő kész térkövezési csomagot.",
+      "suggested_cta": "Kérem a szilárd augusztusi ajánlatot",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "publication_approvals": {"finance": true, "legal": true, "leadership": true},
+      "models": [
+        {"name": "Pannonház", "area_sqm": 70.20, "discount_pct": 6},
+        {"name": "Csipke", "area_sqm": 80, "discount_pct": 6},
+        {"name": "Morzsa", "area_sqm": 81.63, "discount_pct": 5},
+        {"name": "Muskátli", "area_sqm": 87.46, "discount_pct": 5},
+        {"name": "Atlanti-óceán", "area_sqm": 108, "discount_pct": 5},
+        {"name": "Tiszafa", "area_sqm": 109.50, "discount_pct": 5},
+        {"name": "Lombház", "area_sqm": 127.90, "discount_pct": 5},
+        {"name": "Ibiza", "area_sqm": 135, "discount_pct": 4},
+        {"name": "Ljubljana", "area_sqm": 149, "discount_pct": 4},
+        {"name": "Balatonzug", "area_sqm": 187, "discount_pct": 4}
+      ],
+      "gift": {
+        "name": "Kész kertkapcsolat csomag",
+        "items": ["legfeljebb 30 m² térkövezés", "alapréteg", "szegély", "standard kivitelezés"],
+        "internal_net_cost_cap_huf": 750000,
+        "communicated_value_huf_min": 1800000,
+        "communicated_value_huf_max": 2500000,
+        "communicated_value_requires_market_evidence": true
+      }
+    },
+    "timberhaus": {
+      "brand_id": "timberhaus",
+      "monthly_policy": "SOURCE_DRIVEN",
+      "status": "PREPARATION_ONLY",
+      "promotion_id": "PROMO-TIMBERHAUS-2026-08",
+      "campaign_message": "Fából mindent lehet. Augusztusban még többet kapsz.",
+      "secondary_message": "Okos favázas otthon, hozzá illő kerti faházzal.",
+      "suggested_cta": "Kérem a TimberHaus döntéstámogató ajánlatot",
+      "valid_from": "2026-08-01",
+      "valid_until": "2026-08-31",
+      "publication_approvals": {"finance": false, "legal": false, "leadership": false, "catalog_model_mapping": false},
+      "models": [
+        {"campaign_slot": "kompakt 45–55 m², 1 hálós vagy stúdió jellegű", "discount_pct": 6, "verified_model_name": null},
+        {"campaign_slot": "első otthon 65–75 m², 2 hálós", "discount_pct": 6, "verified_model_name": null},
+        {"campaign_slot": "Optimized Living 85–95 m²", "discount_pct": 5, "verified_model_name": null},
+        {"campaign_slot": "Smart Family Home 100–110 m²", "discount_pct": 5, "verified_model_name": null},
+        {"campaign_slot": "pajtaház-jellegű 110–125 m²", "discount_pct": 5, "verified_model_name": null},
+        {"campaign_slot": "minimál/lapostetős 120–140 m²", "discount_pct": 5, "verified_model_name": null},
+        {"campaign_slot": "emeletes 140–160 m²", "discount_pct": 4, "verified_model_name": null},
+        {"campaign_slot": "High-Value Home 170–200 m²", "discount_pct": 4, "verified_model_name": null}
+      ],
+      "gift": {
+        "name": "Timber Garden House",
+        "items": ["8 m²-es favázas kerti szerszámtároló/kisház", "a főépülethez illeszkedő standard külső burkolat"],
+        "internal_net_cost_cap_huf": 650000,
+        "communicated_value_huf_min": 1800000,
+        "communicated_value_huf_max": 2500000,
+        "communicated_value_requires_market_evidence": true
+      },
+      "blocking_reasons": ["A nyolc tényleges modellnév és URL katalógus-alapú jóváhagyása hiányzik; ideiglenes névvel vagy nem ellenőrzött alaprajzzal publikálni tilos."]
+    },
+    "baufreund": {
+      "brand_id": "baufreund",
+      "monthly_policy": "SOURCE_DRIVEN",
+      "status": "NO_PROMOTION_SOURCE",
+      "blocking_reasons": ["A forráslevél ehhez a márkához nem határoz meg augusztusi akciót."]
+    },
+    "casa-moderna": {
+      "brand_id": "casa-moderna",
+      "monthly_policy": "NEVER_PROMOTION",
+      "status": "NEVER_PROMOTION",
+      "blocking_reasons": ["A márkapolitika szerint akciós kommunikáció nem használható."]
+    },
+    "red": {
+      "brand_id": "red",
+      "monthly_policy": "ALWAYS_REQUIRED",
+      "status": "MISSING_REQUIRED_SOURCE",
+      "blocking_reasons": ["A forráslevél ehhez a kötelezően akciós márkához nem tartalmaz hiteles havi ajánlatot."]
+    }
+  }
+}

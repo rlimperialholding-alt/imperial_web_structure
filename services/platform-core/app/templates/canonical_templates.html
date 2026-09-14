@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Kanonikus iratmintatár | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="content-header canonical-head">
+  <div>
+    <span class="eyebrow">DOCUMENT &amp; EVIDENCE · KANONIKUS FORRÁS</span>
+    <h1>Iratmintatár</h1>
+    <p>A Drive-on jóváhagyott iratminták szerepkör, kiváltó esemény és projektfolyamat szerint. Minden példány TemplateID-, verzió- és SHA-256 forrásnyommal készül.</p>
+  </div>
+  <a class="button" href="/documents">Dokumentumtár</a>
+</section>
+
+<section class="workspace-kpis compact-kpis">
+  <a><span>Kanonikus sablon</span><strong>{{ status.template_count }}</strong></a>
+  <a><span>Ellenőrzött forrás</span><strong>{{ status.verified_count }}</strong></a>
+  <a><span>Iratcsalád</span><strong>{{ status.category_count }}</strong></a>
+  <a class="{{ 'success-kpi' if status.healthy else 'danger-kpi' }}"><span>Forrásállapot</span><strong>{{ 'RENDBEN' if status.healthy else 'HIBÁS' }}</strong></a>
+</section>
+
+<section class="workspace-card filter-card">
+  <form method="get" class="filter-bar">
+    <label>Keresés<input name="q" value="{{ filters.q or '' }}" placeholder="TemplateID, iratnév vagy cél"></label>
+    <label>Iratcsalád<select name="category"><option value="">Minden iratcsalád</option>{% for code, label in categories %}<option value="{{ code }}" {% if filters.category==code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <button>Szűrés</button><a class="clear-filter" href="/documents/templates">Törlés</a>
+  </form>
+</section>
+
+<section class="canonical-template-grid">
+{% for row in rows %}
+  <a class="canonical-template-card" href="/documents/templates/{{ row.template_id }}">
+    <div class="canonical-template-top">
+      <span class="template-code">{{ row.template_id }}</span>
+      <span class="template-tier tier-{{ row.tier|lower }}">{{ row.tier }}</span>
+    </div>
+    <h2>{{ row.display_name }}</h2>
+    <p>{{ row.purpose }}</p>
+    <div class="canonical-template-meta">
+      <span>{{ row.category_label }}</span><span>{{ row.version }}</span>
+      {% if row.legal_level %}<span>{{ row.legal_level }}</span>{% endif %}
+    </div>
+    {% if row.trigger %}<div class="template-trigger"><b>Kiváltó esemény:</b> {{ row.trigger }}</div>{% endif %}
+  </a>
+{% else %}
+  <div class="workspace-card empty-state"><b>Nincs találat.</b><span>A szerepkörhöz és szűréshez nem tartozik elérhető iratminta.</span></div>
+{% endfor %}
+</section>
+{% endblock %}

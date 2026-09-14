@@ -1,0 +1,87 @@
+{
+  "status": "PASS",
+  "check_count": 6,
+  "failed_count": 0,
+  "checks": [
+    {
+      "name": "pytest",
+      "ok": true,
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "stdout": "...................................................                      [100%]\n51 passed in 1.83s\n",
+      "stderr": ""
+    },
+    {
+      "name": "static_check",
+      "ok": true,
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "scripts/static_check.py"
+      ],
+      "stdout": "{\n  \"status\": \"PASS\",\n  \"checked_python_files\": 78,\n  \"failures\": []\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "compileall",
+      "ok": true,
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "-m",
+        "compileall",
+        "-q",
+        "app",
+        "scripts"
+      ],
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "alembic_current",
+      "ok": true,
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "-m",
+        "alembic",
+        "heads"
+      ],
+      "stdout": "8f6db9b7a701 (head)\n",
+      "stderr": ""
+    },
+    {
+      "name": "staging_artifact_qa",
+      "ok": true,
+      "source_report": "/mnt/data/iip-v0.7.0-staging-gate-final/staging-gate-report.json",
+      "artifact_summary": {
+        "catalog": {
+          "processes_imported": 99,
+          "processes_unchanged": 0,
+          "checklists_imported": 99,
+          "checklists_unchanged": 0,
+          "total_processes": 99,
+          "total_checklists": 99
+        },
+        "processes": 99,
+        "checklist_templates": 99,
+        "artifacts_inspected": 396,
+        "issues": [],
+        "passed": true
+      }
+    },
+    {
+      "name": "production_preflight",
+      "ok": true,
+      "command": [
+        "/opt/pyvenv/bin/python",
+        "scripts/production_preflight.py",
+        "--env-file",
+        "/mnt/data/iip-v0.7.0-production-test.env"
+      ],
+      "stdout": "{\n  \"status\": \"PASS\",\n  \"check_count\": 8,\n  \"failed_count\": 0,\n  \"checks\": [\n    {\n      \"name\": \"production_configuration\",\n      \"ok\": true,\n      \"detail\": \"Production configuration is valid\"\n    },\n    {\n      \"name\": \"five_role_authorization\",\n      \"ok\": true,\n      \"detail\": \"Exactly five unique human role tokens are configured\",\n      \"configured_roles\": [\n        \"Marketinges\",\n        \"Projektmenedzser\",\n        \"Pénzügyes\",\n        \"Értékesítő\",\n        \"Ügyvezető\"\n      ]\n    },\n    {\n      \"name\": \"pinned_container_images\",\n      \"ok\": true,\n      \"detail\": \"All production images are pinned\"\n    },\n    {\n      \"name\": \"operational_catalog\",\n      \"ok\": true,\n      \"detail\": \"99/99 Process Card and checklist mapping is consistent\",\n      \"path\": \"/mnt/data/imperial-intelligence-integration-hub-v0.7.0/config/operational-process-catalog-v1.0.json\",\n      \"processes\": 99,\n      \"templates\": 99,\n      \"roles\": [\n        \"Marketinges\",\n        \"Projektmenedzser\",\n        \"Pénzügyes\",\n        \"Értékesítő\",\n        \"Ügyvezető\"\n      ]\n    },\n    {\n      \"name\": \"runtime_storage\",\n      \"ok\": true,\n      \"detail\": \"Runtime storage is writable\",\n      \"paths\": [\n        \"/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/process_cards\",\n        \"/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/published_process_cards\",\n        \"/mnt/data/imperial-intelligence-integration-hub-v0.7.0/runtime/checklists\"\n      ]\n    },\n    {\n      \"name\": \"google_service_account\",\n      \"ok\": true,\n      \"detail\": \"Google publication features are disabled\"\n    },\n    {\n      \"name\": \"operations_scripts\",\n      \"ok\": true,\n      \"detail\": \"Backup and restore-drill scripts pass shell syntax validation\"\n    },\n    {\n      \"name\": \"production_compose\",\n      \"ok\": true,\n      \"detail\": \"Compose YAML structure is valid; Docker CLI unavailable for interpolation\",\n      \"mode\": \"yaml_fallback\"\n    }\n  ]\n}\n",
+      "stderr": ""
+    }
+  ]
+}

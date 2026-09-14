@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Imperial TenderMail{% endblock %}
+{% block content %}
+<section class="page-hero mail-hero">
+  <div><span class="eyebrow">BESZERZÉSI KOMMUNIKÁCIÓ</span><h1>Imperial TenderMail</h1><p>Személyre szabott tendermeghívók több száz partnernek, BCC nélkül. Globális tiltólista, domainhitelesítés, adagolt küldés és kézbesítési események egyetlen auditált rendszerben.</p></div>
+  <div class="hero-seal"><b>Nem spam-trükk.</b><span>Reputációvédelem, releváns címzés és kötelező kézbesítési kapuk.</span></div>
+</section>
+<section class="metric-grid metric-grid-5">
+  <article><span>Küldési domain</span><strong>{{ metrics.domains }}</strong><small>{{ metrics.verified_domains }} hitelesített</small></article>
+  <article><span>Kampány</span><strong>{{ metrics.campaigns }}</strong><small>{{ metrics.draft_campaigns }} vázlat</small></article>
+  <article><span>Címzett</span><strong>{{ metrics.recipients }}</strong><small>egyedi levelek</small></article>
+  <article><span>Kiküldött</span><strong>{{ metrics.sent }}</strong><small>{{ metrics.delivered }} kézbesített</small></article>
+  <article class="metric-emphasis"><span>Tiltólista</span><strong>{{ metrics.suppressed }}</strong><small>nem küldhető cím</small></article>
+</section>
+<div class="workspace-grid">
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">ÚJ KAMPÁNY</span><h2>Tendermeghívó létrehozása</h2></div><span class="status-dot good">egyedi címzés</span></div>
+  <form method="post" action="/tendermail/campaigns" class="form-grid">
+    <label class="span-2">Kampány neve<input name="name" placeholder="Például: Göd – szerkezetépítési tender" required></label>
+    <label>Küldési domain<select name="domain_key">{% for domain in domains %}<option value="{{ domain.domain_key }}">{{ domain.from_name }} &lt;{{ domain.from_email }}&gt;</option>{% endfor %}</select></label>
+    <label>Óránkénti maximum<input name="hourly_rate" type="number" value="100" min="1" max="500"></label>
+    <label>Tenderazonosító<input name="tender_id" placeholder="TND-2026-..."></label>
+    <label>ProjectID<input name="project_id" placeholder="IMP-..."></label>
+    <label class="span-2">Tárgy<input name="subject_template" value="{% raw %}Meghívás ajánlattételre – {{company_name}} – {{tender_id}}{% endraw %}" required></label>
+    <label class="span-2">Levél szövege<textarea name="text_template" rows="10" required>{% raw %}Tisztelt {{contact_name}}!
+
+Az Imperial Holding meghívja Önöket a {{tender_id}} azonosítójú tenderre.
+
+A tender részletei és dokumentumai:
+{{tender_link}}
+
+Kérjük, ajánlatukat a tenderfelületen megadott határidőig töltsék fel.
+
+Üdvözlettel:
+Imperial Holding Beszerzés
+
+Értesítési beállítások: {{unsubscribe_url}}{% endraw %}</textarea></label>
+    <div class="form-action span-2"><button class="gold">Kampány létrehozása</button></div>
+  </form>
+</section>
+<aside class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">KÜLDÉSI IDENTITÁS</span><h2>Domainállapot</h2></div></div>
+  {% for domain in domains %}<div class="domain-card"><b>{{ domain.domain_name }}</b><small>{{ domain.from_email }} · {{ domain.provider }}</small><div class="dns-grid"><span>SPF <em class="{{ domain.spf_status }}">{{ domain.spf_status }}</em></span><span>DKIM <em class="{{ domain.dkim_status }}">{{ domain.dkim_status }}</em></span><span>DMARC <em class="{{ domain.dmarc_status }}">{{ domain.dmarc_status }}</em></span><span>Warm-up <em>{{ domain.warmup_status }}</em></span></div><p>Max. {{ domain.max_hourly_rate }} levél/óra. Éles kampány csak mindhárom DNS-kapu „pass” állapotánál indulhat.</p></div>{% endfor %}
+  <div class="principle-strip"><b>Nincs „soha nem spam” garancia.</b><span>A rendszer a feladói reputáció, az adatminőség és a panaszarány védelmével csökkenti a kockázatot.</span></div>
+</aside>
+</div>
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">KAMPÁNYOK</span><h2>Aktív és korábbi tenderküldések</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Kampány</th><th>Projekt / tender</th><th>Állapot</th><th>Címzett</th><th>Sor</th><th>Kiküldött</th><th>Hiba</th><th></th></tr></thead><tbody>{% for c in campaigns %}<tr><td><b>{{ c.name }}</b><small>{{ c.created_at|dt }}</small></td><td>{{ c.project_id or '—' }}<small>{{ c.tender_id or '—' }}</small></td><td><span class="badge {{ 'green' if c.status in ['completed','ready'] else 'yellow' }}">{{ c.status }}</span></td><td>{{ c.recipient_count }}</td><td>{{ c.queued_count }}</td><td>{{ c.sent_count }}</td><td>{{ c.bounced_count + c.complained_count }}</td><td><a class="table-link" href="/tendermail/{{ c.campaign_id }}">Megnyitás →</a></td></tr>{% else %}<tr><td colspan="8" class="empty">Még nincs kampány.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+<div class="grid-2"><section class="panel elevated"><span class="eyebrow">KÉZBESÍTÉSI ALAPELVEK</span><h2>Mi védi a feladói reputációt?</h2><div class="guard-list"><span><b>01</b>Egyedi címzett, nincs tömeges BCC.</span><span><b>02</b>Globális bounce-, panasz- és leiratkozási tiltólista.</span><span><b>03</b>SPF, DKIM és DMARC kapu minden éles küldés előtt.</span><span><b>04</b>Adagolt küldés domainenkénti órás plafonnal.</span><span><b>05</b>Dokumentumok csatolmány helyett jogosult tenderlinken.</span></div></section><section class="panel elevated"><span class="eyebrow">SUPPRESSION</span><h2>Legutóbbi tiltások</h2><div class="compact-list">{% for row in suppressions %}<div><span class="domain-pill neutral">{{ row.reason }}</span><div><b>{{ row.email }}</b><small>{{ row.source or 'rendszer' }} · {{ row.created_at|dt }}</small></div></div>{% else %}<p class="empty">A tiltólista üres.</p>{% endfor %}</div></section></div>
+{% endblock %}

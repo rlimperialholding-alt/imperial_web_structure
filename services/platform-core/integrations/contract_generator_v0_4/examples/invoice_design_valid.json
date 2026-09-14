@@ -1,0 +1,56 @@
+{
+  "invoice_number": "TERV-2026-0001",
+  "invoice_type": "INVOICE",
+  "issue_date": "2026-10-31",
+  "performance_date": "2026-10-30",
+  "received_date": "2026-10-31",
+  "due_date": "2026-11-08",
+  "currency": "HUF",
+  "payment_method": "banki átutalás",
+  "supplier": {
+    "name": "Minta Tervező Kft.",
+    "address": "1024 Budapest, Terv utca 1.",
+    "tax_number": "23456789-2-41",
+    "bank_account": "11700000-00000003-00000003"
+  },
+  "buyer": {
+    "name": "Imperial Teszt Megrendelő Kft. (MINTAADAT)",
+    "address": "1037 Budapest, Teszt köz 1.",
+    "tax_number": "10000001-2-41"
+  },
+  "net_amount": 420000,
+  "vat_percent": 27,
+  "vat_amount": 113400,
+  "gross_amount": 533400,
+  "contract_number": "TERV-AV-2026-0001",
+  "project_id": "PRJ-TERV-AV-2026-0001",
+  "performance_certificate": {
+    "id": "TERV-TIG-2026-0001",
+    "contract_number": "TERV-AV-2026-0001",
+    "project_id": "PRJ-TERV-AV-2026-0001",
+    "status": "ACCEPTED",
+    "accepted_date": "2026-10-30",
+    "accepted_by_name": "Minta Projektvezető",
+    "accepted_by_title": "projektvezető",
+    "supplier_signed": true,
+    "authorized_acceptor_signed": true,
+    "accepted_gross_amount": 533400
+  },
+  "line_items": [
+    {
+      "description": "Kiviteli tervdokumentáció – 1. rész",
+      "quantity": 1,
+      "unit": "tervcsomag",
+      "unit_net_price": 420000,
+      "net_amount": 420000,
+      "vat_percent": 27,
+      "vat_amount": 113400,
+      "gross_amount": 533400
+    }
+  ],
+  "file_present": true,
+  "file_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "document_readable": true,
+  "content_integrity_verified": true,
+  "duplicate_invoice": false
+}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Háztervező · Imperial Intelligence{% endblock %}
+{% block content %}
+<style>
+.hd-hero{background:linear-gradient(135deg,#0b1d34,#183b5f);color:#fff;border-radius:22px;padding:32px;margin-bottom:20px}.hd-hero h1{margin:.3rem 0}.hd-grid{display:grid;grid-template-columns:minmax(280px,420px) 1fr;gap:20px}.hd-card{background:#fff;border:1px solid #e0e6ec;border-radius:16px;padding:20px}.hd-form{display:grid;gap:12px}.hd-form label{display:grid;gap:6px;font-weight:650}.hd-form input,.hd-form select{padding:10px;border:1px solid #bac5d1;border-radius:8px}.hd-list{display:grid;gap:10px}.hd-item{display:flex;justify-content:space-between;gap:15px;padding:14px;border:1px solid #e0e6ec;border-radius:12px;text-decoration:none;color:inherit}.hd-status{font-size:.8rem;background:#eef3f7;border-radius:999px;padding:4px 9px;height:max-content}.hd-warning{padding:12px;border-radius:10px;background:#fff3cd;color:#674d00;margin:10px 0}@media(max-width:900px){.hd-grid{grid-template-columns:1fr}}
+.hd-form :is(input,select,button){min-height:44px}
+</style>
+<section class="hd-hero">
+  <span class="eyebrow light">HOUSE DESIGNER · SANDBOX</span>
+  <h1>Tervezze meg saját otthonát milliméterpontosan</h1>
+  <p>Induljon üres alaprajzról, vagy alakítson tovább egy jóváhagyott típustervet. A telek- és jogszabályi megfelelőség csak igazolt szabálykészlettel minősül ellenőrzöttnek.</p>
+</section>
+{% if error %}<div class="hd-warning" role="alert">A művelet nem hajtható végre: <code>{{ error }}</code>.</div>{% endif %}
+{% if user.role in ['designer','technical-prep','managing-director','owner'] %}
+<p><a href="/house-designer/adapters">Éles szolgáltatói adapterek kezelése →</a></p>
+{% endif %}
+{% if user.role in ['sales','designer','technical-prep','project-manager','legal','finance','managing-director','owner','platform-admin'] %}
+<p><a href="/house-designer/submissions">Belső submission review munkasor →</a></p>
+{% endif %}
+<section class="hd-grid">
+  <div class="hd-card">
+    <span class="eyebrow">ÚJ TERV</span><h2>Kiindulási méretek</h2>
+    <form class="hd-form" method="post" action="/house-designer/sessions" data-command-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="command_id">
+      <label>Megnevezés<input name="title" value="Saját családi ház" maxlength="255" required></label>
+      <label>Kiindulás<select name="origin" data-origin><option value="blank">Üres alaprajz</option>{% if templates %}<option value="template">Jóváhagyott típusterv</option>{% endif %}</select></label>
+      {% if templates %}<label data-template-picker hidden>Típusterv<select name="template_plan_id"><option value="">Válasszon típustervet</option>{% for template in templates %}<option value="{{ template.planId }}">{{ template.title }} · v{{ template.versionNumber }} · {{ template.status }}</option>{% endfor %}</select></label>{% endif %}
+      <label>Szélesség (mm)<input type="number" name="width_mm" min="600" max="100000" value="10000" required></label>
+      <label>Mélység (mm)<input type="number" name="depth_mm" min="600" max="100000" value="8000" required></label>
+      <button class="gold" type="submit">Szerkesztés indítása</button>
+    </form>
+  </div>
+  <div class="hd-card">
+    <span class="eyebrow">SAJÁT TERVEK</span><h2>Folytatható munkák</h2>
+    <div class="hd-list">
+    {% for item in sessions %}
+      <a class="hd-item" href="/house-designer/sessions/{{ item.sessionId }}"><span><strong>{{ item.title }}</strong><br><small>{{ item.origin }} · {{ item.updatedAt|dt }}</small></span><span class="hd-status">{{ item.status }}</span></a>
+    {% else %}<p>Még nincs mentett házterv.</p>{% endfor %}
+    </div>
+  </div>
+</section>
+<script>document.querySelectorAll('[data-command-form]').forEach(f=>{const i=f.querySelector('[name=command_id]');if(i&&!i.value)i.value=crypto.randomUUID();const o=f.querySelector('[data-origin]'),p=f.querySelector('[data-template-picker]');if(o&&p){const sync=()=>{p.hidden=o.value!=='template';p.querySelector('select').required=o.value==='template'};o.addEventListener('change',sync);sync()}});</script>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}HouseVision munkasor | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="ops-hero"><div><span class="eyebrow light">HOUSEVISION PRODUCTION</span><h1>Vizualizációs munkasor</h1><p>Jogtiszta, geometriahű házvizualizációk feladatvezérelt előállítása és kiadása.</p><p>SOURCE RIGHTS → GeometryLock → Renderkimenet → QA- és csomagbizonyíték → HousePlan kötése</p></div></section>
+<section class="panel"><p><a class="button" href="/housevision/typehouse-factory">Typehouse Factory v1.0 – forráslista és soros ügynök</a></p></section>
+
+<section class="ops-kpis">
+  <article><span>Összes job</span><b>{{ metrics.jobs }}</b></article>
+  <article><span>READY</span><b>{{ metrics.ready }}</b></article>
+  <article class="{% if metrics.rights_blocked %}danger-card{% endif %}"><span>Jog által blokkolt</span><b>{{ metrics.rights_blocked }}</b></article>
+  <article class="{% if metrics.retrying %}warning-card{% endif %}"><span>Újragenerálás</span><b>{{ metrics.retrying }}</b></article>
+  <article class="{% if metrics.failed %}danger-card{% endif %}"><span>Végleg hibás</span><b>{{ metrics.failed }}</b></article>
+</section>
+
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">QUEUE</span><h2>Aktív munkák</h2></div></div>
+  <form method="get" action="/housevision" class="inline-form">
+    <input name="q" value="{{ filters.search }}" placeholder="Job ID, forrás URL vagy HousePlan">
+    <select name="status"><option value="">Minden állapot</option>{% for status in status_options %}<option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select>
+    <select name="brand_id"><option value="">Minden márka</option>{% for brand in brand_options %}<option value="{{ brand }}" {% if filters.brand_id == brand %}selected{% endif %}>{{ brand }}</option>{% endfor %}</select>
+    <button>Szűrés</button><a class="button secondary" href="/housevision">Alaphelyzet</a>
+  </form>
+  <table><thead><tr><th>Job</th><th>Márka / forrás</th><th>Állapot</th><th>Forrás / kimenet</th><th>HousePlan</th><th>Műveletek</th></tr></thead>
+  <tbody>{% for job in jobs %}<tr>
+    <td><a href="/housevision/jobs/{{ job.job_id }}"><b>{{ job.job_id }}</b></a><br><small>{{ job.updated_at }}</small></td>
+    <td><b>{{ job.brand_id }}</b><br><small>{{ job.source_url }}</small></td>
+    <td><span class="status-badge {{ job.status|lower }}">{{ job.status }}</span><br><span class="status-badge {{ job.publication_eligibility }}">{{ job.publication_eligibility }}</span></td>
+    <td>{{ job.accepted_source_count }} / {{ job.output_count }}{% if job.retry_count %}<br><small>retry {{ job.retry_count }}/3</small>{% endif %}</td>
+    <td>{{ job.house_id or '—' }}</td>
+    <td><a href="/housevision/jobs/{{ job.job_id }}">Adatlap</a> · <a href="/housevision/jobs/{{ job.job_id }}/upload">Assetek</a> · <a href="/housevision/jobs/{{ job.job_id }}/compare">Összehasonlítás</a></td>
+  </tr>{% else %}<tr><td colspan="6">A megadott szűréssel nincs HouseVision job.</td></tr>{% endfor %}</tbody></table>
+</section>
+
+<div class="procurement-layout">
+{% if permissions.job_create %}<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">NEW JOB</span><h2>Forrásoldal indítása</h2></div></div>
+  <form method="post" action="/housevision/jobs" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <select name="brand_id"><option value="imperial">Imperial</option><option value="timberhaus">TimberHaus</option></select>
+    <input type="url" name="source_url" placeholder="https://jogtiszta-forras.hu/haz" required>
+    <select name="operation_mode"><option value="package_only">Manuális csomagfolyamat</option><option value="provider_dispatch">Konfigurált renderprovider</option></select>
+    <input name="render_provider" value="mock" required><button>Job indítása</button>
+  </form><p class="muted">Jóváhagyott forrásjog nélkül a job fail-closed módon RIGHTS_BLOCKED állapotba kerül.</p>
+</section>{% endif %}
+
+<section class="panel elevated"><div class="panel-title"><div><span class="eyebrow">SOURCE RIGHTS</span><h2>Forrásjog-policy</h2></div></div>
+  {% if permissions.rights_manage %}<form method="post" action="/housevision/rights" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="domain" placeholder="pelda.hu" required><input name="path_prefix" value="/" required>
+    <select name="rights_status"><option value="licensed">licensed</option><option value="owned">owned</option><option value="partner_permission">partner_permission</option><option value="open_license">open_license</option><option value="blocked">blocked</option></select>
+    <input name="evidence_ref" placeholder="Bizonyíték dokumentumhivatkozása" required>
+    <input name="grant_id" placeholder="Egyedi rights grant ID (factory használathoz kötelező)">
+    <input name="owner_attestation_sha256" placeholder="Tulajdonosi nyilatkozat SHA-256">
+    <input name="page_scope_sha256" placeholder="Oldal-scope SHA-256">
+    <label><input type="checkbox" name="attribution_required"> Forrásmegjelölés szükséges</label><input name="attribution_text" placeholder="Forrásmegjelölés">
+    <input name="crawl_delay_seconds" type="number" value="2" min="0"><input name="max_assets_per_page" type="number" value="12" min="1"><button>Policy rögzítése</button>
+  </form>{% endif %}
+  <table><thead><tr><th>Domain / útvonal</th><th>Jogállás</th><th>Bizonyíték</th><th>Állapot</th><th></th></tr></thead><tbody>{% for p in policies %}<tr><td><b>{{ p.domain }}</b>{{ p.path_prefix }}</td><td>{{ p.rights_status }}</td><td>{{ p.evidence_ref }}</td><td><span class="status-badge {{ 'ready' if p.active else 'pending' }}">{{ 'aktív' if p.active else 'tervezet' }}</span></td><td>{% if not p.active and permissions.rights_approve %}<form method="post" action="/housevision/rights/{{ p.policy_id }}/approve"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button>Jóváhagyás</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="5">Nincs policy.</td></tr>{% endfor %}</tbody></table>
+</section>
+</div>
+{% endblock %}

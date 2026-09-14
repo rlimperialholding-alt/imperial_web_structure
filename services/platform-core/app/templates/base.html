@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Imperial Intelligence{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <meta name="theme-color" content="#0b1d34">
+</head>
+<body>
+<a class="skip-link" href="#main-content">Ugrás a fő tartalomhoz</a>
+{% if user and not standalone %}
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar" aria-label="Oldalsáv">
+    <a class="brand" href="/"><span class="brand-mark">I</span><span><strong>IMPERIAL</strong><small>INTELLIGENCE</small></span></a>
+    <div class="user-card"><span class="avatar">{{ user.name[:1] }}</span><div><b>{{ user.name }}</b><small>{{ user.role|replace('_',' ') }}</small></div></div>
+    <nav class="side-nav" aria-label="Fő navigáció">
+      <span class="nav-label">MUNKATÉR</span>
+      <a class="{% if active=='workspace' %}active{% endif %}" href="/"><i>⌂</i><span>Kezdőlap</span></a>
+      {% if can_access(user, 'workflow-center', 'workspace') %}<a class="{% if active=='tasks' %}active{% endif %}" href="/tasks"><i>✓</i><span>Saját feladataim</span></a>{% endif %}
+      {% if can_access(user, 'smart-calendar', 'workflow-center') %}<a class="{% if active=='calendar' %}active{% endif %}" href="/smart-calendar"><i>◷</i><span>Okosnaptár</span></a>{% endif %}
+      {% if can_access(user, 'my-imperial') %}<a class="{% if active=='my-imperial' %}active{% endif %}" href="/my-imperial"><i>◎</i><span>MyImperial</span></a>{% endif %}
+      {% if user.role not in ['customer','subcontractor'] %}<a class="{% if active=='communications' %}active{% endif %}" href="/communications"><i>✉</i><span>Belső üzenetek</span></a>{% endif %}
+      {% if can_access(user, 'project-control') %}<a class="{% if active=='projects' %}active{% endif %}" href="/projects"><i>◆</i><span>Projekt 360°</span></a>{% endif %}
+      {% if can_access(user, 'project-control') %}<a class="{% if active=='project-control' %}active{% endif %}" href="/project-control"><i>PC</i><span>Project Control</span></a>{% endif %}
+      {% if can_access(user, 'digital-project-managers', 'pm-cockpit') %}<a class="{% if active=='digital-project-managers' %}active{% endif %}" href="/digital-project-managers"><i>DPM</i><span>Digitális PM-ek</span></a>{% endif %}
+      {% if can_access(user, 'operations-workspace', 'pm-cockpit') %}<a class="{% if active=='operations' %}active{% endif %}" href="/operations"><i>▥</i><span>PM Cockpit 2.0</span></a>{% endif %}
+      {% if can_access(user, 'field-pwa', 'partner-field') %}<a class="{% if active=='field' %}active{% endif %}" href="/field"><i>◫</i><span>Helyszíni mobil</span></a>{% endif %}
+      {% if can_access(user, 'procurement') %}<a class="{% if active=='procurement' %}active{% endif %}" href="/procurement/workbench"><i>▧</i><span>Beszerzési munkapad</span></a>{% endif %}
+      {% if can_access(user, 'document-center', 'document-evidence') %}<a class="{% if active=='documents' %}active{% endif %}" href="/documents"><i>▤</i><span>Dokumentumtár</span></a>{% endif %}
+      <a class="{% if active=='search' %}active{% endif %}" href="/search"><i>⌕</i><span>Központi kereső</span></a>
+      <span class="nav-label">ÜZLETI MODULOK</span>
+      {% if can_access(user, 'executive-dashboard') %}<a class="{% if active=='executive' %}active{% endif %}" href="/executive"><i>◉</i><span>Vezetői cockpit</span></a>{% endif %}
+      {% if can_access(user, 'import-center') %}<a class="{% if active=='imports' %}active{% endif %}" href="/imports"><i>⇩</i><span>Import Center</span></a>{% endif %}
+      {% if user.role in ['owner','platform-admin','finance','managing-director'] %}<a class="{% if active=='financial' %}active{% endif %}" href="/financial/incoming-invoices"><i>Ft</i><span>Bejövő számlák</span></a>{% endif %}
+      {% if user.role in ['owner','platform-admin','finance','managing-director'] %}<a class="{% if active=='financial-allocations' %}active{% endif %}" href="/financial/allocations"><i>↔</i><span>Pénzügyi besorolás</span></a>{% endif %}
+      {% if can_access(user, 'finance-intelligence') %}<a class="{% if active=='finance-intelligence' %}active{% endif %}" href="/financial/intelligence"><i>∑</i><span>Pénzügyi intelligencia</span></a>{% endif %}
+      {% if can_access(user, 'housematch', 'buildconfig') %}<a class="{% if active=='experience' %}active{% endif %}" href="/experience"><i>⌂</i><span>HouseMatch & BuildConfig</span></a>{% endif %}
+      {% if can_access(user, 'house-designer') %}<a class="{% if active=='house-designer' %}active{% endif %}" href="/house-designer"{% if active=='house-designer' %} aria-current="page"{% endif %}><i aria-hidden="true">HD</i><span>Háztervező</span></a>{% endif %}
+      {% if can_access(user, 'housebuild-agent', 'plotcheck', 'buildconfig', 'plancheck') %}<a class="{% if active=='technical' %}active{% endif %}" href="/technical"><i>⌬</i><span>Műszaki termékfolyamatok</span></a>{% endif %}
+      {% if can_access(user, 'engineering-workspace') %}<a class="{% if active=='engineering-workspace' %}active{% endif %}" href="/engineering-workspace"><i>ENG</i><span>Engineering Workspace</span></a>{% endif %}
+      {% if user.role in ['technical-prep','designer','platform-admin','legal','managing-director'] %}<a class="{% if active=='house-studio' %}active{% endif %}" href="/house-studio"><i>HP</i><span>House Studio</span></a>{% endif %}
+      {% if can_access(user, 'house-catalog') %}<a class="{% if active=='house-catalog' %}active{% endif %}" href="/house-catalog"><i>⌂</i><span>House Catalog</span></a>{% endif %}
+      {% if can_access(user, 'housevision') %}<a class="{% if active=='housevision' %}active{% endif %}" href="/housevision"><i>HV</i><span>HouseVision</span></a>{% endif %}
+      {% if can_access(user, 'imperial-care') %}<a class="{% if active=='imperial-care' %}active{% endif %}" href="/imperial-care"><i>♡</i><span>Imperial Care</span></a>{% endif %}
+      {% if can_access(user, 'marketing-control', 'campaign-factory', 'content-factory') %}<a class="{% if active=='marketing' %}active{% endif %}" href="/marketing"><i>◎</i><span>Marketing Control</span></a>{% endif %}
+      {% if can_access(user, 'market-creative-intelligence') %}<a class="{% if active=='market-intelligence' %}active{% endif %}" href="/market-intelligence"><i>MI</i><span>Market Intelligence</span></a>{% endif %}
+      {% if can_access(user, 'website-content-control') %}<a class="{% if active=='website-content-control' %}active{% endif %}" href="/website-content-control"><i>WEB</i><span>Website Content Control</span></a>{% endif %}
+      {% if can_access(user, 'answer-center') %}<a class="{% if active=='answer-center' %}active{% endif %}" href="/answer-center"><i>?</i><span>Szakmai válaszközpont</span></a>{% endif %}
+      {% if can_access(user, 'b2b-project-intake') %}<a class="{% if active=='b2b-project-intake' %}active{% endif %}" href="/b2b-project-intake"><i>B2B</i><span>Vállalati projektigény</span></a>{% endif %}
+      {% if can_access(user, 'lead-intelligence') and not can_access(user, 'marketing-control', 'campaign-factory', 'content-factory') %}<a class="{% if active=='marketing' %}active{% endif %}" href="/marketing/automation"><i>↗</i><span>Lead Intelligence</span></a>{% endif %}
+      {% if can_access(user, 'tendermail') %}<a class="{% if active in ['tendermail','tenders'] %}active{% endif %}" href="/tenders"><i>✉</i><span>Tenderportál</span></a>{% endif %}
+      {% if can_access(user, 'partner-connect', 'partner-control') %}<a class="{% if active == 'partners' %}active{% endif %}" href="/partners"><i>🤝</i><span>Partner Control</span></a>{% endif %}
+      {% if can_access(user, 'contract-generator', 'change-control') %}<a class="{% if active=='commercial' %}active{% endif %}" href="/commercial"><i>§</i><span>Szerződés & ChangeControl</span></a>{% endif %}
+      {% if can_access(user, 'control-center', 'executive-dashboard') %}<a class="{% if active=='exceptions' %}active{% endif %}" href="/exceptions"><i>!</i><span>Kivételek</span></a>{% endif %}
+      <span class="nav-label">RENDSZER</span>
+      {% if can_access(user, 'control-center', 'admin') %}<a class="{% if active=='modules' %}active{% endif %}" href="/modules"><i>▦</i><span>Modulok</span></a>{% endif %}
+      {% if user.role in ['owner','platform-admin'] %}<a class="{% if active=='user-admin' %}active{% endif %}" href="/admin/users"><i>◇</i><span>Felhasználók</span></a>{% endif %}
+      {% if can_access(user, 'admin') %}<a class="{% if active=='governance' %}active{% endif %}" href="/development-governance"><i>≠</i><span>Reuse gate</span></a>{% endif %}
+      {% if can_access(user, 'completion-audit', 'admin') %}<a class="{% if active=='releases' %}active{% endif %}" href="/releases"><i>⇧</i><span>Kiadások</span></a>{% endif %}
+      {% if can_access(user, 'integration-control-room', 'admin') %}<a class="{% if active=='pilots' %}active{% endif %}" href="/pilots"><i>⌁</i><span>Integrációs pilot</span></a>{% endif %}
+      {% if user.role != 'customer' and can_access(user, 'sales', 'booking-engine', 'reservation-engine') %}<a class="{% if active=='sales-commercial' %}active{% endif %}" href="/sales-commercial"><i>◎</i><span>Sales &amp; Foglalás</span></a>{% endif %}
+    </nav>
+    <div class="sidebar-footer"><span>Commercial Integration v1.0</span><small>Platform 5.0.0</small></div>
+  </aside>
+  <div class="app-main">
+    <header class="workspace-topbar">
+      <button class="menu-toggle" type="button" aria-label="Főmenü megnyitása" aria-controls="sidebar" aria-expanded="false" onclick="const s=document.getElementById('sidebar'),open=s.classList.toggle('open');this.setAttribute('aria-expanded',String(open));this.setAttribute('aria-label',open?'Főmenü bezárása':'Főmenü megnyitása')"><span aria-hidden="true">☰</span></button>
+      <form class="global-search" action="/search" method="get" role="search"><span aria-hidden="true">⌕</span><label class="sr-only" for="global-search-input">Központi keresés</label><input id="global-search-input" name="q" placeholder="Keressen projektet, feladatot, dokumentumot vagy céget…" autocomplete="off"></form>
+      <nav class="top-actions" aria-label="Gyorsműveletek">{% if can_access(user, 'workflow-center', 'workspace') %}<a class="top-action" href="/tasks">Feladatok</a>{% endif %}{% if user.role not in ['customer','subcontractor'] %}<a class="top-action" href="/communications">Üzenetek <b id="unread-notification-count"></b></a>{% endif %}{% if can_access(user, 'control-center', 'executive-dashboard') %}<a class="top-action" href="/exceptions">Riasztások</a>{% endif %}<a class="top-action" href="/account/password">Jelszó</a><form method="post" action="/logout"><button class="logout-button" type="submit">Kilépés</button></form></nav>
+    </header>
+    <main class="workspace-content" id="main-content" tabindex="-1">
+{% else %}
+<header class="login-topbar"><div><strong>IMPERIAL INTELLIGENCE</strong><span>Workspace</span></div></header>
+<main class="login-container" id="main-content" tabindex="-1">
+{% endif %}
+{% block content %}{% endblock %}
+</main>
+{% if user and not standalone %}</div></div>{% endif %}
+{% if user and not standalone %}<script>if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("/static/service-worker.js").catch(() => {})); }const unreadBadge=document.getElementById("unread-notification-count");if(unreadBadge){fetch("/api/communications/unread").then(r=>r.ok?r.json():null).then(d=>{if(d&&d.unread){unreadBadge.textContent=`(${d.unread})`;}}).catch(()=>{});}</script>{% endif %}
+</body>
+</html>

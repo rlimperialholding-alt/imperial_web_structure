@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imperial-intelligence-integration-hub"
+version = "0.9.0.dev0"
+description = "Integration and publishing control plane for Imperial Intelligence"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.32,<1",
+  "pydantic-settings>=2.7,<3",
+  "sqlalchemy>=2.0,<3",
+  "psycopg[binary]>=3.2,<4",
+  "alembic>=1.14,<2",
+  "httpx>=0.28,<1",
+  "google-auth>=2.38,<3",
+  "google-auth-oauthlib>=1.2,<2",
+  "google-api-python-client>=2.160,<3",
+  "google-analytics-data>=0.18,<1",
+  "celery[redis]>=5.4,<6",
+  "structlog>=24.4,<26",
+  "python-multipart>=0.0.20,<1",
+  "orjson>=3.10,<4",
+  "reportlab>=4.2,<5",
+  "Pillow>=10.4,<12",
+  "PyMuPDF>=1.24,<2",
+  "prometheus-client>=0.21,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "pytest-asyncio>=0.25,<1",
+  "ruff>=0.9,<1",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+  "B008",  # FastAPI dependency injection intentionally uses call defaults.
+  "E402",  # CLI entrypoints extend sys.path before importing the local app.
+  "E501",  # Existing API payloads and operational commands favor readability.
+  "UP042", # Keep string Enum behavior stable across the supported runtime.
+]

@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: imperial-itep-config
+data:
+  NODE_ENV: "production"
+  HOST: "0.0.0.0"
+  PORT: "3000"
+  DEFAULT_ORGANIZATION_ID: "imperial-holding"
+  DEFAULT_ASSIGNEE_ID: "human-anne"
+  DEFAULT_ESCALATION_PERSON_ID: "director"
+  API_RATE_LIMIT_MAX: "300"
+  API_RATE_LIMIT_WINDOW_MS: "60000"
+  ENFORCEMENT_INTERVAL_MS: "60000"
+  OUTBOX_INTERVAL_MS: "15000"
+  CONNECTOR_SYNC_INTERVAL_MS: "60000"
+  BUSINESS_CONNECTORS_MODE: "disabled"
+  BILLINGO_API_BASE_URL: "https://api.billingo.hu"
+  BILLINGO_CONNECTOR_ID: "billingo-live"
+  BILLINGO_EXTERNAL_ACCOUNT_ID: "all"
+  META_GRAPH_API_BASE_URL: "https://graph.facebook.com"
+  META_GRAPH_API_VERSION: "v25.0"
+  META_ADS_CONNECTOR_ID: "meta-ads-live"
+  META_ADS_AD_ACCOUNT_ID: "act_REPLACE_ME"
+  GOOGLE_ADS_API_BASE_URL: "https://googleads.googleapis.com"
+  GOOGLE_ADS_API_VERSION: "v25"
+  GOOGLE_OAUTH_TOKEN_URL: "https://oauth2.googleapis.com/token"
+  GOOGLE_ADS_CONNECTOR_ID: "google-ads-live"
+  GOOGLE_ADS_CUSTOMER_ID: "REPLACE_WITHOUT_HYPHENS"

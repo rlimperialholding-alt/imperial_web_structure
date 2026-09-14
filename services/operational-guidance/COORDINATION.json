@@ -1,0 +1,20 @@
+{
+  "repository": "rlimperialholding-alt/imperial_web_structure",
+  "base_branch": "staging",
+  "this_branch": "agent/operational-guidance-v0.8.1",
+  "parallel_workstreams": [
+    {
+      "branch": "feature/platform-foundation",
+      "owner": "Codex/platform",
+      "protected_areas": ["platform UI", "site previews", "shared design system", "root web staging"]
+    },
+    {
+      "branch": "agent/migration-engine-v1",
+      "owner": "Codex/migration",
+      "protected_areas": ["migration engine", "import workflows", "migration secrets", "source data connectors"]
+    }
+  ],
+  "merge_policy": "draft-pr-only",
+  "direct_merge": false,
+  "owned_paths_enforced_by_ci": true
+}

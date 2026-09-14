@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Prefab szándéknyilatkozat | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">PREFAB · INTENT DECLARATION</span><h1>{{ offer.public_name }}</h1><p>{{ offer.intent_public_summary or offer.public_summary }}</p></div><span class="status-pill">fizetés nélkül</span></div>
+{% if error %}<section class="panel"><div class="alert critical">{{ error }}</div></section>{% endif %}
+{% if intent %}
+<section class="panel"><h2>A szándéknyilatkozat beérkezett</h2><p><b>{{ intent.intent_declaration_id }}</b> · {{ intent.status }}</p><p>Ez nem fizetés és nem aktív árgarancia. Az értékesítői ellenőrzés után külön visszaigazolás készül.</p><div class="form-actions"><a class="button primary" href="/intent/manage/{{ intent.cancellation_token }}">Szándéknyilatkozat kezelése</a></div></section>
+{% else %}
+<section class="panel"><div class="metric-grid four"><article><span>OfferVersion</span><b class="small">{{ offer.offer_version_id }}</b></article><article><span>PriceSnapshot</span><b class="small">{{ offer.price_snapshot_id }}</b></article><article><span>TermsVersion</span><b class="small">{{ offer.terms_version_id }}</b></article><article><span>Érvényesség</span><b>{{ offer.intent_valid_days }} nap</b></article></div></section>
+<section class="panel"><form method="post" class="form-card">
+  <h2>Projekt- és ügyféladatok</h2>
+  <div class="form-grid three"><label>HousePlanID<input name="house_plan_id" required></label><label>HouseConfigID<input name="house_config_id" required></label><label>Célindítási időablak<input name="target_start_window" required placeholder="például 6–12 hónap"></label><label>Név<input name="customer_name" required></label><label>E-mail<input type="email" name="customer_email" required></label><label>Telefon<input name="customer_phone" required></label><label>Telek státusza<input name="plot_status" required placeholder="nincs / keresés / megvan"></label><label>ConsentVersionID<input name="consent_version_id" value="CONSENT-INTENT-V1" required></label></div>
+  <label>Tervezett műszaki és üzleti tartalom<textarea name="project_scope" rows="5" required placeholder="A kiválasztott ház, műszaki csomag, telekhelyzet és tervezett következő lépés."></textarea></label>
+  <label class="check"><input type="checkbox" name="terms_accepted" required> Elfogadom a(z) {{ offer.terms_version_id }} feltételeit, és tudomásul veszem, hogy ez a nyilatkozat nem fizetett lekötés.</label>
+  <label class="check"><input type="checkbox" name="consent" required> Az adatkezelési hozzájárulásomat a megjelölt ConsentVersion szerint megadom.</label>
+  <button class="button primary" type="submit">Szándéknyilatkozat beküldése</button>
+</form></section>
+{% endif %}
+{% endblock %}

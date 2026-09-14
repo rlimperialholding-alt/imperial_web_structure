@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Foglalás és Árgarancia | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><span class="eyebrow">CRM → BOOKING → RESERVATION → CONTRACT</span><h1>Foglalás és Árgarancia</h1><p>Valós idősáv-zárolás, naptárkapu, verziózott ajánlat, fizetési egyezőség és szerződéses átadás.</p></div>
+  <div class="head-actions"><a class="button" href="/smart-calendar">Okosnaptár</a><a class="button" href="/commercial">Szerződések</a></div>
+</div>
+<div class="metric-grid four">
+  <article class="metric-card"><span>Aktív szándéknyilatkozat</span><strong>{{ data.metrics.active_intents }}</strong><small>Prefab, fizetés nélkül</small></article>
+  <article class="metric-card"><span>Jóváhagyott szándék</span><strong>{{ data.metrics.approved_intents }}</strong><small>szerződés-előkészítésre kész</small></article>
+  <article class="metric-card"><span>Sikertelen fizetés</span><strong>{{ data.metrics.payment_failures }}</strong><small>nincs aktív árgarancia</small></article>
+  <article class="metric-card"><span>MyImperial</span><strong>ON</strong><small>explicit projekt-hozzáférés</small></article>
+</div>
+
+<div class="metric-grid four">
+  <article class="metric-card"><span>Szabad idősáv</span><strong>{{ data.metrics.available_slots }}</strong><small>ütközésmentesen foglalható</small></article>
+  <article class="metric-card"><span>Naptárra vár</span><strong>{{ data.metrics.calendar_locked }}</strong><small>külső visszaigazolás nélkül</small></article>
+  <article class="metric-card"><span>Megerősített</span><strong>{{ data.metrics.confirmed_bookings }}</strong><small>CalendarEventID igazolva</small></article>
+  <article class="metric-card"><span>Aktív árgarancia</span><strong>{{ data.metrics.active_price_locks }}</strong><small>egyező sikeres fizetéssel</small></article>
+</div>
+
+<section class="panel" id="pipeline">
+  <div class="panel-head"><div><h2>Natív Sales pipeline</h2><p>Kanonikus CRM-hivatkozás, deduplikált opportunity, ügyfélspecifikus ajánlatverzió, elkülönített műszaki–pénzügyi–jogi kapuk és bizonyított nyerés/vesztés.</p></div><span class="status-pill">35% fedezeti kapu</span></div>
+  <div class="metric-grid four">
+    <article class="metric-card"><span>Nyitott opportunity</span><strong>{{ pipeline.metrics.open_opportunities }}</strong><small>kanonikus CRM-kapcsolattal</small></article>
+    <article class="metric-card"><span>Súlyozott pipeline</span><strong>{{ '{:,.0f}'.format(pipeline.metrics.weighted_pipeline_huf)|replace(',',' ') }} Ft</strong><small>érték × valószínűség</small></article>
+    <article class="metric-card"><span>Belső review</span><strong>{{ pipeline.metrics.proposals_in_review }}</strong><small>sorrendi, elkülönített kapuk</small></article>
+    <article class="metric-card"><span>Ügyféldöntésre vár</span><strong>{{ pipeline.metrics.proposals_waiting_customer }}</strong><small>igazolt kézbesítéssel</small></article>
+  </div>
+  {% if user.role in ['owner','managing-director','platform-admin','sales'] %}
+  <form method="post" action="/sales-commercial/opportunities" class="form-card">
+    <h3>Új opportunity kanonikus CRM-referenciából</h3>
+    <div class="form-grid four">
+      <label>LeadID<input name="lead_id" placeholder="MKT-LEAD-..."></label><label>CustomerID<input name="customer_id" placeholder="kanonikus ügyfélkulcs"></label><label>Márka<input name="brand_id" required value="imperial-holding"></label><label>Felelős e-mail<input type="email" name="owner_email" required value="{{ user.email }}"></label>
+      <label>Opportunity neve<input name="title" required></label><label>Ügyfél neve<input name="customer_name" required></label><label>Ügyfél e-mail<input type="email" name="customer_email"></label><label>Várható zárás<input type="date" name="expected_close_date"></label>
+      <label>Becsült nettó érték (Ft)<input type="number" min="0" name="estimated_value_huf" required></label><label>Valószínűség (%)<input type="number" min="0" max="100" name="probability_percent" value="10" required></label><label class="check"><input type="checkbox" name="budget_confirmed"> Költségkeret megerősítve</label>
+    </div>
+    <label>Igény és üzleti probléma<textarea name="needs_summary" minlength="10" required></textarea></label><label>Döntési folyamat<textarea name="decision_process" minlength="5" required></textarea></label><label>Következő konkrét lépés<textarea name="next_action" minlength="5" required></textarea></label>
+    <button class="button primary" type="submit">Opportunity létrehozása</button>
+  </form>
+  {% endif %}
+  <div class="table-wrap"><table><thead><tr><th>Opportunity / ügyfél</th><th>Pipeline</th><th>Ajánlatverziók</th><th>Következő művelet</th></tr></thead><tbody>
+  {% for row in pipeline.opportunities %}
+    <tr><td><b>{{ row.title }}</b><small>{{ row.opportunity_id }} · {{ row.customer_name }} · {{ row.lead_id or row.customer_id }}</small><small>{{ row.owner_email }}</small></td><td><span class="status-pill">{{ row.stage }}</span><small>{{ '{:,.0f}'.format(row.estimated_value_huf)|replace(',',' ') }} Ft · {{ row.probability_percent }}%</small><small>{{ row.next_action }}</small></td><td>
+      {% for proposal in pipeline.proposal_by_opportunity.get(row.opportunity_id, []) %}<div><b>{{ proposal.proposal_version_id }}</b> <span class="status-pill">{{ proposal.status }}</span><small>{{ '{:,.0f}'.format(proposal.sale_net)|replace(',',' ') }} Ft · margin {{ proposal.margin_percent }}% · {{ proposal.content_sha256 or 'nincs hash' }}</small></div>{% else %}<span class="empty">Nincs ajánlat.</span>{% endfor %}
+    </td><td>
+      {% if row.stage not in ['won','lost'] and user.role in ['owner','managing-director','platform-admin','sales'] %}
+      {% if not pipeline.proposal_by_opportunity.get(row.opportunity_id) or pipeline.proposal_by_opportunity.get(row.opportunity_id, [])[0].status in ['rejected','customer_rejected','expired','superseded'] %}
+      <details><summary>Új ajánlatverzió</summary><form method="post" action="/sales-commercial/opportunities/{{ row.opportunity_id }}/proposals" class="inline-form"><input type="hidden" name="currency" value="HUF"><input type="hidden" name="vat_rate" value="27"><input type="number" name="cost_net" min="0" required placeholder="nettó költség"><input type="number" name="sale_net" min="1" required placeholder="nettó eladási ár"><input name="price_snapshot_id" required placeholder="PriceSnapshotID"><input name="terms_version_id" required placeholder="TermsVersionID"><input name="technical_scope_version_id" required placeholder="ScopeVersionID"><textarea name="scope_summary" minlength="10" required placeholder="Műszaki és üzleti scope"></textarea><textarea name="exclusions" minlength="3" required placeholder="Kizárások"></textarea><textarea name="payment_terms" minlength="5" required placeholder="Fizetési ütemezés"></textarea><input type="datetime-local" name="valid_until" required><button class="button small">Verzió létrehozása</button></form></details>
+      {% endif %}
+      <details><summary>Szakasz / lezárás</summary><form method="post" action="/sales-commercial/opportunities/{{ row.opportunity_id }}/stage" class="inline-form"><select name="stage"><option value="qualified">qualified</option><option value="discovery">discovery</option><option value="proposal">proposal</option><option value="negotiation">negotiation</option><option value="contracting">contracting</option></select><input type="number" min="0" max="100" name="probability_percent" value="{{ row.probability_percent }}" required><input name="note" minlength="10" required placeholder="Állapotváltás indoka"><input name="next_action" minlength="5" required placeholder="Következő lépés"><button class="button small">Szakaszváltás</button></form><form method="post" action="/sales-commercial/opportunities/{{ row.opportunity_id }}/close" class="inline-form"><select name="outcome"><option value="won">won</option><option value="lost">lost</option></select><input name="reason" minlength="10" required placeholder="Lezárás indoka"><input name="contract_id" placeholder="aláírt ContractID"><input name="delivery_project_id" placeholder="delivery ProjectID"><input name="competitor" placeholder="versenytárs"><button class="button small">Lezárás</button></form></details>
+      {% endif %}
+      {% for proposal in pipeline.proposal_by_opportunity.get(row.opportunity_id, []) %}
+        {% if proposal.status == 'draft' and user.role in ['owner','managing-director','platform-admin','sales'] %}<form method="post" action="/sales-commercial/proposals/{{ proposal.proposal_version_id }}/submit" class="inline-form"><button class="button small">Belső review indítása</button></form>{% endif %}
+        {% if proposal.status == 'internal_review' %}<form method="post" action="/sales-commercial/proposals/{{ proposal.proposal_version_id }}/review" class="inline-form"><select name="gate">{% if user.role in ['technical-prep','platform-admin'] %}<option value="technical">technical</option>{% endif %}{% if user.role in ['finance','platform-admin'] %}<option value="finance">finance</option>{% endif %}{% if user.role in ['legal','platform-admin'] %}<option value="legal">legal</option>{% endif %}</select><select name="decision"><option value="approve">approve</option><option value="reject">reject</option></select><input name="note" minlength="10" required placeholder="Kapudöntés indoka"><button class="button small">Kapudöntés</button></form>{% endif %}
+        {% if proposal.status == 'approved' and user.role in ['owner','managing-director','platform-admin','sales'] %}<form method="post" action="/sales-commercial/proposals/{{ proposal.proposal_version_id }}/send" class="inline-form"><input type="url" name="delivery_evidence_url" required placeholder="Kézbesítési bizonyíték URL"><button class="button small">Ajánlat kiküldése</button></form>{% endif %}
+        {% if proposal.status == 'sent' and user.role in ['owner','managing-director','platform-admin','sales','legal'] %}<form method="post" action="/sales-commercial/proposals/{{ proposal.proposal_version_id }}/decision" class="inline-form"><select name="decision"><option value="accept">accept</option><option value="reject">reject</option></select><input name="customer_decision_reference" required placeholder="Döntési bizonyíték azonosító"><input name="note" minlength="10" required placeholder="Ügyféldöntés megjegyzése"><button class="button small">Ügyféldöntés</button></form>{% endif %}
+      {% endfor %}
+    </td></tr>
+  {% else %}<tr><td colspan="4" class="empty">Még nincs natív opportunity.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+<section class="panel" id="booking">
+  <div class="panel-head"><div><h2>Booking Engine</h2><p>A belső zárolás nem minősül ügyfél-visszaigazolásnak. A CONFIRMED állapothoz külső CalendarEventID, online találkozónál meeting-link is kötelező.</p></div><span class="status-pill">fail-closed</span></div>
+  <div class="two-column">
+    <form method="post" action="/sales-commercial/experiences" class="form-card">
+      <h3>Márkaélmény-verzió</h3>
+      <label>ExperienceID<input name="experience_id" required placeholder="BEXP-IMPERIAL-V1"></label>
+      <label>Márka<input name="brand_id" required placeholder="imperial-holding"></label>
+      <div class="form-grid two"><label>Verzió<input name="version" value="v1" required></label><label>Témakulcs<input name="theme_key" value="imperial-engineering" required></label></div>
+      <label>Megjelenő név<input name="display_name" required placeholder="Imperial mérnöki konzultáció"></label>
+      <label>CTA<input name="cta_label" required placeholder="Időpontot foglalok"></label>
+      <label>Bizalmi szöveg<textarea name="trust_copy" required></textarea></label>
+      <label>Visszaigazoló szöveg<textarea name="confirmation_copy" required></textarea></label>
+      {% if can_activate %}<label class="check"><input type="checkbox" name="active"> Azonnal aktív verzió</label>{% endif %}
+      <button class="button primary" type="submit">Élményverzió mentése</button>
+    </form>
+    <form method="post" action="/sales-commercial/slots" class="form-card">
+      <h3>Foglalható idősáv</h3>
+      <label>Élményverzió<select name="experience_id" required>{% for row in data.experiences %}<option value="{{ row.experience_id }}">{{ row.brand_id }} · {{ row.version }}{% if row.active %} · aktív{% endif %}</option>{% endfor %}</select></label>
+      <label>Típus<select name="booking_type"><option value="personal">Személyes konzultáció</option><option value="online">Online videókonzultáció</option><option value="site_visit">Helyszíni szemle</option></select></label>
+      <div class="form-grid two"><label>Kezdés<input type="datetime-local" name="starts_at" required></label><label>Vége<input type="datetime-local" name="ends_at" required></label></div>
+      <label>Naptári erőforrás<input name="calendar_resource_id" required placeholder="sales-imperial-01"></label>
+      <label>Tanácsadó e-mail<input type="email" name="advisor_email" required></label>
+      <label>Helyszín / iroda<input name="location" placeholder="Online esetén üresen hagyható"></label>
+      <button class="button primary" type="submit">Idősáv létrehozása</button>
+    </form>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>ExperienceID</th><th>Márka</th><th>Verzió</th><th>Állapot</th><th>Verzióváltás</th></tr></thead><tbody>{% for row in data.experiences %}<tr><td class="mono small">{{ row.experience_id }}</td><td>{{ row.brand_id }}<small>{{ row.display_name }}</small></td><td>{{ row.version }}</td><td><span class="status-pill">{{ 'active' if row.active else 'inactive' }}</span></td><td>{% if can_activate %}<form method="post" action="/sales-commercial/experiences/{{ row.experience_id }}/activation" class="inline-form"><input type="hidden" name="active" value="{{ 'false' if row.active else 'true' }}"><input name="note" required value="Jóváhagyott BookingExperienceVersion-váltás"><button class="button small">{{ 'Deaktiválás' if row.active else 'Aktiválás' }}</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="empty">Nincs élményverzió.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+
+<section class="panel" id="bookings">
+  <div class="panel-head"><div><h2>Új ügyfélfoglalás</h2><p>A helyszíni szemle teljes címet és megközelítési információt követel.</p></div></div>
+  <form method="post" action="/sales-commercial/bookings" class="form-card">
+    <div class="form-grid three">
+      <label>Szabad idősáv<select name="slot_id" required>{% for row in data.slots if row.status == 'available' %}<option value="{{ row.slot_id }}">{{ row.brand_id }} · {{ row.booking_type }} · {{ row.starts_at|dt }} · {{ row.advisor_email }}</option>{% endfor %}</select></label>
+      <label>ProjectID (opcionális)<input name="project_id"></label><label>LeadID<input name="lead_id"></label>
+      <label>Ügyfél neve<input name="customer_name" required></label><label>E-mail<input type="email" name="customer_email" required></label><label>Telefon<input name="customer_phone" required></label>
+      <label>Telek státusza<input name="plot_status" required placeholder="nincs / keresés / megvan"></label><label>Tervezett kezdés<input name="planned_start" required placeholder="6–12 hónap"></label><label>ConsentVersionID<input name="consent_version_id" required value="CONSENT-BOOKING-V1"></label>
+      <label>Irányítószám<input name="postal_code"></label><label>Település<input name="city"></label><label>Cím / hrsz.<input name="street_address"></label>
+    </div>
+    <label>Rövid projektleírás<textarea name="project_description" required minlength="10"></textarea></label>
+    <label>Megközelíthetőség<textarea name="access_notes"></textarea></label>
+    <label>Dokumentumhivatkozás<input type="url" name="document_url"></label>
+    <label class="check"><input type="checkbox" name="consent" required> Az ügyfél adatkezelési hozzájárulása rögzítve</label>
+    <button class="button primary" type="submit">Idősáv zárolása</button>
+  </form>
+  <div class="table-wrap"><table><thead><tr><th>BookingID</th><th>Ügyfél / időpont</th><th>Állapot</th><th>Külső szinkron</th><th>Művelet</th></tr></thead><tbody>
+    {% for row in data.bookings %}<tr><td class="mono small">{{ row.booking_id }}<small>{{ row.project_id }}</small></td><td><b>{{ row.customer_name }}</b><small>{{ row.customer_email }} · {{ row.booking_type }}</small></td><td><span class="status-pill">{{ row.status }}</span></td><td>{{ row.external_sync_status }}{% if row.calendar_event_id %}<small>{{ row.calendar_event_id }}</small>{% endif %}</td><td>
+      {% if row.status in ['calendar_locked','calendar_sync_failed'] %}<form method="post" action="/sales-commercial/bookings/{{ row.booking_id }}/calendar-sync" class="inline-form"><input name="calendar_event_id" placeholder="CalendarEventID"><input name="meeting_link" placeholder="Meet-link"><label class="check"><input type="checkbox" name="success"> sikeres</label><button class="button small">Szinkron rögzítése</button></form>{% endif %}
+      {% if row.status not in ['cancelled','completed','expired'] %}<form method="post" action="/sales-commercial/bookings/{{ row.booking_id }}/cancel" class="inline-form"><input name="reason" required placeholder="Lemondás oka"><button class="button small">Lemondás</button></form>{% endif %}
+      {% if row.status in ['confirmed','reminded'] %}<form method="post" action="/sales-commercial/bookings/{{ row.booking_id }}/outcome" class="inline-form"><select name="status"><option value="reminded">emlékeztetve</option><option value="completed">teljesült</option><option value="no_show">nem jelent meg</option></select><input name="note" required placeholder="Eredmény / jegyzet"><button class="button small">Eredmény</button></form>{% endif %}
+    </td></tr>{% else %}<tr><td colspan="5" class="empty">Még nincs foglalás.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+<section class="panel" id="reservation">
+  <div class="panel-head"><div><h2>Reservation &amp; Price Lock</h2><p>Aktiválás csak jogi, pénzügyi és árazási PASS, érvényes PriceSnapshot, TermsVersion és scope-verzió mellett.</p></div><span class="status-pill">3 kötelező jóváhagyás</span></div>
+  <form method="post" action="/sales-commercial/offers" class="form-card">
+    <h3>Verziózott lekötési ajánlat</h3>
+    <div class="form-grid three">
+      <label>OfferVersionID<input name="offer_version_id" required></label><label>Márka<input name="brand_id" required></label><label>Nyilvános név<input name="public_name" required></label>
+      <label>CTA<input name="cta_label" required></label><label>Összeg (Ft)<input type="number" min="0" name="reservation_amount_huf" required></label><label>Árgarancia (hó)<input type="number" name="price_lock_months" value="12" required></label>
+      <label>Célindítás min. (hó)<input type="number" name="target_start_months_min" value="6" required></label><label>Célindítás max. (hó)<input type="number" name="target_start_months_max" value="12" required></label><label>PriceSnapshotID<input name="price_snapshot_id" required></label>
+      <label>TermsVersionID<input name="terms_version_id" required></label><label>TechnicalScopeVersionID<input name="technical_scope_version_id" required></label><label>Érvényes ettől<input type="datetime-local" name="valid_from" required></label>
+      <label>Érvényes eddig<input type="datetime-local" name="valid_to" required></label>
+    </div>
+    <label>Árgarancia tárgya<textarea name="public_summary" required></textarea></label><label>Kizárások<textarea name="exclusions_summary" required></textarea></label>
+    <div class="form-grid two"><label>Visszatérítési szabály<textarea name="refund_rule" required></textarea></label><label>Átviteli/módosítási szabály<textarea name="transfer_rule" required></textarea></label></div>
+    <div class="form-grid two"><label class="check"><input type="checkbox" name="intent_declaration_enabled"> Fizetés nélküli szándéknyilatkozati út engedélyezve</label><label>Szándéknyilatkozat érvényessége (nap)<input type="number" min="1" max="365" name="intent_valid_days" value="30"></label></div>
+    <label>Szándéknyilatkozat nyilvános összefoglalója<textarea name="intent_public_summary" placeholder="Kizárólag az engedélyezett márkaútvonalon jelenik meg."></textarea></label>
+    <div class="form-grid four"><label class="check"><input type="checkbox" name="legal_approved"> Jogi PASS</label><label class="check"><input type="checkbox" name="finance_approved"> Pénzügyi PASS</label><label class="check"><input type="checkbox" name="pricing_approved"> Árazási PASS</label>{% if can_activate %}<label class="check"><input type="checkbox" name="active"> Aktív kiadás</label>{% endif %}</div>
+    <button class="button primary" type="submit">OfferVersion mentése</button>
+  </form>
+  <div class="table-wrap"><table><thead><tr><th>OfferVersion</th><th>Márka / összeg</th><th>Snapshot / Terms</th><th>Kapuk</th><th>Érvényesség / kiadás</th></tr></thead><tbody>{% for row in data.offers %}<tr><td><b>{{ row.public_name }}</b><small>{{ row.offer_version_id }}</small></td><td>{{ row.brand_id }}<small>{{ '{:,.0f}'.format(row.reservation_amount_huf)|replace(',',' ') }} Ft{% if row.intent_declaration_enabled %} · Intent ON{% endif %}</small></td><td>{{ row.price_snapshot_id }}<small>{{ row.terms_version_id }}</small></td><td>{{ 'J' if row.legal_approved else '–' }} / {{ 'P' if row.finance_approved else '–' }} / {{ 'Á' if row.pricing_approved else '–' }} <span class="status-pill">{{ 'active' if row.active else 'draft' }}</span></td><td>{{ row.valid_to|dt }}{% if row.active and row.intent_declaration_enabled %}<small><a href="/intent/{{ row.offer_version_id }}">nyilvános szándéknyilatkozat</a></small>{% endif %}{% if can_activate %}<form method="post" action="/sales-commercial/offers/{{ row.offer_version_id }}/activation" class="inline-form"><input type="hidden" name="active" value="{{ 'false' if row.active else 'true' }}"><input name="note" required value="Jóváhagyott OfferVersion-váltás"><button class="button small">{{ 'Deaktiválás' if row.active else 'Aktiválás' }}</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="empty">Nincs OfferVersion.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+
+<section class="panel" id="intents">
+  <div class="panel-head"><div><h2>Prefab szándéknyilatkozat</h2><p>Külön, fizetés nélküli objektum. Nem hoz létre árgaranciát; jóváhagyásához kézbesítési vagy aláírási bizonyíték kell.</p></div><span class="status-pill">Reservation Gate</span></div>
+  <form method="post" action="/sales-commercial/intents" class="form-card"><div class="form-grid three">
+    <label>Intent-engedélyes aktív ajánlat<select name="offer_version_id" required>{% for row in data.offers if row.active and row.intent_declaration_enabled %}<option value="{{ row.offer_version_id }}">{{ row.brand_id }} · {{ row.offer_version_id }}</option>{% endfor %}</select></label><label>ProjectID (opcionális)<input name="project_id"></label><label>LeadID<input name="lead_id"></label>
+    <label>HousePlanID<input name="house_plan_id" required></label><label>HouseConfigID<input name="house_config_id" required></label><label>Célindítás<input name="target_start_window" required placeholder="6–12 hónap"></label>
+    <label>Ügyfél neve<input name="customer_name" required></label><label>Ügyfél e-mail<input type="email" name="customer_email" required></label><label>Telefon<input name="customer_phone" required></label><label>Telek státusza<input name="plot_status" required></label><label>ConsentVersionID<input name="consent_version_id" value="CONSENT-INTENT-V1" required></label>
+  </div><label>Projekt tartalma<textarea name="project_scope" minlength="10" required></textarea></label><div class="form-grid two"><label class="check"><input type="checkbox" name="terms_accepted" required> TermsVersion elfogadva</label><label class="check"><input type="checkbox" name="consent" required> Adatkezelési hozzájárulás rögzítve</label></div><button class="button primary">IntentDeclarationID létrehozása</button></form>
+  <div class="table-wrap"><table><thead><tr><th>IntentDeclarationID</th><th>Ügyfél / ház</th><th>Verziók</th><th>Állapot</th><th>Elbírálás / átadás</th></tr></thead><tbody>{% for row in data.intents %}<tr><td class="mono small">{{ row.intent_declaration_id }}<small>{{ row.project_id }}</small></td><td><b>{{ row.customer_name }}</b><small>{{ row.house_plan_id }} · {{ row.house_config_id }}</small></td><td>{{ row.offer_version_id }}<small>{{ row.price_snapshot_id }} · {{ row.terms_version_id }}</small></td><td><span class="status-pill">{{ row.status }}</span><small>{{ row.expires_at|dt }}</small></td><td>{% if row.status == 'submitted' and user.role in ['owner','managing-director','platform-admin','sales','legal'] %}<form method="post" action="/sales-commercial/intents/{{ row.intent_declaration_id }}/review" class="inline-form"><select name="action"><option value="approve">approve</option><option value="request_changes">request changes</option><option value="reject">reject</option></select><input name="note" required placeholder="Bírálói megjegyzés"><input type="url" name="delivery_evidence_url" placeholder="Kézbesítési bizonyíték URL"><button class="button small">Elbírálás</button></form>{% endif %}{% if row.status == 'approved' and user.role in ['owner','platform-admin','sales','legal'] %}<form method="post" action="/sales-commercial/intents/{{ row.intent_declaration_id }}/convert" class="inline-form"><input name="contract_id" required placeholder="aláírt ContractID"><button class="button small">Szerződésbe átadás</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="empty">Még nincs szándéknyilatkozat.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+
+<section class="panel" id="reservations">
+  <div class="panel-head"><div><h2>Lekötési és fizetési folyamat</h2><p>A felület fizetést nem színlel: a sikeres callbackhez szolgáltatói referencia, idempotency-kulcs, egyező összeg és bizonyíték szükséges.</p></div></div>
+  <form method="post" action="/sales-commercial/reservations" class="form-card">
+    <div class="form-grid three">
+      <label>Aktív ajánlat<select name="offer_version_id" required>{% for row in data.offers if row.active %}<option value="{{ row.offer_version_id }}">{{ row.brand_id }} · {{ row.public_name }} · {{ row.reservation_amount_huf }} Ft</option>{% endfor %}</select></label><label>ProjectID (opcionális)<input name="project_id"></label><label>LeadID<input name="lead_id"></label>
+      <label>HousePlanID<input name="house_plan_id" required></label><label>HouseConfigID<input name="house_config_id" required></label><label>Ügyfél neve<input name="customer_name" required></label>
+      <label>Ügyfél e-mail<input type="email" name="customer_email" required></label><label>Számlázási név<input name="billing_name" required></label><label>Adószám<input name="tax_number"></label>
+    </div>
+    <label>Számlázási cím<input name="billing_address" required></label><label class="check"><input type="checkbox" name="terms_accepted" required> Az aktív TermsVersion elfogadása auditált</label>
+    <button class="button primary" type="submit">ReservationID és fizetési folyamat létrehozása</button>
+  </form>
+  <div class="table-wrap"><table><thead><tr><th>ReservationID</th><th>Ügyfél / ház</th><th>Összeg</th><th>Állapot</th><th>Fizetési callback</th></tr></thead><tbody>
+    {% for row in data.reservations %}<tr><td class="mono small">{{ row.reservation_id }}<small>{{ row.project_id }}</small></td><td><b>{{ row.customer_name }}</b><small>{{ row.house_plan_id }} · {{ row.house_config_id }}</small></td><td>{{ '{:,.0f}'.format(row.amount_huf)|replace(',',' ') }} Ft<small>{{ row.price_snapshot_id }}</small></td><td><span class="status-pill">{{ row.status }}</span><small>price lock: {{ row.price_lock_status }}{% if row.price_lock_expires_at %} · {{ row.price_lock_expires_at|dt }}{% endif %}</small></td><td>{% if row.status == 'payment_pending' and user.role in ['owner','platform-admin','finance'] %}<form method="post" action="/sales-commercial/reservations/{{ row.reservation_id }}/payment" class="inline-form"><input name="provider" required placeholder="provider"><input name="provider_reference" required placeholder="provider ref"><input name="idempotency_key" required placeholder="idempotency key"><input type="number" name="amount_huf" value="{{ row.amount_huf }}" required><select name="status"><option value="succeeded">succeeded</option><option value="failed">failed</option></select><input type="url" name="evidence_url" placeholder="https://... bizonyíték"><button class="button small">Callback rögzítése</button></form>{% else %}{{ row.payment_id or '—' }}{% endif %}{% if row.status in ['payment_pending','payment_failed','price_lock_active','converted'] and user.role in ['owner','platform-admin','finance','sales'] %}<form method="post" action="/sales-commercial/reservations/{{ row.reservation_id }}/lifecycle" class="inline-form"><select name="action"><option value="cancel">cancel</option><option value="expire">expire</option><option value="refund">refund</option></select><input name="reason" required placeholder="Indok"><input type="url" name="evidence_url" placeholder="Refund bizonyíték"><button class="button small">Életciklus</button></form>{% endif %}{% if row.status == 'price_lock_active' and user.role in ['owner','platform-admin','sales','legal'] %}<form method="post" action="/sales-commercial/reservations/{{ row.reservation_id }}/convert" class="inline-form"><input name="contract_id" required placeholder="aláírt ContractID"><button class="button small">Szerződésbe átadás</button></form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5" class="empty">Még nincs lekötési folyamat.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+<section class="panel"><div class="panel-head"><div><h2>Éles kapcsolati kapuk</h2><p>A belső üzleti motor működik, de production release csak valós adapter-bizonyítékkal adható.</p></div></div><div class="key-value-grid"><div><span>Google Calendar / Meet</span><b>callback és fail-closed kész</b></div><div><span>Fizetési szolgáltató</span><b>idempotens callback-kapu kész</b></div><div><span>CRM / Finance / Contract / MyImperial</span><b>kanonikus esemény + outbox</b></div><div><span>Külső E2E</span><b>hitelesítés után igazolandó</b></div></div></section>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}House Catalog | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><span class="eyebrow">HOUSEMATCH → HOUSEBUILD → BUILDCONFIG</span><h1>House Catalog kiadáskezelés</h1><p>Verziózott típustervtörzs, forrásjogi–műszaki–kereskedelmi kapuk, hash-zárolt kiadás és azonnali visszavonás.</p></div>
+  <div class="head-actions"><a class="button" href="/technical?module=housebuild-agent">HouseBuild</a><a class="button" href="/experience">HouseMatch</a></div>
+</div>
+<div class="metric-grid four">
+  <article class="metric-card"><span>Kiadott típusterv</span><strong>{{ data.metrics.released }}</strong><small>HouseMatch és HouseBuild számára aktív</small></article>
+  <article class="metric-card"><span>Visszavont</span><strong>{{ data.metrics.withdrawn }}</strong><small>publikus és generátori használat tiltva</small></article>
+  <article class="metric-card"><span>Review alatt</span><strong>{{ data.metrics.in_review }}</strong><small>három sorrendi kapu</small></article>
+  <article class="metric-card"><span>Kiadásra vár</span><strong>{{ data.metrics.approved_waiting_release }}</strong><small>elkülönített vezetői döntés</small></article>
+</div>
+{% if user.role in ['owner','managing-director','platform-admin','technical-prep'] %}
+<section class="panel">
+  <div class="panel-head"><div><h2>Új terv vagy új verzió</h2><p>Meglévő HouseID esetén a márka és a kanonikus név stabil; új üzleti tartalom új verziót kap.</p></div></div>
+  <form method="post" action="/house-catalog/versions" class="form-card">
+    <div class="form-grid four">
+      <label>HouseID<input name="house_id" required></label><label>Márka<input name="brand" required></label><label>Kanonikus név<input name="canonical_name" required></label><label>Katalógusár (Ft)<input type="number" min="1" name="catalog_price_huf" required></label>
+      <label>Bruttó alapterület (m²)<input type="number" min="1" max="1000" step="0.01" name="gross_area_m2" required></label><label>Szobák<input name="rooms" required></label><label>Árstátusz<input name="price_status" required value="ellenőrzött"></label><label>Adatminőség<input name="data_quality" required value="verified"></label>
+      <label>Élethelyzetek, vesszővel<input name="lifestyles"></label><label>Forrástípus<input name="source_type" required value="vállalati tervcsomag"></label><label>Forrás URL<input type="url" name="source_url" required></label><label>Forrás ellenőrizve<input name="source_verified_at" required placeholder="2026-08-02"></label>
+    </div>
+    <label>Felhasználási jog bizonyítéka<textarea name="rights_evidence" minlength="8" required></textarea></label><label>Műszaki összefoglaló<textarea name="technical_summary" minlength="10" required></textarea></label><label>Verzióváltozás összefoglalója<textarea name="change_summary" minlength="5" required></textarea></label>
+    <button class="button primary">Draft verzió létrehozása</button>
+  </form>
+</section>
+{% endif %}
+<section class="panel">
+  <div class="panel-head"><div><h2>Típustervek és verziók</h2><p>A publikus katalógus kizárólag a current released verziókat olvassa.</p></div><span class="status-pill">fail-closed</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Típusterv</th><th>Aktív kiadás</th><th>Verziók</th><th>Műveletek</th></tr></thead><tbody>
+  {% for plan in data.plans %}<tr><td><b>{{ plan.canonical_name }}</b><small>{{ plan.house_id }} · {{ plan.brand }}</small></td><td><span class="status-pill">{{ plan.lifecycle_status }}</span><small>V{{ plan.current_released_version or '—' }}</small></td><td>{% for row in data.by_house.get(plan.house_id, []) %}<div><b>V{{ row.version }}</b> · {{ row.status }}<small>{{ row.catalog_version_id }} · {{ row.catalog_price_huf|huf }} · {{ row.gross_area_m2 }} m² · {{ row.content_sha256 or 'nincs hash' }}</small></div>{% endfor %}</td><td>
+    {% for row in data.by_house.get(plan.house_id, []) %}
+      {% if row.status == 'draft' and user.role in ['owner','managing-director','platform-admin','technical-prep'] %}<form method="post" action="/house-catalog/versions/{{ row.catalog_version_id }}/submit" class="inline-form"><button class="button small">Review indítása</button></form>{% endif %}
+      {% if row.status == 'review' %}<form method="post" action="/house-catalog/versions/{{ row.catalog_version_id }}/review" class="inline-form"><select name="gate">{% if user.role in ['legal','platform-admin'] %}<option value="source">source</option>{% endif %}{% if user.role in ['technical-prep','designer','platform-admin'] %}<option value="technical">technical</option>{% endif %}{% if user.role in ['finance','sales','platform-admin'] %}<option value="commercial">commercial</option>{% endif %}</select><select name="decision"><option value="approve">approve</option><option value="reject">reject</option></select><input name="note" minlength="10" required placeholder="Bizonyíték és indok"><button class="button small">Kapudöntés</button></form>{% endif %}
+      {% if row.status == 'approved' and user.role in ['owner','managing-director','platform-admin'] %}<form method="post" action="/house-catalog/versions/{{ row.catalog_version_id }}/release" class="inline-form"><button class="button small">Kiadás</button></form>{% endif %}
+    {% endfor %}
+    {% if plan.lifecycle_status == 'active' and user.role in ['owner','managing-director','platform-admin'] %}<form method="post" action="/house-catalog/plans/{{ plan.house_id }}/withdraw" class="inline-form"><input name="reason" minlength="10" required placeholder="Visszavonás oka"><button class="button small">Visszavonás</button></form>{% endif %}
+  </td></tr>{% else %}<tr><td colspan="4" class="empty">Nincs katalógusterv.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

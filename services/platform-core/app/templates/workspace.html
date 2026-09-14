@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Kezdőlap | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="workspace-welcome">
+  <div><span class="eyebrow">SZEMÉLYES MUNKATÉR</span><h1>Jó reggelt, {{ user.name.split(' ')[0] }}!</h1><p>Itt csak az jelenik meg, ami ma döntést, intézkedést vagy figyelmet igényel.</p></div>
+  <div class="welcome-actions"><a class="button secondary" href="/search">Keresés a rendszerben</a><a class="button gold" href="/tasks">Feladatok megnyitása</a></div>
+</section>
+<section class="workspace-kpis">
+  <a href="/tasks"><span>Nyitott feladataim</span><strong>{{ summary.open_tasks }}</strong><small>{{ summary.today_tasks }} ma esedékes</small></a>
+  <a class="danger-kpi" href="/tasks"><span>Lejárt feladat</span><strong>{{ summary.overdue_tasks }}</strong><small>azonnali intézkedés</small></a>
+  <a href="/projects"><span>Blokkolt projekt</span><strong>{{ summary.blocked_projects }}</strong><small>{{ summary.financial_impact_huf|huf }} érintett összeg</small></a>
+  <a href="/exceptions"><span>Adateltérés</span><strong>{{ summary.open_issues }}</strong><small>egyeztetést igényel</small></a>
+  <a href="/modules"><span>Élő modulkapcsolat</span><strong>{{ summary.healthy_modules }}/{{ summary.module_count }}</strong><small>integrációs állapot</small></a>
+</section>
+<div class="workspace-columns">
+  <section class="workspace-card priority-card">
+    <div class="card-heading"><div><span class="eyebrow">ACTION CENTER</span><h2>A következő teendőim</h2></div><a href="/tasks">Összes feladat →</a></div>
+    <div class="task-list">
+      {% for t in summary.tasks %}
+      <article class="task-row"><span class="priority-indicator {{ t.priority }}"></span><div class="task-main"><div><a href="/projects/{{ t.project_id }}"><b>{{ t.title }}</b></a><span class="badge {{ t.priority }}">{{ t.priority }}</span></div><p>{{ t.description or 'Nincs további leírás.' }}</p><small>{{ t.project_id }} · {{ t.assignee or 'Nincs kijelölt felelős' }}</small></div><div class="task-due"><b>{{ t.due_at|dt }}</b><form method="post" action="/tasks/{{ t.task_id }}/update"><input type="hidden" name="status" value="done"><button class="complete-button" title="Lezárás">✓</button></form></div></article>
+      {% else %}<div class="empty-state"><b>Nincs nyitott feladat.</b><span>A modulokból érkező teendők itt fognak megjelenni.</span></div>{% endfor %}
+    </div>
+  </section>
+  <aside class="workspace-card risk-card">
+    <div class="card-heading"><div><span class="eyebrow">PORTFÓLIÓKOCKÁZAT</span><h2>Blokkolt projektek</h2></div><a href="/projects">Mind →</a></div>
+    <div class="risk-list">{% for p in summary.blocked_project_rows %}<a href="/projects/{{ p.project_id }}"><span class="risk-dot {{ p.risk_level }}"></span><div><b>{{ p.name }}</b><small>{{ p.project_id }} · {{ p.responsible or 'Nincs felelős' }}</small></div><strong>{{ p.financial_impact_huf|huf }}</strong></a>{% else %}<div class="empty-state compact"><b>Nincs blokkolt projekt.</b></div>{% endfor %}</div>
+  </aside>
+</div>
+<div class="workspace-columns equal">
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">VEZETŐI ESEMÉNYEK</span><h2>Mi változott?</h2></div><a href="/executive">Cockpit →</a></div>
+    <div class="activity-list">{% for e in summary.executive_events %}<a href="/projects/{{ e.project_id }}"><span class="event-icon {{ e.severity }}">!</span><div><b>{{ e.next_action or e.event_type }}</b><p>{{ e.project_id }} · {{ e.source_module }}</p></div><small>{{ e.received_at|dt }}</small></a>{% else %}<div class="empty-state compact"><b>Nincs új vezetői esemény.</b></div>{% endfor %}</div>
+  </section>
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">LEGUTÓBBI MUNKA</span><h2>Projektek és dokumentumok</h2></div></div>
+    <div class="recent-grid"><div><h3>Projektek</h3>{% for p in summary.recent_projects %}<a href="/projects/{{ p.project_id }}"><span class="project-symbol">{{ p.name[:1] }}</span><div><b>{{ p.name }}</b><small>{{ p.project_id }} · {{ p.status }}</small></div></a>{% else %}<p class="muted">Nincs projekt.</p>{% endfor %}</div><div><h3>Dokumentumok</h3>{% for d in summary.recent_documents %}<a href="{{ d.source_url or '/documents' }}"><span class="doc-symbol">▤</span><div><b>{{ d.title }}</b><small>{{ d.project_id or 'Általános' }} · {{ d.category }}</small></div></a>{% else %}<p class="muted">Nincs dokumentum.</p>{% endfor %}</div></div>
+  </section>
+</div>
+<section class="module-launcher workspace-card"><div class="card-heading"><div><span class="eyebrow">ALKALMAZÁSOK</span><h2>Imperial Intelligence modulok</h2></div><a href="/modules">Rendszerállapot →</a></div><div class="module-grid">{% for m in summary.modules %}<a href="/workbench/{{ m.module_key }}"><span>{{ m.name[:2]|upper }}</span><div><b>{{ m.name }}</b><small>{{ m.version }} · {{ m.integration_status }}</small></div><i class="module-health {{ m.integration_status }}"></i></a>{% endfor %}</div></section>
+{% endblock %}

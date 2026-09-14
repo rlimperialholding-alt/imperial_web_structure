@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} | Helyszíni mobil{% endblock %}
+{% block content %}
+<section class="field-shell field-project-shell">
+  <header class="field-header compact"><div><a class="backlink" href="/field">← Projektek</a><span class="eyebrow light">FIELD PWA</span><h1>{{ project.name }}</h1><p>{{ project.project_id }} · {{ metrics.progress_pct }}% készültség</p></div><div class="connection-pill" id="connection-pill">Kapcsolat…</div></header>
+  <nav class="field-quick-nav"><a href="#daily-report">Napi jelentés</a><a href="#issue-form">Probléma</a><a href="/procurement/projects/{{ project.project_id }}">Anyagátvétel</a><a href="/operations/projects/{{ project.project_id }}">PM Cockpit</a></nav>
+
+  <section class="field-alert-strip {% if metrics.blocked_packages or metrics.open_issues %}danger{% endif %}"><div><b>{{ metrics.blocked_packages }} blokkolt munkacsomag</b><span>{{ metrics.open_issues }} nyitott helyszíni ügy · {{ metrics.pending_delivery_docs }} dokumentumblokk</span></div></section>
+
+  <div class="field-columns">
+    <section class="field-form-card" id="daily-report"><span class="eyebrow">NAPI JELENTÉS</span><h2>Mi történt ma a helyszínen?</h2>
+      <form method="post" action="/field/{{ project.project_id }}/daily-report" class="field-form persist-form" data-draft-key="daily-{{ project.project_id }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field-form-row"><label>Dátum<input type="date" name="report_date"></label><label>Létszám<input type="number" min="0" name="workers_total" value="0"></label></div>
+        <label>Jelentést készíti<input name="reporter" value="{{ user.name }}" required></label>
+        <label>Időjárás<input name="weather" placeholder="Például: napos, 27 °C"></label>
+        <label>Elvégzett munkák<textarea name="summary" rows="5" required placeholder="Röviden, tényszerűen…"></textarea></label>
+        <label>Akadályok / döntési igény<textarea name="blockers" rows="3" placeholder="Ha itt akadály szerepel, a rendszer feladatot és eseményt képez."></textarea></label>
+        <div class="field-form-row"><label>Munkavédelem<select name="safety_status"><option value="ok">Rendben</option><option value="attention">Figyelmet igényel</option><option value="stop">STOP</option></select></label><label>Minőség<select name="quality_status"><option value="ok">Rendben</option><option value="attention">Ellenőrzendő</option><option value="failed">Nem megfelelő</option></select></label></div>
+        <label>Drive-fotó / bizonyíték URL<input type="url" name="evidence_url" placeholder="https://drive.google.com/…"></label>
+        <label>Hangjegyzet leirata<textarea name="voice_note_text" rows="2" placeholder="A későbbi hangfelismerő adapter ide tölti a szöveget."></textarea></label>
+        <input type="hidden" name="source_device_id" class="device-id">
+        <div class="draft-status" aria-live="polite"></div>
+        <button class="field-primary">Jelentés beküldése</button>
+      </form>
+    </section>
+
+    <section class="field-form-card" id="issue-form"><span class="eyebrow">ÚJ ÜGY</span><h2>Probléma vagy eltérés rögzítése</h2>
+      <form method="post" action="/field/{{ project.project_id }}/issues" class="field-form persist-form" data-draft-key="issue-{{ project.project_id }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field-form-row"><label>Típus<select name="issue_type"><option value="blocker">Akadály</option><option value="quality">Minőség</option><option value="safety">Munkavédelem</option><option value="documentation">Dokumentum</option><option value="quantity">Mennyiség</option><option value="other">Egyéb</option></select></label><label>Súlyosság<select name="severity"><option value="medium">Közepes</option><option value="high">Magas</option><option value="critical">Kritikus</option></select></label></div>
+        <label>Megnevezés<input name="title" required placeholder="Mi a probléma?"></label>
+        <label>Leírás<textarea name="description" rows="4"></textarea></label>
+        <label>Munkacsomag<select name="work_package_id"><option value="">Projekt szintű</option>{% for wp in packages %}<option value="{{ wp.work_package_id }}">{{ wp.name }}</option>{% endfor %}</select></label>
+        <div class="field-form-row"><label>Hely<input name="location" placeholder="Épületrész / tengely"></label><label>Felelős<input name="responsible" value="Projektvezetés"></label></div>
+        <div class="field-form-row"><label>Határidő<input type="date" name="due_at"></label><label>Határidőhatás (nap)<input type="number" name="deadline_impact_days" value="0"></label></div>
+        <label>Pénzügyi hatás (Ft)<input type="number" name="financial_impact_huf" value="0"></label>
+        <label>Bizonyíték URL<input type="url" name="evidence_url"></label>
+        <div class="draft-status" aria-live="polite"></div>
+        <button class="field-primary danger-action">Ügy rögzítése</button>
+      </form>
+    </section>
+  </div>
+
+  <section class="field-history"><div class="panel-title"><div><span class="eyebrow">LEGUTÓBBI JELENTÉSEK</span><h2>Helyszíni napló</h2></div></div>{% for report in reports[:10] %}<article><div><b>{{ report.report_date|dt }}</b><small>{{ report.reporter }} · {{ report.workers_total }} fő · {{ report.weather or 'időjárás nincs rögzítve' }}</small></div><p>{{ report.summary }}</p>{% if report.blockers %}<span class="field-warning">{{ report.blockers }}</span>{% endif %}</article>{% else %}<div class="empty-state"><b>Még nincs jelentés.</b></div>{% endfor %}</section>
+</section>
+<script src="/static/field.js"></script>
+{% endblock %}

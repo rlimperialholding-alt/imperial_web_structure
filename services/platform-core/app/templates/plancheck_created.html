@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><div><span class="eyebrow light">{% if rotated %}PLANCHECK LINK MEGÚJÍTVA{% else %}PLANCHECK ÜGY LÉTREJÖTT{% endif %}</span><h1>{{ detail.case.case_id }}</h1><p>Az alábbi ügyfélfeltöltési link csak most jelenik meg. Másold ki és biztonságos csatornán add át a kapcsolattartónak. Az előző link már nem használható.</p></div></section>
+<section class="workspace-card"><label>Biztonságos feltöltési hivatkozás<input readonly value="{{ upload_url }}" onclick="this.select()"></label><p><strong>Érvényes eddig:</strong> {{ detail.case.upload_token_expires_at }}</p><div class="form-action"><a class="button" href="{{ upload_url }}">Feltöltési képernyő tesztelése</a><a class="button" href="/plancheck/cases/{{ detail.case.case_id }}">Ügy megnyitása</a></div></section>
+{% endblock %}

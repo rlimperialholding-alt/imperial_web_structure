@@ -1,0 +1,15 @@
+{
+  "catalog": {
+    "processes_imported": 99,
+    "processes_unchanged": 0,
+    "checklists_imported": 99,
+    "checklists_unchanged": 0,
+    "total_processes": 99,
+    "total_checklists": 99
+  },
+  "processes": 99,
+  "checklist_templates": 99,
+  "artifacts_inspected": 396,
+  "issues": [],
+  "passed": true
+}

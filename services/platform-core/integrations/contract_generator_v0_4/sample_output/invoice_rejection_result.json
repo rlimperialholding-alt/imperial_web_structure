@@ -1,0 +1,36 @@
+{
+  "accepted": false,
+  "status": "REJECTED_IMMEDIATELY",
+  "blockers": [
+    "INVOICE_NOT_READABLE",
+    "SUPPLIER_TAX_MISMATCH",
+    "TIG_NOT_ACCEPTED",
+    "TIG_AUTHORIZED_SIGNATURE_MISSING",
+    "INVOICE_DUE_DATE_TOO_EARLY"
+  ],
+  "field_details": {
+    "supplier.tax_number": "A számlán szereplő adat nem egyezik a szerződéses törzsadattal.",
+    "due_date": "A szerződés szerinti legkorábbi esedékesség: 2026-10-20."
+  },
+  "calculation": {
+    "invoice_gross": "1000000.00",
+    "warranty_retention": "50000.00",
+    "client_services_deduction": "10000.00",
+    "good_performance_guarantee": "50000.00",
+    "standard_payable": "890000.00",
+    "standard_due_date": "2026-10-20",
+    "skonto_percent": "3",
+    "skonto_amount": "26700.00"
+  },
+  "rejection_notice": {
+    "subject": "Számla befogadásának elutasítása – MSZ-2026-0002",
+    "body": "Tisztelt Minta Szakipari Kft.!\n\nTájékoztatjuk, hogy a(z) MSZ-2026-0002 sorszámú számlát nem fogadjuk be, azt könyvelésre és kifizetésre nem továbbítjuk. Az elutasítás oka: a számla nem olvasható; a szállító adószáma nem egyezik a szerződéses törzsadattal; a teljesítésigazolás nincs elfogadott állapotban; a teljesítésigazolás megrendelői/jogosult aláírása hiányzik; a számlán feltüntetett esedékesség korábbi a szerződés szerint megengedettnél.\n\nA szerződés szerint számla kizárólag a szerződésszerű teljesítést igazoló, a jogosult személyek által aláírt és elfogadott teljesítésigazolás alapján, a teljesítésigazolással egyező tartalommal és összeggel nyújtható be. A számlának meg kell felelnie az Áfa tv. 168/A. §-ában foglalt hitelességi, sértetlenségi és olvashatósági követelményeknek, valamint az Áfa tv. 169. §-ában meghatározott kötelező adattartalomnak.\n\nKérjük, a hibás számla tekintetében a szükséges sztornó- vagy módosító bizonylatot állítsák ki, illetve a hiányzó, aláírt és elfogadott teljesítésigazolással együtt a javított számlát új benyújtásként küldjék meg. A számla módosítására szolgáló okiratnak az Áfa tv. 170. §-a szerinti adatokat kell tartalmaznia. A fizetési határidő kizárólag a hibátlan, hiánytalan és befogadott számla rendszerben rögzített befogadási napjától kezdődhet.\n\nJelen értesítés nem minősül a teljesítés vagy a követelés elismerésének.\n\nÜdvözlettel:\nImperial Holding",
+    "legal_basis": {
+      "invoice_authenticity": "Áfa tv. 168/A. § (1)–(2): hitelesség, sértetlenség, olvashatóság és megbízható ellenőrzési kapcsolat.",
+      "invoice_content": "Áfa tv. 169. §: a számla kötelező adattartalma.",
+      "invoice_correction": "Áfa tv. 168. § (2) és 170. §: a számla módosítása számlával egy tekintet alá eső okirattal."
+    },
+    "required_action": "Sztornó/módosító bizonylat és hibátlan új benyújtás; hiányzó aláírt, elfogadott TIG csatolása."
+  },
+  "rejection_docx": "sample_output/invoice_rejection_execution.docx"
+}

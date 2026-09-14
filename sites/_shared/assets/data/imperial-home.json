@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "environment": "local-prototype",
+    "locale": "hu-HU",
+    "containsCustomerData": false,
+    "source": "synthetic-test-data",
+    "updatedAt": "2026-07-23"
+  },
+  "sections": [
+    { "id": "hero", "label": "Nyitó szekció" },
+    { "id": "trust", "label": "Bizalmi mutatók" },
+    { "id": "portfolio", "label": "Márkaportfólió" },
+    { "id": "capabilities", "label": "Komplex szakértelem" },
+    { "id": "projects", "label": "Kiemelt projektek" },
+    { "id": "sustainability", "label": "Fenntartható jövőkép" },
+    { "id": "news", "label": "Hírek és perspektívák" },
+    { "id": "contact", "label": "Kapcsolati felhívás" }
+  ],
+  "stats": [
+    { "value": "12", "suffix": "", "label": "specializált márka" },
+    { "value": "04", "suffix": "", "label": "integrált szakterület" },
+    { "value": "360", "suffix": "°", "label": "értéklánc-szemlélet" },
+    { "value": "01", "suffix": "", "label": "közös minőségi mérce" }
+  ],
+  "portfolio": [
+    {
+      "id": "property-development",
+      "index": "01",
+      "title": "Ingatlanfejlesztés",
+      "description": "Városi terek és otthonok stratégiai, értékalapú fejlesztése.",
+      "brands": "RED Property · Property 360",
+      "tone": "navy"
+    },
+    {
+      "id": "construction",
+      "index": "02",
+      "title": "Építés és kivitelezés",
+      "description": "Összehangolt mérnöki és generálkivitelezési kompetencia.",
+      "brands": "BMV · BauFreund · Bautica",
+      "tone": "gold"
+    },
+    {
+      "id": "homes",
+      "index": "03",
+      "title": "Otthonmárkák",
+      "description": "Különböző élethelyzetekre tervezett, emberközpontú otthonok.",
+      "brands": "Family Homes · Everyday Homes · Casa Moderna",
+      "tone": "ivory"
+    },
+    {
+      "id": "manufacturing",
+      "index": "04",
+      "title": "Innováció és gyártás",
+      "description": "Modern technológia, előregyártás és természetes alapanyagok.",
+      "brands": "Prefab · Timberhaus · Danish Fabrik",
+      "tone": "slate"
+    }
+  ],
+  "projects": [
+    {
+      "id": "project-aurora",
+      "category": "Városi lakónegyed",
+      "name": "Aurora Gardens",
+      "location": "Budapest · minta helyszín",
+      "year": "2026",
+      "tone": "warm"
+    },
+    {
+      "id": "project-riverside",
+      "category": "Vegyes funkció",
+      "name": "Riverside Quarter",
+      "location": "Duna-part · minta helyszín",
+      "year": "2027",
+      "tone": "blue"
+    },
+    {
+      "id": "project-verde",
+      "category": "Kertvárosi otthonok",
+      "name": "Verde Courtyard",
+      "location": "Pest régió · minta helyszín",
+      "year": "2026",
+      "tone": "green"
+    },
+    {
+      "id": "project-nord",
+      "category": "Faépítészeti koncepció",
+      "name": "Nord House",
+      "location": "Dunántúl · minta helyszín",
+      "year": "2028",
+      "tone": "sand"
+    }
+  ],
+  "news": [
+    {
+      "id": "news-integrated-design",
+      "date": "2026. július 12.",
+      "category": "Szakértelem",
+      "title": "Mit jelent az integrált fejlesztői szemlélet a gyakorlatban?",
+      "tone": "lines"
+    },
+    {
+      "id": "news-timber-future",
+      "date": "2026. június 28.",
+      "category": "Innováció",
+      "title": "Fa, technológia, ember: az új generációs otthonok alapjai",
+      "tone": "blocks"
+    },
+    {
+      "id": "news-city-value",
+      "date": "2026. június 04.",
+      "category": "Perspektíva",
+      "title": "Hogyan teremt hosszú távú értéket egy jól megtervezett városrész?",
+      "tone": "grid"
+    }
+  ]
+}

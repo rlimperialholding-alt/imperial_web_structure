@@ -1,0 +1,438 @@
+{
+  "source_zip": "integrations/source_artifacts/Imperial_Contract_Generator_v0.4.zip",
+  "source_zip_sha256": "3634378bbc90f885b54e787f6de06e57cabf4d6a594e1351463388814e191a42",
+  "expected_source_zip_sha256": "3634378bbc90f885b54e787f6de06e57cabf4d6a594e1351463388814e191a42",
+  "meaningful_original_files_checked": 70,
+  "runtime_bytecode_entries_excluded": 4,
+  "mismatches": [],
+  "passed": true,
+  "note": "A ZIP-ben tárolt __pycache__/.pyc runtime-bytecode nem forrás és Python-verziófüggő, ezért a fájlszintű összevetésből kizárt. A teljes eredeti ZIP hash-e külön, változatlanul ellenőrzött. Az integrations/contract_generator_v0_4/__init__.py integrációs csomagjelölő nem része az eredeti ZIP-nek és nem módosítja a kanonikus üzleti motort.",
+  "excluded_runtime_entries": [
+    "imperial_contract_generator/__pycache__/__init__.cpython-313.pyc",
+    "imperial_contract_generator/__pycache__/__main__.cpython-313.pyc",
+    "imperial_contract_generator/__pycache__/core.cpython-313.pyc",
+    "tests/__pycache__/test_contract_generator.cpython-313.pyc"
+  ],
+  "files": [
+    {
+      "file": "RELEASE_MANIFEST.md",
+      "expected_sha256": "ee46e1c366036345d350a1d8b48034ff6125b89364b3592dc9b8314d8be09070",
+      "actual_sha256": "ee46e1c366036345d350a1d8b48034ff6125b89364b3592dc9b8314d8be09070",
+      "ok": true
+    },
+    {
+      "file": "TEST_RESULTS.txt",
+      "expected_sha256": "e33aa810954ff1b4e2acece4bd6be5ece61248ebae2bb47135b31b004836621e",
+      "actual_sha256": "e33aa810954ff1b4e2acece4bd6be5ece61248ebae2bb47135b31b004836621e",
+      "ok": true
+    },
+    {
+      "file": "UAT_REPORT.md",
+      "expected_sha256": "233d32d510b75a34f34713b6870d55a656be2c95b3c965bcc7634a2fe05f956a",
+      "actual_sha256": "233d32d510b75a34f34713b6870d55a656be2c95b3c965bcc7634a2fe05f956a",
+      "ok": true
+    },
+    {
+      "file": "config/default_deduction_schedule.json",
+      "expected_sha256": "0f4e043c2740543f2f26cd6d720cef10ed6459cc51542a59af8c4046c2d121f6",
+      "actual_sha256": "0f4e043c2740543f2f26cd6d720cef10ed6459cc51542a59af8c4046c2d121f6",
+      "ok": true
+    },
+    {
+      "file": "config/templates.json",
+      "expected_sha256": "e408369273908c4af1db8564b2226524599d828e0fb751783ef3e3b1fa505441",
+      "actual_sha256": "e408369273908c4af1db8564b2226524599d828e0fb751783ef3e3b1fa505441",
+      "ok": true
+    },
+    {
+      "file": "examples/customer_construction_valid.json",
+      "expected_sha256": "2fe3dc63251d84786c9ff8e1176c333926ea011ffce0503786e9893895a51756",
+      "actual_sha256": "2fe3dc63251d84786c9ff8e1176c333926ea011ffce0503786e9893895a51756",
+      "ok": true
+    },
+    {
+      "file": "examples/customer_design_execution_plans_valid.json",
+      "expected_sha256": "8878d92ecc3ff9674e1de6fbbdd7ae8bd7e0ebb7bf2e191cf98fee5ae90b6a00",
+      "actual_sha256": "8878d92ecc3ff9674e1de6fbbdd7ae8bd7e0ebb7bf2e191cf98fee5ae90b6a00",
+      "ok": true
+    },
+    {
+      "file": "examples/customer_type_house_design_build_valid.json",
+      "expected_sha256": "37878744447d55f9dc59aa5ea287edf9658de42d2bdfc8eaddeea672bee644c8",
+      "actual_sha256": "37878744447d55f9dc59aa5ea287edf9658de42d2bdfc8eaddeea672bee644c8",
+      "ok": true
+    },
+    {
+      "file": "examples/invoice_design_valid.json",
+      "expected_sha256": "52d751488852c268bb59db449ac00019cea577b26fa2270b61cbd3cf476571f6",
+      "actual_sha256": "52d751488852c268bb59db449ac00019cea577b26fa2270b61cbd3cf476571f6",
+      "ok": true
+    },
+    {
+      "file": "examples/invoice_execution_invalid.json",
+      "expected_sha256": "3901cd840d79eb735b0c1dbce1ee77bf3baaa1e03587975fe026dda1a4da348a",
+      "actual_sha256": "3901cd840d79eb735b0c1dbce1ee77bf3baaa1e03587975fe026dda1a4da348a",
+      "ok": true
+    },
+    {
+      "file": "examples/invoice_execution_valid.json",
+      "expected_sha256": "26a731fe82f8b01ce5a54dba57c0b4eeb732df678f416c9c4bd3cbd5e6652c80",
+      "actual_sha256": "26a731fe82f8b01ce5a54dba57c0b4eeb732df678f416c9c4bd3cbd5e6652c80",
+      "ok": true
+    },
+    {
+      "file": "examples/invoice_valid.json",
+      "expected_sha256": "26a731fe82f8b01ce5a54dba57c0b4eeb732df678f416c9c4bd3cbd5e6652c80",
+      "actual_sha256": "26a731fe82f8b01ce5a54dba57c0b4eeb732df678f416c9c4bd3cbd5e6652c80",
+      "ok": true
+    },
+    {
+      "file": "examples/subcontractor_design_valid.json",
+      "expected_sha256": "c9d478a02d59fd86b364bba9a5ab8fe5a18c72396b1b0e4c240cc859c815553c",
+      "actual_sha256": "c9d478a02d59fd86b364bba9a5ab8fe5a18c72396b1b0e4c240cc859c815553c",
+      "ok": true
+    },
+    {
+      "file": "examples/subcontractor_execution_valid.json",
+      "expected_sha256": "45eec4a57ca84d2da5547186da57b93ac65714b35f86c455c8a7e84a98302cdd",
+      "actual_sha256": "45eec4a57ca84d2da5547186da57b93ac65714b35f86c455c8a7e84a98302cdd",
+      "ok": true
+    },
+    {
+      "file": "imperial_contract_generator/__init__.py",
+      "expected_sha256": "0a01dd2d51b52ea5eee52e97bddba6af8ec9b6e85f30ab1c0126e098cc5a97cc",
+      "actual_sha256": "0a01dd2d51b52ea5eee52e97bddba6af8ec9b6e85f30ab1c0126e098cc5a97cc",
+      "ok": true
+    },
+    {
+      "file": "imperial_contract_generator/__main__.py",
+      "expected_sha256": "81fddfce13b4cf9e2bc5d1b2ba619ec301b235af6ed2b3f6d77aa1ab2d4789ad",
+      "actual_sha256": "81fddfce13b4cf9e2bc5d1b2ba619ec301b235af6ed2b3f6d77aa1ab2d4789ad",
+      "ok": true
+    },
+    {
+      "file": "imperial_contract_generator/core.py",
+      "expected_sha256": "2c7fda84d68d3c73743a38b43fce7785d0c58c6c5e98a62ad62f882085746887",
+      "actual_sha256": "2c7fda84d68d3c73743a38b43fce7785d0c58c6c5e98a62ad62f882085746887",
+      "ok": true
+    },
+    {
+      "file": "master_templates/customer_construction.docx",
+      "expected_sha256": "1ce03391f4e2a39c1ba4c204d8ae1948b222464e2d4d708416b0d7370fdddf4b",
+      "actual_sha256": "1ce03391f4e2a39c1ba4c204d8ae1948b222464e2d4d708416b0d7370fdddf4b",
+      "ok": true
+    },
+    {
+      "file": "master_templates/customer_design_execution_plans.docx",
+      "expected_sha256": "2f885955ab3b4bae7d9731cf8a87312d86912c5a0d01677f496b3742113cbc8b",
+      "actual_sha256": "2f885955ab3b4bae7d9731cf8a87312d86912c5a0d01677f496b3742113cbc8b",
+      "ok": true
+    },
+    {
+      "file": "master_templates/customer_type_house_design_build.docx",
+      "expected_sha256": "7712c39018bb4f65630d262476e2054384657bb788c9b34022b472e6f4dc026e",
+      "actual_sha256": "7712c39018bb4f65630d262476e2054384657bb788c9b34022b472e6f4dc026e",
+      "ok": true
+    },
+    {
+      "file": "master_templates/subcontractor_design.docx",
+      "expected_sha256": "d5a65882afb051d210f250b625b271346a9b87614932bea845cd2e81c50ab823",
+      "actual_sha256": "d5a65882afb051d210f250b625b271346a9b87614932bea845cd2e81c50ab823",
+      "ok": true
+    },
+    {
+      "file": "master_templates/subcontractor_execution.docx",
+      "expected_sha256": "4ece06d17224f06e338effb0f70b7cb9252fce43411222e1c4722698034f45b8",
+      "actual_sha256": "4ece06d17224f06e338effb0f70b7cb9252fce43411222e1c4722698034f45b8",
+      "ok": true
+    },
+    {
+      "file": "pyproject.toml",
+      "expected_sha256": "2d83391c9e72f7036252495d1e28bec953ab3f242f57d45903795af30bc958ca",
+      "actual_sha256": "2d83391c9e72f7036252495d1e28bec953ab3f242f57d45903795af30bc958ca",
+      "ok": true
+    },
+    {
+      "file": "requirements.txt",
+      "expected_sha256": "d5b659fe0f702623f7dae561506a3df549d4f402f5a8b7bd599e794a0e223993",
+      "actual_sha256": "d5b659fe0f702623f7dae561506a3df549d4f402f5a8b7bd599e794a0e223993",
+      "ok": true
+    },
+    {
+      "file": "tests/test_contract_generator.py",
+      "expected_sha256": "7db6ec697fddcd7d0928b09b3a5c8f54c1e97a43cea24f7be575c100cbf5a911",
+      "actual_sha256": "7db6ec697fddcd7d0928b09b3a5c8f54c1e97a43cea24f7be575c100cbf5a911",
+      "ok": true
+    },
+    {
+      "file": "OWNER_POLICY_DECISION.md",
+      "expected_sha256": "76ba7668f175663629ca055b4f086065992cfd757dd87cd4673244ef99fbea48",
+      "actual_sha256": "76ba7668f175663629ca055b4f086065992cfd757dd87cd4673244ef99fbea48",
+      "ok": true
+    },
+    {
+      "file": "README.md",
+      "expected_sha256": "e01c7a4928fbc81a81f70701c62fc79d58d154c6a6129af0f6b823442670e4d2",
+      "actual_sha256": "e01c7a4928fbc81a81f70701c62fc79d58d154c6a6129af0f6b823442670e4d2",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_type_house_design_build_run.json",
+      "expected_sha256": "84ffd48e4dce76163368a157a2fc0642defcace778dbc7cd63ef76039bc460a3",
+      "actual_sha256": "84ffd48e4dce76163368a157a2fc0642defcace778dbc7cd63ef76039bc460a3",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_type_house_design_build/00_contract_filled.docx",
+      "expected_sha256": "e09ea0203475c0d6e61ff72a25590d2395d752b9a904a9036ab881eaa37b412e",
+      "actual_sha256": "e09ea0203475c0d6e61ff72a25590d2395d752b9a904a9036ab881eaa37b412e",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_type_house_design_build/01_contract_data_and_terms.docx",
+      "expected_sha256": "1f9c3f9e6bea4483d6993d4a5069758da16c3a6836ef49929a3e55f6eda9d667",
+      "actual_sha256": "1f9c3f9e6bea4483d6993d4a5069758da16c3a6836ef49929a3e55f6eda9d667",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_type_house_design_build/02_approval_delivery_and_gate_checklist.docx",
+      "expected_sha256": "49b2eb11fea9b58f4a99d6e3ce9836f1347a866184337ed24710b65cae6528eb",
+      "actual_sha256": "49b2eb11fea9b58f4a99d6e3ce9836f1347a866184337ed24710b65cae6528eb",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_type_house_design_build/manifest.json",
+      "expected_sha256": "66cade2d589b83d574f8c37a55c98abf30cc90a12a0402a1dda4b3bbfaa8094a",
+      "actual_sha256": "66cade2d589b83d574f8c37a55c98abf30cc90a12a0402a1dda4b3bbfaa8094a",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_type_house_design_build/source_input.json",
+      "expected_sha256": "37878744447d55f9dc59aa5ea287edf9658de42d2bdfc8eaddeea672bee644c8",
+      "actual_sha256": "37878744447d55f9dc59aa5ea287edf9658de42d2bdfc8eaddeea672bee644c8",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_type_house_design_build/validation_result.json",
+      "expected_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "actual_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_type_house_design_build.zip",
+      "expected_sha256": "b0270353fcf1cda8421b30496acbf23c723220d4cbb86da783297e44d83bf21d",
+      "actual_sha256": "b0270353fcf1cda8421b30496acbf23c723220d4cbb86da783297e44d83bf21d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_construction_run.json",
+      "expected_sha256": "d469317c52f4d6aff960505f4f345dc7ef678087ab5fce19a7dad18c581b4828",
+      "actual_sha256": "d469317c52f4d6aff960505f4f345dc7ef678087ab5fce19a7dad18c581b4828",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_construction/00_contract_filled.docx",
+      "expected_sha256": "1b0692ceb0d293ea94079ba113927c60e4dedb69a0be21a8682cfd293a53a046",
+      "actual_sha256": "1b0692ceb0d293ea94079ba113927c60e4dedb69a0be21a8682cfd293a53a046",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_construction/01_contract_data_and_terms.docx",
+      "expected_sha256": "970a9297ca71dbec186c010dc81f34c10e3824595838d59954b944f42752b28e",
+      "actual_sha256": "970a9297ca71dbec186c010dc81f34c10e3824595838d59954b944f42752b28e",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_construction/02_approval_delivery_and_gate_checklist.docx",
+      "expected_sha256": "49b2eb11fea9b58f4a99d6e3ce9836f1347a866184337ed24710b65cae6528eb",
+      "actual_sha256": "49b2eb11fea9b58f4a99d6e3ce9836f1347a866184337ed24710b65cae6528eb",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_construction/manifest.json",
+      "expected_sha256": "191331eb2cc3737afd6517849f686de3e6da7b2412202d0420580314e431361b",
+      "actual_sha256": "191331eb2cc3737afd6517849f686de3e6da7b2412202d0420580314e431361b",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_construction/source_input.json",
+      "expected_sha256": "2fe3dc63251d84786c9ff8e1176c333926ea011ffce0503786e9893895a51756",
+      "actual_sha256": "2fe3dc63251d84786c9ff8e1176c333926ea011ffce0503786e9893895a51756",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_construction/validation_result.json",
+      "expected_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "actual_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_construction.zip",
+      "expected_sha256": "e3f87ced4726be8870d3e7456639510a3e9c669f9dea596a66afc42e9f75ab7f",
+      "actual_sha256": "e3f87ced4726be8870d3e7456639510a3e9c669f9dea596a66afc42e9f75ab7f",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_design_execution_plans_run.json",
+      "expected_sha256": "230d690ba9bf7bc8872bce161faf9e09d3cb00cc5a38331f26a1e323e7a5f441",
+      "actual_sha256": "230d690ba9bf7bc8872bce161faf9e09d3cb00cc5a38331f26a1e323e7a5f441",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_design_execution_plans/00_contract_filled.docx",
+      "expected_sha256": "aeb9839963d6b80a2c540d08fae0300acaf4d58a23d95dec2a0c5081d4c9cddb",
+      "actual_sha256": "aeb9839963d6b80a2c540d08fae0300acaf4d58a23d95dec2a0c5081d4c9cddb",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_design_execution_plans/01_contract_data_and_terms.docx",
+      "expected_sha256": "4d75fdb13d5587e30d5ef448b9ba23674d414d54cefe6f343b34db3c1e933f99",
+      "actual_sha256": "4d75fdb13d5587e30d5ef448b9ba23674d414d54cefe6f343b34db3c1e933f99",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_design_execution_plans/02_approval_delivery_and_gate_checklist.docx",
+      "expected_sha256": "f74d34b19205f693f0c34214fb591db2878698a59bc8cd980698f845b50bacd7",
+      "actual_sha256": "f74d34b19205f693f0c34214fb591db2878698a59bc8cd980698f845b50bacd7",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_design_execution_plans/manifest.json",
+      "expected_sha256": "e6cd821df662ed43baecf81c3a4a64d82518bd38103350feac285b7b8a62e763",
+      "actual_sha256": "e6cd821df662ed43baecf81c3a4a64d82518bd38103350feac285b7b8a62e763",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_design_execution_plans/source_input.json",
+      "expected_sha256": "8878d92ecc3ff9674e1de6fbbdd7ae8bd7e0ebb7bf2e191cf98fee5ae90b6a00",
+      "actual_sha256": "8878d92ecc3ff9674e1de6fbbdd7ae8bd7e0ebb7bf2e191cf98fee5ae90b6a00",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_design_execution_plans/validation_result.json",
+      "expected_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "actual_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/customer_design_execution_plans.zip",
+      "expected_sha256": "f64df83e716d3c3e3839155ac7a2e5aeb867ef528d98d464be216437c6064559",
+      "actual_sha256": "f64df83e716d3c3e3839155ac7a2e5aeb867ef528d98d464be216437c6064559",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution_run.json",
+      "expected_sha256": "441585bc1191c91200d23eb41be905960c6b85b348155365b354654a7a98791d",
+      "actual_sha256": "441585bc1191c91200d23eb41be905960c6b85b348155365b354654a7a98791d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution/00_contract_filled.docx",
+      "expected_sha256": "f1387bf8e7a3d38c8ebf66bcc47542f73d7ab0dd4c4374822695d8ba7ac34f89",
+      "actual_sha256": "f1387bf8e7a3d38c8ebf66bcc47542f73d7ab0dd4c4374822695d8ba7ac34f89",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution/01_contract_data_and_terms.docx",
+      "expected_sha256": "ad09c6d7ec7000e22595433e910d5af815876282e39bae9a6e85baae6883721e",
+      "actual_sha256": "ad09c6d7ec7000e22595433e910d5af815876282e39bae9a6e85baae6883721e",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution/02_technical_compliance_deductions.docx",
+      "expected_sha256": "9d480a0d827fda3fd44f3e74036cafa4881fbbe735e3bdc5c73ae40c302ef0d1",
+      "actual_sha256": "9d480a0d827fda3fd44f3e74036cafa4881fbbe735e3bdc5c73ae40c302ef0d1",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution/03_approval_delivery_and_gate_checklist.docx",
+      "expected_sha256": "4edf8bb9d7153ba8642b73c321829630218a912e9bb66535c4e9e231aa9d5dee",
+      "actual_sha256": "4edf8bb9d7153ba8642b73c321829630218a912e9bb66535c4e9e231aa9d5dee",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution/manifest.json",
+      "expected_sha256": "a46e3572670ccf7795f4af3104fb2d266fb0674350cda9bcec1a2893167dc882",
+      "actual_sha256": "a46e3572670ccf7795f4af3104fb2d266fb0674350cda9bcec1a2893167dc882",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution/source_input.json",
+      "expected_sha256": "45eec4a57ca84d2da5547186da57b93ac65714b35f86c455c8a7e84a98302cdd",
+      "actual_sha256": "45eec4a57ca84d2da5547186da57b93ac65714b35f86c455c8a7e84a98302cdd",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution/validation_result.json",
+      "expected_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "actual_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_execution.zip",
+      "expected_sha256": "43a476e88b6608ed7b9309705b79309f56fb1b928896faabc999113fae45c78d",
+      "actual_sha256": "43a476e88b6608ed7b9309705b79309f56fb1b928896faabc999113fae45c78d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/invoice_rejection_result.json",
+      "expected_sha256": "93004ec553c4f1fcefb9a57576fcf2c73850cf0c40e1da49c5160ccc0a940c6d",
+      "actual_sha256": "93004ec553c4f1fcefb9a57576fcf2c73850cf0c40e1da49c5160ccc0a940c6d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/invoice_rejection_execution.docx",
+      "expected_sha256": "db714837f42359559e0033d34cf5213016a1e4db115ac910be10aeb793f7f518",
+      "actual_sha256": "db714837f42359559e0033d34cf5213016a1e4db115ac910be10aeb793f7f518",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_design_run.json",
+      "expected_sha256": "779119b72314b1af5a399b8a2b3c06a8df6a72394bbb336bf7a34efc2db82c34",
+      "actual_sha256": "779119b72314b1af5a399b8a2b3c06a8df6a72394bbb336bf7a34efc2db82c34",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_design/00_contract_filled.docx",
+      "expected_sha256": "72439cc3ead07913772060ba6eff7617e221b57e58be9b4cd95338afa5612b4e",
+      "actual_sha256": "72439cc3ead07913772060ba6eff7617e221b57e58be9b4cd95338afa5612b4e",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_design/01_contract_data_and_terms.docx",
+      "expected_sha256": "3c4a869d50299fc1b9aef0a3d95ef3ba08c10e23142912dcb05e4357339d1bff",
+      "actual_sha256": "3c4a869d50299fc1b9aef0a3d95ef3ba08c10e23142912dcb05e4357339d1bff",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_design/02_approval_delivery_and_gate_checklist.docx",
+      "expected_sha256": "6d03e63f060c4d30d270b211bb9924715cc59233fc0551f0af76920a828e6847",
+      "actual_sha256": "6d03e63f060c4d30d270b211bb9924715cc59233fc0551f0af76920a828e6847",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_design/manifest.json",
+      "expected_sha256": "804b68f934db049bac9a1cfbd1bc685ad15dda1c6d49715ae6e8d3d34dfc4e80",
+      "actual_sha256": "804b68f934db049bac9a1cfbd1bc685ad15dda1c6d49715ae6e8d3d34dfc4e80",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_design/source_input.json",
+      "expected_sha256": "c9d478a02d59fd86b364bba9a5ab8fe5a18c72396b1b0e4c240cc859c815553c",
+      "actual_sha256": "c9d478a02d59fd86b364bba9a5ab8fe5a18c72396b1b0e4c240cc859c815553c",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_design/validation_result.json",
+      "expected_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "actual_sha256": "a38ea6917799caf6a4e1fd8216809316619327bb643c6f7ad006a1a27ec6314d",
+      "ok": true
+    },
+    {
+      "file": "sample_output/subcontractor_design.zip",
+      "expected_sha256": "8162251b3e7ee870b88ae61197e9bba96c1401b8985227928b0ccdcdfd9a9536",
+      "actual_sha256": "8162251b3e7ee870b88ae61197e9bba96c1401b8985227928b0ccdcdfd9a9536",
+      "ok": true
+    }
+  ]
+}

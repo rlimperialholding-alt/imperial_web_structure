@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Enterprise Import Center | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="page-hero import-hero">
+  <div>
+    <span class="eyebrow">ENTERPRISE DATA INTAKE</span>
+    <h1>Import Center</h1>
+    <p>Gmailből, Drive-ból, táblázatokból és régi rendszerekből érkező pénzügyi, projekt-, partner-, ügyfél- és dokumentumadatok kontrollált beemelése.</p>
+  </div>
+  <div class="hero-seal"><b>Értő beolvasás</b><span>forrás → bizonyíték → jóváhagyás → célmodul</span></div>
+</section>
+
+<section class="metric-grid metric-grid-5">
+  <article><span>Aktív forrás</span><strong>{{ metrics.enabled_sources }}</strong><small>{{ metrics.sources }} regisztrált</small></article>
+  <article><span>Importfutás</span><strong>{{ metrics.jobs }}</strong><small>{{ metrics.jobs_in_review }} ellenőrzés alatt</small></article>
+  <article><span>Kinyert rekord</span><strong>{{ metrics.staged }}</strong><small>{{ metrics.pending_review }} emberi döntésre vár</small></article>
+  <article><span>Automatikusan kész</span><strong>{{ metrics.ready }}</strong><small>magas biztonságú rekord</small></article>
+  <article class="metric-emphasis"><span>Végleges rekord</span><strong>{{ metrics.committed_records }}</strong><small>auditált vállalati adat</small></article>
+</section>
+
+<section class="panel elevated canonical-sync-panel">
+  <div class="panel-title">
+    <div><span class="eyebrow">BELSŐ RENDSZERSZINKRON</span><h2>Migrált CRM-adatok beemelése</h2></div>
+    <form method="post" action="/imports/crm-sync"><button class="primary">Kanonikus szinkron indítása</button></form>
+  </div>
+  <p>A védett CRM-migrációs tár teljes tartalma stabil forráskulccsal kerül a központi adatmodellbe. Az ismételt futás csak a megváltozott rekordokat frissíti.</p>
+  {% if canonical_by_domain %}<div class="source-counts">
+    {% for domain, count in canonical_by_domain.items() %}<span><b>{{ count }}</b>{{ domain }}</span>{% endfor %}
+  </div>{% endif %}
+</section>
+
+<section class="panel elevated canonical-sync-panel">
+  <div class="panel-title">
+    <div><span class="eyebrow">KÉTIRÁNYÚ KANONIKUS ADATGERINC</span><h2>CRM ↔ platform ↔ ITEP egyeztetés</h2></div>
+  </div>
+  <p>A műveletek tartós kézbesítési naplóval, forrásverzióval és SHA-256 ellenőrzéssel futnak. Előbb az ITEP-feladatokat és a CRM-adatokat kell beolvasni, majd az eseményeket és a kanonikus állapotot kiküldeni, végül visszaolvasással egyeztetni.</p>
+  <div class="action-buttons">
+    <form method="post" action="/imports/canonical/pull-itep"><button>1. ITEP-feladatok beolvasása</button></form>
+    <form method="post" action="/imports/canonical/push-itep"><button>2. Platformesemények küldése</button></form>
+    <form method="post" action="/imports/canonical/push-crm"><button>3. Kanonikus állapot küldése CRM-be</button></form>
+    <form method="post" action="/imports/canonical/reconcile-crm"><button class="primary">4. CRM-egyeztetés futtatása</button></form>
+  </div>
+  {% if delivery_by_target_status %}<div class="source-counts">
+    {% for item in delivery_by_target_status %}<span><b>{{ item.count }}</b>{{ item.target }} · {{ item.status }}</span>{% endfor %}
+  </div>{% endif %}
+  {% if latest_reconciliation %}
+  <div class="principle-strip"><b>Legutóbbi egyeztetés: {{ latest_reconciliation.status }}</b><span>{{ latest_reconciliation.matching_count }}/{{ latest_reconciliation.local_count }} egyező · {{ latest_reconciliation.missing_remote_count }} hiányzó · {{ latest_reconciliation.hash_mismatch_count }} hash-eltérés · {{ latest_reconciliation.conflict_count }} konfliktus</span></div>
+  {% endif %}
+  <div class="principle-strip">
+    <b>Modulközi ProjectID-integritás: {{ integrity.status }}</b>
+    <span>{{ integrity.linked_project_references }}/{{ integrity.project_references }} érvényes hivatkozás · {{ integrity.project_masters }} projekttörzs · {{ integrity.missing_project_masters }} hiányzó projekt · {{ integrity.modules_with_canonical_data }} adatot tartalmazó modul</span>
+  </div>
+  {% if integrity.warnings %}<div class="source-counts">
+    {% for warning in integrity.warnings %}<span><b>{{ warning.count }}</b>{{ warning.code }}</span>{% endfor %}
+  </div>{% endif %}
+</section>
+
+<div class="workspace-grid">
+  <section class="panel elevated">
+    <div class="panel-title"><div><span class="eyebrow">ÚJ FUTÁS</span><h2>Adatforrás beolvasása</h2></div><span class="status-dot good">kontrollált</span></div>
+    <form class="form-grid" method="post" action="/imports/jobs">
+      <label class="span-2">Forrás<select name="source_key" required>{% for source in sources %}<option value="{{ source.source_key }}">{{ source.name }}</option>{% endfor %}</select></label>
+      <label class="span-2">Futás neve<input name="name" placeholder="Például: 2024–2026 projektjelentések" required></label>
+      <label>Elsődleges tartalom<select name="domain_hint"><option value="enterprise">Automatikus felismerés</option><option value="finance">Pénzügy</option><option value="project">Projekt</option><option value="partner">Partner / alvállalkozó</option><option value="customer">Ügyfél / lead</option><option value="procurement">Beszerzés / tender</option><option value="contract">Szerződés</option><option value="product_data">Termék- és áradat</option></select></label>
+      <div class="form-action"><button class="primary">Importfutás létrehozása</button></div>
+    </form>
+    <div class="principle-strip"><b>Az AI nem ír közvetlenül az éles adatbázisba.</b><span>Minden rekord megőrzi a forrást, bizonyítékot, biztonsági pontszámot és visszagörgethető commit-csomagot.</span></div>
+  </section>
+
+  <aside class="panel source-panel">
+    <div class="panel-title"><div><span class="eyebrow">CSATLAKOZÓK</span><h2>Regisztrált források</h2></div></div>
+    <div class="source-list">
+      {% for source in sources %}
+      <div class="source-row"><span class="source-icon">{{ source.source_type[:1]|upper }}</span><div><b>{{ source.name }}</b><small>{{ source.domain_scope }} · {{ source.sync_mode }}</small></div><span class="badge {% if source.enabled %}green{% else %}red{% endif %}">{{ 'aktív' if source.enabled else 'tiltva' }}</span></div>
+      {% endfor %}
+    </div>
+  </aside>
+</div>
+
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">FOLYAMATOK</span><h2>Legutóbbi importfutások</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Futás</th><th>Forrás</th><th>Állapot</th><th>Fájlok</th><th>Kinyert</th><th>Jóváhagyás</th><th>Commit</th><th></th></tr></thead><tbody>
+  {% for job in jobs %}<tr><td><b>{{ job.name }}</b><small>{{ job.created_at|dt }}</small></td><td>{{ job.source_key }}</td><td><span class="badge {{ 'green' if job.status in ['committed'] else 'yellow' if job.status in ['review','partially_committed'] else '' }}">{{ job.status }}</span></td><td>{{ job.items_processed }}/{{ job.items_total }}</td><td>{{ job.records_extracted }}</td><td>{{ job.records_review_required }}</td><td>{{ job.records_committed }}</td><td><a class="table-link" href="/imports/{{ job.job_id }}">Megnyitás →</a></td></tr>
+  {% else %}<tr><td colspan="8" class="empty">Még nincs importfutás.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+<div class="grid-2">
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">VÁLLALATI ADATVAGYON</span><h2>Legutóbb véglegesített rekordok</h2></div></div>
+  <div class="compact-list">{% for row in canonical %}<div><span class="domain-pill">{{ row.domain }}</span><div><b>{{ row.canonical_name or row.external_key or row.record_id }}</b><small>{{ row.entity_type }} · {{ row.target_module }}{% if row.project_id %} · {{ row.project_id }}{% endif %}</small></div></div>{% else %}<p class="empty">Még nincs commitált rekord.</p>{% endfor %}</div>
+</section>
+<section class="panel elevated">
+  <div class="panel-title"><div><span class="eyebrow">BIZTONSÁG</span><h2>Visszagörgethető commitok</h2></div></div>
+  <div class="compact-list">{% for batch in batches %}<div><span class="domain-pill neutral">{{ batch.committed_count }}</span><div><b>{{ batch.batch_id }}</b><small>{{ batch.status }} · {{ batch.created_at|dt }}</small></div>{% if batch.status != 'rolled_back' %}<form method="post" action="/imports/batches/{{ batch.batch_id }}/rollback"><button class="mini danger-outline">Rollback</button></form>{% endif %}</div>{% else %}<p class="empty">Még nincs commit-csomag.</p>{% endfor %}</div>
+</section>
+</div>
+{% endblock %}

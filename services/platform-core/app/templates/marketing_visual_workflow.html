@@ -1,0 +1,57 @@
+{% if asset.row.state=='VISUAL_PRODUCTION' and user.role in ['marketing','designer','creative-director','platform-admin'] %}
+<details open><summary><strong>Vizuális alap elkészítése</strong></summary>
+<form class="form-grid" method="post" enctype="multipart/form-data" action="/marketing/assets/{{ asset.row.asset_id }}/visual-production">
+  <label>Vizuális irány ID *<input name="visual_direction_id" required placeholder="VD-2026-001"></label><label>Platform *<input name="platform" required placeholder="website"></label>
+  <label>Szélesség (px) *<input type="number" min="320" max="10000" name="width_px" value="1200" required></label><label>Magasság (px) *<input type="number" min="320" max="10000" name="height_px" value="628" required></label>
+  <label class="span-2">Kreatív indoklás *<textarea name="creative_rationale" minlength="20" required></textarea></label>
+  <label class="span-2">Szöveg nélküli vizuális alap (PNG/JPEG/WebP, max. 20 MB) *<input type="file" name="creative_file" accept="image/png,image/jpeg,image/webp" required></label>
+  <label class="checkbox span-2"><input type="checkbox" name="contains_text">A képen már van kampányszöveg (jóváhagyáskor tiltott)</label><div class="form-action span-2"><button class="gold">Vizuális alap leadása</button></div>
+</form></details>
+{% endif %}
+
+{% if asset.row.state=='CREATIVE_DIRECTOR_QA' and asset.creative %}
+<p><a href="/marketing/assets/{{ asset.row.asset_id }}/creative/{{ asset.creative.generation_run_id }}" target="_blank">Aktuális kreatív megnyitása</a></p>
+{% if user.role in ['creative-director','platform-admin'] and asset.creative.producer_identity != user.email %}
+<details open><summary><strong>Kreatívigazgatói minőségellenőrzés</strong></summary>
+<form class="form-grid" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/creative-director-review">
+  {% for key,label in [('brand_fidelity_score','Márkahűség'),('composition_score','Kompozíció'),('distinctiveness_score','Megkülönböztethetőség'),('typography_score','Tipográfia'),('asset_accuracy_score','Assetpontosság')] %}<label>{{ label }} (0–10)<input type="number" min="0" max="10" name="{{ key }}" value="9" required></label>{% endfor %}
+  <label>Minimum kontraszt<input type="number" min="1" max="21" step="0.1" name="minimum_contrast_ratio" value="4.5" required></label><label>Minimum betűméret (px)<input type="number" min="1" max="1000" name="minimum_source_font_px" value="32" required></label>
+  <label>Dekoratív keret aránya<input type="number" min="0" max="1" step="0.01" name="decorative_frame_area_ratio" value="0.08" required></label><label>Főtéma képaránya<input type="number" min="0" max="1" step="0.01" name="primary_subject_area_ratio" value="0.75" required></label>
+  <label>Döntés<select name="decision"><option value="APPROVED">Jóváhagyás</option><option value="RETURN_FOR_REVISION">Újragyártás kérése</option></select></label>
+  {% for key,label in [('full_subject_expected','Teljes tárgy/ház elvárt'),('full_subject_contour_visible','Teljes kontúr látható'),('accidental_crop_absent','Nincs véletlen vágás'),('text_boxes_within_bounds','Szövegdobozok képhatáron belül'),('text_background_clear','Szövegháttér tiszta'),('primary_subject_dominance_required','Főtéma dominanciája szükséges'),('logo_lockup_brand_native','Márkanatív logó')] %}<label class="checkbox"><input type="checkbox" name="{{ key }}" checked>{{ label }}</label>{% endfor %}
+  <label class="checkbox"><input type="checkbox" name="proof_caption_present">Bizonyíték-képaláírás van</label><label class="checkbox"><input type="checkbox" name="proof_caption_semantically_complete">Képaláírás jelentése teljes</label>
+  <label class="span-2">Szándékos vágás indoklása (ha nem teljes tárgy)<textarea name="declared_crop_intent"></textarea></label><label>Nyitott hibák<textarea name="findings"></textarea></label><label>Javítási brief<textarea name="repair_brief"></textarea></label>
+  <div class="form-action span-2"><button>Kreatívigazgatói döntés</button></div>
+</form></details>
+{% endif %}{% endif %}
+
+{% if asset.row.state=='ASSEMBLY_QA' and asset.creative and user.role in ['marketing','designer','copywriter','platform-admin'] and asset.creative.producer_identity != user.email %}
+<details open><summary><strong>Copy + vizuál végleges összeállítása</strong></summary>
+<form class="form-grid" method="post" enctype="multipart/form-data" action="/marketing/assets/{{ asset.row.asset_id }}/assembly">
+  <label>Platform *<input name="platform" required value="{{ asset.creative.platform }}"></label><label>Elhelyezés *<input name="placement" required placeholder="feed"></label>
+  <label>Szélesség (px) *<input type="number" min="320" max="10000" name="width_px" value="{{ asset.creative.width_px }}" required></label><label>Magasság (px) *<input type="number" min="320" max="10000" name="height_px" value="{{ asset.creative.height_px }}" required></label>
+  <label class="span-2">Párosítás szakmai indoklása *<textarea name="pairing_rationale" minlength="30" required></textarea></label><label class="span-2">Végleges export (PNG/JPEG/WebP, max. 20 MB) *<input type="file" name="export_file" accept="image/png,image/jpeg,image/webp" required></label>
+  <label class="checkbox"><input type="checkbox" name="safe_zone_checked" checked>Safe-zone ellenőrizve</label><label class="checkbox"><input type="checkbox" name="text_legibility_checked" checked>Olvashatóság ellenőrizve</label><div class="form-action span-2"><button class="gold">PublicationBundle összeállítása</button></div>
+</form></details>
+{% endif %}
+
+{% if asset.row.state=='RELEASE_QA' and asset.bundle %}
+<p><a href="/marketing/assets/{{ asset.row.asset_id }}/exports/{{ asset.bundle.assembly_run_id }}" target="_blank">Végleges export megnyitása</a></p>
+{% if user.role in ['marketing','managing-director','platform-admin'] and asset.bundle.assembler_identity != user.email %}
+<details open><summary><strong>Integrált release QA</strong></summary>
+<form class="form-grid" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/release-review">
+  {% for key,label in [('strategy_match_score','Stratégiailleszkedés'),('copy_visual_consistency_score','Copy–vizuál összhang'),('channel_fit_score','Csatornailleszkedés'),('conversion_path_score','Konverziós út')] %}<label>{{ label }} (0–10)<input type="number" min="0" max="10" name="{{ key }}" value="9" required></label>{% endfor %}
+  <label>Döntés<select name="decision"><option value="APPROVED">Kiadásra jóváhagyva</option><option value="RETURN_FOR_REVISION">Vissza összeállításra</option></select></label>
+  <label class="checkbox"><input type="checkbox" name="four_gate_recheck_passed" checked>Négy kapu újraellenőrizve</label><label class="checkbox"><input type="checkbox" name="brand_recheck_passed" checked>Márka újraellenőrizve</label><label class="checkbox"><input type="checkbox" name="technical_export_check_passed" checked>Technikai export ellenőrizve</label>
+  <label class="span-2">Nyitott hibák<textarea name="findings"></textarea></label><div class="form-action span-2"><button>Release QA hitelesítése</button></div>
+</form></details>
+{% endif %}{% endif %}
+
+{% if asset.row.state=='RELEASE_APPROVED' and user.role=='owner' %}<form class="review-form" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/publish"><span>A teljes kapulánc jóváhagyott.</span><button class="approve">Publikáció indítása</button></form>{% endif %}
+
+{% if asset.row.state=='LIVE_QA' and user.role in ['marketing','creative-director','copywriter'] %}
+<details open><summary><strong>Élő felület double check – {{ user.role }}</strong></summary>
+<form class="form-grid" method="post" enctype="multipart/form-data" action="/marketing/assets/{{ asset.row.asset_id }}/live-review"><label>Döntés<select name="decision"><option value="APPROVED">Élő felület rendben</option><option value="REJECTED">Azonnali karantén</option></select></label><label>Élő URL *<input type="url" name="live_url" required placeholder="https://..."></label><label class="span-2">Képernyőkép (PNG/JPEG/WebP, max. 20 MB) *<input type="file" name="screenshot_file" accept="image/png,image/jpeg,image/webp" required></label><label class="span-2">Hibák (elutasításnál kötelező)<textarea name="findings"></textarea></label><div class="form-action span-2"><button>Élő ellenőrzés rögzítése</button></div></form>
+</details>{% endif %}
+
+{% if asset.row.state in ['LIVE_QA','PUBLISHED','QUARANTINED'] and user.role=='owner' %}<form class="review-form" method="post" action="/marketing/assets/{{ asset.row.asset_id }}/rollback"><input name="reason" minlength="10" required placeholder="Visszavonás részletes indoka"><button class="danger">Publikáció visszavonása</button></form>{% endif %}

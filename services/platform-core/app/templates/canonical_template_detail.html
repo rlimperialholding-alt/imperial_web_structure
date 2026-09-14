@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ template.template_id }} | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="content-header canonical-head">
+  <div>
+    <span class="eyebrow">{{ template.category_label }} · {{ template.tier_label }}</span>
+    <h1>{{ template.display_name }}</h1>
+    <p>{{ template.purpose }}</p>
+  </div>
+  <div class="head-actions"><a class="button" href="/documents/templates">Iratmintatár</a><a class="button" target="_blank" rel="noopener" href="{{ template.url }}">Drive-forrás</a></div>
+</section>
+
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if created_document %}
+<div class="alert success canonical-created">
+  <div><b>A dokumentumpéldány elkészült.</b><span>{{ created_document.document_id }} · az ellenőrzési, jóváhagyási és lezárási feladatkártyák létrejöttek.</span></div>
+  <div><a class="button gold" href="{{ created_document.source_url }}">DOCX letöltése</a><a class="button" href="/tasks?project_id={{ created_document.project_id or 'GENERAL' }}">Feladatkártyák</a></div>
+</div>
+{% endif %}
+
+<section class="key-value-grid canonical-key-grid">
+  <div><span>TemplateID</span><b class="mono">{{ template.template_id }}</b></div>
+  <div><span>Verzió</span><b>{{ template.version }}</b></div>
+  <div><span>Használati szint</span><b>{{ template.tier_label }}</b></div>
+  <div><span>Forráshash</span><b class="mono small">{{ template.sha256 }}</b></div>
+</section>
+
+<section class="canonical-detail-grid">
+  <article class="workspace-card canonical-instance-card">
+    <div class="panel-head"><div><span class="eyebrow">ÚJ PÉLDÁNY</span><h2>Kitöltés és folyamatindítás</h2><p>A rendszer létrehozza a DOCX-példányt, dokumentumrekordot és a szükséges feladatkártyákat.</p></div></div>
+    <form method="post" action="/documents/templates/{{ template.template_id }}/instantiate" class="canonical-form">
+      <div class="form-grid-2">
+        <label>Projekt<select name="project_id"><option value="">Általános / nem projekthez kötött</option>{% for p in projects %}<option value="{{ p.project_id }}">{{ p.project_id }} · {{ p.name }}</option>{% endfor %}</select></label>
+        <label>Kapcsolódó objektum / esemény ID<input name="related_object_id" placeholder="pl. ChangeID, IssueID, InvoiceID" {% if template.tier=='B' %}required{% endif %}></label>
+      </div>
+      <div class="form-grid-2">
+        <label>Kiváltó esemény<input name="trigger_reason" value="{{ template.trigger or '' }}" {% if template.tier=='B' %}required{% endif %}></label>
+        <label>Esemény időpontja<input type="datetime-local" name="occurred_at"></label>
+      </div>
+      <div class="form-grid-2">
+        <label>Felelős<input name="owner" value="{{ user.email }}" required></label>
+        <label>Lezárási határidő<input type="date" name="due_at"></label>
+      </div>
+      <label>Résztvevők<textarea name="participants" rows="2" placeholder="Név, szerepkör, szervezet"></textarea></label>
+      <label>Tények és körülmények<textarea name="facts" rows="5" placeholder="Ellenőrzött tények, források, érintett scope"></textarea></label>
+      <label>Döntés / eredmény<textarea name="decision" rows="3" placeholder="Döntés, státusz, jóváhagyási feltétel"></textarea></label>
+      <label>Intézkedések és határidők<textarea name="actions" rows="4" placeholder="ActionID, felelős, határidő, elfogadási feltétel"></textarea></label>
+      <label>Bizonyítékok / EvidenceID-k<textarea name="evidence_ids" rows="3" placeholder="Drive-link, EvidenceID, fénykép, mérés, e-mail"></textarea></label>
+      <label>Megjegyzések<textarea name="notes" rows="3"></textarea></label>
+      <button class="button gold full">Dokumentumpéldány és feladatkártyák létrehozása</button>
+    </form>
+  </article>
+
+  <aside class="workspace-card canonical-source-card">
+    <div class="panel-head"><div><span class="eyebrow">VÁLTOZATLAN FORRÁS</span><h2>Kanonikus szöveg</h2><p>A forrásszöveget a rendszer pillanatképként, hash-ellenőrzéssel őrzi meg.</p></div></div>
+    {% if template.legal_level %}<div class="template-trigger"><b>Jogi review:</b> {{ template.legal_level }}</div>{% endif %}
+    {% if template.trigger %}<div class="template-trigger"><b>Kiváltó esemény:</b> {{ template.trigger }}</div>{% endif %}
+    <pre>{{ template.content }}</pre>
+  </aside>
+</section>
+{% endblock %}

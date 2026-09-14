@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ row.canonical_name or row.record_id }} · Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="page-hero compact-hero">
+  <div>
+    <a class="backlink" href="/workbench/{{ row.target_module }}">← Vissza a modulhoz</a>
+    <span class="eyebrow">MIGRÁLT KANONIKUS REKORD</span>
+    <h1>{{ row.canonical_name or row.external_key or row.record_id }}</h1>
+    <p>{{ row.entity_type|replace('_', ' ') }} · {{ row.domain }} · {{ row.record_id }}</p>
+  </div>
+  <div class="hero-status"><span class="badge big green">{{ row.status }}</span><b>{{ row.target_module }}</b><small>célmodul</small></div>
+</section>
+
+<div class="workspace-grid">
+  <section class="panel elevated">
+    <div class="panel-title"><div><span class="eyebrow">ÜZLETI ADATOK</span><h2>Rekordtartalom</h2></div></div>
+    <dl class="canonical-record-fields">
+      {% for key, value in data.items() %}
+      <div><dt>{{ key }}</dt><dd>{% if value is mapping or (value is sequence and value is not string) %}<pre>{{ value|tojson(indent=2) }}</pre>{% else %}{{ value if value not in [none, ''] else '—' }}{% endif %}</dd></div>
+      {% endfor %}
+    </dl>
+  </section>
+  <aside class="panel elevated">
+    <div class="panel-title"><div><span class="eyebrow">EREDIGAZOLÁS</span><h2>Forrás és szinkron</h2></div></div>
+    <dl class="canonical-record-fields compact">
+      <div><dt>Forráskulcs</dt><dd>{{ row.external_key }}</dd></div>
+      <div><dt>Forrásrendszer</dt><dd>{{ provenance.get('source', 'imperial-sales-crm') }}</dd></div>
+      <div><dt>Workspace</dt><dd>{{ provenance.get('workspace_id', '—') }}</dd></div>
+      <div><dt>Export-entitás</dt><dd>{{ provenance.get('export_entity', '—') }}</dd></div>
+      <div><dt>Szinkronfutás</dt><dd>{{ row.source_job_id or '—' }}</dd></div>
+      <div><dt>Frissítve</dt><dd>{{ row.updated_at|dt }}</dd></div>
+    </dl>
+  </aside>
+</div>
+{% endblock %}

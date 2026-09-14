@@ -1,0 +1,28 @@
+{
+  "release": "Imperial Intelligence Operations + Partner Field Portal v1.0",
+  "release_date": "2026-07-19",
+  "application_version": "1.4.0",
+  "platform_version": "4.9.0",
+  "alembic_head": "20260719_0005",
+  "tests": {
+    "passed": 43,
+    "total": 43
+  },
+  "database_tables": 45,
+  "status": "tested development/UAT release; not production deployed",
+  "key_routes": [
+    "/partner-field/login",
+    "/partner-field",
+    "/operations/projects/{ProjectID}?tab=partners"
+  ],
+  "production_gates": [
+    "PostgreSQL",
+    "HTTPS",
+    "Partner IAM or expiring PIN",
+    "object storage",
+    "malware scan",
+    "GDPR retention",
+    "three real crews UAT",
+    "e-naplo export adapter"
+  ]
+}

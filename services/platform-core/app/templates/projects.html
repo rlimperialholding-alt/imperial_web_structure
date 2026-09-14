@@ -1,0 +1,3 @@
+{% extends "base.html" %}{% block content %}<h1>Közös ProjectID-regiszter</h1>
+<section class="panel"><table><thead><tr><th>Projekt</th><th>Ügyfél / típus</th><th>Státusz</th><th>Kockázat</th><th>Pénzügyi hatás</th><th>Késés</th><th>Felelős</th></tr></thead><tbody>
+{% for p in projects %}<tr><td><a href="/projects/{{ p.project_id }}"><strong>{{ p.name }}</strong><br><small>{{ p.project_id }}</small></a></td><td>{{ p.customer_name or '—' }}<br><small>{{ p.project_type or '—' }}</small></td><td>{{ p.status }}</td><td><span class="badge {{ p.risk_level }}">{{ p.risk_level }}</span></td><td>{{ p.financial_impact_huf|huf }}</td><td>{{ p.deadline_impact_days }} nap</td><td>{{ p.responsible or '—' }}</td></tr>{% endfor %}</tbody></table></section>{% endblock %}

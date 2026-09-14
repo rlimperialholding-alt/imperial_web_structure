@@ -1,0 +1,4 @@
+resources:
+  - deployment.yaml
+  - worker-deployment.yaml
+  - configmap.yaml

@@ -1,0 +1,156 @@
+{
+  "name": "Imperial Operational Guidance – Process Card and Checklist",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "imperial-operational-source-changed",
+        "responseMode": "responseNode"
+      },
+      "id": "source-webhook",
+      "name": "Operational Source Changed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.IMPERIAL_HUB_URL + '/api/v1/process-cards/webhooks/directus'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-Directus-Secret", "value": "={{$env.DIRECTUS_WEBHOOK_SECRET}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($json.body)}}"
+      },
+      "id": "source-sync",
+      "name": "Regenerate Changed Guidance",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({accepted: true, result: $json})}}"
+      },
+      "id": "source-response",
+      "name": "Source Change Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [780, 180]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "imperial-process-started",
+        "responseMode": "responseNode"
+      },
+      "id": "process-webhook",
+      "name": "Business Process Started",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.IMPERIAL_HUB_URL + '/api/v1/process-cards/' + $json.body.process_key + '/checklists/start'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.IMPERIAL_HUB_SERVICE_TOKEN}}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify({object_id: $json.body.object_id, object_type: $json.body.object_type, created_by: $json.body.created_by, metadata: $json.body.metadata || {}})}}"
+      },
+      "id": "start-checklist",
+      "name": "Start Required Checklist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 440]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({accepted: true, checklist: $json})}}"
+      },
+      "id": "process-response",
+      "name": "Process Start Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [780, 440]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "imperial-checklist-gate",
+        "responseMode": "responseNode"
+      },
+      "id": "gate-webhook",
+      "name": "Checklist Gate Check",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 700]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.IMPERIAL_HUB_URL + '/api/v1/checklists/instances/' + $json.body.instance_id + '/gate'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "={{'Bearer ' + $env.IMPERIAL_HUB_SERVICE_TOKEN}}"}
+          ]
+        }
+      },
+      "id": "read-gate",
+      "name": "Read Gate Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify($json)}}"
+      },
+      "id": "gate-response",
+      "name": "Gate Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [780, 700]
+    }
+  ],
+  "connections": {
+    "Operational Source Changed": {
+      "main": [[{"node": "Regenerate Changed Guidance", "type": "main", "index": 0}]]
+    },
+    "Regenerate Changed Guidance": {
+      "main": [[{"node": "Source Change Response", "type": "main", "index": 0}]]
+    },
+    "Business Process Started": {
+      "main": [[{"node": "Start Required Checklist", "type": "main", "index": 0}]]
+    },
+    "Start Required Checklist": {
+      "main": [[{"node": "Process Start Response", "type": "main", "index": 0}]]
+    },
+    "Checklist Gate Check": {
+      "main": [[{"node": "Read Gate Status", "type": "main", "index": 0}]]
+    },
+    "Read Gate Status": {
+      "main": [[{"node": "Gate Response", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "6d4d01ea-1d2d-4b2b-8e8b-fc5605509663"
+}

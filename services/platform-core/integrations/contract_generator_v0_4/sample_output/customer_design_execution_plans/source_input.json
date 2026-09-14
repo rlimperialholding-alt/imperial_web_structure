@@ -1,0 +1,145 @@
+{
+  "contract_type": "customer_design_execution_plans",
+  "relationship": "customer",
+  "service": "design",
+  "contract_number": "VEVO-TERV-2026-0001",
+  "contract_date": "2026-07-18",
+  "contract_place": "Budapest",
+  "ids": {
+    "CompanyID": "COM-VEVO-TERV-2026-0001",
+    "PersonID": "PER-VEVO-TERV-2026-0001",
+    "OpportunityID": "OPP-VEVO-TERV-2026-0001",
+    "ProjectID": "PRJ-VEVO-TERV-2026-0001",
+    "PartnerID": "PAR-VEVO-TERV-2026-0001"
+  },
+  "internal_entity": {
+    "party_type": "company",
+    "name": "Imperial Teszt Megrendelő Kft. (MINTAADAT)",
+    "short_name": "Imperial Teszt Kft.",
+    "registration_number": "01-09-000001",
+    "tax_number": "10000001-2-41",
+    "registered_office": "1037 Budapest, Teszt köz 1.",
+    "address": "1037 Budapest, Teszt köz 1.",
+    "postal_address": "1037 Budapest, Teszt köz 1.",
+    "bank_account": "11700000-00000001-00000001",
+    "representative": "Minta Imre",
+    "representative_title": "ügyvezető",
+    "email": "szerzodes@example.com",
+    "phone": "+36 70 000 0001"
+  },
+  "counterparty": {
+    "party_type": "natural_person",
+    "name": "Minta János",
+    "address": "2096 Üröm, Minta utca 2.",
+    "postal_address": "2096 Üröm, Minta utca 2.",
+    "email": "minta.janos@example.com",
+    "phone": "+36 30 000 0004",
+    "birth_place": "Budapest",
+    "birth_date": "1980-05-24",
+    "mother_name": "Példa Anna",
+    "identity_document_type": "személyazonosító igazolvány",
+    "identity_document_number": "000000AA"
+  },
+  "project": {
+    "name": "Minta családi ház kiviteli tervezése",
+    "site_address": "2096 Üröm, Minta utca 2.",
+    "parcel_number": "2468/1",
+    "gross_floor_area_m2": 120,
+    "scope": "engedélyezési és teljes kiviteli tervdokumentáció"
+  },
+  "commercial": {
+    "net_price": 1904761.9,
+    "vat_percent": 5,
+    "vat_amount": 95238.1,
+    "gross_price": 2000000,
+    "currency": "HUF",
+    "payment_schedule": [
+      {
+        "milestone": "Szerződéskötés",
+        "percent": 35,
+        "due_rule": "szerződés aláírásakor"
+      },
+      {
+        "milestone": "Koncepció elfogadása",
+        "percent": 25,
+        "due_rule": "koncepció írásbeli elfogadásakor"
+      },
+      {
+        "milestone": "Engedélyezési terv",
+        "percent": 25,
+        "due_rule": "tervcsomag átadásakor"
+      },
+      {
+        "milestone": "Kiviteli terv",
+        "percent": 15,
+        "due_rule": "hiánytalan átadáskor"
+      }
+    ]
+  },
+  "schedule": {
+    "start_date": "2026-08-03",
+    "deadline": "2026-11-30"
+  },
+  "delivery_requirements": {
+    "postal_required": true,
+    "electronic_required": true,
+    "postal_method": "registered_return_receipt",
+    "postal_original_copies": 1,
+    "electronic_format": "SIGNED_PDF"
+  },
+  "required_attachments": [
+    "design_program",
+    "deliverables",
+    "fee_schedule"
+  ],
+  "attachments": [
+    {
+      "type": "design_program",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "deliverables",
+      "status": "APPROVED",
+      "version": "1.0"
+    },
+    {
+      "type": "fee_schedule",
+      "status": "APPROVED",
+      "version": "1.0"
+    }
+  ],
+  "status": {
+    "contract_status": "DRAFT",
+    "signed_contract_present": false,
+    "master_hash_verified": false,
+    "all_required_annexes_present": true,
+    "commercial_approval": "APPROVED",
+    "technical_approval": "APPROVED",
+    "all_fields_complete": true,
+    "both_parties_signed": false,
+    "signed_contract_file_id": "",
+    "owner_policy_version": "ICG-PAY-2026-07-18"
+  },
+  "dispatch_status": {
+    "internal_signed_original_present": false,
+    "internal_signature_date": "",
+    "signed_document_sha256": "",
+    "postal": {
+      "sent": false,
+      "sent_at": "",
+      "recipient_address": "2096 Üröm, Minta utca 2.",
+      "original_copy_count": 0,
+      "tracking_number": "",
+      "proof_file_id": ""
+    },
+    "electronic": {
+      "sent": false,
+      "sent_at": "",
+      "recipient_email": "minta.janos@example.com",
+      "message_id": "",
+      "attachment_sha256": ""
+    }
+  },
+  "execution_plans": true
+}

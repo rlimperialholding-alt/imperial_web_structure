@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Vezetői döntési munkatér | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">EXECUTIVE ACTION CENTER</span><h1>Vezetői döntések és kivételek</h1><p>Minden ügyhöz pénzügyi vagy határidőhatás, felelős, következő intézkedés és auditált lezárás tartozik.</p></div><a class="button" href="/executive">Cockpit áttekintés</a></div>
+<div class="metric-grid three"><article class="metric-card"><span>Nyitott esemény</span><strong>{{ events|length }}</strong></article><article class="metric-card"><span>Adateltérés</span><strong>{{ issues|length }}</strong></article><article class="metric-card"><span>Vezetői feladat</span><strong>{{ tasks|length }}</strong></article></div>
+
+<section class="panel"><div class="panel-head"><div><h2>Vezetői események</h2><p>Lezáráskor a bizonyíték, a döntéshozó és az időpont auditálva lesz; a kapcsolódó feladatok együtt zárhatók.</p></div></div>
+{% for event in events %}<article class="record-card">
+  <div class="record-top"><strong><a href="/projects/{{ event.project_id }}">{{ event.project_id }}</a> · {{ event.event_type }}</strong><span class="badge {{ event.severity }}">{{ event.severity }}</span></div>
+  <dl><div><dt>Pénzügyi hatás</dt><dd>{{ event.financial_impact_huf|huf }}</dd></div><div><dt>Határidőhatás</dt><dd>{{ event.deadline_impact_days }} nap</dd></div><div><dt>Felelős</dt><dd>{{ event.responsible or '—' }}</dd></div><div><dt>Következő intézkedés</dt><dd>{{ event.next_action or '—' }}</dd></div></dl>
+  {% if event.evidence_url %}<p><a href="{{ event.evidence_url }}" target="_blank" rel="noopener">Forrásbizonyíték megnyitása</a></p>{% endif %}
+  <form class="review-form" method="post" action="/exceptions/events/{{ event.event_id }}/resolve"><input name="resolution_note" minlength="10" required placeholder="Lezárási bizonyíték és vezetői döntés"><label class="checkbox"><input type="checkbox" name="close_related_tasks" checked>Kapcsolódó feladatok lezárása</label><button class="approve">Esemény lezárása</button></form>
+</article>{% else %}<p class="empty">Nincs nyitott vezetői esemény.</p>{% endfor %}
+</section>
+
+<section class="panel"><div class="panel-head"><div><h2>Rendszerközi adateltérések</h2><p>Az eltérés felelőshöz rendelhető; a megoldás után az újraellenőrzés csak egyező forrásadatoknál zárja le automatikusan.</p></div></div>
+{% for issue in issues %}<article class="record-card">
+  <div class="record-top"><strong>{{ issue.project_id }} · {{ issue.title }}</strong><span class="badge {{ issue.severity }}">{{ issue.severity }}</span></div>
+  <p>{{ issue.source_a }}: {{ issue.value_a }}<br>{{ issue.source_b }}: {{ issue.value_b }}</p><dl><div><dt>Eltérés összege</dt><dd>{{ issue.financial_impact_huf|huf }}</dd></div><div><dt>Felelős</dt><dd>{{ issue.responsible or '—' }}</dd></div><div><dt>Előfordulás</dt><dd>{{ issue.occurrence_count }}</dd></div></dl>
+  {% if issue.assignment_note %}<div class="validation"><strong>Hozzárendelési indok:</strong> {{ issue.assignment_note }}</div>{% endif %}
+  <form class="review-form" method="post" action="/exceptions/issues/{{ issue.fingerprint }}/assign"><input name="responsible" minlength="3" required value="{{ issue.responsible or '' }}" placeholder="Felelős neve vagy e-mail-címe"><input name="assignment_note" minlength="10" required placeholder="Hozzárendelés indoklása"><button>Felelőshöz rendelés</button></form>
+  <form class="review-form" method="post" action="/exceptions/issues/{{ issue.fingerprint }}/recheck"><span>A forrásrendszerek javítása után indítható.</span><button class="approve">Adatok újraellenőrzése</button></form>
+</article>{% else %}<p class="empty">Nincs nyitott rendszerközi eltérés.</p>{% endfor %}
+</section>
+
+<section class="panel"><div class="panel-head"><div><h2>Kapcsolódó vezetői feladatok</h2><p>A felelős és az állapot közvetlenül frissíthető.</p></div></div>
+<div class="table-wrap"><table><thead><tr><th>Projekt</th><th>Feladat</th><th>Határidő</th><th>Prioritás</th><th>Intézkedés</th></tr></thead><tbody>
+{% for task in tasks %}<tr><td><a href="/projects/{{ task.project_id }}">{{ task.project_id }}</a></td><td><strong>{{ task.title }}</strong><small>{{ task.assignee or 'Nincs felelős' }}</small></td><td>{{ task.due_at|dt }}</td><td><span class="badge {{ task.priority }}">{{ task.priority }}</span></td><td><form class="review-form" method="post" action="/exceptions/tasks/{{ task.task_id }}/update"><input name="assignee" value="{{ task.assignee or '' }}" placeholder="Felelős"><select name="status"><option value="open">Nyitott</option><option value="in_progress">Folyamatban</option><option value="done">Kész</option><option value="cancelled">Törölve</option></select><button>Mentés</button></form></td></tr>{% else %}<tr><td colspan="5" class="empty">Nincs nyitott vezetői feladat.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

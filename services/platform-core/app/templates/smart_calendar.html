@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Projekt Smart Calendar | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="page-hero compact-hero calendar-hero">
+  <div>
+    <span class="eyebrow light">KANONIKUS PROJEKTÜTEMEZÉS</span>
+    <h1>Project Smart Calendar</h1>
+    <p>Feladatok, mérföldkövek, szerződéses határidők, helyszíni ellenőrzések és ügyféldöntések egy auditált ütemtervben.</p>
+  </div>
+  <div class="hero-status"><small>Aktív naptárelem</small><b>{{ metrics.active }}</b><small>{{ metrics.pending_changes }} jóváhagyandó változás</small></div>
+</section>
+
+{% if message %}<div class="alert success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+
+<section class="workspace-card filter-card">
+  <form method="get" class="filter-bar">
+    <label>Projekt<select name="project_id"><option value="">Minden projekt</option>{% for p in projects %}<option value="{{ p.project_id }}" {% if project_id==p.project_id %}selected{% endif %}>{{ p.project_id }} · {{ p.name }}</option>{% endfor %}</select></label>
+    <label>Állapot<select name="status"><option value="">Minden állapot</option>{% for value,label in [('planned','Tervezett'),('confirmed','Megerősített'),('in_progress','Folyamatban'),('completed','Lezárt'),('cancelled','Törölt')] %}<option value="{{ value }}" {% if filters.status==value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label>Típus<select name="entry_type"><option value="">Minden típus</option>{% for value,label in [('task','Feladat'),('milestone','Mérföldkő'),('meeting','Megbeszélés'),('inspection','Helyszíni ellenőrzés'),('deadline','Határidő'),('customer_decision','Ügyféldöntés'),('delivery','Szállítás')] %}<option value="{{ value }}" {% if filters.entry_type==value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label>Felelős<select name="assignee"><option value="">Minden felelős</option>{% for item in internal_users %}<option value="{{ item.email }}" {% if filters.assignee==item.email %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label>
+    <label>Kezdőnap<input type="date" name="starts_from" value="{{ filters.starts_from }}"></label>
+    <label>Zárónap<input type="date" name="starts_until" value="{{ filters.starts_until }}"></label>
+    <label>Keresés<input name="q" value="{{ filters.q }}" placeholder="cím, leírás, ProjectID"></label>
+    <button>Szűrés</button><a class="clear-filter" href="/smart-calendar">Alaphelyzet</a><a class="button" href="/tasks{% if project_id %}?project_id={{ project_id }}{% endif %}">Feladatkártyák</a>
+  </form>
+  <form method="post" action="/smart-calendar/sync"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button">PM- és feladatforrások szinkronizálása</button></form>
+</section>
+
+<div class="metric-grid calendar-metrics">
+  <article><span>Aktív</span><strong>{{ metrics.active }}</strong><small>tervezett vagy folyamatban</small></article>
+  <article><span>Mérföldkő / határidő</span><strong>{{ metrics.milestones }}</strong><small>kiemelt projektkapuk</small></article>
+  <article class="{% if metrics.overdue %}metric-danger{% endif %}"><span>Lejárt</span><strong>{{ metrics.overdue }}</strong><small>intézkedést igényel</small></article>
+  <article class="{% if metrics.conflicts %}metric-danger{% endif %}"><span>Erőforrásütközés</span><strong>{{ metrics.conflicts }}</strong><small>azonos résztvevő, átfedő idő</small></article>
+  <article class="{% if metrics.dependency_violations %}metric-danger{% endif %}"><span>Függőségi eltérés</span><strong>{{ metrics.dependency_violations }}</strong><small>előfeltétel sérül</small></article>
+  <article><span>Változáskérelem</span><strong>{{ metrics.pending_changes }}</strong><small>szerződéses határidő</small></article>
+</div>
+
+<div class="calendar-admin-grid">
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">ADATBEVITEL</span><h2>Új naptárelem</h2><p>A rendszer ütközést vizsgál, feladatkártyát és integrációs eseményt készít.</p></div></div>
+    <form class="calendar-form" method="post" action="/smart-calendar/entries">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Projekt *<select name="project_id" required><option value="">Válasszon</option>{% for p in projects %}<option value="{{ p.project_id }}" {% if project_id==p.project_id %}selected{% endif %}>{{ p.project_id }} · {{ p.name }}</option>{% endfor %}</select></label>
+      <label>Típus *<select name="entry_type"><option value="task">Feladat</option><option value="milestone">Mérföldkő</option><option value="meeting">Megbeszélés</option><option value="inspection">Helyszíni ellenőrzés</option><option value="deadline">Határidő</option><option value="customer_decision">Ügyféldöntés</option><option value="delivery">Szállítás</option></select></label>
+      <label class="span-2">Megnevezés *<input name="title" required maxlength="255"></label>
+      <label>Kezdés *<input type="datetime-local" name="starts_at" required></label>
+      <label>Befejezés *<input type="datetime-local" name="ends_at" required></label>
+      <label>Felelős<select name="assignee"><option value="">Kiosztatlan</option>{% for item in internal_users %}<option value="{{ item.email }}">{{ item.name }} · {{ item.email }}</option>{% endfor %}</select></label>
+      <label>Prioritás<select name="priority"><option value="normal">Normál</option><option value="high">Magas</option><option value="critical">Kritikus</option><option value="low">Alacsony</option></select></label>
+      <label>Kapacitás (óra)<input type="number" min="0" max="24" step="0.25" name="capacity_hours" value="0"></label>
+      <label>Helyszín<input name="location"></label>
+      <label class="span-2">Résztvevők e-mail-címei, vesszővel<textarea name="participants" rows="2"></textarea></label>
+      <label>Forrásmodul<input name="source_module" value="smart-calendar"></label>
+      <label>Forrásobjektum ID<input name="source_object_id" placeholder="pl. ChangeID, OrderID"></label>
+      <label class="span-2">Leírás<textarea name="description" rows="3"></textarea></label>
+      <label class="span-2">Ütközés felülbírálási indoka<textarea name="conflict_override_reason" rows="2" placeholder="Csak ismert ütközés tudatos vállalásakor töltendő"></textarea></label>
+      <label class="check-label"><input type="checkbox" name="all_day"> Egész napos</label>
+      <label class="check-label"><input type="checkbox" name="contractual_deadline"> Szerződéses határidő</label>
+      <label class="check-label"><input type="checkbox" name="create_task" checked> Feladatkártya létrehozása</label>
+      <button class="gold span-2">Naptárelem létrehozása</button>
+    </form>
+  </section>
+
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">KRITIKUS ÚT</span><h2>Ütemezési függőség</h2><p>A ciklikus és időben hibás függőségeket a rendszer blokkolja.</p></div></div>
+    <form class="calendar-form" method="post" action="/smart-calendar/dependencies">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="span-2">Előfeltétel *<select name="predecessor_entry_id" required><option value="">Válasszon</option>{% for item in entries %}<option value="{{ item.entry_id }}">{{ item.entry_id }} · {{ item.title }}</option>{% endfor %}</select></label>
+      <label class="span-2">Követő elem *<select name="successor_entry_id" required><option value="">Válasszon</option>{% for item in entries %}<option value="{{ item.entry_id }}">{{ item.entry_id }} · {{ item.title }}</option>{% endfor %}</select></label>
+      <label>Kapcsolat<select name="dependency_type"><option value="finish_to_start">Befejezés → kezdés</option><option value="start_to_start">Kezdés → kezdés</option><option value="finish_to_finish">Befejezés → befejezés</option></select></label>
+      <label>Átfutási idő (nap)<input type="number" min="0" max="365" name="lag_days" value="0"></label>
+      <button class="span-2">Függőség rögzítése</button>
+    </form>
+    <div class="calendar-dependency-list">
+      {% for dep in dependencies %}<div><b>{{ dep.predecessor_entry_id }}</b><span>→ {{ dep.dependency_type }} +{{ dep.lag_days }} nap →</span><b>{{ dep.successor_entry_id }}</b></div>{% else %}<p class="empty">Még nincs rögzített függőség.</p>{% endfor %}
+    </div>
+  </section>
+</div>
+
+{% if overdue or conflicts or dependency_violations %}
+<section class="workspace-card calendar-risk-panel">
+  <div class="card-heading"><div><span class="eyebrow">AUTOMATIKUS ELLENŐRZÉS</span><h2>Ütemtervi eltérések</h2></div></div>
+  <div class="calendar-risk-grid">
+    {% for item in overdue %}<article><span class="status-badge critical">LEJÁRT</span><b>{{ item.title }}</b><small>{{ item.project_id }} · {{ item.ends_at|dt }} · {{ item.assignee or 'kiosztatlan' }}</small></article>{% endfor %}
+    {% for item in conflicts %}<article><span class="status-badge critical">ÜTKÖZÉS</span><b>{{ item.left.title }} ↔ {{ item.right.title }}</b><small>{{ item.people|join(', ') }}</small></article>{% endfor %}
+    {% for item in dependency_violations %}<article><span class="status-badge critical">FÜGGŐSÉG</span><b>{{ item.predecessor.title }} → {{ item.successor.title }}</b><small>{{ item.dependency.dependency_type }} · +{{ item.dependency.lag_days }} nap</small></article>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if pending_changes %}
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">VEZETŐI KAPU</span><h2>Szerződéses határidő-változások</h2></div></div>
+  <div class="calendar-change-list">
+    {% for change in pending_changes %}{% set entry=entry_map.get(change.entry_id) %}
+    <article>
+      <div><span class="status-badge pending">{{ change.status }}</span><h3>{{ entry.title if entry else change.entry_id }}</h3><p>{{ change.reason }}</p><small>{{ change.requested_starts_at|dt }} – {{ change.requested_ends_at|dt }} · {{ change.impact_summary }}</small></div>
+      {% if can_approve_change %}<form class="calendar-form compact" method="post" action="/smart-calendar/change-requests/{{ change.request_id }}/decision"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_entry_version" value="{{ entry.version if entry else 1 }}"><label>Döntés<select name="decision"><option value="approved">Jóváhagyás</option><option value="rejected">Elutasítás</option></select></label><label>Döntési indok<input name="note" minlength="10" required></label><label>Ütközés felülbírálása<input name="conflict_override_reason"></label><button>Döntés rögzítése</button></form>{% else %}<small>Vezetői döntésre vár.</small>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">42 NAPOS ÜTEMTERV</span><h2>Projektmenedzseri naptár</h2><p>Minden naptárelemnél elérhető az állapotkezelés, átütemezés és a szerződéses változáskérelem.</p></div></div>
+  {% for day in calendar_days %}
+  <div class="calendar-day-block">
+    <h3><span>{{ day.date.strftime('%m.%d') }}</span>{{ day.date|weekday_hu }}</h3>
+    <div class="calendar-entry-list">
+      {% for item in day.entries %}
+      <article class="calendar-entry {{ item.priority }}" id="{{ item.entry_id }}">
+        <div class="calendar-entry-time"><b>{{ item.starts_at.strftime('%H:%M') }}</b><span>{% if item.starts_at.date()==item.ends_at.date() %}{{ item.ends_at.strftime('%H:%M') }}{% else %}→ {{ item.ends_at.strftime('%m.%d %H:%M') }}{% endif %}</span></div>
+        <div class="calendar-entry-main">
+          <div class="calendar-entry-top"><span class="status-badge {{ item.status }}">{{ item.status }}</span><span class="type-chip">{{ item.entry_type }}</span>{% if item.contractual_deadline %}<span class="type-chip contractual">szerződéses</span>{% endif %}</div>
+          <h3>{{ item.title }}</h3><p>{{ item.description or 'Nincs leírás.' }}</p><small>{{ item.project_id }} · {{ item.assignee or 'kiosztatlan' }}{% if item.location %} · {{ item.location }}{% endif %}{% if item.linked_task_id %} · {{ item.linked_task_id }}{% endif %}</small>
+        </div>
+        <div class="calendar-entry-actions">
+          {% if item.status=='planned' %}<form method="post" action="/smart-calendar/entries/{{ item.entry_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="status" value="confirmed"><button>Megerősítés</button></form>{% elif item.status=='confirmed' %}<form method="post" action="/smart-calendar/entries/{{ item.entry_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="status" value="in_progress"><button>Indítás</button></form>{% elif item.status=='in_progress' %}<details><summary>Lezárás</summary><form class="calendar-form compact" method="post" action="/smart-calendar/entries/{{ item.entry_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="status" value="completed"><label>Teljesítés bizonyítéka / megjegyzése<textarea name="note" minlength="10" required></textarea></label><button>Lezárás</button></form></details>{% endif %}
+          {% if item.status in ['planned','confirmed','in_progress'] %}<details><summary>Törlés</summary><form class="calendar-form compact" method="post" action="/smart-calendar/entries/{{ item.entry_id }}/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="status" value="cancelled"><label>Törlés indoka<textarea name="note" minlength="10" required></textarea></label><button>Törlés auditnaplóval</button></form></details>{% endif %}
+          <details><summary>{% if item.contractual_deadline %}Változáskérelem{% else %}Átütemezés{% endif %}</summary>
+            {% if item.contractual_deadline %}<form class="calendar-form compact" method="post" action="/smart-calendar/entries/{{ item.entry_id }}/change-requests"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><label>Új kezdés<input type="datetime-local" name="starts_at" value="{{ item.starts_at|calendar_local }}" required></label><label>Új befejezés<input type="datetime-local" name="ends_at" value="{{ item.ends_at|calendar_local }}" required></label><label>Indok<textarea name="reason" required></textarea></label><label>Hatáselemzés<textarea name="impact_summary" required></textarea></label><button>Kérelem benyújtása</button></form>
+            {% else %}<form class="calendar-form compact" method="post" action="/smart-calendar/entries/{{ item.entry_id }}/reschedule"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><label>Új kezdés<input type="datetime-local" name="starts_at" value="{{ item.starts_at|calendar_local }}" required></label><label>Új befejezés<input type="datetime-local" name="ends_at" value="{{ item.ends_at|calendar_local }}" required></label><label>Indok<textarea name="reason" required></textarea></label><label>Ütközés felülbírálási indoka<textarea name="conflict_override_reason"></textarea></label><button>Átütemezés</button></form>{% endif %}
+          </details>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}<div class="empty-state"><b>Nincs naptárelem a következő 42 napban.</b><span>A fenti adatbeviteli képernyőn létrehozható az első.</span></div>{% endfor %}
+</section>
+{% endblock %}

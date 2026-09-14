@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><div><span class="eyebrow light">BUILDCONFIG · BOM · ÁR · KAPACITÁS</span><h1>Kanonikus műszaki és kereskedelmi konfigurátor</h1><p>Kiválasztott HousePlanból verziózott opciócsomagot, tételes költségstruktúrát, árat, fizetési cashflow-t és kapacitásvállalást készít. Forrás-, kompatibilitási, fedezeti vagy kapacitás-STOP mellett nincs ajánlati kiadás.</p></div></section>
+<section class="kpi-grid"><article><span>BuildConfig ügy</span><strong>{{ cases|length }}</strong></article><article><span>Jóváhagyott</span><strong>{{ cases|selectattr('status','equalto','approved')|list|length }}</strong></article><article><span>Konfigurálható HousePlan</span><strong>{{ housebuild_variants|length }}</strong></article><article><span>Kapuk</span><strong>10</strong></article></section>
+
+{% if can_edit %}<section class="workspace-card"><div class="card-heading"><div><span class="eyebrow">ÚJ BUILDCONFIGID</span><h2>HousePlan, műszaki csomag és vállalási idő</h2></div></div><form method="post" action="/buildconfig/cases" class="form-grid" id="buildconfig-create">
+  <label class="span-2">Kiválasztott HousePlan *<select id="bc-binding" required><option value="">Válasszon</option>{% for item in housebuild_variants %}<option value="{{ item.case_id }}|{{ item.variant_id }}|{{ item.project_id }}|{{ item.gross_area_m2 }}|{{ item.technology }}">{{ item.project_id }} · {{ item.case_id }} · {{ item.variant_id }} · {{ item.gross_area_m2 }} m² · {{ item.status }}</option>{% endfor %}</select></label>
+  <input type="hidden" name="housebuild_case_id" id="bc-housebuild-case"><input type="hidden" name="housebuild_variant_id" id="bc-housebuild-variant">
+  <label>ProjectID *<input name="project_id" id="bc-project" readonly required></label><label>Konfiguráció neve *<input name="title" required></label>
+  <label>Márka *<select name="brand" id="bc-brand" required>{% for brand in catalog %}<option value="{{ brand }}">{{ brand|title }}</option>{% endfor %}</select></label><label>Technológia *<select name="technology" id="bc-technology" required></select></label>
+  <label>Készültség *<select name="completion_level"><option>Szerkezetkész</option><option>Fűtéskész</option><option selected>Kulcsrakész</option></select></label><label>Csomag *<select name="package"><option>Alap</option><option>Közép</option><option>Prémium</option></select></label>
+  <label>HousePlan bruttó alapterület m² *<input type="number" step="0.1" min="20" max="500" name="gross_area_m2" id="bc-area" readonly required></label><label>ÁFA-kulcs *<input type="number" step="0.01" min="0" max="0.3" name="vat_rate" value="0.05" required></label>
+  <fieldset class="span-2"><legend>Verziózott opciók</legend>{% for option in options %}<label><input type="checkbox" name="options" value="{{ option.code }}"> {{ option.label }} · {{ option.net_price_huf|huf }} + ÁFA</label>{% endfor %}</fieldset>
+  <label>Tervezett kezdés *<input type="date" name="planned_start" required></label><label>Vállalt átadás *<input type="date" name="promised_delivery" required></label><label>Brigádok száma *<input type="number" min="1" max="8" name="crew_count" value="2" required></label><label>Heti kapacitás m²/brigád *<input type="number" min="5" max="1000" step="0.1" name="weekly_capacity_m2" value="30" required></label>
+  <div class="form-action span-2"><button class="gold">Verzió, BOM és tíz kapu létrehozása</button></div>
+</form></section>{% endif %}
+
+<section class="workspace-card"><div class="card-heading"><div><span class="eyebrow">PORTFÓLIÓ</span><h2>BuildConfig ügyek</h2></div><form method="get" action="/buildconfig"><input name="project_id" value="{{ project_id }}" placeholder="ProjectID"><button>Szűrés</button></form></div><div class="table-wrap"><table><thead><tr><th>Ügy</th><th>HousePlan</th><th>Aktuális verzió</th><th>Állapot</th><th></th></tr></thead><tbody>{% for c in cases %}<tr><td><strong>{{ c.case_id }}</strong><br>{{ c.project_id }} · {{ c.title }}</td><td>{{ c.housebuild_variant_id }}</td><td>{{ c.current_version_id }}</td><td>{{ c.status }}</td><td><a class="button" href="/buildconfig/cases/{{ c.case_id }}">Megnyitás</a></td></tr>{% else %}<tr><td colspan="5">Még nincs kanonikus BuildConfig ügy.</td></tr>{% endfor %}</tbody></table></div></section>
+
+<script>
+const catalogs={{ catalog|tojson }};const binding=document.getElementById('bc-binding'),brand=document.getElementById('bc-brand'),tech=document.getElementById('bc-technology');
+function bindHouse(){if(!binding)return;const p=binding.value.split('|');document.getElementById('bc-housebuild-case').value=p[0]||'';document.getElementById('bc-housebuild-variant').value=p[1]||'';document.getElementById('bc-project').value=p[2]||'';document.getElementById('bc-area').value=p[3]||'';if(p[4]&&tech){const option=[...tech.options].find(x=>x.value===p[4]);if(option)tech.value=p[4];}}
+function fillTech(){if(!brand||!tech)return;tech.innerHTML=(catalogs[brand.value]||[]).map(value=>`<option value="${value}">${value}</option>`).join('');bindHouse();}
+if(brand){fillTech();brand.addEventListener('change',fillTech)}if(binding){binding.addEventListener('change',bindHouse)}
+</script>
+{% endblock %}

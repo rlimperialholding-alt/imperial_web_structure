@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Commercial Integration | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><span class="eyebrow">KANONIKUS MODULOK ÖSSZEKÖTÉSE</span><h1>Commercial Integration</h1><p>A Contract Generator és a ChangeControl közös Workspace-nézete. Ez a felület nem másolja le a forrásmodulok üzleti logikáját.</p></div>
+  <div class="head-actions"><a class="button primary" href="/commercial/contracts/new">Új szerződéscsomag</a><a class="button" href="/change-control">Change Control</a><a class="button" href="/development-governance">Discovery gate</a></div>
+</div>
+<div class="metric-grid four">
+  <article class="metric-card"><span>Szerződések</span><strong>{{ data.contracts|length }}</strong><small>Contract Generator projekciók</small></article>
+  <article class="metric-card"><span>Változtatások</span><strong>{{ data.changes|length }}</strong><small>ChangeControl projekciók</small></article>
+  <article class="metric-card"><span>Partner intake</span><strong>{{ data.partner_change_notices|length }}</strong><small>Változásbejelentések</small></article>
+  <article class="metric-card {% if not data.contract_source.healthy %}danger{% endif %}"><span>Kanonikus forrás</span><strong>{{ 'OK' if data.contract_source.healthy else 'BLOKKOLT' }}</strong><small>Contract Generator v{{ data.contract_source.version }}</small></article>
+</div>
+<section class="panel">
+  <div class="panel-head"><div><h2>Kanonikus forrásellenőrzés</h2><p>Drive-artifact és a jóváhagyott masterek SHA-256 ellenőrzése.</p></div><span class="status-pill {{ 'ok' if data.contract_source.healthy else 'critical' }}">{{ 'egészséges' if data.contract_source.healthy else 'blokkolt' }}</span></div>
+  <div class="key-value-grid">
+    <div><span>Drive FileID</span><b>{{ data.contract_source.drive_file_id }}</b></div>
+    <div><span>ZIP SHA-256</span><b class="mono small">{{ data.contract_source.zip_actual_sha256 }}</b></div>
+    <div><span>Sablonok</span><b>{{ data.contract_source.templates|length }} / {{ data.contract_source.templates|selectattr('ok')|list|length }} ellenőrzött</b></div>
+    <div><span>Workspace szerepe</span><b>projekció és orchestration</b></div>
+  </div>
+  {% if data.contract_source.issues %}<div class="alert critical">{% for issue in data.contract_source.issues %}<div>{{ issue }}</div>{% endfor %}</div>{% endif %}
+</section>
+<div class="two-column">
+<section class="panel">
+  <div class="panel-head"><div><h2>Szerződésállapotok</h2><p>A hiteles állapot tulajdonosa: Contract Generator.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Projekt</th><th>Szerződés</th><th>Állapot</th><th>Frissítve</th></tr></thead><tbody>
+  {% for row in data.contracts %}<tr><td><a href="/projects/{{ row.project_id }}/360">{{ row.project_id }}</a></td><td>{{ row.object_id }}</td><td><span class="status-pill">{{ row.status }}</span></td><td>{{ row.updated_at|dt }}</td></tr>{% else %}<tr><td colspan="4" class="empty">Nincs még szerződésprojekció.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="panel">
+  <div class="panel-head"><div><h2>ChangeControl állapotok</h2><p>A Workspace nem módosítja önállóan a scope-ot, árat vagy munkakezdési engedélyt.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Projekt</th><th>ChangeID</th><th>Állapot</th><th>Frissítve</th></tr></thead><tbody>
+  {% for row in data.changes %}<tr><td><a href="/projects/{{ row.project_id }}/360">{{ row.project_id }}</a></td><td>{{ row.object_id }}</td><td><span class="status-pill">{{ row.status }}</span></td><td>{{ row.updated_at|dt }}</td></tr>{% else %}<tr><td colspan="4" class="empty">Nincs még ChangeControl-projekció.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+</div>
+<section class="panel">
+  <div class="panel-head"><div><h2>Szerződés-életciklusok</h2><p>Elkülönített jóváhagyás, aláírt példány, kettős kézbesítés és munkakezdési kapu.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Szerződés</th><th>Partner</th><th>Projekt</th><th>Állapot</th><th>Munkakezdés</th></tr></thead><tbody>
+  {% for row in data.contract_workflows %}<tr><td><a href="/commercial/contracts/{{ row.contract_id }}"><b>{{ row.contract_number }}</b></a><small>{{ row.contract_type }}</small></td><td>{{ row.counterparty_name }}</td><td>{{ row.project_id }}</td><td><span class="status-pill {{ 'ok' if row.status == 'active' else 'critical' if row.status == 'rejected' else '' }}">{{ row.status }}</span></td><td>{{ 'ENGEDÉLYEZETT' if row.work_start_allowed else 'TILOS' }}</td></tr>{% else %}<tr><td colspan="5" class="empty">Nincs még generált szerződés-életciklus.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="panel">
+  <div class="panel-head"><div><h2>Alvállalkozói változásbejelentések</h2><p>Ezek csak intake rekordok; az üzleti döntést a ChangeControl végzi.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Projekt</th><th>Bejelentés</th><th>Típus</th><th>Állapot</th><th>Határidőhatás</th></tr></thead><tbody>
+  {% for row in data.partner_change_notices %}<tr><td>{{ row.project_id }}</td><td><b>{{ row.title }}</b><small>{{ row.description }}</small></td><td>{{ row.change_type }}</td><td>{{ row.status }}</td><td>{{ row.deadline_impact_days }} nap</td></tr>{% else %}<tr><td colspan="5" class="empty">Nincs partneri változásbejelentés.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

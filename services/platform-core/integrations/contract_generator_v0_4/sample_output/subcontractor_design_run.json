@@ -1,0 +1,210 @@
+{
+  "output_dir": "sample_output/subcontractor_design",
+  "zip_path": "sample_output/subcontractor_design.zip",
+  "manifest": {
+    "generator_version": "0.4.0",
+    "generated_at": "2026-07-18T20:15:04Z",
+    "contract_type": "subcontractor_design",
+    "contract_number": "TERV-AV-2026-0001",
+    "template": {
+      "drive_file_id": "1B502E2YvluFmDfO-FUdhqYRCMfiYCoz5",
+      "file_name": "subcontractor_design.docx",
+      "sha256": "d5a65882afb051d210f250b625b271346a9b87614932bea845cd2e81c50ab823"
+    },
+    "ids": {
+      "CompanyID": "COM-TERV-AV-2026-0001",
+      "PersonID": "PER-TERV-AV-2026-0001",
+      "OpportunityID": "OPP-TERV-AV-2026-0001",
+      "ProjectID": "PRJ-TERV-AV-2026-0001",
+      "PartnerID": "PAR-TERV-AV-2026-0001"
+    },
+    "field_fill_audit": [
+      {
+        "field": "internal_entity",
+        "changed": true,
+        "target": "paragraph:4"
+      },
+      {
+        "field": "counterparty",
+        "changed": true,
+        "target": "paragraph:6"
+      },
+      {
+        "field": "project",
+        "changed": true,
+        "target": "paragraph:12"
+      },
+      {
+        "field": "procedure_clause",
+        "changed": true,
+        "target": "paragraph:16"
+      },
+      {
+        "field": "price",
+        "changed": true,
+        "target": "paragraph:29"
+      },
+      {
+        "field": "insurance",
+        "changed": true,
+        "target": "paragraph:52"
+      },
+      {
+        "field": "milestone_1",
+        "changed": true,
+        "target": "paragraph:95"
+      },
+      {
+        "field": "milestone_2",
+        "changed": true,
+        "target": "paragraph:96"
+      },
+      {
+        "field": "milestone_3",
+        "changed": true,
+        "target": "paragraph:97"
+      },
+      {
+        "field": "deadline",
+        "changed": true,
+        "target": "paragraph:99"
+      },
+      {
+        "field": "emails",
+        "changed": true,
+        "target": "paragraph:150"
+      },
+      {
+        "field": "contract_date",
+        "changed": true,
+        "target": "paragraph:158"
+      },
+      {
+        "field": "signature_names",
+        "changed": true,
+        "target": "paragraph:161"
+      },
+      {
+        "field": "witness_heading",
+        "changed": true,
+        "target": "paragraph:169"
+      },
+      {
+        "field": "witness_170",
+        "changed": true,
+        "target": "paragraph:170"
+      },
+      {
+        "field": "witness_171",
+        "changed": true,
+        "target": "paragraph:171"
+      },
+      {
+        "field": "witness_172",
+        "changed": true,
+        "target": "paragraph:172"
+      },
+      {
+        "field": "witness_173",
+        "changed": true,
+        "target": "paragraph:173"
+      },
+      {
+        "field": "witness_174",
+        "changed": true,
+        "target": "paragraph:174"
+      },
+      {
+        "field": "witness_175",
+        "changed": true,
+        "target": "paragraph:175"
+      },
+      {
+        "field": "mandatory_delivery_clause",
+        "changed": true,
+        "target": "before_paragraph:158"
+      },
+      {
+        "field": "mandatory_invoice_acceptance_clause",
+        "changed": true,
+        "target": "before_paragraph:158"
+      }
+    ],
+    "field_fill_failures": [],
+    "unresolved_placeholders": [],
+    "all_fields_complete": true,
+    "dispatch_gate": {
+      "allowed": false,
+      "blockers": [
+        "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+        "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+        "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+        "SIGNED_ORIGINAL_NOT_POSTED",
+        "POSTAL_SENT_AT_MISSING",
+        "POSTAL_TRACKING_NUMBER_MISSING",
+        "POSTAL_PROOF_MISSING",
+        "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+        "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+        "ELECTRONIC_SENT_AT_MISSING",
+        "ELECTRONIC_MESSAGE_ID_MISSING"
+      ]
+    },
+    "work_start_gate": {
+      "allowed": false,
+      "blockers": [
+        "CONTRACT_NOT_SIGNED",
+        "SIGNED_FILE_MISSING",
+        "BOTH_PARTIES_SIGNATURE_MISSING",
+        "SIGNED_CONTRACT_FILE_ID_MISSING",
+        "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+        "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+        "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+        "SIGNED_ORIGINAL_NOT_POSTED",
+        "POSTAL_SENT_AT_MISSING",
+        "POSTAL_TRACKING_NUMBER_MISSING",
+        "POSTAL_PROOF_MISSING",
+        "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+        "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+        "ELECTRONIC_SENT_AT_MISSING",
+        "ELECTRONIC_MESSAGE_ID_MISSING"
+      ],
+      "dispatch_gate": {
+        "allowed": false,
+        "blockers": [
+          "INTERNALLY_SIGNED_ORIGINAL_MISSING",
+          "INTERNAL_SIGNATURE_DATE_MISSING_OR_INVALID",
+          "SIGNED_DOCUMENT_HASH_MISSING_OR_INVALID",
+          "SIGNED_ORIGINAL_NOT_POSTED",
+          "POSTAL_SENT_AT_MISSING",
+          "POSTAL_TRACKING_NUMBER_MISSING",
+          "POSTAL_PROOF_MISSING",
+          "POSTAL_ORIGINAL_COPY_COUNT_INSUFFICIENT",
+          "SIGNED_CONTRACT_NOT_SENT_ELECTRONICALLY",
+          "ELECTRONIC_SENT_AT_MISSING",
+          "ELECTRONIC_MESSAGE_ID_MISSING"
+        ]
+      }
+    },
+    "owner_approved_policy": {
+      "version": "ICG-PAY-2026-07-18",
+      "payment_term_days": 8,
+      "approval_basis": "tulajdonosi döntés",
+      "effective_date": "2026-07-18"
+    },
+    "signing_queue_status": "READY_FOR_APPROVAL",
+    "files": [
+      {
+        "name": "00_contract_filled.docx",
+        "sha256": "72439cc3ead07913772060ba6eff7617e221b57e58be9b4cd95338afa5612b4e"
+      },
+      {
+        "name": "01_contract_data_and_terms.docx",
+        "sha256": "3c4a869d50299fc1b9aef0a3d95ef3ba08c10e23142912dcb05e4357339d1bff"
+      },
+      {
+        "name": "02_approval_delivery_and_gate_checklist.docx",
+        "sha256": "6d03e63f060c4d30d270b211bb9924715cc59233fc0551f0af76920a828e6847"
+      }
+    ]
+  }
+}

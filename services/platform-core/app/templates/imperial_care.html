@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Imperial Care | Imperial Intelligence{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><span class="eyebrow">KIZÁRÓLAGOS ÜGYFÉL-HIBABEJELENTÉSI CSATORNA</span><h1>Imperial Care</h1><p>Hiba-, garanciális és szervizügyek egyetlen auditált felületen. Az e-mailben, chatben vagy más modulban jelzett ügy csak akkor indul el, ha itt CareID-t kap.</p></div>
+  <div class="head-actions"><a class="button" href="/my-imperial">MyImperial</a></div>
+</div>
+
+<div class="metric-grid four">
+  <article class="metric-card"><span>Nyitott ügy</span><strong>{{ data.metrics.open }}</strong><small>aktív kivizsgálás</small></article>
+  <article class="metric-card {% if data.metrics.urgent %}danger{% endif %}"><span>Sürgős</span><strong>{{ data.metrics.urgent }}</strong><small>4 órás első reakció</small></article>
+  <article class="metric-card {% if data.metrics.overdue %}danger{% endif %}"><span>SLA-túllépés</span><strong>{{ data.metrics.overdue }}</strong><small>azonnali intézkedés</small></article>
+  <article class="metric-card"><span>Megoldott / lezárt</span><strong>{{ data.metrics.resolved }}</strong><small>visszakövethető előzmény</small></article>
+</div>
+
+<section class="panel"><div class="panel-head"><div><h2>Munkasor szűrése</h2><p>Projekt, állapot, súlyosság, felelős vagy szabad szöveg alapján.</p></div></div>
+  <form method="get" action="/imperial-care" class="form-grid compact-form">
+    <label>Projekt<input name="project_id" value="{{ data.filters.project_id }}" placeholder="ProjectID"></label>
+    <label>Állapot<select name="status"><option value="">Mind</option>{% for value in ['submitted','triaged','in_progress','waiting_customer','resolved','closed','rejected'] %}<option value="{{ value }}" {% if data.filters.status==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    <label>Súlyosság<select name="severity"><option value="">Mind</option>{% for value in ['urgent','high','medium','low'] %}<option value="{{ value }}" {% if data.filters.severity==value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+    {% if data.internal %}<label>Felelős<input type="email" name="assigned_to" value="{{ data.filters.assigned_to }}" placeholder="felelos@imperialholding.hu"></label>{% endif %}
+    <label>Keresés<input name="query" value="{{ data.filters.query }}" placeholder="CareID, cím, ügyfél vagy helyszín"></label>
+    <div class="form-action"><button>Szűrés</button><a class="button" href="/imperial-care">Törlés</a></div>
+  </form>
+</section>
+
+{% if data.projects %}
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">ÚJ CAREID</span><h2>Hiba vagy garanciális ügy bejelentése</h2><p>A részletes leírás után fotó vagy PDF bizonyíték is csatolható.</p></div></div>
+  <form class="form-grid" method="post" action="/imperial-care/cases">
+    <label>Projekt *<select name="project_id" required>{% for project in data.projects %}<option value="{{ project.project_id }}">{{ project.project_id }} · {{ project.name }}</option>{% endfor %}</select></label>
+    <label>Ügytípus *<select name="category" required><option value="defect">Hiba / meghibásodás</option><option value="warranty">Garanciális igény</option><option value="service">Szervizigény</option><option value="documentation">Dokumentációs kérdés</option><option value="other">Egyéb</option></select></label>
+    <label>Súlyosság *<select name="severity" required><option value="medium">Normál · 48 óra</option><option value="low">Alacsony · 72 óra</option><option value="high">Magas · 24 óra</option><option value="urgent">Sürgős · 4 óra</option></select></label>
+    <label>Helyszín / helyiség<input name="location" placeholder="Például: földszinti fürdő, északi fal"></label>
+    {% if data.internal %}<label>Ügyfél e-mail *<input type="email" name="customer_email" list="care-customers" required><datalist id="care-customers">{% for access in data.accesses %}<option value="{{ access.customer_email }}">{{ access.project_id }} · {{ access.contact_name }}</option>{% endfor %}</datalist></label><label>Bejelentő neve *<input name="reporter_name" required></label>{% endif %}
+    <label class="span-2">Rövid cím *<input name="title" minlength="5" maxlength="255" required placeholder="Mi a tapasztalt probléma?"></label>
+    <label class="span-2">Részletes leírás *<textarea name="description" rows="5" minlength="15" required placeholder="Mikor jelentkezett, milyen körülmények között, mit tapasztal, történt-e ideiglenes beavatkozás?"></textarea></label>
+    <label class="span-2">Elérhetőség / kapcsolattartási kérés<input name="preferred_contact" placeholder="Telefonszám vagy előnyben részesített időpont"></label>
+    <div class="form-action span-2"><button class="primary">Imperial Care ügy megnyitása</button></div>
+  </form>
+</section>
+{% else %}
+<section class="panel empty-state"><h2>Nincs bejelentésre jogosító projekt</h2><p>Imperial Care ügy csak aktív MyImperial projekt-hozzáféréssel nyitható.</p></section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><div><h2>Imperial Care ügyek</h2><p>{{ data.cases|length }} látható ügy</p></div></div>
+  <div class="record-grid">
+  {% for case in data.cases %}
+    <a class="canonical-template-card" href="/imperial-care/{{ case.case_id }}">
+      <div class="record-top"><strong>{{ case.case_id }}</strong><span class="status-pill {% if case.status in ['resolved','closed'] %}ok{% elif case.severity in ['high','urgent'] %}critical{% endif %}">{{ case.status }}</span></div>
+      <h2>{{ case.title }}</h2><p>{{ case.project_id }} · {{ case.category }} · {{ case.severity }}</p><small>SLA: {{ case.sla_due_at|dt }}{% if case.assigned_to %} · {{ case.assigned_to }}{% endif %}</small>
+    </a>
+  {% else %}<p class="empty">Még nincs Imperial Care ügy.</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}

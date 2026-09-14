@@ -1,0 +1,484 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TaskPriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum TaskStatus {
+  DRAFT
+  ASSIGNED
+  AWAITING_ACKNOWLEDGEMENT
+  IN_PROGRESS
+  WAITING_EXTERNAL
+  BLOCKED
+  SUBMITTED
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  CLOSED
+  CANCELLED
+}
+
+enum AssigneeType {
+  EMPLOYEE
+  MANAGER
+  SUBCONTRACTOR
+  PARTNER
+  EXTERNAL_EXPERT
+  SYSTEM
+}
+
+enum EvidenceType {
+  EMAIL
+  DOCUMENT
+  PHOTO
+  FILE
+  LINK
+  SYSTEM_DATA
+  SIGNATURE
+  APPROVAL
+  OTHER
+}
+
+enum SensitivityLevel {
+  INTERNAL
+  CONFIDENTIAL
+  LEGAL
+  FINANCIAL
+  AUTHORITY
+  HR
+}
+
+model ItepTask {
+  id                    String           @id
+  organizationId        String
+  source                String
+  sourceExternalId      String?
+  semanticFingerprint   String?
+  issuerId              String
+  assigneeId            String
+  assigneeType          AssigneeType
+  title                 String
+  description           String
+  priority              TaskPriority
+  status                TaskStatus       @default(DRAFT)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  dueAt                 DateTime
+  acceptanceCriteria    String
+  evidenceType          EvidenceType
+  evidenceDescription   String
+  machineVerifiable     Boolean          @default(false)
+  escalationPersonId    String
+  contactEmail          String
+  contactPhone          String?
+  lastCheckedAt         DateTime?
+  nextCheckAt           DateTime
+  reminderLevel         Int              @default(0)
+  acceptedBy            String?
+  acceptedAt            DateTime?
+  rejectionReason       String?
+  blockedReason         String?
+  cancelledReason       String?
+  sensitivity           SensitivityLevel @default(INTERNAL)
+  version               Int              @default(1)
+
+  evidence              TaskEvidence[]
+  auditEvents           TaskAuditEvent[]
+  notificationOutbox    NotificationOutbox[]
+  dependenciesFrom      TaskDependency[] @relation("DependencyFrom")
+  dependenciesTo        TaskDependency[] @relation("DependencyTo")
+
+  @@index([organizationId, status])
+  @@index([assigneeId, status])
+  @@index([priority, nextCheckAt])
+  @@index([dueAt, status])
+  @@index([semanticFingerprint, status])
+  @@unique([organizationId, source, sourceExternalId])
+}
+
+model TaskEvidence {
+  id           String       @id @default(uuid())
+  taskId       String
+  type         EvidenceType
+  uri          String
+  checksum     String?
+  metadata     Json?
+  submittedAt  DateTime     @default(now())
+  submittedBy  String
+  verifiedAt   DateTime?
+  verifiedBy   String?
+  verificationResult String?
+
+  task ItepTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, submittedAt])
+}
+
+model TaskAuditEvent {
+  id          String   @id @default(uuid())
+  taskId      String
+  eventType   String
+  actorId     String
+  occurredAt  DateTime @default(now())
+  payload     Json
+  sequence    BigInt
+  previousHash String?
+  hash         String?
+
+  task ItepTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, sequence])
+  @@index([taskId, occurredAt])
+}
+
+model NotificationOutbox {
+  id             String   @id @default(uuid())
+  taskId         String
+  eventKey       String
+  channel        String
+  recipient      String
+  cc             String[]
+  subject        String
+  body           String
+  scheduledFor   DateTime
+  sentAt         DateTime?
+  attempts       Int      @default(0)
+  lastError      String?
+  lockedAt       DateTime?
+  deadLetteredAt DateTime?
+  providerMessageId String?
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  task ItepTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@index([sentAt, scheduledFor])
+}
+
+model TaskDependency {
+  id          String @id @default(uuid())
+  taskId      String
+  dependsOnId String
+
+  task      ItepTask @relation("DependencyFrom", fields: [taskId], references: [id], onDelete: Restrict)
+  dependsOn ItepTask @relation("DependencyTo", fields: [dependsOnId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, dependsOnId])
+}
+
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+model HumanAnneIncident {
+  id                String           @id
+  taskId            String?
+  category          String
+  severity          IncidentSeverity
+  status            IncidentStatus   @default(OPEN)
+  title             String
+  description       String
+  recommendedAction String
+  source            String
+  createdAt         DateTime         @default(now())
+  acknowledgedAt    DateTime?
+  acknowledgedBy    String?
+  resolvedAt        DateTime?
+  resolvedBy        String?
+  resolution        String?
+
+  @@index([status, severity, createdAt])
+  @@index([taskId])
+}
+
+
+enum SourceKind {
+  GMAIL
+  CALENDAR
+  DRIVE
+  MANUAL
+  WEBHOOK
+}
+
+enum SourceEventStatus {
+  RECEIVED
+  NORMALIZED
+  IGNORED
+  TASK_CREATED
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum IngestionReviewStatus {
+  OPEN
+  APPROVED
+  REJECTED
+  CONVERTED
+}
+
+model SourceEvent {
+  id             String            @id
+  organizationId String
+  source         SourceKind
+  externalId     String
+  occurredAt     DateTime
+  receivedAt     DateTime
+  processedAt    DateTime?
+  actorId        String?
+  subject        String?
+  body           String?
+  participants   String[]
+  labels         String[]
+  metadata       Json
+  status         SourceEventStatus @default(RECEIVED)
+  fingerprint    String            @unique
+  lastError      String?
+
+  reviewItems IngestionReviewItem[]
+
+  @@unique([organizationId, source, externalId])
+  @@index([organizationId, status, occurredAt])
+}
+
+model IngestionReviewItem {
+  id             String                @id @default(uuid())
+  sourceEventId  String
+  organizationId String
+  action         String
+  reason         String
+  candidate      Json
+  status         IngestionReviewStatus @default(OPEN)
+  createdAt      DateTime              @default(now())
+  reviewedAt     DateTime?
+  reviewedBy     String?
+  resolution     String?
+
+  sourceEvent SourceEvent @relation(fields: [sourceEventId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, createdAt])
+}
+
+
+enum ConnectorKind {
+  GMAIL
+  CALENDAR
+  DRIVE
+  BILLINGO
+  BANK
+  CRM
+  META_ADS
+  GOOGLE_ADS
+}
+
+enum ConnectorStatus {
+  DISCONNECTED
+  CONNECTING
+  ACTIVE
+  DEGRADED
+  ERROR
+  REAUTH_REQUIRED
+}
+
+model ConnectorAccount {
+  id                   String          @id
+  organizationId       String
+  kind                 ConnectorKind
+  externalAccountId    String
+  displayName          String
+  status               ConnectorStatus @default(DISCONNECTED)
+  scopes               String[]
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  lastSuccessfulSyncAt DateTime?
+  lastError             String?
+
+  checkpoint SyncCheckpoint?
+  webhookSubscriptions WebhookSubscription[]
+
+  @@unique([organizationId, kind, externalAccountId])
+  @@index([organizationId, status])
+}
+
+model SyncCheckpoint {
+  id                 String   @id
+  connectorAccountId String   @unique
+  cursor             String?
+  historyId          String?
+  syncToken          String?
+  expiresAt          DateTime?
+  updatedAt          DateTime @updatedAt
+
+  connectorAccount ConnectorAccount @relation(fields: [connectorAccountId], references: [id], onDelete: Cascade)
+}
+
+
+model OAuthState {
+  state            String        @id
+  organizationId   String
+  kind             ConnectorKind
+  redirectUri      String
+  requestedScopes  String[]
+  createdBy        String
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  createdAt        DateTime      @default(now())
+
+  @@index([expiresAt, consumedAt])
+}
+
+enum WebhookSubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+model WebhookSubscription {
+  id                 String                    @id @default(uuid())
+  connectorAccountId String
+  externalChannelId  String                    @unique
+  secret             String
+  status             WebhookSubscriptionStatus @default(ACTIVE)
+  expiresAt          DateTime?
+  lastNotificationAt DateTime?
+  createdAt          DateTime                  @default(now())
+
+  connectorAccount ConnectorAccount @relation(fields: [connectorAccountId], references: [id], onDelete: Cascade)
+
+  @@index([connectorAccountId, status])
+}
+
+
+model IdempotencyRecord {
+  id             String   @id @default(uuid())
+  scope          String
+  key            String
+  requestHash    String
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+  completedAt    DateTime?
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+}
+
+
+model ConnectorOperationalSnapshot {
+  id                   String   @id @default(uuid())
+  connectorId          String
+  organizationId       String
+  kind                 String
+  status               String
+  lastSuccessfulSyncAt DateTime?
+  lastAttemptAt        DateTime?
+  consecutiveFailures  Int      @default(0)
+  pendingRetries       Int      @default(0)
+  deadLetterCount      Int      @default(0)
+  reauthRequired       Boolean  @default(false)
+  rateLimitedUntil     DateTime?
+  lastErrorCode        String?
+  lastErrorMessage     String?
+  updatedAt            DateTime @updatedAt
+
+  @@unique([organizationId, connectorId])
+  @@index([organizationId, status])
+}
+
+model IntegrationIncident {
+  id               String   @id @default(uuid())
+  organizationId   String
+  connectorId      String?
+  severity         String
+  type             String
+  status           String
+  title            String
+  description      String
+  firstObservedAt  DateTime
+  lastObservedAt   DateTime
+  occurrenceCount  Int      @default(1)
+  assignedTo       String?
+  resolutionNote   String?
+  resolvedAt       DateTime?
+
+  @@index([organizationId, status, severity])
+  @@index([connectorId, status])
+}
+
+model ConnectorRetryCommand {
+  id             String   @id @default(uuid())
+  organizationId String
+  connectorId    String
+  operation      String
+  payload        Json
+  attempt        Int      @default(0)
+  maxAttempts    Int      @default(5)
+  nextAttemptAt  DateTime
+  status         String
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([organizationId, connectorId])
+}
+
+model ConnectorDeadLetterItem {
+  id               String   @id @default(uuid())
+  organizationId   String
+  connectorId      String
+  operation        String
+  payload          Json
+  totalAttempts    Int
+  lastError        String
+  failedAt         DateTime
+  acknowledgedAt   DateTime?
+  acknowledgedBy   String?
+  resolution       String?
+
+  @@index([organizationId, acknowledgedAt])
+  @@index([connectorId, failedAt])
+}
+
+model OrchestrationEvent {
+  id              String   @id @default(uuid())
+  organizationId  String
+  source           String
+  externalEventId  String
+  eventType        String
+  projectId        String
+  ownerId          String
+  status           String
+  payload          Json
+  taskIds          String[]
+  occurredAt       DateTime
+  receivedAt       DateTime @default(now())
+  processedAt      DateTime?
+  lastError        String?
+
+  @@unique([organizationId, source, externalEventId])
+  @@index([organizationId, status, occurredAt])
+  @@index([projectId, occurredAt])
+}

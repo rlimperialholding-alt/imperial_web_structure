@@ -1,0 +1,137 @@
+{
+  "environment": "local-prototype",
+  "brands": [
+    {
+      "id": "imperial",
+      "name": "Imperial Holding",
+      "shortName": "Imperial",
+      "initials": "IH",
+      "status": "active",
+      "statusLabel": "10 tesztelhető oldal",
+      "accent": "#c7a15a",
+      "sectionCount": 8,
+      "pageCount": 10
+    },
+    {
+      "id": "danish-fabrik",
+      "name": "Danish Fabrik",
+      "shortName": "Danish Fabrik",
+      "initials": "DF",
+      "status": "source-only",
+      "statusLabel": "Forrásanyag elérhető",
+      "accent": "#b8aa91",
+      "sectionCount": 1,
+      "pageCount": 0
+    },
+    {
+      "id": "bautica",
+      "name": "Bautica",
+      "shortName": "Bautica",
+      "initials": "BA",
+      "status": "active",
+      "statusLabel": "6 Drive-prototípus",
+      "accent": "#d3a35a",
+      "sectionCount": 1,
+      "pageCount": 6
+    },
+    {
+      "id": "prefab",
+      "name": "Prefab",
+      "shortName": "Prefab",
+      "initials": "PF",
+      "status": "active",
+      "statusLabel": "19 tesztelhető oldal",
+      "accent": "#a7b6a2",
+      "sectionCount": 1,
+      "pageCount": 19
+    },
+    {
+      "id": "casa-moderna",
+      "name": "Casa Moderna",
+      "shortName": "Casa Moderna",
+      "initials": "CM",
+      "status": "source-only",
+      "statusLabel": "Forrásanyag elérhető",
+      "accent": "#d0a17f",
+      "sectionCount": 1,
+      "pageCount": 0
+    },
+    {
+      "id": "family-homes",
+      "name": "Family Homes",
+      "shortName": "Family Homes",
+      "initials": "FH",
+      "status": "source-only",
+      "statusLabel": "Forrásanyag elérhető",
+      "accent": "#98b6a2",
+      "sectionCount": 1,
+      "pageCount": 0
+    },
+    {
+      "id": "everyday-homes",
+      "name": "Everyday Homes",
+      "shortName": "Everyday Homes",
+      "initials": "EH",
+      "status": "source-only",
+      "statusLabel": "Forrásanyag elérhető",
+      "accent": "#c6a86b",
+      "sectionCount": 1,
+      "pageCount": 0
+    },
+    {
+      "id": "property-360",
+      "name": "Property 360",
+      "shortName": "Property 360",
+      "initials": "P3",
+      "status": "source-only",
+      "statusLabel": "Forrásanyag elérhető",
+      "accent": "#7ea6b9",
+      "sectionCount": 1,
+      "pageCount": 0
+    },
+    {
+      "id": "budapesti-magasepito-vallalat",
+      "name": "Budapesti Magasépítő Vállalat",
+      "shortName": "BMV",
+      "initials": "BM",
+      "status": "active",
+      "statusLabel": "15 oldalas Drive-webhely",
+      "accent": "#b68f65",
+      "sectionCount": 1,
+      "pageCount": 15
+    },
+    {
+      "id": "baufreund",
+      "name": "BauFreund",
+      "shortName": "BauFreund",
+      "initials": "BF",
+      "status": "source-only",
+      "statusLabel": "Forrásanyag elérhető",
+      "accent": "#d4b35f",
+      "sectionCount": 1,
+      "pageCount": 0
+    },
+    {
+      "id": "red-property",
+      "name": "RED Property",
+      "shortName": "RED Property",
+      "initials": "RP",
+      "status": "source-only",
+      "statusLabel": "Forrásanyag elérhető",
+      "accent": "#bc6464",
+      "sectionCount": 1,
+      "pageCount": 0
+    },
+    {
+      "id": "timberhaus",
+      "name": "Timberhaus",
+      "shortName": "Timberhaus",
+      "initials": "TH",
+      "status": "source-only",
+      "statusLabel": "Forrásanyag elérhető",
+      "accent": "#9eaa7e",
+      "sectionCount": 1,
+      "pageCount": 0
+    }
+  ]
+}

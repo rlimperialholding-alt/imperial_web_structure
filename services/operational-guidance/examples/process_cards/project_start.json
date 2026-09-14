@@ -1,0 +1,12 @@
+{
+  "process_key": "PC-PRJ-001",
+  "title": "Új kivitelezési projekt indítása",
+  "trigger": "Amikor az ügyfél szerződése aláírt, a kezdő befizetés beérkezett és a jóváhagyott műszaki dokumentumcsomag rendelkezésre áll",
+  "inputs": ["Aláírt kivitelezési szerződés", "Jóváhagyott terv és műszaki tartalom", "Induló projektköltségvetés", "Beérkezett kezdő befizetés igazolása"],
+  "steps": ["Ellenőrizd, hogy minden kötelező dokumentum és pénzügyi feltétel teljesült", "Hozd létre a projektmappát és a projekt alapadatait", "Egyeztesd a tervezett kezdési időpontot az ügyféllel és az alvállalkozókkal", "Készítsd el az első ütemtervet és felelősi kiosztást", "Küldd ki az indulási tájékoztatót az érintetteknek", "Rögzítsd az indulás bizonyítékait a projektben"],
+  "outputs": ["Aktív projektadatlap", "Első jóváhagyott ütemterv", "Indulási értesítés", "Projektmappa"],
+  "stop_conditions": ["Hiányzik aláírt szerződés vagy jóváhagyott terv", "A kezdő befizetés nem érkezett be", "A költségvetés vagy a kezdési dátum nincs jóváhagyva"],
+  "completion_conditions": ["A projekt aktív státuszban van", "Minden érintett megkapta az indulási tájékoztatást", "Az ütemterv és a felelősök rögzítve vannak"],
+  "source_role": "Projektmenedzser",
+  "policy_refs": ["Projektindítási szabályzat", "Pénzügyi kapurendszer"]
+}

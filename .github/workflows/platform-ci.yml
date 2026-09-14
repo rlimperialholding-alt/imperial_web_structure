@@ -1,0 +1,137 @@
+name: Imperial Intelligence CI
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+      - staging
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intelligence-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platform:
+    name: Validate module routes, fixtures and links
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COMPOSE_PROJECT_NAME: intelligence-ci-${{ github.run_id }}
+      HTTP_PORT: "8080"
+      NGINX_IMAGE: nginx:stable-alpine
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Generate ephemeral synthetic CI secret files (non-production)
+        # Task65: a gyökér docker-compose.yml ``secrets:`` blokkja által
+        # igényelt MINDEN bind-source fájl létrehozása friss, futásonkénti,
+        # szintetikus runner-adatként (openssl rand; nem repository/
+        # environment production secret, nincs commitolt érték; production
+        # adapterek/external write módok OFF/fail-closed maradnak). A
+        # kanonikus névkészlet a scripts/ci-provision-secrets.sh-ban él.
+        shell: bash
+        run: sh scripts/ci-provision-secrets.sh
+
+      - name: Verify Compose secret provisioning reconciliation
+        # Automatikus drift-blokkoló: a Compose secret-deklarációk és a
+        # CI-provisioning eltérése (új/átnevezett secret, árván provisionált
+        # bejegyzés, rossz sorrend) itt fail-closed.
+        run: python scripts/check_ci_secret_provisioning.py
+
+      - name: Validate platform model and cross-module links
+        run: python3 scripts/validate-platform.py
+
+      - name: Validate client syntax
+        run: node --check sites/_shared/assets/platform.js
+
+      - name: Run shared platform backend tests
+        run: docker compose --profile platform-test run --rm platform-core-tests
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Ensure the shared integration network exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          network_name="${INTEGRATED_NETWORK_NAME:-imperial-intelligence-test_default}"
+          docker network inspect "$network_name" >/dev/null 2>&1 || docker network create "$network_name"
+
+      - name: Start isolated staging stack
+        run: docker compose up --detach --wait --wait-timeout 180
+
+      - name: Smoke test module routes and public surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # A jelenlegi architektúra füsttesztje: a 9fc0751 óta az nginx a
+          # platform-core FastAPI alkalmazásra proxyz; a modul-oldalak
+          # session-hitelesítettek, a demo API sessiont kér, a /data/*
+          # adatfájlokat a validate-platform.py (repo-szinten) és a
+          # platform-core-tests pytest lépés ellenőrzi. Itt a kiszolgált
+          # felület HTTP-szintű bizonyítékai futnak.
+
+          # 1) A portal asset-réteg elérhető, és a kiszolgált kliens
+          #    routeMap mind a 49 regisztrált modult tartalmazza
+          #    (route/fixture/runtime konzisztencia a kiszolgált oldalon).
+          platform_css="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/assets/platform.css)"
+          grep --quiet '.platform-shell' <<<"$platform_css"
+
+          platform_js="$(curl --fail --silent --show-error \
+            --header "Host: localhost" \
+            http://127.0.0.1:8080/assets/platform.js)"
+          grep --quiet 'history.pushState' <<<"$platform_js"
+          printf '%s' "$platform_js" > /tmp/platform-smoke.js
+
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          portal = json.loads(
+              pathlib.Path("sites/_portal/data/platform.json").read_text(encoding="utf-8")
+          )
+          platform_js = pathlib.Path("/tmp/platform-smoke.js").read_text(encoding="utf-8")
+          missing = [
+              module["id"]
+              for module in portal["modules"]
+              if f'"/{module["id"]}"' not in platform_js
+          ]
+          if missing:
+              raise SystemExit(f"served client routeMap missing for: {missing}")
+          print(f"served routeMap completeness OK for {len(portal['modules'])} modules")
+          PY
+
+          # 2) Az alkalmazás nyilvános felülete: a nyitó- és login-oldal
+          #    HTML-t ad, az alkalmazás base assetjével (a modul-oldalak
+          #    auth mögött; elérésüket a pytest szvit bizonyítja).
+          for path in "/" "/login"; do
+            page="$(curl --fail --silent --show-error --location \
+              --header "Host: localhost" \
+              "http://127.0.0.1:8080${path}")"
+            grep --quiet '/static/style.css' <<<"$page"
+          done
+
+          health_response="$(curl --fail --silent --show-error \
+            http://127.0.0.1:8080/healthz)"
+          grep --quiet "^ok$" <<<"$health_response"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop isolated staging stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans

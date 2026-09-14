@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Digital Project Managers | Imperial Intelligence{% endblock %}
+{% block content %}
+<section class="page-hero compact-hero dpm-hero">
+  <div><span class="eyebrow light">EMBERI KONTROLL ALATT MŰKÖDŐ DIGITÁLIS PROJEKTMENEDZSEREK</span><h1>Digital Project Managers</h1><p>Kanonikus projektadatok, feladatkiosztás, R0–R7 kockázati kapu, projektmemória, tudástár és audit egy operátori munkatérben.</p></div>
+  <div class="hero-status"><small>Aktív digitális PM</small><b>{{ agents|length }}</b><small>{{ assignments|length }} aktív projektkiosztás</small></div>
+</section>
+
+{% if message %}<div class="alert success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error }}</div>{% endif %}
+{% if not configured %}<div class="alert error">A DPM szolgáltatáskapcsolat nincs konfigurálva; a munkatér fail-closed állapotban van.</div>{% endif %}
+
+<div class="metric-grid four">
+  <article class="metric-card"><span>Digitális PM</span><strong>{{ agents|length }}</strong><small>szerepkörhöz rendelten</small></article>
+  <article class="metric-card"><span>Projektkiosztás</span><strong>{{ assignments|length }}</strong><small>kanonikus projektre</small></article>
+  <article class="metric-card"><span>Munkasor</span><strong>{{ tasks|length }}</strong><small>kiválasztott digitális PM</small></article>
+  <article class="metric-card {% if approvals %}metric-danger{% endif %}"><span>Emberi döntés</span><strong>{{ approvals|length }}</strong><small>függő jóváhagyás</small></article>
+</div>
+
+<section class="workspace-card filter-card">
+  <form method="get" action="/digital-project-managers" class="filter-bar">
+    <label>Digitális projektmenedzser<select name="agent_id"><option value="">Válasszon</option>{% for agent in agents %}<option value="{{ agent.id }}" {% if agent_id==agent.id|string %}selected{% endif %}>{{ agent.name }} · {{ agent.human_partner_name }}{% if agent.human_manager_ref %} · {{ agent.human_manager_ref }}{% endif %}</option>{% endfor %}</select></label>
+    <label>Projekt<select name="project_id"><option value="">Válasszon</option>{% for item in assignments %}{% if not agent_id or item.digital_manager_id|string==agent_id %}<option value="{{ item.external_project_id }}" {% if project_id==item.external_project_id %}selected{% endif %}>{{ item.external_project_id }}</option>{% endif %}{% endfor %}</select></label>
+    <button>Megnyitás</button><a class="clear-filter" href="/digital-project-managers">Alaphelyzet</a>
+  </form>
+</section>
+
+{% if is_admin %}
+<div class="dpm-admin-grid">
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">FELELŐSSÉGI KAPCSOLAT</span><h2>Digitális PM ↔ humán PM</h2><p>A projektmenedzser csak a saját e-mail-címéhez kapcsolt digitális PM projektjeit látja.</p></div></div>
+    {% for agent in agents %}<form method="post" action="/digital-project-managers/agents/{{ agent.id }}/link" class="dpm-inline-row"><b>{{ agent.name }}</b><select name="human_manager_ref"><option value="">Nincs kapcsolva</option>{% for person in internal_users %}<option value="{{ person.email }}" {% if agent.human_manager_ref==person.email %}selected{% endif %}>{{ person.name }} · {{ person.email }}</option>{% endfor %}</select><button>Kapcsolat mentése</button></form>{% endfor %}
+  </section>
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">KANONIKUS KIOSZTÁS</span><h2>Projekt delegálása</h2><p>Egy projektnek egyszerre egy aktív digitális projektmenedzsere lehet.</p></div></div>
+    <form method="post" action="/digital-project-managers/agents/{{ agent_id or (agents[0].id if agents else '') }}/assignments" class="calendar-form">
+      <label class="span-2">Digitális PM<select name="agent_selector" disabled>{% for agent in agents %}<option {% if agent_id==agent.id|string %}selected{% endif %}>{{ agent.name }}</option>{% endfor %}</select></label>
+      <label class="span-2">Kanonikus projekt *<select name="project_id" required><option value="">Válasszon</option>{% for project in projects %}<option value="{{ project.project_id }}">{{ project.project_id }} · {{ project.name }}</option>{% endfor %}</select></label>
+      <label class="span-2">Jóváhagyó<select name="approval_owner_ref"><option value="">Vezetői kapu</option>{% for person in internal_users %}<option value="{{ person.email }}">{{ person.name }} · {{ person.email }}</option>{% endfor %}</select></label>
+      <button class="span-2" {% if not agent_id and not agents %}disabled{% endif %}>Projekt kiosztása</button>
+    </form>
+  </section>
+</div>
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">KIOSZTÁSI ÉLETCIKLUS</span><h2>Aktív projektkiosztások</h2><p>A visszavonás nem töröl: lezárási időponttal és auditnyommal őrzi meg az előzményt.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Projekt</th><th>Digitális PM</th><th>Humán jóváhagyó</th><th>Művelet</th></tr></thead><tbody>{% for item in assignments %}<tr><td><b>{{ item.external_project_id }}</b><small>{{ item.valid_from }}</small></td><td>{{ agent_map.get(item.digital_manager_id|string, {}).get('name', item.digital_manager_id) }}</td><td>{{ item.approval_owner_ref or 'vezetői kapu' }}</td><td><form method="post" action="/digital-project-managers/assignments/{{ item.id }}/close"><input type="hidden" name="agent_id" value="{{ item.digital_manager_id }}"><input type="hidden" name="project_id" value="{{ item.external_project_id }}"><button class="button small">Kiosztás visszavonása</button></form></td></tr>{% else %}<tr><td colspan="4" class="empty">Nincs aktív projektkiosztás.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% endif %}
+
+{% if project_id and agent_id %}
+<section class="workspace-card dpm-context-card">
+  <div class="card-heading"><div><span class="eyebrow">ÉLŐ KANONIKUS KONTEXTUS</span><h2>{{ project_context.project.name if project_context and project_context.project else project_id }}</h2><p>{{ project_id }} · {{ project_context.customer.canonical_name if project_context and project_context.customer else 'Ügyfélkapcsolat nélkül' }}</p></div><span class="status-pill">{{ project_context.project.status if project_context and project_context.project else 'aktív' }}</span></div>
+  {% if project_context %}<div class="dpm-context-grid"><article><span>Projekt</span><b>{{ project_context.project.name or project_context.project.id }}</b><small>{{ project_context.project.id }}</small></article><article><span>Ügyfél</span><b>{{ project_context.customer.canonical_name or project_context.customer.name or '—' }}</b><small>{{ project_context.customer.external_key or '—' }}</small></article><article><span>Forrás</span><b>Platform kanonikus API</b><small>tokenvédett, olvasási modell</small></article></div>{% endif %}
+</section>
+
+<div class="dpm-work-grid">
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">ÚJ MŰVELET</span><h2>Feladat a digitális PM-nek</h2><p>A szerver a feladattípus alapján felülbírálja az R-szintet; R4–R7 esetén emberi döntési kaput nyit.</p></div></div>
+    <form method="post" action="/digital-project-managers/agents/{{ agent_id }}/tasks" class="calendar-form">
+      <input type="hidden" name="project_id" value="{{ project_id }}">
+      <label>Feladattípus<select name="task_type"><option value="internal_administration">Belső adminisztráció</option><option value="prepare_report">Riport előkészítése</option><option value="request_document">Dokumentum bekérése</option><option value="send_reminder">Emlékeztető küldése</option><option value="request_quote">Ajánlatkérés</option><option value="rank_quotes">Ajánlatok rangsorolása</option><option value="change_deadline">Határidő módosítása</option><option value="place_order">Megrendelés</option><option value="contract_change">Szerződésmódosítás</option><option value="performance_certificate">Teljesítésigazolás</option></select></label>
+      <label>Prioritás<select name="priority"><option value="1">1 · kritikus</option><option value="2">2 · magas</option><option value="3" selected>3 · normál</option><option value="4">4 · alacsony</option><option value="5">5 · backlog</option></select></label>
+      <label>Kezdeményezett kockázat<select name="risk_level">{% for risk in range(8) %}<option value="{{ risk }}">R{{ risk }}</option>{% endfor %}</select></label>
+      <label class="span-2">Cél *<textarea name="objective" minlength="3" required rows="3"></textarea></label>
+      <label class="span-2">Hatás JSON<textarea name="impact_json" rows="3">{}</textarea></label>
+      <label class="span-2">Ajánlott végrehajtás<textarea name="recommendation" rows="2"></textarea></label>
+      <button class="gold span-2">Kockázati kapu futtatása és feladat létrehozása</button>
+    </form>
+  </section>
+
+  <section class="workspace-card">
+    <div class="card-heading"><div><span class="eyebrow">VERZIÓZOTT ÁLLAPOT</span><h2>Projektmemória</h2><p>Optimista zárolás védi a párhuzamos módosítások felülírását.</p></div></div>
+    {% if memory %}<form method="post" action="/digital-project-managers/agents/{{ agent_id }}/projects/{{ project_id }}/memory" class="calendar-form"><input type="hidden" name="expected_version" value="{{ memory.version }}"><label class="span-2">JSON tartalom<textarea name="content_json" rows="12">{{ memory.content|tojson(indent=2) }}</textarea></label><small class="span-2">Aktuális verzió: {{ memory.version }} · {{ memory.updated_at }}</small><button class="span-2">Új memóriaverzió mentése</button></form>{% else %}<p class="empty">Ehhez a kiosztáshoz még nincs projektmemória.</p>{% endif %}
+  </section>
+</div>
+
+<section class="workspace-card">
+  <div class="card-heading"><div><span class="eyebrow">MUNKASOR</span><h2>Feladatok és végrehajtási állapotok</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Feladat</th><th>Kockázati kapu</th><th>Állapot</th><th>Művelet</th></tr></thead><tbody>{% for task in tasks %}<tr><td><b>{{ task.objective }}</b><small>{{ task.task_type }} · {{ task.id }}<br>{{ task.created_by }} · {{ task.created_at }}</small></td><td><span class="status-badge {% if task.risk_level >= 6 %}critical{% elif task.risk_level >= 4 %}pending{% else %}completed{% endif %}">R{{ task.risk_level }} / {{ task.escalation_level }}</span><small>{% if task.requires_approval %}emberi jóváhagyás kötelező{% else %}autonóm tartomány{% endif %}</small></td><td><span class="status-pill">{{ task.status }}</span></td><td>{% if task.status in ['CREATED','READY'] and not task.requires_approval and task.risk_level < 6 %}<form method="post" action="/digital-project-managers/tasks/{{ task.id }}/retry"><input type="hidden" name="agent_id" value="{{ agent_id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><button class="button small">Újra sorba</button></form>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="4" class="empty">Nincs feladat ezen a projekten.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+
+{% if approvals %}<section class="workspace-card dpm-approval-panel"><div class="card-heading"><div><span class="eyebrow">EMBERI DÖNTÉSI KAPU</span><h2>Függő jóváhagyások</h2><p>A döntés, indoklás, döntéshozó és időpont auditáltan rögzül.</p></div></div>{% for approval in approvals %}<article><div><span class="status-badge pending">{{ approval.escalation_level }}</span><h3>{{ approval.requested_action }}</h3><p>{{ approval.recommendation }}</p><small>{{ approval.approver_ref or 'vezetői kapu' }} · {{ approval.created_at }}</small></div>{% if is_admin or approval.approver_ref==user.email %}<form method="post" action="/digital-project-managers/approvals/{{ approval.id }}/decision" class="calendar-form compact"><input type="hidden" name="agent_id" value="{{ agent_id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><label>Döntés<select name="decision"><option value="APPROVED">Jóváhagyás</option><option value="REJECTED">Elutasítás</option></select></label><label>Indoklás<input name="rationale" minlength="3" required></label><button>Döntés rögzítése</button></form>{% else %}<small>A kijelölt jóváhagyó döntésére vár.</small>{% endif %}</article>{% endfor %}</section>{% endif %}
+
+<div class="dpm-work-grid">
+  <section class="workspace-card"><div class="card-heading"><div><span class="eyebrow">PROJEKTISMERET</span><h2>Tudástár</h2></div></div><form method="get" action="/digital-project-managers" class="filter-bar"><input type="hidden" name="agent_id" value="{{ agent_id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><label>Keresés<input name="knowledge_q" value="{{ knowledge_q }}" minlength="2" required></label><button>Keresés</button></form>{% for hit in knowledge_results %}<article class="dpm-knowledge-hit"><b>{{ hit.title }} · v{{ hit.version }}</b><p>{{ hit.chunk }}</p><small>pontszám: {{ hit.score }} · precedencia: {{ hit.precedence }}</small></article>{% else %}{% if knowledge_q %}<p class="empty">Nincs találat.</p>{% endif %}{% endfor %}<details><summary><strong>Új projektismeret rögzítése</strong></summary><form method="post" action="/digital-project-managers/knowledge" class="calendar-form"><input type="hidden" name="agent_id" value="{{ agent_id }}"><input type="hidden" name="project_id" value="{{ project_id }}"><label class="span-2">Cím<input name="title" required></label><label>Verzió<input name="version" value="1.0" required></label><label>Precedencia<input type="number" name="precedence" value="100" min="0" max="1000"></label><label class="span-2">Tartalom<textarea name="content" rows="8" required></textarea></label><button class="span-2">Indexelés</button></form></details></section>
+  <section class="workspace-card"><div class="card-heading"><div><span class="eyebrow">VÁLTOZTATHATATLAN NYOMVONAL</span><h2>Legutóbbi audit események</h2></div></div><div class="dpm-audit-list">{% for event in audit_events %}<article><span class="status-pill">{{ event.action }}</span><b>{{ event.entity_type }} · {{ event.entity_id or '—' }}</b><small>{{ event.actor_ref }} · {{ event.occurred_at }}</small></article>{% else %}<p class="empty">Nincs auditbejegyzés.</p>{% endfor %}</div></section>
+</div>
+{% else %}
+<section class="workspace-card"><div class="empty-state"><b>Nincs megnyitható DPM-projektkiosztás.</b><span>{% if is_admin %}Kapcsoljon humán felelőst és osszon ki kanonikus projektet a fenti űrlapon.{% else %}A platformadminnak előbb a céges e-mail-címéhez kell kapcsolnia egy digitális projektmenedzsert és projektet.{% endif %}</span></div></section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block content %}
+<h1>Modulregiszter</h1><p>Verzió, felelős, kritikusság, életciklus és tényleges integrációs egészség.</p>
+<section class="panel"><table><thead><tr><th>Modul</th><th>Verzió</th><th>Felelős</th><th>Kritikusság</th><th>Életciklus</th><th>Kapcsolat</th><th>Utolsó heartbeat</th></tr></thead><tbody>
+{% for m in modules %}<tr><td><a href="/workbench/{{ m.module_key }}"><strong>{{ m.name }}</strong><br><small>{{ m.module_key }}</small></a></td><td>{{ m.version }}</td><td>{{ m.owner or '—' }}</td><td><span class="badge {{ m.criticality }}">{{ m.criticality }}</span></td><td>{{ m.lifecycle_status }}</td><td><span class="badge {{ 'green' if m.integration_status=='healthy' else 'yellow' if m.integration_status=='degraded' else 'red' }}">{{ m.integration_status }}</span></td><td>{{ m.last_heartbeat_at|dt }}</td></tr>{% endfor %}
+</tbody></table></section>{% endblock %}

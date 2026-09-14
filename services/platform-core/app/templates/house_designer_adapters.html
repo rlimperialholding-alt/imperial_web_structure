@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Háztervező adapterek · Imperial Intelligence{% endblock %}
+{% block content %}
+<style>
+.ha-hero{background:linear-gradient(135deg,#101f33,#244c6d);color:#fff;border-radius:20px;padding:28px;margin-bottom:18px}.ha-grid{display:grid;grid-template-columns:minmax(290px,390px) 1fr;gap:18px}.ha-card{background:#fff;border:1px solid #dce4eb;border-radius:15px;padding:19px}.ha-form{display:grid;gap:11px}.ha-form label{display:grid;gap:5px;font-weight:650}.ha-form input,.ha-form select{padding:10px;border:1px solid #b7c4d0;border-radius:8px}.ha-list{display:grid;gap:10px}.ha-row{border:1px solid #dce4eb;border-radius:12px;padding:14px;display:grid;grid-template-columns:1fr auto;gap:12px}.ha-badges{display:flex;gap:6px;flex-wrap:wrap}.ha-badge{background:#edf2f6;border-radius:999px;padding:4px 8px;font-size:.78rem}.ha-actions{display:flex;gap:8px;align-items:start}.ha-warning{background:#fff3cd;color:#664d03;padding:12px;border-radius:9px;margin:10px 0}.ha-ok{background:#d9f3e2;color:#124c2a;padding:12px;border-radius:9px;margin:10px 0}@media(max-width:900px){.ha-grid{grid-template-columns:1fr}.ha-row{grid-template-columns:1fr}}
+</style>
+<section class="ha-hero"><span class="eyebrow light">HOUSE DESIGNER · PRODUCTION CONTROL</span><h1>Ár-, kapacitás- és renderadapterek</h1><p>A szolgáltatói kulcsok nem itt tárolódnak. Aktiválás csak külön szerző és jóváhagyó mellett lehetséges; minden eredmény aláírt, tervverzióhoz kötött bizonylatot kap.</p></section>
+{% if adapters_enabled %}<div class="ha-ok">A külső adapterkapu környezeti szinten engedélyezve van.</div>{% else %}<div class="ha-warning">A külső adapterkapu zárva van. A regisztráció előkészíthető, de éles feladat nem indítható.</div>{% endif %}
+{% if error %}<div class="ha-warning" role="alert">A művelet sikertelen: <code>{{ error }}</code>.</div>{% endif %}
+<section class="ha-card" style="margin-bottom:18px"><span class="eyebrow">RELEASE-KAPU</span><h2>Éles aktiválási feltételek</h2><p><strong>{{ 'AKTIVÁLHATÓ' if readiness.readyForActivation else 'ZÁRVA' }}</strong> · <code>{{ readiness.readinessSha256 }}</code></p><div class="ha-list">
+{% for check in readiness.checks %}<div class="ha-row"><div><strong>{{ 'PASS' if check.passed else 'BLOCKED' }} · {{ check.key }}</strong><br><small>{{ check.detail }}</small></div><span class="ha-badge">{{ 'rendben' if check.passed else 'hiányzik' }}</span></div>{% endfor %}
+</div>{% if readiness.entitlement %}<p>Jelenlegi jogosultság: <strong>{{ readiness.entitlement.status }}</strong> · order intake: {{ readiness.entitlement.orderIntakeEnabled }}</p>{% else %}<p>Nincs létrehozott tenant/brand jogosultság.</p>{% endif %}</section>
+<section class="ha-card" style="margin-bottom:18px"><span class="eyebrow">KOLLÉGAI UAT</span><h2>Sandbox tesztelés</h2><p>A sandbox kizárólag a böngészős tervezőt nyitja meg. Megrendelést, production render-, ár- vagy kapacitásadaptert nem engedélyez.</p>
+{% if user.role in ['owner','managing-director'] %}
+  {% if not readiness.entitlement or readiness.entitlement.status in ['suspended'] %}<form method="post" action="/house-designer/entitlement/sandbox"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% if readiness.entitlement %}<input type="hidden" name="row_version" value="{{ readiness.entitlement.rowVersion }}">{% endif %}<button class="gold" name="action" value="enable" type="submit">Sandbox tesztelés bekapcsolása</button></form>{% endif %}
+  {% if readiness.entitlement and readiness.entitlement.status == 'sandbox' %}<p><a href="/house-designer/standalone">Standalone Háztervező megnyitása →</a></p><form method="post" action="/house-designer/entitlement/sandbox"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ readiness.entitlement.rowVersion }}"><button name="action" value="disable" type="submit">Sandbox tesztelés leállítása</button></form>{% endif %}
+{% else %}<p>A sandbox állapotát az ügyvezető vagy a tulajdonos kezelheti.</p>{% endif %}
+</section>
+<section class="ha-card" style="margin-bottom:18px"><span class="eyebrow">AKTIVÁLÁSI WORKFLOW</span><h2>Négy-szemes élesítés</h2>
+{% if readiness.readyForActivation and (not readiness.entitlement or readiness.entitlement.status in ['sandbox','suspended']) %}<form method="post" action="/house-designer/entitlement/request"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% if readiness.entitlement %}<input type="hidden" name="row_version" value="{{ readiness.entitlement.rowVersion }}">{% endif %}<button class="gold" type="submit">Aktiválási kérelem rögzítése</button></form>{% elif not readiness.readyForActivation %}<p>A kérelem csak minden release-kapu PASS állapota után indítható.</p>{% endif %}
+{% if readiness.entitlement and readiness.entitlement.status == 'pending_review' and user.role in ['owner','managing-director'] %}<p>Előkészítő: {{ readiness.entitlement.createdBy }} · bizonyíték: <code>{{ readiness.entitlement.readinessSha256 }}</code></p><form method="post" action="/house-designer/entitlement/review"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ readiness.entitlement.rowVersion }}"><input type="hidden" name="readiness_sha256" value="{{ readiness.entitlement.readinessSha256 }}"><button class="gold" name="decision" value="approve" type="submit">Élesítés jóváhagyása</button><button name="decision" value="reject" type="submit">Visszautasítás</button></form>{% endif %}
+{% if readiness.entitlement and readiness.entitlement.status == 'active' and user.role in ['owner','managing-director'] %}<form method="post" action="/house-designer/entitlement/suspend"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="row_version" value="{{ readiness.entitlement.rowVersion }}"><button type="submit">Éles működés azonnali felfüggesztése</button></form>{% endif %}
+</section>
+<section class="ha-grid">
+  <div class="ha-card"><span class="eyebrow">ÚJ VERZIÓ</span><h2>Adapter regisztrálása</h2>
+    <form class="ha-form" method="post" action="/house-designer/adapters">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Típus<select name="adapter_type" required><option value="pricing">Árképzés</option><option value="capacity">Kapacitás / ütem</option><option value="render">Látványterv</option></select></label>
+      <label>Szolgáltató<input name="provider" maxlength="120" required></label>
+      <label>HTTPS végpont<input name="endpoint" type="url" placeholder="https://provider.example/v1/jobs" required></label>
+      <label>Aláírókulcs azonosítója<input name="key_id" maxlength="160" required></label>
+      <button class="gold" type="submit">Felülvizsgálatra küldés</button>
+    </form>
+  </div>
+  <div class="ha-card"><span class="eyebrow">NYILVÁNTARTÁS</span><h2>Adapterverziók</h2><div class="ha-list">
+  {% for item in adapters %}<article class="ha-row"><div><strong>{{ item.adapterType|upper }} · {{ item.provider }}</strong><div class="ha-badges"><span class="ha-badge">v{{ item.revisionNo }}</span><span class="ha-badge">{{ item.status }}</span><span class="ha-badge">health: {{ item.healthStatus }}</span><span class="ha-badge">{{ item.keyId }}</span></div><small>{{ item.endpoint }}</small><br><small>Szerző: {{ item.authoredBy }}{% if item.reviewedBy %} · Jóváhagyó: {{ item.reviewedBy }}{% endif %}</small></div><div class="ha-actions">
+    {% if item.status == 'IN_REVIEW' and user.role in ['owner','managing-director'] %}<form method="post" action="/house-designer/adapters/{{ item.adapterId }}/review"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button name="decision" value="approve" type="submit">Jóváhagyás</button><button name="decision" value="reject" type="submit">Elutasítás</button></form>{% endif %}
+    {% if item.status == 'ACTIVE' and user.role in ['owner','managing-director'] %}<form method="post" action="/house-designer/adapters/{{ item.adapterId }}/suspend"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Felfüggesztés</button></form>{% endif %}
+  </div></article>{% else %}<p>Még nincs regisztrált adapter.</p>{% endfor %}
+  </div></div>
+</section>
+{% endblock %}

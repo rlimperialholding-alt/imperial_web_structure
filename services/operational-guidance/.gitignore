@@ -1,0 +1,23 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.pytest-cache-*/
+.pytest-tmp-*/
+.ruff_cache/
+*.egg-info/
+*.pyc
+*.log
+*.egg-info/
+secrets/*
+!secrets/.gitkeep
+postgres_data/
+
+# Monorepo integration runtime
+.env
+runtime/
+secrets/*
+!secrets/.gitkeep
+*.pem
+*.key
+*service-account*.json
