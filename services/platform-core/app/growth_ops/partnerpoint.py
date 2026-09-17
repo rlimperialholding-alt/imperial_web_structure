@@ -44,6 +44,7 @@ PARTNERPOINT_CHECKPOINT_PREFIX = "partnerpoint:daily-checkpoint:"
 PARTNERPOINT_READY_STATUS = "MINŐSÍTVE – KÖZPONTI ÁTADÁSRA KÉSZ"
 PARTNERPOINT_ALLOWED_TEMPLATES = {
     "ARCHITECT_OFFICE_FIRST_CONTACT_HU": "architect_office",
+    "REAL_ESTATE_AGENT_FIRST_CONTACT_HU": "real_estate_agent",
     "REFERRAL_PARTNER_FIRST_CONTACT_HU": "referral_partner",
 }
 PARTNERPOINT_RANGES = (
@@ -536,10 +537,10 @@ def _source_entry(
         "contact_basis": "public_business_contact",
         "primary_language": "hu",
         "verification_policy": GrowthRegistry.PARTNERPOINT_PUBLIC_EMAIL_POLICY,
-        "organization_names": [
+        "organization_names": list(dict.fromkeys([
             candidate["company"],
             candidate["organization_marker"],
-        ],
+        ])),
         "recipient_names": [candidate["recipient_name"]],
     }
     if candidate["recipient_type"] == "referral_partner":
@@ -562,7 +563,7 @@ def _source_entry(
         bucket = "referral_partner"
     else:
         authority = architect_authority
-        bucket = "architect_office"
+        bucket = candidate["recipient_type"]
     source: dict[str, Any] = {
         "enabled": True,
         "motor": "construction",
@@ -707,7 +708,7 @@ def _partner_lane_created_today(db: Session) -> dict[str, int]:
         .join(OutreachMessage, OutreachMessage.signal_id == GrowthSignal.signal_id)
         .where(
             OutreachMessage.created_at >= local_start,
-            GrowthSignal.source_bucket.in_(("architect_office", "referral_partner")),
+            GrowthSignal.source_bucket.in_(("architect_office", "real_estate_agent", "referral_partner")),
         )
         .group_by(GrowthSignal.source_bucket)
     ).all()
@@ -727,7 +728,7 @@ def _partner_external_keys_created_today(db: Session) -> set[str]:
             .join(OutreachMessage, OutreachMessage.signal_id == GrowthSignal.signal_id)
             .where(
                 OutreachMessage.created_at >= local_start,
-                GrowthSignal.source_bucket.in_(("architect_office", "referral_partner")),
+                GrowthSignal.source_bucket.in_(("architect_office", "real_estate_agent", "referral_partner")),
             )
         )
     )
@@ -774,12 +775,13 @@ def sync_candidates(db: Session) -> dict[str, Any]:
         blocked: list[dict[str, str]] = []
         lane_discovered = {
             lane: sum(candidate["recipient_type"] == lane for candidate in candidates)
-            for lane in ("architect_office", "referral_partner")
+            for lane in ("architect_office", "real_estate_agent", "referral_partner")
         }
-        lane_counts = {"architect_office": 0, "referral_partner": 0}
-        existing_revalidated = {"architect_office": 0, "referral_partner": 0}
+        lane_counts = {"architect_office": 0, "real_estate_agent": 0, "referral_partner": 0}
+        existing_revalidated = {"architect_office": 0, "real_estate_agent": 0, "referral_partner": 0}
         daily_targets = {
             "architect_office": settings().partnerpoint_architect_daily_max,
+            "real_estate_agent": settings().partnerpoint_real_estate_daily_max,
             "referral_partner": settings().partnerpoint_referral_daily_max,
         }
         already_created_today = _partner_lane_created_today(db)
@@ -844,15 +846,23 @@ def sync_candidates(db: Session) -> dict[str, Any]:
             for candidate in qualified
             if candidate["recipient_type"] == "architect_office"
         ]
+        real_estates = [
+            candidate
+            for candidate in qualified
+            if candidate["recipient_type"] == "real_estate_agent"
+        ]
         referrals = [
             candidate
             for candidate in qualified
             if candidate["recipient_type"] == "referral_partner"
         ]
-        dispatch_order = [*architects[:1], *referrals[:1], *architects[1:], *referrals[1:]]
+        dispatch_order = [
+            *architects[:1], *real_estates[:1], *referrals[:1],
+            *architects[1:], *real_estates[1:], *referrals[1:]
+        ]
 
         queued = 0
-        newly_queued = {"architect_office": 0, "referral_partner": 0}
+        newly_queued = {"architect_office": 0, "real_estate_agent": 0, "referral_partner": 0}
         receipts: list[dict[str, Any]] = []
         for candidate in dispatch_order:
             source = candidate["source"]
@@ -914,8 +924,17 @@ def sync_candidates(db: Session) -> dict[str, Any]:
             0,
             daily_targets["architect_office"] - architect_total_today,
         )
+        real_estate_total_today = already_created_today.get(
+            "real_estate_agent", 0
+        ) + newly_queued["real_estate_agent"]
+        real_estate_shortfall = max(
+            0,
+            daily_targets["real_estate_agent"] - real_estate_total_today,
+        )
         detail = {
-            "status": "healthy" if not architect_shortfall else "degraded",
+            "status": (
+                "healthy" if not architect_shortfall and not real_estate_shortfall else "degraded"
+            ),
             "discovered": len(candidates),
             "qualified": sum(lane_counts.values()),
             "queued": queued,
@@ -924,9 +943,11 @@ def sync_candidates(db: Session) -> dict[str, Any]:
             "lane_revalidated_existing": existing_revalidated,
             "lane_newly_queued": newly_queued,
             "architect_daily_target": daily_targets["architect_office"],
+            "real_estate_daily_target": daily_targets["real_estate_agent"],
             "already_created_today": already_created_today,
             "remaining_before_run": limits,
             "architect_shortfall": architect_shortfall,
+            "real_estate_shortfall": real_estate_shortfall,
             "blocked": blocked,
             "receipts": receipts,
             "stop_sync": stop_sync,

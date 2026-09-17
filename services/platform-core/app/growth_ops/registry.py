@@ -131,6 +131,7 @@ class GrowthSettings:
     partnerpoint_runtime_sources_file: str
     partnerpoint_architect_daily_max: int
     partnerpoint_referral_daily_max: int
+    partnerpoint_real_estate_daily_max: int
     deepseek_api_key_file: str
     deepseek_base_url: str
     deepseek_routine_model: str
@@ -353,6 +354,13 @@ def settings() -> GrowthSettings:
             minimum=1,
             maximum=8,
             error="partnerpoint_referral_daily_max_invalid",
+        ),
+        partnerpoint_real_estate_daily_max=_strict_int_setting(
+            "GROWTH_PARTNERPOINT_REAL_ESTATE_DAILY_MAX",
+            "18",
+            minimum=1,
+            maximum=18,
+            error="partnerpoint_real_estate_daily_max_invalid",
         ),
         deepseek_api_key_file=os.getenv(
             "DEEPSEEK_API_KEY_FILE", "/run/secrets/growth/deepseek-api-key"
@@ -657,6 +665,7 @@ class GrowthRegistry:
         expected_bucket = {
             "architect_office": "architect_office",
             "referral_partner": "referral_partner",
+            "real_estate_agent": "real_estate_agent",
         }.get(recipient_type)
         if source.get("motor") != "construction" or source.get("bucket") != expected_bucket:
             raise GrowthRegistryError(
@@ -705,7 +714,7 @@ class GrowthRegistry:
         organization_names = binding.get("organization_names")
         recipient_names = binding.get("recipient_names")
         if (
-            recipient_type not in {"architect_office", "referral_partner"}
+            recipient_type not in {"architect_office", "referral_partner", "real_estate_agent"}
             or binding.get("recipient_email_type") != "role"
             or binding.get("contact_basis") != "public_business_contact"
             or binding.get("primary_language") != "hu"
@@ -795,7 +804,7 @@ class GrowthRegistry:
                 "OWNER_APPROVED",
                 "CANONICAL",
             }.issubset(set(authority_raw.get("status") or []))
-            or "architect_office"
+            or recipient_type
             not in set((authority_raw.get("send_gates") or {}).get("allowed_recipient_types") or [])
             or not bool(discovery_policy.get("allow_unlisted_public_sources"))
             or not bool(discovery_policy.get("include_search_discovered_sources"))

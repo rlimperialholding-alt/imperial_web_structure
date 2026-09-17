@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import quote, unquote, urljoin, urlsplit, urlunsplit
 
 from .registry import GrowthRegistry, GrowthRegistryError, _registrable_domain
 
@@ -367,9 +367,15 @@ def _fetch_html(
                 raise OfficialSourceEvidenceError("official_source_fetch_timeout")
             if connection.sock is not None:
                 connection.sock.settimeout(remaining)
-            path = parsed.path or "/"
+            path = quote(
+                parsed.path or "/",
+                safe="/:@-._~!$&\'()*+,;=%",
+            )
             if parsed.query:
-                path = f"{path}?{parsed.query}"
+                path = f"{path}?" + quote(
+                    parsed.query,
+                    safe="=&%/:?+,-._~!$\'()*;@",
+                )
             connection.request(
                 "GET",
                 path,

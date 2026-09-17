@@ -7150,6 +7150,9 @@ def run_once(
     )
     from .wide_service import run_due as run_due_wide
 
+    # Scheduled acquisition motors must not be starved by slower partner,
+    # catalog, content or publishing pipelines later in the worker cycle.
+    runs = run_due_motors(db) if settings().enabled else []
     reply_sync = sync_sales_agent_reply_stops(db)
     partnerpoint_sync = sync_candidates(db)
 
@@ -7210,7 +7213,6 @@ def run_once(
             "sent": 0,
         }
 
-    runs = run_due_motors(db)
     followups = schedule_followups(db) if writes_unlocked() else 0
     sent = early_sent + (dispatch_batch(db) if writes_unlocked() else 0)
     partnerpoint_writeback = writeback_sent(db)

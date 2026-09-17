@@ -406,6 +406,11 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
     events = []
     monkeypatch.setattr(
         service,
+        "run_due_motors",
+        lambda _db: events.append("motors") or [],
+    )
+    monkeypatch.setattr(
+        service,
         "automatic_public_land_transient_block_promotion",
         lambda _db: events.append("transient_promotion") or {"status": "applied", "queued": 0},
     )
@@ -425,7 +430,7 @@ def test_run_once_dispatches_approved_mail_before_unrelated_pipeline_failure(
     with pytest.raises(RuntimeError, match="unrelated pipeline failure"):
         service.run_once(db)
 
-    assert events == ["transient_promotion", "promotion", "mail", "wide"]
+    assert events == ["motors", "transient_promotion", "promotion", "mail", "wide"]
 
 
 def test_readiness_accepts_fresh_non_send_critical_degraded_worker_as_serving(

@@ -201,6 +201,14 @@ def test_partnerpoint_candidate_filter_accepts_unsent_pass_rows_without_status_l
     public_gmail[7] = "https://peldaepitesz.hu/kapcsolat"
     public_gmail[10] = "peldaepitesz@gmail.com"
     public_gmail[14] = "https://peldaepitesz.hu/kapcsolat"
+    real_estate = list(eligible)
+    real_estate[0] = "PC-REAL-ESTATE"
+    real_estate[1] = "Példa Ingatlaniroda Kft."
+    real_estate[2] = "Ingatlanközvetítő iroda"
+    real_estate[7] = "https://example-realestate.hu/kapcsolat"
+    real_estate[10] = "info@example-realestate.hu"
+    real_estate[14] = "https://example-realestate.hu/kapcsolat"
+    real_estate[18] = "REAL_ESTATE_AGENT_FIRST_CONTACT_HU"
     manual = list(eligible)
     manual[0] = "PC-MANUAL"
     manual[1] = "Hofstädter Építőanyag Centrum Kft."
@@ -209,14 +217,17 @@ def test_partnerpoint_candidate_filter_accepts_unsent_pass_rows_without_status_l
     manual[21] = "OWNER_MANUAL_ONLY"
 
     result = partnerpoint._candidate_rows(
-        {"Partner_Universe": [header, eligible, stale, public_gmail, manual]}
+        {"Partner_Universe": [header, eligible, stale, public_gmail, real_estate, manual]}
     )
 
     assert [item["candidate_id"] for item in result] == [
         "PC-260908-A01",
         "PC-260827-A01",
         "PC-PUBLIC-GMAIL",
+        "PC-REAL-ESTATE",
     ]
+    real_estate_row = next(item for item in result if item["candidate_id"] == "PC-REAL-ESTATE")
+    assert real_estate_row["recipient_type"] == "real_estate_agent"
 
 
 def test_partnerpoint_shared_mailbox_history_checks_exact_address_only(db, monkeypatch):
@@ -303,6 +314,13 @@ def test_partnerpoint_daily_capacity_counts_existing_created_messages(db):
         status="queued",
     )
     referral.source_bucket = "referral_partner"
+    real_estate = _signal(
+        signal_id="SIG-REAL-ESTATE-TODAY",
+        email="estate@example.hu",
+        status="queued",
+    )
+    real_estate.source_bucket = "real_estate_agent"
+    real_estate.signal_type = "real_estate_agent"
     old = _signal(
         signal_id="SIG-ARCH-YESTERDAY",
         email="old@example.hu",
@@ -312,6 +330,7 @@ def test_partnerpoint_daily_capacity_counts_existing_created_messages(db):
         [
             architect,
             referral,
+            real_estate,
             old,
             _outreach(
                 outreach_id="OUT-ARCH-TODAY",
@@ -324,6 +343,13 @@ def test_partnerpoint_daily_capacity_counts_existing_created_messages(db):
                 outreach_id="OUT-REF-TODAY",
                 signal_id=referral.signal_id,
                 email="referral@example.hu",
+                status="queued",
+                sent_at=None,
+            ),
+            _outreach(
+                outreach_id="OUT-REAL-ESTATE-TODAY",
+                signal_id=real_estate.signal_id,
+                email="estate@example.hu",
                 status="queued",
                 sent_at=None,
             ),
@@ -347,10 +373,12 @@ def test_partnerpoint_daily_capacity_counts_existing_created_messages(db):
 
     assert partnerpoint._partner_lane_created_today(db) == {
         "architect_office": 1,
+        "real_estate_agent": 1,
         "referral_partner": 1,
     }
     assert partnerpoint._partner_external_keys_created_today(db) == {
         architect.external_key,
+        real_estate.external_key,
         referral.external_key,
     }
 
@@ -723,3 +751,36 @@ def test_partnerpoint_copy_gate_accepts_only_the_two_owner_approved_template_typ
         canonical_policy.assert_partnerpoint_outreach_copy(
             templates["architect_office"] + " 2,5%", recipient_type="architect_office"
         )
+
+
+def test_partnerpoint_real_estate_source_uses_real_estate_lane(monkeypatch):
+    candidate = {
+        "source_url": "https://example-estate.hu/kapcsolat",
+        "email": "info@example-estate.hu",
+        "recipient_type": "real_estate_agent",
+        "company": "Huber Ingatlan",
+        "organization_marker": "Huber Ingatlan",
+        "recipient_name": "Példa Ingatlaniroda",
+        "candidate_id": "PC-REAL-ESTATE",
+        "control_row_sha256": "a" * 64,
+    }
+    monkeypatch.setattr(
+        partnerpoint, "_public_email_evidence",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(http_status=200, content_type="text/html", content_sha256="b" * 64),
+            "https://example-estate.hu/kapcsolat",
+        ),
+    )
+    source_id, source = partnerpoint._source_entry(
+        candidate,
+        architect_authority={
+            "registry_id": "IMPERIAL_REAL_ESTATE_DISCOVERY_SOURCES_HU_V1",
+            "version": 1,
+            "sha256": "c" * 64,
+            "owner_instruction_ref": "fixture",
+        },
+    )
+    assert source_id == "DYNAMIC_HU_EXAMPLE_ESTATE_HU"
+    assert source["bucket"] == "real_estate_agent"
+    assert source["recipient_binding"]["recipient_type"] == "real_estate_agent"
+    assert source["recipient_binding"]["organization_names"] == ["Huber Ingatlan"]

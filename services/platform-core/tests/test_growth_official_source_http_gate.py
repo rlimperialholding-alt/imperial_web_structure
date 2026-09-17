@@ -520,6 +520,23 @@ def test_fetch_uses_pinned_ip_tls_host_header_and_identity_encoding(monkeypatch)
     assert connections[0].closed
 
 
+def test_fetch_percent_encodes_unicode_path_and_query(monkeypatch):
+    url = "https://example.hu/kapcsolat/építész?város=Győr&x=1"
+    connections, _ = _install_http(monkeypatch, [_Response()])
+    monkeypatch.setattr(official_source.time, "monotonic", lambda: 0.0)
+
+    page, _ = official_source._fetch_html(
+        url, allowed_urls={url}, root_domain="example.hu", max_bytes=1024,
+        max_redirects=0, expected_final_url=url, deadline_monotonic=100.0,
+    )
+
+    assert connections[0].requests[0][1] == (
+        "/kapcsolat/%C3%A9p%C3%ADt%C3%A9sz?v%C3%A1ros=Gy%C5%91r&x=1"
+    )
+    assert page.requested_url == url
+    assert page.final_url == url
+
+
 def test_exact_allowlisted_same_root_redirect_is_followed(monkeypatch):
     redirected = "https://example.hu/approved"
     connections, _ = _install_http(
